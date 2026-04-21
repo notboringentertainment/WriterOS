@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WriterOS · Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:          hsl(220 13% 9%);
+    --surface:     hsl(220 13% 12%);
+    --sidebar:     hsl(220 13% 10%);
+    --border:      hsl(220 13% 18%);
+    --chip:        hsl(220 13% 15%);
+    --input:       hsl(220 13% 11%);
+    --row-active:  hsl(220 13% 15%);
+    --fg:          hsl(220 9% 95%);
+    --fg-muted:    hsl(220 9% 60%);
+    --primary:     hsl(260 100% 80%);
+    --p-sam:       hsl(45 100% 75%);
+    --p-casey:     hsl(200 100% 75%);
+    --p-oliver:    hsl(120 60% 70%);
+    --p-maya:      hsl(320 70% 75%);
+    --p-zoe:       hsl(270 60% 75%);
+    --p-alex:      hsl(15 80% 70%);
+    --sans:  'Inter', system-ui, sans-serif;
+    --serif: 'Crimson Text', Georgia, serif;
+    --mono:  'JetBrains Mono', ui-monospace, monospace;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); height: 100%; overflow: hidden; }
+  * { box-sizing: border-box; }
+  #root { height: 100vh; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- canonical state + bridge + store -->
+<script src="lib/state.mock.js"></script>
+<script src="lib/bridge.js"></script>
+<script src="lib/store.js"></script>
+
+<!-- React -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- presentation layer -->
+<script type="text/babel" src="ui/frame.jsx"></script>
+<script type="text/babel" src="ui/screens-mission.jsx"></script>
+<script type="text/babel" src="ui/screens-knowledge.jsx"></script>
+<script type="text/babel" src="ui/screens-system.jsx"></script>
+
+<!-- app root -->
+<script type="text/babel" data-presets="react">
+
+function App() {
+  const [screen, setScreen] = React.useState(() => localStorage.getItem('wos.screen') || 'control');
+  React.useEffect(() => { localStorage.setItem('wos.screen', screen); }, [screen]);
+
+  const activeAgentId = screen.startsWith('agent:') ? screen.split(':')[1] : null;
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateAreas: `
+        "top top top"
+        "nav main drawer"
+      `,
+      gridTemplateColumns: '208px 1fr 320px',
+      gridTemplateRows: '48px 1fr',
+      height: '100vh',
+    }}>
+      <TopBar screen={screen} setScreen={setScreen} activeAgentId={activeAgentId}/>
+      <LeftNav screen={screen} setScreen={setScreen}/>
+      <main style={{ gridArea: 'main', overflowY: 'auto', background: 'var(--bg)', minWidth: 0 }}>
+        <ScreenRouter screen={screen} setScreen={setScreen}/>
+      </main>
+      <RightDrawer screen={screen} activeAgentId={activeAgentId}/>
+    </div>
+  );
+}
+
+function ScreenRouter({ screen, setScreen }) {
+  if (screen === 'control')   return <MissionControl setScreen={setScreen}/>;
+  if (screen === 'triage')    return <TriageView setScreen={setScreen}/>;
+  if (screen === 'tasks')     return <TaskQueue/>;
+  if (screen === 'handoffs')  return <HandoffTimeline/>;
+  if (screen === 'memory')    return <HiveMind/>;
+  if (screen === 'structure') return <StructureView/>;
+  if (screen === 'cast')      return <CastView/>;
+  if (screen === 'world')     return <WorldView/>;
+  if (screen === 'scenes')    return <ScenesView/>;
+  if (screen === 'inspector') return <StateInspector/>;
+  if (screen === 'modules')   return <FutureModules setScreen={setScreen}/>;
+  if (screen === 'settings')  return <SettingsView/>;
+  if (screen.startsWith('agent:')) return <AgentWorkbench agentId={screen.split(':')[1]}/>;
+  return <MissionControl setScreen={setScreen}/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+</script>
+</body>
+</html>
