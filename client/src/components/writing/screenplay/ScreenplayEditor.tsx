@@ -1,5 +1,6 @@
-import React, { useRef, useCallback } from 'react'
+import React, { useRef, useCallback, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import type { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -9,6 +10,9 @@ import { ElementType, countWords } from '../../../lib/screenplay'
 import './screenplay.css'
 
 interface ScreenplayEditorProps {
+  initialContent?: string
+  onContentChange?: (html: string) => void
+  onEditorReady?: (editor: Editor) => void
   onWordCountChange?: (count: number) => void
   onPageCountChange?: (count: number) => void
   onElementTypeChange?: (type: ElementType) => void
@@ -16,12 +20,26 @@ interface ScreenplayEditorProps {
 }
 
 export function ScreenplayEditor({
+  initialContent,
+  onContentChange,
+  onEditorReady,
   onWordCountChange,
   onPageCountChange,
   onElementTypeChange,
   onSceneHeadingsChange,
 }: ScreenplayEditorProps) {
   const editorDivRef = useRef<HTMLDivElement>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Stable ref so the debounced callback always calls the latest prop value
+  const onContentChangeRef = useRef(onContentChange)
+  onContentChangeRef.current = onContentChange
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [])
 
   const updatePageCount = useCallback(() => {
     if (!editorDivRef.current) return
@@ -32,12 +50,20 @@ export function ScreenplayEditor({
 
   const editor = useEditor({
     extensions: [Document, Paragraph, Text, History, ScreenplayExtension],
-    content: '<p data-element-type="scene-heading"></p>',
+    content: initialContent || '<p data-element-type="scene-heading"></p>',
 
-    onUpdate: ({ editor }) => {
+    onCreate({ editor }) {
+      onEditorReady?.(editor)
+    },
+
+    onUpdate({ editor }) {
       onWordCountChange?.(countWords(editor.getText()))
-
       updatePageCount()
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        onContentChangeRef.current?.(editor.getHTML())
+      }, 500)
 
       const headings: Array<{ index: number; text: string; nodePos: number }> = []
       let sceneIndex = 0
@@ -53,7 +79,7 @@ export function ScreenplayEditor({
       onSceneHeadingsChange?.(headings)
     },
 
-    onSelectionUpdate: ({ editor }) => {
+    onSelectionUpdate({ editor }) {
       const { $anchor } = editor.state.selection
       const node = $anchor.parent
       if (node.type.name === 'paragraph') {
