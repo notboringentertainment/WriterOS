@@ -6,7 +6,7 @@ import {
   saveProjectState,
   loadProjectState,
 } from '../../client/src/lib/projectState'
-import type { TranscriptMessage } from '../../client/src/lib/projectState'
+import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 
 describe('defaultProjectState', () => {
   it('has schemaVersion equal to CURRENT_SCHEMA_VERSION', () => {
@@ -84,6 +84,34 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.agents.zoe).toEqual({ transcript: [], lastTouched: null })
+  })
+})
+
+describe('script field — typed shape', () => {
+  it('defaultProjectState has rawHtml empty string', () => {
+    expect(defaultProjectState().script.rawHtml).toBe('')
+  })
+
+  it('defaultProjectState has empty scenes array', () => {
+    expect(defaultProjectState().script.scenes).toEqual([])
+  })
+
+  it('migrateState converts old unknown[] shape to new shape', () => {
+    const old = { schemaVersion: 1, script: { scenes: [], elements: [], revisionHistory: [] } }
+    const migrated = migrateState(old)
+    expect(migrated.script.rawHtml).toBe('')
+    expect(Array.isArray(migrated.script.scenes)).toBe(true)
+  })
+
+  it('migrateState preserves existing rawHtml', () => {
+    const old = { schemaVersion: 1, script: { rawHtml: '<p>hello</p>', scenes: [] } }
+    const migrated = migrateState(old)
+    expect(migrated.script.rawHtml).toBe('<p>hello</p>')
+  })
+
+  it('ScriptScene type compiles — id, heading, index fields present', () => {
+    const scene: ScriptScene = { id: 's1', heading: 'INT. ROOM - DAY', index: 1 }
+    expect(scene.heading).toBe('INT. ROOM - DAY')
   })
 })
 

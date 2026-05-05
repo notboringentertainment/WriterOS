@@ -11,6 +11,12 @@ export interface TranscriptMessage {
   ts: number
 }
 
+export interface ScriptScene {
+  id: string
+  heading: string
+  index: number
+}
+
 export interface Beat {
   id: string
   name: string
@@ -32,7 +38,7 @@ export interface Character {
 export interface ProjectState {
   schemaVersion: number
   meta: { title: string; genre: string; format: string; wordCount: number; pageCount: number }
-  script: { scenes: unknown[]; elements: unknown[]; revisionHistory: unknown[] }
+  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
@@ -70,7 +76,7 @@ export function defaultProjectState(): ProjectState {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     meta: { title: 'Untitled Project', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
-    script: { scenes: [], elements: [], revisionHistory: [] },
+    script: { rawHtml: '', scenes: [], revisionHistory: [] },
     outline: {
       beatType: 'save-the-cat',
       beats: SAVE_THE_CAT_BEATS.map(b => ({ ...b, notes: '', linkedSceneIds: [] })),
@@ -125,6 +131,18 @@ export function migrateState(raw: unknown): ProjectState {
     }
   }
   state.agents = agents as ProjectState['agents']
+
+  // Migrate script field from unknown[] shape to typed shape
+  const rawScript =
+    state.script && typeof state.script === 'object'
+      ? (state.script as Record<string, unknown>)
+      : {}
+  state.script = {
+    rawHtml: typeof rawScript.rawHtml === 'string' ? rawScript.rawHtml : '',
+    scenes: Array.isArray(rawScript.scenes) ? (rawScript.scenes as ScriptScene[]) : [],
+    revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
+  }
+
   return state as unknown as ProjectState
 }
 

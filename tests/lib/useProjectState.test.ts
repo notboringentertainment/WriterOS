@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
-import type { TranscriptMessage } from '../../client/src/lib/projectState'
+import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 
 beforeEach(() => localStorage.clear())
 
@@ -64,6 +64,21 @@ describe('useProjectState', () => {
     act(() => result.current.addMessage('oliver', msg))
     expect(result.current.state.agents.writingPartner.transcript).toHaveLength(0)
     expect(result.current.state.agents.alex.transcript).toHaveLength(0)
+  })
+
+  it('updateScript stores rawHtml and scenes', () => {
+    const { result } = renderHook(() => useProjectState())
+    const scenes: ScriptScene[] = [{ id: 's1', heading: 'INT. ROOM - DAY', index: 1 }]
+    act(() => result.current.updateScript('<p>hello</p>', scenes))
+    expect(result.current.state.script.rawHtml).toBe('<p>hello</p>')
+    expect(result.current.state.script.scenes).toEqual(scenes)
+  })
+
+  it('updateScript persists to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.updateScript('<p>persisted</p>', []))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.script.rawHtml).toBe('<p>persisted</p>')
   })
 
   it('addMessage persists to localStorage', () => {

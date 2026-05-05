@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { loadProjectState, saveProjectState } from './projectState'
-import type { ProjectState, Beat, Character, AgentId, TranscriptMessage } from './projectState'
+import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 
 export function useProjectState() {
   const [state, setState] = useState<ProjectState>(() => loadProjectState())
@@ -96,6 +96,10 @@ export function useProjectState() {
     }))
   }, [update])
 
+  const updateScript = useCallback((rawHtml: string, scenes: ScriptScene[]) => {
+    update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
+  }, [update])
+
   return {
     state,
     setMeta,
@@ -108,5 +112,6 @@ export function useProjectState() {
     setThemes,
     setRules,
     addMessage,
+    updateScript,
   }
 }
