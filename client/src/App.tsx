@@ -9,7 +9,7 @@ import { OutlineTab } from './components/writing/OutlineTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WritersRoom } from './components/writing/WritersRoom'
 import { PERSONAS } from '@shared/personas'
-import type { TranscriptMessage, AgentId } from './lib/projectState'
+import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 
 function makeMessage(role: 'user' | 'assistant', content: string, speaker: string): TranscriptMessage {
   return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now() }
@@ -98,6 +98,8 @@ export default function App() {
           <ScriptTab
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
+            initialScript={project.state.script.rawHtml || undefined}
+            onScriptChange={(html: string, scenes: ScriptScene[]) => project.updateScript(html, scenes)}
           />
         )
       case 'synopsis':
