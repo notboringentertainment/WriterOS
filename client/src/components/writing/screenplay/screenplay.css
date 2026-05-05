@@ -27,46 +27,48 @@
 }
 
 /* One blank line before scene headings (except the first) */
-.ProseMirror p + [data-element-type="scene-heading"] {
+.ProseMirror p + p[data-element-type="scene-heading"] {
   margin-top: 16px;
 }
 
-/* ---- Element-specific indentation ---- */
+/* ---- Element-specific indentation ----
+   Selectors use .ProseMirror p[data-element-type="..."] (specificity 0,2,1)
+   to beat .ProseMirror p { margin: 0 } (specificity 0,1,1). */
 
-/* Scene Heading: left margin, bold */
-[data-element-type="scene-heading"] {
+/* Scene Heading: full width, bold */
+.ProseMirror p[data-element-type="scene-heading"] {
   margin-left: 0;
   margin-right: 0;
   font-weight: 700;
 }
 
-/* Action: left margin (no extra indent) */
-[data-element-type="action"] {
+/* Action: full width */
+.ProseMirror p[data-element-type="action"] {
   margin-left: 0;
   margin-right: 0;
 }
 
 /* Character: ~2.2" from content left = 211px */
-[data-element-type="character"] {
+.ProseMirror p[data-element-type="character"] {
   margin-left: 211px;
   margin-right: 0;
   text-transform: uppercase;
 }
 
 /* Dialogue: 1" left = 96px, 1.5" right = 144px */
-[data-element-type="dialogue"] {
+.ProseMirror p[data-element-type="dialogue"] {
   margin-left: 96px;
   margin-right: 144px;
 }
 
 /* Parenthetical: 1.5" left = 144px, 2" right = 192px */
-[data-element-type="parenthetical"] {
+.ProseMirror p[data-element-type="parenthetical"] {
   margin-left: 144px;
   margin-right: 192px;
 }
 
 /* Transition: flush right, uppercase */
-[data-element-type="transition"] {
+.ProseMirror p[data-element-type="transition"] {
   text-align: right;
   margin-left: 0;
   margin-right: 0;
@@ -74,7 +76,7 @@
 }
 
 /* Scene heading placeholder */
-[data-element-type="scene-heading"].is-empty::before {
+.ProseMirror p[data-element-type="scene-heading"].is-empty::before {
   content: 'INT./EXT. LOCATION — DAY/NIGHT';
   color: hsl(220 10% 65%);
   pointer-events: none;
@@ -83,8 +85,8 @@
   font-weight: 400;
 }
 
-/* ProseMirror placeholder for action line */
-[data-element-type="action"].is-empty::before {
+/* Action placeholder */
+.ProseMirror p[data-element-type="action"].is-empty::before {
   content: 'Action…';
   color: hsl(220 10% 65%);
   pointer-events: none;
