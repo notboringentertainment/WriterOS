@@ -1,0 +1,77 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
+import { useProjectState } from '../../client/src/lib/useProjectState'
+import type { TranscriptMessage } from '../../client/src/lib/projectState'
+
+beforeEach(() => localStorage.clear())
+
+describe('useProjectState', () => {
+  it('returns state with default title on first load', () => {
+    const { result } = renderHook(() => useProjectState())
+    expect(result.current.state.meta.title).toBe('Untitled Project')
+  })
+
+  it('setMeta updates meta fields', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setMeta({ title: 'My Film' }))
+    expect(result.current.state.meta.title).toBe('My Film')
+  })
+
+  it('setSynopsisSection updates logline', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisSection('logline', 'A hero rises.'))
+    expect(result.current.state.synopsis.logline).toBe('A hero rises.')
+  })
+
+  it('setSynopsisSection updates a section', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisSection('setup', 'Set in Chicago.'))
+    expect(result.current.state.synopsis.sections.setup).toBe('Set in Chicago.')
+  })
+
+  it('setBeat updates a single beat by id', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setBeat('midpoint', { notes: 'Hero wins battle, loses war' }))
+    const midpoint = result.current.state.outline.beats.find(b => b.id === 'midpoint')
+    expect(midpoint?.notes).toBe('Hero wins battle, loses war')
+  })
+
+  it('addCharacter appends to storyBible.characters', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.addCharacter({ name: 'Alex', role: 'Protagonist', wound: '', want: '', need: '', arc: '' }))
+    expect(result.current.state.storyBible.characters).toHaveLength(1)
+    expect(result.current.state.storyBible.characters[0].name).toBe('Alex')
+  })
+
+  it('persists state to localStorage on update', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setMeta({ title: 'Persisted' }))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.meta.title).toBe('Persisted')
+  })
+
+  it('addMessage appends to the selected agent transcript', () => {
+    const { result } = renderHook(() => useProjectState())
+    const msg: TranscriptMessage = { id: 'msg1', role: 'user', content: 'hello', speaker: 'Writer', ts: 1 }
+    act(() => result.current.addMessage('alex', msg))
+    expect(result.current.state.agents.alex.transcript).toHaveLength(1)
+    expect(result.current.state.agents.alex.transcript[0].content).toBe('hello')
+  })
+
+  it('addMessage does not touch other agent transcripts', () => {
+    const { result } = renderHook(() => useProjectState())
+    const msg: TranscriptMessage = { id: 'msg2', role: 'assistant', content: 'hi', speaker: 'Oliver', ts: 2 }
+    act(() => result.current.addMessage('oliver', msg))
+    expect(result.current.state.agents.writingPartner.transcript).toHaveLength(0)
+    expect(result.current.state.agents.alex.transcript).toHaveLength(0)
+  })
+
+  it('addMessage persists to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    const msg: TranscriptMessage = { id: 'msg3', role: 'user', content: 'persist me', speaker: 'Writer', ts: 3 }
+    act(() => result.current.addMessage('writingPartner', msg))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.agents.writingPartner.transcript).toHaveLength(1)
+    expect(stored.agents.writingPartner.transcript[0].content).toBe('persist me')
+  })
+})

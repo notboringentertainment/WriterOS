@@ -1,45 +1,31 @@
-# WriterOS — Claude Code Context
+# WriterOS — Agent Context
 
-A personality-driven, multi-agent writing studio. Six specialist agents (Sam, Casey, Oliver, Maya, Zoe, Marcus) coordinated by a Triage agent, sharing one ProjectState.
+This repo is now the clean WriterOS app, not the original Claude Design prototype bundle.
 
-## Repo status
+## Current Shape
 
-This repo is a **Claude Design handoff bundle**, not yet a built app. The prototype in `project/` is the visual + interaction spec. The real application is being built fresh in `src/` using Vite + React.
+- React + Vite frontend under `client/`
+- Minimal Express server under `server/`
+- Shared persona and story-memory types under `shared/`
+- Specs and plans under `docs/superpowers/`
+- Tests under `tests/`
 
-- `project/` — the HTML/CSS/JS prototype. Read to understand **what** to build. Do not port its structure directly.
-- `chats/` — design conversation transcripts. The "why" behind decisions. Read once when starting on a new area.
-- `src/` — the real app. Target architecture below.
-- `docs/HANDOFF.md` — phase-by-phase roadmap. Read per phase, not per session.
+## Important Constraints
 
-## Target architecture (honor this contract)
+1. Preserve the writing-first product direction. The script editor and structured documents are the primary app surface.
+2. Keep Writing Partner and Writer's Room transcripts separate:
+   - `agents.writingPartner.transcript` is only for the left rail host conversation.
+   - `agents.sam/casey/oliver/maya/zoe/alex.transcript` are only for Writer's Room specialist sessions.
+3. Do not reintroduce Replit, Drizzle, Neon, Passport, or session scaffold unless the user explicitly asks for a backend persistence project.
+4. Keep `/api/wp-chat` a thin adapter over `OpenAIService.generatePersonaResponse`.
+5. Run `npm run test:run`, `npm run check`, and `npm run build` after meaningful changes.
 
-```
-src/
-  lib/
-    state.mock.js   canonical ProjectState shape (replace with live feed in Phase 1)
-    bridge.js       ONLY outbound-call surface; MockBridge → WSBridge
-    store.js        subscribe/select/mutate; UI never fetches directly
-    schema.js       runtime validation for every mutation (Phase 1)
-  ui/
-    frame.jsx             TopBar + LeftNav + RightDrawer
-    screens-mission.jsx   Mission Control, Triage, Tasks, Handoffs
-    screens-knowledge.jsx Hive Mind, Structure, Cast, World, Scenes, AgentWorkbench
-    screens-system.jsx    State Inspector, Future Modules, Settings
-```
+## Useful Entry Points
 
-UI reads state via `useStore(selector)`, writes via `window.WOS.store.actions.*`. Nothing else. All networking lives in `lib/bridge.js`.
-
-## Hard rules
-
-1. **UI never touches `lib/bridge.js` directly.** If a new mutation is needed, add an action in `store.js`.
-2. **Agents cannot write outside their declared scope.** `agent.writes` is a permission boundary, not documentation.
-3. **Shared information lives in ProjectState.** No side channels between agents.
-4. **Memory classes are not interchangeable.** `canon` is immutable except by Zoe. `pinned` requires user approval to delete. Never conflate.
-5. **Triage is the only router.** Specialists file handoffs; they do not invoke each other.
-
-## Working style
-
-- Prototype in `project/` is HTML/CSS/JS. Target is React + Vite. Match visual output, not internal structure.
-- Ambiguous scope? Ask before implementing. Cheaper than rebuilding.
-- Phase roadmap and known debts live in `docs/HANDOFF.md` — load when starting a phase, not every session.
-- No tests yet. Add Vitest once there is a backend worth testing (post-Phase 1).
+- `client/src/App.tsx`
+- `client/src/lib/projectState.ts`
+- `client/src/lib/wpRouting.ts`
+- `client/src/components/writing/ScriptTab.tsx`
+- `client/src/components/writing/WritersRoom.tsx`
+- `server/routes.ts`
+- `server/ai/openaiService.ts`
