@@ -43,6 +43,7 @@ const ENTER_NEXT: Record<ElementType, ElementType> = {
 }
 
 const UPPERCASE_ELEMENTS = new Set<ElementType>(['scene-heading', 'character'])
+const SENTENCE_CASE_ELEMENTS = new Set<ElementType>(['action', 'dialogue'])
 
 export function getTabNext(type: ElementType): ElementType {
   return TAB_NEXT[type]
@@ -58,6 +59,13 @@ export function getEnterNext(type: ElementType): ElementType {
 
 export function shouldUppercase(type: ElementType): boolean {
   return UPPERCASE_ELEMENTS.has(type)
+}
+
+export function shouldSentenceCapitalize(type: ElementType, textBeforeCursor: string): boolean {
+  if (!SENTENCE_CASE_ELEMENTS.has(type)) return false
+
+  const meaningfulBefore = textBeforeCursor.replace(/[\s"'“”‘’([{]+$/g, '')
+  return meaningfulBefore === '' || /[.!?]$/.test(meaningfulBefore)
 }
 
 export function countWords(text: string): number {

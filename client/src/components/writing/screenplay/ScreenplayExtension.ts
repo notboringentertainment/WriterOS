@@ -1,9 +1,11 @@
 import { Extension } from '@tiptap/core'
+import { Plugin } from '@tiptap/pm/state'
 import {
   ElementType,
   getTabNext,
   getTabPrev,
   getEnterNext,
+  shouldSentenceCapitalize,
   shouldUppercase,
 } from '../../../lib/screenplay'
 
@@ -59,6 +61,29 @@ export const ScreenplayExtension = Extension.create({
           return true
         },
     }
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleTextInput(view, from, to, text) {
+            if (from !== to || text.length !== 1 || !/[a-z]/.test(text)) return false
+
+            const { $from } = view.state.selection
+            const node = $from.parent
+            if (node.type.name !== 'paragraph') return false
+
+            const currentType = (node.attrs.elementType ?? 'action') as ElementType
+            const textBeforeCursor = node.textBetween(0, $from.parentOffset)
+            if (!shouldSentenceCapitalize(currentType, textBeforeCursor)) return false
+
+            view.dispatch(view.state.tr.insertText(text.toUpperCase(), from, to))
+            return true
+          },
+        },
+      }),
+    ]
   },
 
   addKeyboardShortcuts() {

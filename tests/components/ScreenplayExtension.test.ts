@@ -26,6 +26,17 @@ function nodeType(editor: Editor, childIndex = 0): ElementType {
   return (editor.state.doc.child(childIndex).attrs.elementType ?? 'action') as ElementType
 }
 
+function typeTextInput(editor: Editor, text: string): boolean {
+  const { from, to } = editor.state.selection
+  let handled = false
+  editor.view.someProp('handleTextInput', handler => {
+    handled = handler(editor.view, from, to, text, () => editor.state.tr) === true
+    return handled
+  })
+  if (!handled) editor.commands.insertContent(text)
+  return handled
+}
+
 afterEach(() => {
   mountEl?.remove()
   mountEl = undefined
@@ -97,6 +108,55 @@ describe('uppercaseCurrentBlock command', () => {
     editor = makeEditor('<p data-element-type="action"></p>')
     editor.commands.uppercaseCurrentBlock()
     expect(editor.state.doc.firstChild?.textContent).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sentence capitalization — handleTextInput capitalizes action/dialogue starts.
+// ---------------------------------------------------------------------------
+
+describe('sentence capitalization text input', () => {
+  let editor: Editor
+
+  afterEach(() => editor.destroy())
+
+  it('capitalizes the first typed letter in action', () => {
+    editor = makeEditor('<p data-element-type="action"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'b')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('B')
+  })
+
+  it('capitalizes the first typed letter in dialogue', () => {
+    editor = makeEditor('<p data-element-type="dialogue"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'i')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('I')
+  })
+
+  it('capitalizes after sentence-ending punctuation', () => {
+    editor = makeEditor('<p data-element-type="action">He stops.</p>')
+    const end = editor.state.doc.content.size - 1
+    editor.commands.setTextSelection(end)
+    typeTextInput(editor, ' ')
+    expect(typeTextInput(editor, 't')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('He stops. T')
+  })
+
+  it('does not capitalize mid-sentence action text', () => {
+    editor = makeEditor('<p data-element-type="action">He</p>')
+    const end = editor.state.doc.content.size - 1
+    editor.commands.setTextSelection(end)
+    typeTextInput(editor, ' ')
+    expect(typeTextInput(editor, 'w')).toBe(false)
+    expect(editor.state.doc.firstChild?.textContent).toBe('He w')
+  })
+
+  it('does not sentence-capitalize character cues', () => {
+    editor = makeEditor('<p data-element-type="character"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'b')).toBe(false)
+    expect(editor.state.doc.firstChild?.textContent).toBe('b')
   })
 })
 

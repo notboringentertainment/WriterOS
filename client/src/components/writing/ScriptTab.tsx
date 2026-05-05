@@ -75,26 +75,28 @@ export function ScriptTab({
 
   return (
     <div style={styles.wrapper}>
-      <ScreenplayToolbar
-        elementType={elementType}
-        wordCount={wordCount}
-        pageCount={pageCount}
-        focusMode={focusMode}
-        onElementTypeChange={handleToolbarElementTypeChange}
-        onToggleFocusMode={onToggleFocusMode}
-      />
-
-      <div style={styles.row}>
-        <SceneGutter scenes={scenes} onSceneClick={handleSceneClick} />
-        <ScreenplayEditor
-          initialContent={initialScript}
-          onContentChange={handleContentChange}
-          onEditorReady={handleEditorReady}
-          onWordCountChange={setWordCount}
-          onPageCountChange={setPageCount}
-          onElementTypeChange={setElementType}
-          onSceneHeadingsChange={handleSceneHeadingsChange}
+      <div style={styles.pageWrapper}>
+        <ScreenplayToolbar
+          elementType={elementType}
+          wordCount={wordCount}
+          pageCount={pageCount}
+          focusMode={focusMode}
+          onElementTypeChange={handleToolbarElementTypeChange}
+          onToggleFocusMode={onToggleFocusMode}
         />
+
+        <div style={styles.row}>
+          <SceneGutter scenes={scenes} onSceneClick={handleSceneClick} />
+          <ScreenplayEditor
+            initialContent={initialScript}
+            onContentChange={handleContentChange}
+            onEditorReady={handleEditorReady}
+            onWordCountChange={setWordCount}
+            onPageCountChange={setPageCount}
+            onElementTypeChange={setElementType}
+            onSceneHeadingsChange={handleSceneHeadingsChange}
+          />
+        </div>
       </div>
     </div>
   )
@@ -104,10 +106,12 @@ const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     minHeight: '100%',
     background: 'var(--bg)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
+    overflowX: 'auto',   // horizontal scroll on narrow viewports instead of clipping
     padding: '0 24px 80px',
+  },
+  pageWrapper: {
+    width: 'fit-content', // exactly as wide as toolbar+row content (>=856px)
+    margin: '0 auto',     // centers on desktop; left-anchors for horizontal scroll
   },
   row: {
     display: 'flex',

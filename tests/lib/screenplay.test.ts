@@ -4,6 +4,7 @@ import {
   getTabPrev,
   getEnterNext,
   shouldUppercase,
+  shouldSentenceCapitalize,
   countWords,
   estimatePageCount,
   ELEMENT_LABELS,
@@ -43,6 +44,32 @@ describe('shouldUppercase', () => {
   it('dialogue → false', () => expect(shouldUppercase('dialogue')).toBe(false))
   it('parenthetical → false', () => expect(shouldUppercase('parenthetical')).toBe(false))
   it('transition → false', () => expect(shouldUppercase('transition')).toBe(false))
+})
+
+describe('shouldSentenceCapitalize', () => {
+  it('capitalizes at the start of action', () => {
+    expect(shouldSentenceCapitalize('action', '')).toBe(true)
+  })
+
+  it('capitalizes at the start of dialogue', () => {
+    expect(shouldSentenceCapitalize('dialogue', '')).toBe(true)
+  })
+
+  it('capitalizes after sentence-ending punctuation', () => {
+    expect(shouldSentenceCapitalize('action', 'He stops. ')).toBe(true)
+    expect(shouldSentenceCapitalize('dialogue', 'What? "')).toBe(true)
+  })
+
+  it('does not capitalize after mid-sentence text', () => {
+    expect(shouldSentenceCapitalize('action', 'He ')).toBe(false)
+    expect(shouldSentenceCapitalize('dialogue', 'I am ')).toBe(false)
+  })
+
+  it('does not sentence-capitalize non-action elements', () => {
+    expect(shouldSentenceCapitalize('scene-heading', '')).toBe(false)
+    expect(shouldSentenceCapitalize('character', '')).toBe(false)
+    expect(shouldSentenceCapitalize('parenthetical', '')).toBe(false)
+  })
 })
 
 describe('countWords', () => {
