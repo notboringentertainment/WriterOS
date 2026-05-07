@@ -66,7 +66,9 @@ export function SynopsisTab({ synopsis, onUpdate }: SynopsisTabProps) {
     <div style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Synopsis</h2>
-        <p style={styles.subtitle}>Industry standard: 1–3 pages, present tense, third person.</p>
+        <p style={styles.subtitle}>
+          A pitch-facing story spine: logline, turns, stakes, and ending in compressed prose. Writing Partner naturally asks @Sam here.
+        </p>
       </div>
       <div style={styles.sections}>
         {SYNOPSIS_SECTIONS.map(section => (

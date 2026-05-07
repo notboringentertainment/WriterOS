@@ -359,6 +359,16 @@ Recommended MVP:
 - No visible UI required beyond possible toolbar page display.
 - If the writer selects text before asking, selection should be privileged.
 
+### Document Preview Toggle
+
+Planned idea for non-script surfaces:
+
+- Synopsis, Outline, Story Bible, and future Treatment can offer `Edit View` / `Document View`.
+- Edit View keeps fielded guidance and structured controls visible.
+- Document View renders the same authored source as a clean read-through document so writers can judge flow without form chrome.
+- Script already has formatted page presentation, so it does not need this toggle in the same way.
+- Export should come later. The toggle is for drafting and review first, not file generation.
+
 ## Data Ownership
 
 ### Source Of Truth

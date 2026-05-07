@@ -32,8 +32,24 @@ describe('LeftRail', () => {
 
   it('shows chat panel when open', () => {
     render(<LeftRail {...defaultProps} open={true} />)
-    expect(screen.getByText('Writing Partner')).toBeInTheDocument()
+    expect(screen.getAllByText('Writing Partner').length).toBeGreaterThan(0)
     expect(screen.getByPlaceholderText(/message/i)).toBeInTheDocument()
+  })
+
+  it('shows the active helper hint for the current surface', () => {
+    render(<LeftRail {...defaultProps} open={true} activeTab="synopsis" />)
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Sam')
+  })
+
+  it('updates the helper hint when a manual mention is typed', () => {
+    render(<LeftRail {...defaultProps} open={true} activeTab="outline" />)
+    const textarea = screen.getByPlaceholderText(/message/i)
+
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Oliver')
+
+    fireEvent.change(textarea, { target: { value: '@Partner keep this broad' } })
+
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner')
   })
 
   it('does not show chat panel when closed', () => {

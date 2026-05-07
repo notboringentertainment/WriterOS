@@ -3,15 +3,16 @@ import { TopBar } from './TopBar'
 import { LeftRail } from './LeftRail'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
-
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
+import type { ActiveTab } from '../../lib/wpRouting'
+import type { StoryBibleSection } from '../../lib/shellState'
 
 interface ShellState {
-  activeTab: WritingTab
+  activeTab: ActiveTab
   writersRoomActive: boolean
   panelOpen: boolean
   focusMode: boolean
-  setActiveTab: (tab: WritingTab) => void
+  storyBibleSection: StoryBibleSection | null
+  setActiveTab: (tab: ActiveTab) => void
   togglePanel: () => void
   enterWritersRoom: () => void
   exitWritersRoom: () => void
@@ -36,7 +37,7 @@ interface ShellProps {
 export function Shell({ shellState, projectTitle, onProjectTitleChange, railProps, children }: ShellProps) {
   const {
     activeTab, writersRoomActive, panelOpen, focusMode,
-    setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
+    storyBibleSection, setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
   } = shellState
 
   // Shell keyboard shortcuts
@@ -48,7 +49,7 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
       }
       if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
         e.preventDefault()
-        const tabs: WritingTab[] = ['script', 'story-bible', 'outline', 'synopsis']
+        const tabs: ActiveTab[] = ['script', 'story-bible', 'outline', 'synopsis']
         const tab = tabs[Number(e.key) - 1]
         if (tab) setActiveTab(tab)
         else enterWritersRoom()
@@ -86,6 +87,7 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
             onToggle={togglePanel}
             projectTitle={displayProjectTitle}
             activeTab={activeTab}
+            storyBibleSection={storyBibleSection}
             {...railProps}
           />
         )}

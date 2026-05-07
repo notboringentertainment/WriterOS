@@ -25,7 +25,9 @@ export function OutlineTab({ outline, onUpdateBeat, onReorderBeats }: OutlineTab
     <div style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Outline</h2>
-        <p style={styles.subtitle}>Save the Cat · 15 Beats</p>
+        <p style={styles.subtitle}>
+          A writer-facing structural map for beats, reversals, and missing turns. Writing Partner naturally asks @Oliver here.
+        </p>
       </div>
       <div style={styles.beats}>
         {outline.beats.map((beat, index) => (

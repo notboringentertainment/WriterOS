@@ -1,23 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react'
 import type { TranscriptMessage } from '../../lib/projectState'
-
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
+import { getActiveHelperText, type ActiveTab } from '../../lib/wpRouting'
+import type { StoryBibleSection } from '../../lib/shellState'
 
 interface LeftRailProps {
   open: boolean
   onToggle: () => void
   projectTitle: string
-  activeTab: WritingTab
+  activeTab: ActiveTab
+  storyBibleSection?: StoryBibleSection | null
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void
   onClearTranscript?: () => void
 }
 
-export function LeftRail({ open, onToggle, projectTitle, transcript, loading, onSend, onClearTranscript }: LeftRailProps) {
+export function LeftRail({
+  open,
+  onToggle,
+  projectTitle,
+  activeTab,
+  storyBibleSection = null,
+  transcript,
+  loading,
+  onSend,
+  onClearTranscript,
+}: LeftRailProps) {
   const [hasProactive, setHasProactive] = useState(false)
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const activeHelperText = getActiveHelperText(inputText, activeTab, storyBibleSection)
 
   // Pulse after 20 min of no toggle — placeholder for real idle detection
   useEffect(() => {
@@ -104,6 +116,7 @@ export function LeftRail({ open, onToggle, projectTitle, transcript, loading, on
               </>
             )}
           </div>
+          <div style={styles.helperHint} aria-label="Active helper">{activeHelperText}</div>
           <div style={styles.inputRow}>
             <textarea
               placeholder="Message Writing Partner…"
@@ -232,8 +245,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontStyle: 'italic',
   },
   inputRow: {
-    padding: '8px 12px 12px',
+    padding: '4px 12px 12px',
+  },
+  helperHint: {
     borderTop: '1px solid var(--border)',
+    padding: '8px 12px 0',
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    lineHeight: 1.4,
   },
   input: {
     width: '100%',

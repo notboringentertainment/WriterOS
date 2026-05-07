@@ -41,6 +41,9 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
     <div style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Story Bible</h2>
+        <p style={styles.subtitle}>
+          A reference home for identity, continuity, tone, and rules. @Casey helps with characters, theme, and voice; @Zoe helps with world logic and constraints.
+        </p>
       </div>
 
       {/* Characters */}
@@ -147,6 +150,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: 24,
     color: 'var(--fg)',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 13,
+    color: 'var(--fg-muted)',
+    lineHeight: 1.5,
+    maxWidth: 680,
   },
   section: { display: 'flex', flexDirection: 'column', gap: 16 },
   sectionHeader: { display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' },

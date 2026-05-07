@@ -94,6 +94,11 @@ export function ScriptTab({
   return (
     <div style={styles.wrapper}>
       <div style={styles.pageWrapper}>
+        {!focusMode && (
+          <p style={styles.surfaceNote}>
+            Script pages are for formatted scenes and line-level craft. Writing Partner stays primary here; mention @Maya for dialogue and voice.
+          </p>
+        )}
         <ScreenplayToolbar
           elementType={elementType}
           wordCount={wordCount}
@@ -131,6 +136,14 @@ const styles: Record<string, React.CSSProperties> = {
   pageWrapper: {
     width: 'fit-content', // exactly as wide as toolbar+row content (>=856px)
     margin: '0 auto',     // centers on desktop; left-anchors for horizontal scroll
+  },
+  surfaceNote: {
+    width: 816,
+    margin: '16px 0 4px',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 13,
+    lineHeight: 1.5,
   },
   row: {
     display: 'flex',

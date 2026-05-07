@@ -14,6 +14,7 @@ function makeShellState(overrides = {}) {
     writersRoomActive: false,
     panelOpen: false,
     focusMode: false,
+    storyBibleSection: null,
     setActiveTab: vi.fn(),
     togglePanel: vi.fn(),
     enterWritersRoom: vi.fn(),

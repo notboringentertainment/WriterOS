@@ -101,6 +101,20 @@ export function formatWritingPartnerSpeaker(personaId: PersonaId): string {
   return `Writing Partner (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
 }
 
+export function getActiveHelperText(
+  inputText: string,
+  activeTab: ActiveTab,
+  storyBibleSection: string | null
+): string {
+  const mentionResult = parseMention(inputText.trimStart())
+  const personaId = mentionResult
+    ? mentionResult.personaId
+    : getDefaultPersona(activeTab, storyBibleSection)
+
+  if (personaId === 'writingPartner') return 'Writing Partner'
+  return `Writing Partner will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
+}
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }

@@ -3,6 +3,7 @@ import {
   SCRIPT_EXCERPT_WORD_LIMIT,
   parseMention,
   getDefaultPersona,
+  getActiveHelperText,
   formatWritingPartnerSpeaker,
   buildProjectContext,
   extractScriptContext,
@@ -134,6 +135,30 @@ describe('getDefaultPersona', () => {
 
   it('story-bible + null section -> casey', () => {
     expect(getDefaultPersona('story-bible', null)).toBe('casey')
+  })
+})
+
+describe('getActiveHelperText', () => {
+  it('uses Writing Partner directly on script', () => {
+    expect(getActiveHelperText('', 'script', null)).toBe('Writing Partner')
+  })
+
+  it('shows the default specialist for synopsis and outline', () => {
+    expect(getActiveHelperText('', 'synopsis', null)).toBe('Writing Partner will ask @Sam')
+    expect(getActiveHelperText('', 'outline', null)).toBe('Writing Partner will ask @Oliver')
+  })
+
+  it('separates Story Bible defaults by section', () => {
+    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Writing Partner will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'themes')).toBe('Writing Partner will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'tone')).toBe('Writing Partner will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Writing Partner will ask @Zoe')
+    expect(getActiveHelperText('', 'story-bible', 'rules')).toBe('Writing Partner will ask @Zoe')
+  })
+
+  it('lets a typed manual mention override the surface hint', () => {
+    expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Writing Partner will ask @Maya')
+    expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Writing Partner')
   })
 })
 
