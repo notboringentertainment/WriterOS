@@ -6,15 +6,21 @@ import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projec
 beforeEach(() => localStorage.clear())
 
 describe('useProjectState', () => {
-  it('returns state with default title on first load', () => {
+  it('returns state with unset stored title on first load', () => {
     const { result } = renderHook(() => useProjectState())
-    expect(result.current.state.meta.title).toBe('Untitled Project')
+    expect(result.current.state.meta.title).toBe('')
   })
 
   it('setMeta updates meta fields', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'My Film' }))
     expect(result.current.state.meta.title).toBe('My Film')
+  })
+
+  it('setMeta normalizes default display title to unset stored title', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setMeta({ title: 'Untitled Project' }))
+    expect(result.current.state.meta.title).toBe('')
   })
 
   it('setSynopsisSection updates logline', () => {

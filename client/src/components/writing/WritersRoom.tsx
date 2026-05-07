@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { PERSONAS } from '@shared/personas'
 import type { AgentId, ProjectState } from '../../lib/projectState'
+import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 
 type SpecialistId = 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
 
@@ -30,7 +31,7 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
     case 'maya':
       return state.storyBible.world.voiceNotes || 'No voice notes yet'
     case 'alex':
-      return `${state.meta.title} · ${state.meta.genre || 'genre TBD'}`
+      return `${getDisplayProjectTitle(state.meta.title)} · ${state.meta.genre || 'genre TBD'}`
   }
 }
 

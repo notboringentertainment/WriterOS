@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parseMention, getDefaultPersona, buildProjectContext } from '../../client/src/lib/wpRouting'
+import {
+  SCRIPT_EXCERPT_WORD_LIMIT,
+  parseMention,
+  getDefaultPersona,
+  buildProjectContext,
+  extractScriptContext,
+} from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
 describe('parseMention', () => {
@@ -111,7 +117,7 @@ describe('getDefaultPersona', () => {
 describe('buildProjectContext', () => {
   it('maps empty default state', () => {
     const ctx = buildProjectContext(defaultProjectState())
-    expect(ctx.title).toBe('Untitled Project')
+    expect(ctx.title).toBeUndefined()
     expect(ctx.genre).toBe('')
     expect(ctx.logline).toBe('')
     expect(ctx.characters).toEqual([])
@@ -119,6 +125,9 @@ describe('buildProjectContext', () => {
     expect(ctx.beats.length).toBeGreaterThan(0)
     expect(ctx.beats[0]).toMatchObject({ id: 'opening-image', name: 'Opening Image', notes: '' })
     expect(ctx.scenes).toEqual([])
+    expect(ctx.script.excerpt).toBe('')
+    expect(ctx.script.sceneHeadings).toEqual([])
+    expect(ctx.script.excerptWordLimit).toBe(SCRIPT_EXCERPT_WORD_LIMIT)
     expect(ctx.world.setting).toBe('')
     expect(ctx.storyBible.themes).toBe('')
     expect(ctx.storyBible.rules).toBe('')
@@ -169,6 +178,15 @@ describe('buildProjectContext', () => {
     expect(buildProjectContext(state).synopsis.logline).toBe('A hero rises.')
   })
 
+  it('maps real project title while omitting unset display fallback', () => {
+    const state = defaultProjectState()
+    state.meta.title = 'Lifeline'
+    expect(buildProjectContext(state).title).toBe('Lifeline')
+
+    state.meta.title = 'Untitled Project'
+    expect(buildProjectContext(state).title).toBeUndefined()
+  })
+
   it('maps synopsis sections and script scenes', () => {
     const state = defaultProjectState()
     state.synopsis.sections.midpoint = 'The hero wins but loses her ally.'
@@ -176,6 +194,25 @@ describe('buildProjectContext', () => {
     const ctx = buildProjectContext(state)
     expect(ctx.synopsis.sections.midpoint).toBe('The hero wins but loses her ally.')
     expect(ctx.scenes).toEqual([{ id: 'scene-1', heading: 'INT. OFFICE - NIGHT', index: 1 }])
+  })
+
+  it('maps plain script context from rawHtml', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="action">Isaiah grips the receiver.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear the line breathing.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.script.excerpt).toContain('INT. SAFEHOUSE - NIGHT')
+    expect(ctx.script.excerpt).toContain('I can still hear the line breathing.')
+    expect(ctx.script.sceneHeadings).toEqual(['INT. SAFEHOUSE - NIGHT'])
+    expect(ctx.script.dialogueSnippets).toEqual(['ISAIAH: I can still hear the line breathing.'])
+    expect(ctx.script.actionSnippets).toEqual(['Isaiah grips the receiver.'])
+    expect(ctx.script.characterNames).toEqual(['ISAIAH'])
   })
 
   it('defaults sparse legacy story bible fields to empty strings', () => {
@@ -191,5 +228,92 @@ describe('buildProjectContext', () => {
     expect(ctx.storyBible.rules).toBe('')
     expect(ctx.world.toneAnchors).toBe('')
     expect(ctx.world.voiceNotes).toBe('')
+  })
+})
+
+describe('extractScriptContext', () => {
+  it('strips screenplay rawHtml into capped plain text and dialogue snippets', () => {
+    const context = extractScriptContext([
+      '<p data-element-type="scene-heading">INT. TRAIN - NIGHT</p>',
+      '<p data-element-type="action">A red phone <strong>rings</strong> beneath the seat.</p>',
+      '<p data-element-type="character">MARA</p>',
+      '<p data-element-type="dialogue">Tell Isaiah the signal is alive.</p>',
+      '<p data-element-type="parenthetical">(barely above a whisper)</p>',
+      '<p data-element-type="dialogue">And tell him not to answer it.</p>',
+    ].join(''))
+
+    expect(context.excerpt).toBe([
+      'INT. TRAIN - NIGHT',
+      'A red phone rings beneath the seat.',
+      'MARA',
+      'Tell Isaiah the signal is alive.',
+      '(barely above a whisper)',
+      'And tell him not to answer it.',
+    ].join('\n'))
+    expect(context.dialogueSnippets).toEqual([
+      'MARA: Tell Isaiah the signal is alive.',
+      'MARA: And tell him not to answer it.',
+    ])
+    expect(context.sceneHeadings).toEqual(['INT. TRAIN - NIGHT'])
+    expect(context.actionSnippets).toEqual(['A red phone rings beneath the seat.'])
+    expect(context.excerptTruncated).toBe(false)
+  })
+
+  it('falls back to simple HTML stripping when no screenplay blocks are present', () => {
+    const context = extractScriptContext('<section>Loose <strong>notes</strong><br>More notes</section>')
+
+    expect(context.excerpt).toBe('Loose notes More notes')
+    expect(context.sceneHeadings).toEqual([])
+    expect(context.dialogueSnippets).toEqual([])
+    expect(context.actionSnippets).toEqual([])
+    expect(context.characterNames).toEqual([])
+  })
+
+  it('handles empty rawHtml', () => {
+    expect(extractScriptContext('')).toMatchObject({
+      excerpt: '',
+      sceneHeadings: [],
+      dialogueSnippets: [],
+      actionSnippets: [],
+      characterNames: [],
+      excerptWordCount: 0,
+      excerptTruncated: false,
+    })
+  })
+
+  it('caps script excerpts to the first 500 words reproducibly', () => {
+    const words = Array.from({ length: SCRIPT_EXCERPT_WORD_LIMIT + 5 }, (_, index) => `word${index}`)
+    const context = extractScriptContext(`<p data-element-type="action">${words.join(' ')}</p>`)
+
+    expect(context.excerptWordCount).toBe(SCRIPT_EXCERPT_WORD_LIMIT)
+    expect(context.excerpt.split(/\s+/)).toHaveLength(SCRIPT_EXCERPT_WORD_LIMIT)
+    expect(context.excerpt).toContain(`word${SCRIPT_EXCERPT_WORD_LIMIT - 1}`)
+    expect(context.excerpt).not.toContain(`word${SCRIPT_EXCERPT_WORD_LIMIT}`)
+    expect(context.excerptTruncated).toBe(true)
+  })
+
+  it('keeps later dialogue snippets available beyond the prompt sample limit', () => {
+    const rawHtml = Array.from({ length: 13 }, (_, index) => [
+      `<p data-element-type="character">CHAR${index}</p>`,
+      `<p data-element-type="dialogue">Line ${index}</p>`,
+    ].join('')).join('')
+
+    const context = extractScriptContext(rawHtml)
+
+    expect(context.dialogueSnippets).toHaveLength(13)
+    expect(context.dialogueSnippets[12]).toBe('CHAR12: Line 12')
+  })
+
+  it('caps dialogue snippets at the script context list limit', () => {
+    const rawHtml = Array.from({ length: 81 }, (_, index) => [
+      `<p data-element-type="character">CHAR${index}</p>`,
+      `<p data-element-type="dialogue">Line ${index}</p>`,
+    ].join('')).join('')
+
+    const context = extractScriptContext(rawHtml)
+
+    expect(context.dialogueSnippets).toHaveLength(80)
+    expect(context.dialogueSnippets[79]).toBe('CHAR79: Line 79')
+    expect(context.dialogueSnippets).not.toContain('CHAR80: Line 80')
   })
 })

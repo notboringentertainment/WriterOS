@@ -143,7 +143,12 @@ export default function App() {
   }
 
   return (
-    <Shell shellState={shellState} projectTitle={project.state.meta.title} railProps={railProps}>
+    <Shell
+      shellState={shellState}
+      projectTitle={project.state.meta.title}
+      onProjectTitleChange={title => project.setMeta({ title })}
+      railProps={railProps}
+    >
       {renderCenter()}
     </Shell>
   )

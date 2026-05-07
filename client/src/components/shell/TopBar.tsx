@@ -1,3 +1,6 @@
+import React, { useRef, useState } from 'react'
+import { getDisplayProjectTitle, normalizeProjectTitle } from '../../lib/projectIdentity'
+
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
 
 const WRITING_TABS: { id: WritingTab; label: string }[] = [
@@ -11,11 +14,50 @@ interface TopBarProps {
   activeTab: WritingTab
   writersRoomActive: boolean
   projectTitle: string
+  onProjectTitleChange?: (title: string) => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
 }
 
-export function TopBar({ activeTab, writersRoomActive, projectTitle, onTabChange, onWritersRoom }: TopBarProps) {
+export function TopBar({
+  activeTab,
+  writersRoomActive,
+  projectTitle,
+  onProjectTitleChange,
+  onTabChange,
+  onWritersRoom,
+}: TopBarProps) {
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const cancelingTitleEditRef = useRef(false)
+  const displayTitle = getDisplayProjectTitle(projectTitle)
+
+  function startTitleEdit() {
+    if (!onProjectTitleChange) return
+    cancelingTitleEditRef.current = false
+    setDraftTitle(normalizeProjectTitle(projectTitle))
+    setEditingTitle(true)
+  }
+
+  function commitTitleEdit() {
+    onProjectTitleChange?.(normalizeProjectTitle(draftTitle))
+    setEditingTitle(false)
+  }
+
+  function cancelTitleEdit() {
+    cancelingTitleEditRef.current = true
+    setDraftTitle(normalizeProjectTitle(projectTitle))
+    setEditingTitle(false)
+  }
+
+  function handleTitleBlur() {
+    if (cancelingTitleEditRef.current) {
+      cancelingTitleEditRef.current = false
+      return
+    }
+    commitTitleEdit()
+  }
+
   return (
     <header style={styles.bar}>
       <div style={styles.logo}>
@@ -39,7 +81,39 @@ export function TopBar({ activeTab, writersRoomActive, projectTitle, onTabChange
         })}
       </nav>
 
-      <div style={styles.projectTitle}>{projectTitle}</div>
+      <div style={styles.projectTitleSlot}>
+        {editingTitle ? (
+          <input
+            aria-label="Project title"
+            autoFocus
+            value={draftTitle}
+            onChange={e => setDraftTitle(e.target.value)}
+            onBlur={handleTitleBlur}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitTitleEdit()
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                cancelTitleEdit()
+              }
+            }}
+            style={styles.projectTitleInput}
+          />
+        ) : onProjectTitleChange ? (
+          <button
+            type="button"
+            aria-label={`Project title: ${displayTitle}`}
+            style={styles.projectTitleButton}
+            onClick={startTitleEdit}
+          >
+            {displayTitle}
+          </button>
+        ) : (
+          <div style={styles.projectTitleText}>{displayTitle}</div>
+        )}
+      </div>
 
       <div style={styles.rightZone}>
         <button
@@ -97,14 +171,52 @@ const styles: Record<string, React.CSSProperties> = {
     borderColor: 'var(--border)',
     background: 'var(--surface-2)',
   },
-  projectTitle: {
+  projectTitleSlot: {
     flex: 1,
     textAlign: 'center',
+    display: 'flex',
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  projectTitleText: {
     fontFamily: 'var(--font-display)',
     fontSize: 13,
     color: 'var(--fg-muted)',
     fontStyle: 'italic',
-    pointerEvents: 'none',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  projectTitleButton: {
+    maxWidth: '100%',
+    background: 'none',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'transparent',
+    borderRadius: 6,
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    fontStyle: 'italic',
+    padding: '3px 8px',
+    cursor: 'text',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  projectTitleInput: {
+    width: 'min(320px, 100%)',
+    background: 'var(--surface-2)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '3px 8px',
+    textAlign: 'center',
+    outline: 'none',
   },
   rightZone: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 },
   writersRoom: {

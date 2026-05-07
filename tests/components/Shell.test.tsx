@@ -69,4 +69,26 @@ describe('Shell', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('Hello')
   })
+
+  it('passes project title edits through TopBar', () => {
+    const onProjectTitleChange = vi.fn()
+    const shellState = makeShellState()
+    render(
+      <Shell
+        shellState={shellState}
+        projectTitle=""
+        onProjectTitleChange={onProjectTitleChange}
+        railProps={defaultRailProps}
+      >
+        Content
+      </Shell>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project title: Untitled Project' }))
+    const input = screen.getByLabelText('Project title')
+    fireEvent.change(input, { target: { value: 'Lifeline' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onProjectTitleChange).toHaveBeenCalledWith('Lifeline')
+  })
 })

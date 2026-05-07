@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { loadProjectState, saveProjectState } from './projectState'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
+import { normalizeProjectTitle } from './projectIdentity'
 
 export function useProjectState() {
   const [state, setState] = useState<ProjectState>(() => loadProjectState())
@@ -14,7 +15,14 @@ export function useProjectState() {
   }, [])
 
   const setMeta = useCallback((patch: Partial<ProjectState['meta']>) => {
-    update(s => ({ ...s, meta: { ...s.meta, ...patch } }))
+    update(s => ({
+      ...s,
+      meta: {
+        ...s.meta,
+        ...patch,
+        ...(patch.title !== undefined ? { title: normalizeProjectTitle(patch.title) } : {}),
+      },
+    }))
   }, [update])
 
   const setSynopsisSection = useCallback((key: string, value: string) => {

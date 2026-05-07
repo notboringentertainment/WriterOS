@@ -71,6 +71,17 @@ const synopsisAssistSchema = z.object({
   })
 });
 
+const scriptContextSchema = z.object({
+  excerpt: z.string().default(''),
+  sceneHeadings: z.array(z.string()).default([]),
+  dialogueSnippets: z.array(z.string()).default([]),
+  actionSnippets: z.array(z.string()).default([]),
+  characterNames: z.array(z.string()).default([]),
+  excerptWordCount: z.number().default(0),
+  excerptWordLimit: z.number().default(500),
+  excerptTruncated: z.boolean().default(false),
+}).optional();
+
 const wpChatSchema = z.object({
   personaId: z.string(),
   message: z.string(),
@@ -78,6 +89,7 @@ const wpChatSchema = z.object({
     title: z.string().optional(),
     genre: z.string().optional(),
     logline: z.string().optional(),
+    script: scriptContextSchema,
     synopsis: z.object({
       logline: z.string(),
       sections: z.object({
@@ -199,6 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingWork: [] as string[],
         immediateNeed: '',
       };
+      const scriptContext = data.projectContext.script;
 
       const storyMemory: StoryMemory = {
         project: {
@@ -209,6 +222,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           synopsisSections: data.projectContext.synopsis.sections,
           themes: data.projectContext.storyBible.themes,
         },
+        script: scriptContext ? {
+          excerpt: scriptContext.excerpt,
+          sceneHeadings: scriptContext.sceneHeadings,
+          dialogueSnippets: scriptContext.dialogueSnippets,
+          actionSnippets: scriptContext.actionSnippets,
+          characterNames: scriptContext.characterNames,
+          excerptWordCount: scriptContext.excerptWordCount,
+          excerptWordLimit: scriptContext.excerptWordLimit,
+          excerptTruncated: scriptContext.excerptTruncated,
+        } : undefined,
         characters: Object.fromEntries(
           data.projectContext.characters.map(character => [
             character.id,

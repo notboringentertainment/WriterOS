@@ -1,4 +1,5 @@
 import type { ProjectState } from './projectState'
+import { getProjectContextTitle } from './projectIdentity'
 
 export type PersonaId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
 
@@ -6,6 +7,7 @@ export interface ProjectContext {
   title?: string
   genre?: string
   logline?: string
+  script: ScriptContext
   synopsis: {
     logline: string
     sections: ProjectState['synopsis']['sections']
@@ -19,6 +21,26 @@ export interface ProjectContext {
     world: ProjectState['storyBible']['world']
   }
   world: ProjectState['storyBible']['world']
+}
+
+export const SCRIPT_EXCERPT_WORD_LIMIT = 500
+const SCRIPT_CONTEXT_LIST_LIMIT = 80
+const SCRIPT_ACTION_SNIPPET_LIMIT = 24
+
+interface ScriptBlock {
+  type: string
+  text: string
+}
+
+export interface ScriptContext {
+  excerpt: string
+  sceneHeadings: string[]
+  dialogueSnippets: string[]
+  actionSnippets: string[]
+  characterNames: string[]
+  excerptWordCount: number
+  excerptWordLimit: number
+  excerptTruncated: boolean
 }
 
 const SPECIALIST_MENTIONS: Record<string, Exclude<PersonaId, 'writingPartner'>> = {
@@ -49,6 +71,92 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function stripHtmlFallback(rawHtml: string): string {
+  return normalizeWhitespace(
+    rawHtml
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]*>/g, ' ')
+  )
+}
+
+function parseScriptBlocks(rawHtml: string): ScriptBlock[] {
+  if (!rawHtml.trim() || typeof DOMParser === 'undefined') return []
+
+  const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
+  const elements = Array.from(doc.body.querySelectorAll<HTMLElement>('[data-element-type], p'))
+
+  return elements
+    .map(el => ({
+      type: el.getAttribute('data-element-type') ?? 'action',
+      text: normalizeWhitespace(el.textContent ?? ''),
+    }))
+    .filter(block => block.text.length > 0)
+}
+
+function capWords(value: string, maxWords: number): { text: string; wordCount: number; truncated: boolean } {
+  const trimmed = value.trim()
+  const matches = Array.from(trimmed.matchAll(/\S+/g))
+  if (matches.length <= maxWords) {
+    return { text: trimmed, wordCount: matches.length, truncated: false }
+  }
+
+  const lastWord = matches[maxWords - 1]
+  const end = (lastWord.index ?? 0) + lastWord[0].length
+  return { text: trimmed.slice(0, end).trim(), wordCount: maxWords, truncated: true }
+}
+
+export function extractScriptContext(rawHtml: string): ScriptContext {
+  const blocks = parseScriptBlocks(rawHtml)
+  const plainText = blocks.length
+    ? blocks.map(block => block.text).join('\n')
+    : stripHtmlFallback(rawHtml)
+  const excerpt = capWords(plainText, SCRIPT_EXCERPT_WORD_LIMIT)
+  const sceneHeadings: string[] = []
+  const dialogueSnippets: string[] = []
+  const actionSnippets: string[] = []
+  const characterNames: string[] = []
+  let activeCharacter = ''
+
+  for (const block of blocks) {
+    if (block.type === 'scene-heading') {
+      activeCharacter = ''
+      sceneHeadings.push(block.text)
+      continue
+    }
+
+    if (block.type === 'character') {
+      activeCharacter = block.text
+      if (!characterNames.includes(block.text)) characterNames.push(block.text)
+      continue
+    }
+
+    if (block.type === 'dialogue') {
+      dialogueSnippets.push(activeCharacter ? `${activeCharacter}: ${block.text}` : block.text)
+      continue
+    }
+
+    if (block.type === 'action') {
+      actionSnippets.push(block.text)
+    }
+  }
+
+  return {
+    excerpt: excerpt.text,
+    sceneHeadings: sceneHeadings.slice(0, SCRIPT_CONTEXT_LIST_LIMIT),
+    dialogueSnippets: dialogueSnippets.slice(0, SCRIPT_CONTEXT_LIST_LIMIT),
+    actionSnippets: actionSnippets.slice(0, SCRIPT_ACTION_SNIPPET_LIMIT),
+    characterNames: characterNames.slice(0, SCRIPT_CONTEXT_LIST_LIMIT),
+    excerptWordCount: excerpt.wordCount,
+    excerptWordLimit: SCRIPT_EXCERPT_WORD_LIMIT,
+    excerptTruncated: excerpt.truncated,
+  }
+}
+
 export function getDefaultPersona(activeTab: ActiveTab, storyBibleSection: string | null): PersonaId {
   switch (activeTab) {
     case 'script':   return 'writingPartner'
@@ -65,9 +173,10 @@ export function buildProjectContext(state: ProjectState): ProjectContext {
   const world = storyBible.world
 
   return {
-    title: text(state.meta.title),
+    title: getProjectContextTitle(state.meta.title),
     genre: text(state.meta.genre),
     logline: text(state.synopsis.logline),
+    script: extractScriptContext(text(state.script.rawHtml)),
     synopsis: {
       logline: text(state.synopsis.logline),
       sections: {

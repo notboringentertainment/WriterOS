@@ -64,6 +64,15 @@ describe('migrateState', () => {
     expect(result.meta.title).toBe('My Script')
   })
 
+  it('migrates the display fallback title to an unset stored title', () => {
+    const state = defaultProjectState()
+    state.meta.title = 'Untitled Project'
+
+    const result = migrateState(state)
+
+    expect(result.meta.title).toBe('')
+  })
+
   it('migrates old marcus agent state to alex', () => {
     const state = defaultProjectState() as any
     const msg: TranscriptMessage = { id: '1', role: 'assistant', content: 'Keep going.', speaker: 'Marcus', ts: 1 }

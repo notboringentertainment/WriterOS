@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { TopBar } from './TopBar'
 import { LeftRail } from './LeftRail'
 import type { TranscriptMessage } from '../../lib/projectState'
+import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
 
@@ -27,11 +28,12 @@ interface RailProps {
 interface ShellProps {
   shellState: ShellState
   projectTitle: string
+  onProjectTitleChange?: (title: string) => void
   railProps: RailProps
   children: React.ReactNode
 }
 
-export function Shell({ shellState, projectTitle, railProps, children }: ShellProps) {
+export function Shell({ shellState, projectTitle, onProjectTitleChange, railProps, children }: ShellProps) {
   const {
     activeTab, writersRoomActive, panelOpen, focusMode,
     setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
@@ -63,6 +65,7 @@ export function Shell({ shellState, projectTitle, railProps, children }: ShellPr
     if (writersRoomActive) exitWritersRoom()
     else enterWritersRoom()
   }
+  const displayProjectTitle = getDisplayProjectTitle(projectTitle)
 
   return (
     <div style={styles.root}>
@@ -71,6 +74,7 @@ export function Shell({ shellState, projectTitle, railProps, children }: ShellPr
           activeTab={activeTab}
           writersRoomActive={writersRoomActive}
           projectTitle={projectTitle}
+          onProjectTitleChange={onProjectTitleChange}
           onTabChange={setActiveTab}
           onWritersRoom={handleWritersRoom}
         />
@@ -80,7 +84,7 @@ export function Shell({ shellState, projectTitle, railProps, children }: ShellPr
           <LeftRail
             open={panelOpen}
             onToggle={togglePanel}
-            projectTitle={projectTitle}
+            projectTitle={displayProjectTitle}
             activeTab={activeTab}
             {...railProps}
           />

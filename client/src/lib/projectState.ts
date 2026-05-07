@@ -1,4 +1,6 @@
-export const CURRENT_SCHEMA_VERSION = 1
+import { normalizeProjectTitle } from './projectIdentity'
+
+export const CURRENT_SCHEMA_VERSION = 2
 const STORAGE_KEY = 'writeros_project_state'
 
 export type AgentId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
@@ -75,7 +77,7 @@ const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
 export function defaultProjectState(): ProjectState {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    meta: { title: 'Untitled Project', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
+    meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
     script: { rawHtml: '', scenes: [], revisionHistory: [] },
     outline: {
       beatType: 'save-the-cat',
@@ -116,6 +118,22 @@ export function migrateState(raw: unknown): ProjectState {
   for (const key of Object.keys(defaults) as (keyof ProjectState)[]) {
     if (!(key in state)) (state as Record<string, unknown>)[key] = defaults[key]
   }
+
+  const rawMeta =
+    state.meta && typeof state.meta === 'object'
+      ? (state.meta as Record<string, unknown>)
+      : {}
+  state.meta = {
+    ...defaults.meta,
+    ...rawMeta,
+    // Intentional for every loaded state: this must stay idempotent as title semantics evolve.
+    title: normalizeProjectTitle(rawMeta.title),
+    genre: typeof rawMeta.genre === 'string' ? rawMeta.genre : defaults.meta.genre,
+    format: typeof rawMeta.format === 'string' ? rawMeta.format : defaults.meta.format,
+    wordCount: typeof rawMeta.wordCount === 'number' ? rawMeta.wordCount : defaults.meta.wordCount,
+    pageCount: typeof rawMeta.pageCount === 'number' ? rawMeta.pageCount : defaults.meta.pageCount,
+  }
+
   const rawAgents = state.agents && typeof state.agents === 'object'
     ? state.agents as Record<string, unknown>
     : {}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createContextSummary, parseJsonObject } from '../../server/ai/openaiService'
+import { createContextSummary, createWritingPartnerBrief, parseJsonObject } from '../../server/ai/openaiService'
 import type { StoryMemory } from '../../shared/schema'
 
 function storyMemory(overrides: Partial<StoryMemory> = {}): StoryMemory {
@@ -69,6 +69,7 @@ describe('createContextSummary', () => {
   it('formats structured project memory with readable section labels', () => {
     const summary = createContextSummary(populatedStoryMemory())
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
     expect(summary).toContain('- Act 1 Break: The courier accepts the package.')
     expect(summary).toContain('- Act 2 Break: Her ally betrays her.')
@@ -86,6 +87,7 @@ describe('createContextSummary', () => {
   it('emphasizes synopsis context for Sam without including world bible details', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'sam')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
     expect(summary).toContain('OUTLINE BEATS:')
     expect(summary).toContain('CHARACTERS:')
@@ -96,6 +98,7 @@ describe('createContextSummary', () => {
   it('emphasizes world context for Zoe without including synopsis sections', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'zoe')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('STORY BIBLE:')
     expect(summary).toContain('SCRIPT SCENES:')
     expect(summary).toContain('CHARACTERS:')
@@ -106,6 +109,7 @@ describe('createContextSummary', () => {
   it('emphasizes character context for Casey without including outline beats', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'casey')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('CHARACTERS:')
     expect(summary).toContain('STORY BIBLE:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
@@ -116,6 +120,7 @@ describe('createContextSummary', () => {
   it('emphasizes structure context for Oliver without including story bible details', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'oliver')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('OUTLINE BEATS:')
     expect(summary).toContain('SCRIPT SCENES:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
@@ -127,6 +132,7 @@ describe('createContextSummary', () => {
   it('emphasizes dialogue and voice context for Maya without including synopsis sections', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'maya')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('SCRIPT SCENES:')
     expect(summary).toContain('CHARACTERS:')
     expect(summary).toContain('STORY BIBLE:')
@@ -138,6 +144,7 @@ describe('createContextSummary', () => {
   it('gives Alex a full project-progress context in progress-first order', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'alex')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('OUTLINE BEATS:')
     expect(summary).toContain('SCRIPT SCENES:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
@@ -150,6 +157,7 @@ describe('createContextSummary', () => {
   it('uses the balanced context order for unknown personas', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'unknown')
 
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
     expect(summary).toContain('STORY BIBLE:')
     expect(summary.indexOf('SYNOPSIS SECTIONS:')).toBeLessThan(summary.indexOf('CHARACTERS:'))
@@ -165,6 +173,152 @@ describe('createContextSummary', () => {
 
     expect(summary).toContain(`${'A'.repeat(219)}…`)
     expect(summary).not.toContain('A'.repeat(260))
+  })
+
+  it('includes actual script dialogue in Maya context', () => {
+    const summary = createContextSummary(storyMemory({
+      script: {
+        excerpt: [
+          'INT. SWITCHBOARD ROOM - NIGHT',
+          'Isaiah lifts the receiver.',
+          'ISAIAH',
+          'I can still hear the line breathing.',
+        ].join('\n'),
+        sceneHeadings: ['INT. SWITCHBOARD ROOM - NIGHT'],
+        dialogueSnippets: ['ISAIAH: I can still hear the line breathing.'],
+        actionSnippets: ['Isaiah lifts the receiver.'],
+        characterNames: ['ISAIAH'],
+        excerptWordCount: 15,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+      characters: {
+        isaiah: {
+          id: 'isaiah',
+          name: 'Isaiah',
+          role: 'Dispatcher',
+        },
+      },
+      outline: {
+        acts: 3,
+        beats: [],
+        scenes: [{ id: 's1', heading: 'INT. SWITCHBOARD ROOM - NIGHT', index: 1 }],
+      },
+    }), 'maya')
+
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
+    expect(summary).toContain('SCRIPT EXCERPT (15 words):')
+    expect(summary).toContain('ISAIAH: I can still hear the line breathing.')
+    expect(summary).toContain('ACTION SNIPPETS:')
+    expect(summary.indexOf('SCRIPT SCENES:')).toBeLessThan(summary.indexOf('CHARACTERS:'))
+  })
+
+  it('selects later dialogue samples when the request names the speakers', () => {
+    const earlyIsaiahLines = Array.from({ length: 14 }, (_, index) => `ISAIAH: Early line ${index}.`)
+    const memory = storyMemory({
+      script: {
+        excerpt: 'Opening excerpt before the office scene.',
+        sceneHeadings: ['INT. LIFELINE HQ - DANTE OFFICE - DAY'],
+        dialogueSnippets: [
+          ...earlyIsaiahLines,
+          'ISAIAH: Just a heads-up, I have got a meeting with Qadir.',
+          'DANTE: You are welcome.',
+          'ISAIAH: So it was you. You gave him my direct line.',
+          'DANTE: He has a thing for you.',
+          'DANTE: Your war is over, brotha.',
+        ],
+        characterNames: ['ISAIAH', 'DANTE'],
+        excerptWordCount: 6,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+      dialogue: {
+        voiceNotes: 'Dante jokes to soften Isaiah.',
+      },
+    })
+
+    const unfocusedSummary = createContextSummary(memory, 'maya')
+    const focusedSummary = createContextSummary(memory, 'maya', 'Rate the dialogue between Isaiah and Dante.')
+
+    expect(unfocusedSummary).not.toContain('DANTE: You are welcome.')
+    expect(focusedSummary).toContain('DANTE: You are welcome.')
+    expect(focusedSummary).toContain('ISAIAH: So it was you. You gave him my direct line.')
+    expect(focusedSummary).not.toContain('ISAIAH: Early line 0.')
+  })
+
+  it('falls back to the first dialogue samples when requested speakers are not present', () => {
+    const memory = storyMemory({
+      script: {
+        excerpt: 'Opening excerpt before the requested speaker appears.',
+        sceneHeadings: ['INT. CALL CENTER - NIGHT'],
+        dialogueSnippets: Array.from({ length: 13 }, (_, index) => `ISAIAH: Line ${index}.`),
+        characterNames: ['DANTE'],
+        excerptWordCount: 7,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+    })
+
+    const summary = createContextSummary(memory, 'maya', 'Rate Dante dialogue.')
+
+    expect(summary).toContain('ISAIAH: Line 0.')
+    expect(summary).toContain('ISAIAH: Line 11.')
+    expect(summary).not.toContain('ISAIAH: Line 12.')
+  })
+
+  it('builds a compact Writing Partner brief from script-derived scene headings', () => {
+    const brief = createWritingPartnerBrief(storyMemory({
+      project: {
+        title: 'Lifeline',
+        genre: 'Thriller',
+        logline: 'A dispatcher hears a dead caller on an emergency line.',
+      },
+      script: {
+        excerpt: 'INT. CALL CENTER - NIGHT\nThe emergency line rings.',
+        sceneHeadings: ['INT. CALL CENTER - NIGHT', 'EXT. FREEWAY - NIGHT'],
+        excerptWordCount: 8,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+      outline: {
+        acts: 3,
+        beats: [],
+        scenes: [
+          { id: 'legacy-1', heading: 'INT. OLD OUTLINE SCENE - DAY', index: 1 },
+          { id: 'legacy-2', heading: 'EXT. OLD OUTLINE SCENE - DAY', index: 2 },
+          { id: 'legacy-3', heading: 'INT. THIRD OLD OUTLINE SCENE - DAY', index: 3 },
+        ],
+      },
+    }))
+
+    expect(brief).toContain('Project: "Lifeline" | Thriller')
+    expect(brief).toContain('Logline: A dispatcher hears a dead caller on an emergency line.')
+    expect(brief).toContain('Script: 8 excerpt words available, 2 scene headings.')
+    expect(brief).not.toContain('3 scene headings')
+    expect(brief).not.toContain('INT. CALL CENTER - NIGHT')
+  })
+
+  it('keeps the Writing Partner brief compact when a specialist owns the full script pack', () => {
+    const sensitiveLine = 'MARA: This exact dialogue belongs in the specialist pack.'
+    const memory = populatedStoryMemory()
+    memory.script = {
+      excerpt: sensitiveLine,
+      sceneHeadings: [],
+      dialogueSnippets: [sensitiveLine],
+      excerptWordCount: 500,
+      excerptWordLimit: 500,
+      excerptTruncated: true,
+    }
+
+    const brief = createWritingPartnerBrief(memory)
+    const samSummary = createContextSummary(memory, 'sam')
+
+    expect(brief).toContain('Script: 500 excerpt words available, capped at first 500 words')
+    expect(brief).not.toContain(sensitiveLine)
+    expect(samSummary).toContain('WRITING PARTNER BRIEF:')
+    expect(samSummary).toContain('SYNOPSIS SECTIONS:')
+    expect(samSummary).not.toContain('SCRIPT EXCERPT')
+    expect(samSummary).not.toContain(sensitiveLine)
   })
 })
 

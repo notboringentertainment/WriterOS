@@ -49,6 +49,16 @@ export interface StoryMemory {
     synopsisSections?: Record<string, string>
     themes?: string
   }
+  script?: {
+    excerpt?: string
+    sceneHeadings?: string[]
+    dialogueSnippets?: string[]
+    actionSnippets?: string[]
+    characterNames?: string[]
+    excerptWordCount?: number
+    excerptWordLimit?: number
+    excerptTruncated?: boolean
+  }
   characters: Record<string, Character>
   outline: {
     acts: number

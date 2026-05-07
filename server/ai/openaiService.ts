@@ -16,6 +16,10 @@ function truncate(value: string, max = 220): string {
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
 }
 
+function wordCount(value: string): number {
+  return value.trim().match(/\S+/g)?.length ?? 0;
+}
+
 export function parseJsonObject(rawContent: string | null | undefined): Record<string, any> {
   const raw = (rawContent || '{}').trim();
   const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -30,6 +34,8 @@ const SECTION_LABELS: Record<string, string> = {
   resolution: 'Resolution',
 };
 
+const DIALOGUE_SAMPLE_LIMIT = 12;
+
 function sectionLines(sections?: Record<string, string>): string[] {
   if (!sections) return [];
   return Object.entries(sections)
@@ -37,22 +43,171 @@ function sectionLines(sections?: Record<string, string>): string[] {
     .map(([key, value]) => `- ${SECTION_LABELS[key] ?? key}: ${truncate(value)}`);
 }
 
-type ContextSection = 'synopsis' | 'characters' | 'outline' | 'scenes' | 'storyBible';
+function filledCount(values: unknown[]): number {
+  return values.filter(filled).length;
+}
 
-const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['synopsis', 'characters', 'outline', 'scenes', 'storyBible'];
+function compactList(values: string[], maxItems = 6): string {
+  const filledValues = values.filter(filled);
+  if (!filledValues.length) return '';
+  const visible = filledValues.slice(0, maxItems).join(', ');
+  const extra = filledValues.length > maxItems ? ` +${filledValues.length - maxItems} more` : '';
+  return `${visible}${extra}`;
+}
+
+function normalizeName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function speakerFromDialogueSample(sample: string): string {
+  const match = sample.match(/^([^:]{1,60}):\s+/);
+  return match ? match[1].trim() : '';
+}
+
+function requestedSpeakers(dialogueSamples: string[], characterNames: string[], userMessage: string): string[] {
+  const normalizedMessage = ` ${normalizeName(userMessage)} `;
+  if (!normalizedMessage.trim()) return [];
+
+  const candidates = [
+    ...characterNames,
+    ...dialogueSamples.map(speakerFromDialogueSample),
+  ].filter(filled);
+  const seen = new Set<string>();
+
+  return candidates.filter(candidate => {
+    const normalized = normalizeName(candidate);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return normalizedMessage.includes(` ${normalized} `);
+  });
+}
+
+function dialogueSpeakerCounts(dialogueSamples: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const sample of dialogueSamples) {
+    const speaker = normalizeName(speakerFromDialogueSample(sample));
+    if (!speaker) continue;
+    counts.set(speaker, (counts.get(speaker) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function addDialogueWindow(indices: Set<number>, center: number, sampleCount: number): void {
+  const start = Math.max(0, center - 5);
+  const end = Math.min(sampleCount - 1, center + 6);
+  for (let i = start; i <= end; i++) indices.add(i);
+}
+
+function selectDialogueSamples(
+  samples: string[],
+  characterNames: string[],
+  userMessage: string,
+): string[] {
+  // Bridge behavior until Phase 2 script retrieval can use full scene/page spans instead of capped samples.
+  const filledSamples = samples.filter(filled);
+  const speakers = requestedSpeakers(filledSamples, characterNames, userMessage);
+  if (!speakers.length) return filledSamples.slice(0, DIALOGUE_SAMPLE_LIMIT);
+
+  const counts = dialogueSpeakerCounts(filledSamples);
+  const anchorSpeaker = speakers
+    .filter(speaker => (counts.get(normalizeName(speaker)) ?? 0) > 0)
+    .sort((a, b) => (counts.get(normalizeName(a)) ?? 0) - (counts.get(normalizeName(b)) ?? 0))[0];
+
+  if (!anchorSpeaker) return filledSamples.slice(0, DIALOGUE_SAMPLE_LIMIT);
+
+  const selectedIndices = new Set<number>();
+  const normalizedAnchor = normalizeName(anchorSpeaker);
+  const anchorIndex = filledSamples.findIndex(sample => normalizeName(speakerFromDialogueSample(sample)) === normalizedAnchor);
+  if (anchorIndex >= 0) addDialogueWindow(selectedIndices, anchorIndex, filledSamples.length);
+
+  for (const speaker of speakers) {
+    const normalizedSpeaker = normalizeName(speaker);
+    const hasSpeaker = Array.from(selectedIndices).some(index => (
+      normalizeName(speakerFromDialogueSample(filledSamples[index])) === normalizedSpeaker
+    ));
+    if (hasSpeaker) continue;
+
+    const speakerIndex = filledSamples.findIndex(sample => normalizeName(speakerFromDialogueSample(sample)) === normalizedSpeaker);
+    if (speakerIndex >= 0) addDialogueWindow(selectedIndices, speakerIndex, filledSamples.length);
+  }
+
+  return Array.from(selectedIndices)
+    .sort((a, b) => a - b)
+    .slice(0, DIALOGUE_SAMPLE_LIMIT)
+    .map(index => filledSamples[index]);
+}
+
+export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
+  const lines: string[] = [];
+  const titleGenre = [
+    storyMemory.project.title && `"${storyMemory.project.title}"`,
+    storyMemory.project.genre,
+  ].filter(Boolean).join(' | ');
+  if (titleGenre) lines.push(`- Project: ${titleGenre}`);
+  if (filled(storyMemory.project.logline)) lines.push(`- Logline: ${truncate(storyMemory.project.logline, 180)}`);
+
+  const characterNames = compactList(Object.values(storyMemory.characters).map(character => character.name));
+  if (characterNames) lines.push(`- Primary characters: ${characterNames}`);
+
+  const script = storyMemory.script;
+  const sceneCount = (script?.sceneHeadings ?? []).filter(filled).length;
+  const rawScriptExcerpt = script?.excerpt;
+  if (filled(rawScriptExcerpt)) {
+    const excerptWords = script?.excerptWordCount ?? wordCount(rawScriptExcerpt);
+    const wordLimit = script?.excerptWordLimit ?? 500;
+    const capNote = script?.excerptTruncated ? `, capped at first ${wordLimit} words` : '';
+    const sceneNote = sceneCount ? `, ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'}` : '';
+    lines.push(`- Script: ${excerptWords} excerpt words available${capNote}${sceneNote}.`);
+  } else if (sceneCount) {
+    lines.push(`- Script: ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'} available; no page excerpt packaged.`);
+  }
+
+  if (storyMemory.outline.beats.length) {
+    lines.push(`- Outline: ${storyMemory.outline.beats.length} beat${storyMemory.outline.beats.length === 1 ? '' : 's'} available.`);
+  }
+
+  const synopsisSectionCount = filledCount(Object.values(storyMemory.project.synopsisSections ?? {}));
+  if (synopsisSectionCount) {
+    lines.push(`- Synopsis: ${synopsisSectionCount} section${synopsisSectionCount === 1 ? '' : 's'} filled.`);
+  } else if (filled(storyMemory.project.synopsis)) {
+    lines.push('- Synopsis: summary text available.');
+  }
+
+  const storyBibleFieldCount = filledCount([
+    storyMemory.worldRules.setting,
+    storyMemory.worldRules.toneAnchors,
+    storyMemory.worldRules.rules,
+    storyMemory.project.themes,
+    storyMemory.dialogue.voiceNotes,
+  ]);
+  if (storyBibleFieldCount) {
+    lines.push(`- Story Bible: ${storyBibleFieldCount} field${storyBibleFieldCount === 1 ? '' : 's'} filled.`);
+  }
+
+  if (storyMemory.decisions.length) {
+    lines.push(`- Project memory: ${storyMemory.decisions.length} decision${storyMemory.decisions.length === 1 ? '' : 's'} captured.`);
+  }
+
+  return lines.length ? `WRITING PARTNER BRIEF:\n${lines.join('\n')}` : '';
+}
+
+type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'scenes' | 'storyBible';
+
+const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'scenes', 'storyBible'];
 
 const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   writingPartner: DEFAULT_CONTEXT_ORDER,
-  sam: ['synopsis', 'outline', 'characters'],
-  casey: ['characters', 'storyBible', 'synopsis'],
-  oliver: ['outline', 'scenes', 'synopsis'],
-  maya: ['scenes', 'characters', 'storyBible'],
-  zoe: ['storyBible', 'scenes', 'characters'],
-  alex: ['outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
+  sam: ['brief', 'synopsis', 'outline', 'characters'],
+  casey: ['brief', 'characters', 'storyBible', 'scenes', 'synopsis'],
+  oliver: ['brief', 'outline', 'scenes', 'synopsis'],
+  maya: ['brief', 'scenes', 'characters', 'storyBible'],
+  zoe: ['brief', 'storyBible', 'scenes', 'characters'],
+  alex: ['brief', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
 };
 
-export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner'): string {
+export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
   const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
+  const writingPartnerBrief = createWritingPartnerBrief(storyMemory);
   const characterLines = Object.values(storyMemory.characters)
     .filter(character => filled(character.name))
     .slice(0, 8)
@@ -70,9 +225,34 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     .slice(0, 15)
     .map(beat => `- ${truncate(beat.description, 220)}`);
 
-  const sceneLines = (storyMemory.outline.scenes ?? [])
+  const script = storyMemory.script;
+  const scriptSceneLines = script?.sceneHeadings?.filter(filled)
+    .slice(0, 12)
+    .map((heading, index) => `- ${index + 1}. ${truncate(heading, 120)}`) ?? [];
+  const legacySceneLines = (storyMemory.outline.scenes ?? [])
     .slice(0, 12)
     .map(scene => `- ${scene.index}. ${truncate(scene.heading, 120)}`);
+  const sceneLines = scriptSceneLines.length ? scriptSceneLines : legacySceneLines;
+
+  const rawDialogueSamples = script?.dialogueSnippets?.length ? script.dialogueSnippets : storyMemory.dialogue.samples ?? [];
+  const dialogueSamples = selectDialogueSamples(rawDialogueSamples, script?.characterNames ?? [], userMessage)
+    .map(sample => `- ${truncate(sample, 220)}`);
+  const actionSnippets = (script?.actionSnippets ?? [])
+    .filter(filled)
+    .slice(0, 8)
+    .map(sample => `- ${truncate(sample, 220)}`);
+  const scriptCharacterNames = compactList(script?.characterNames ?? []);
+  const rawScriptExcerpt = script?.excerpt;
+  const scriptExcerpt = filled(rawScriptExcerpt)
+    ? `SCRIPT EXCERPT (${script?.excerptWordCount ?? wordCount(rawScriptExcerpt)} words${script?.excerptTruncated ? `, first ${script?.excerptWordLimit ?? 500} words` : ''}):\n${rawScriptExcerpt}`
+    : '';
+  const scriptBlocks = [
+    sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
+    scriptCharacterNames ? `SCRIPT CHARACTER NAMES:\n- ${scriptCharacterNames}` : '',
+    scriptExcerpt,
+    dialogueSamples.length ? `DIALOGUE SAMPLES:\n${dialogueSamples.join('\n')}` : '',
+    actionSnippets.length ? `ACTION SNIPPETS:\n${actionSnippets.join('\n')}` : '',
+  ].filter(Boolean);
 
   const synopsisLines = sectionLines(storyMemory.project.synopsisSections);
   const worldLines = [
@@ -84,10 +264,11 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   ].filter(Boolean);
 
   const sectionBlocks: Record<ContextSection, string> = {
+    brief: writingPartnerBrief,
     synopsis: synopsisLines.length ? `SYNOPSIS SECTIONS:\n${synopsisLines.join('\n')}` : '',
     characters: characterLines.length ? `CHARACTERS:\n${characterLines.join('\n')}` : '',
     outline: beatLines.length ? `OUTLINE BEATS:\n${beatLines.join('\n')}` : '',
-    scenes: sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
+    scenes: scriptBlocks.join('\n\n'),
     storyBible: worldLines.length ? `STORY BIBLE:\n${worldLines.join('\n')}` : '',
   };
 
@@ -98,9 +279,10 @@ export class OpenAIService {
   private createPersonaSystemPrompt(
     persona: Persona, 
     userProfile: AssessmentProfile, 
-    storyMemory: StoryMemory
+    storyMemory: StoryMemory,
+    userMessage: string
   ): string {
-    const contextSummary = createContextSummary(storyMemory, persona.id);
+    const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
     const basePrompt = `You are ${persona.name}, a ${persona.role}. ${persona.personality}.
 
 YOUR PERSONALITY TRAITS:
@@ -254,7 +436,7 @@ IMPORTANT: Respond with JSON in this format:
     conversationHistory: Array<{role: 'user' | 'assistant', content: string}>
   ): Promise<PersonaResponse> {
     try {
-      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory);
+      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage);
       
       const messages: ModelMessage[] = [
         ...conversationHistory.slice(-6).map(msg => ({

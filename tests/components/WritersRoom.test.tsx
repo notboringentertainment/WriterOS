@@ -97,4 +97,10 @@ describe('WritersRoom', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
     expect(onSendToSpecialist).not.toHaveBeenCalled()
   })
+
+  it('uses display fallback title in Alex project context', () => {
+    render(<WritersRoom {...defaultProps} />)
+    fireEvent.click(screen.getAllByText('Alex')[0])
+    expect(screen.getByTestId('specialist-workspace')).toHaveTextContent('Untitled Project · genre TBD')
+  })
 })

@@ -48,4 +48,46 @@ describe('TopBar', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('The Long Hallway')).toBeInTheDocument()
   })
+
+  it('shows default display title when stored title is unset', () => {
+    render(<TopBar {...defaultProps} projectTitle="" />)
+    expect(screen.getByText('Untitled Project')).toBeInTheDocument()
+  })
+
+  it('edits project title inline and saves on Enter', () => {
+    const onProjectTitleChange = vi.fn()
+    render(<TopBar {...defaultProps} projectTitle="" onProjectTitleChange={onProjectTitleChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project title: Untitled Project' }))
+    const input = screen.getByLabelText('Project title')
+    fireEvent.change(input, { target: { value: ' Lifeline ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onProjectTitleChange).toHaveBeenCalledWith('Lifeline')
+  })
+
+  it('saves project title on blur', () => {
+    const onProjectTitleChange = vi.fn()
+    render(<TopBar {...defaultProps} projectTitle="" onProjectTitleChange={onProjectTitleChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project title: Untitled Project' }))
+    const input = screen.getByLabelText('Project title')
+    fireEvent.change(input, { target: { value: ' Lifeline ' } })
+    fireEvent.blur(input)
+
+    expect(onProjectTitleChange).toHaveBeenCalledWith('Lifeline')
+  })
+
+  it('cancels project title edit on Escape', () => {
+    const onProjectTitleChange = vi.fn()
+    render(<TopBar {...defaultProps} projectTitle="Lifeline" onProjectTitleChange={onProjectTitleChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project title: Lifeline' }))
+    const input = screen.getByLabelText('Project title')
+    fireEvent.change(input, { target: { value: 'Other Title' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(onProjectTitleChange).not.toHaveBeenCalled()
+    expect(screen.getByText('Lifeline')).toBeInTheDocument()
+  })
 })
