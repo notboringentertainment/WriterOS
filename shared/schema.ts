@@ -58,6 +58,12 @@ export interface StoryMemory {
     excerptWordCount?: number
     excerptWordLimit?: number
     excerptTruncated?: boolean
+    totalWordCount?: number
+    estimatedPageCount?: number
+    sceneCount?: number
+    contextReason?: string
+    contextLabel?: string
+    pageRange?: { start: number; end: number }
   }
   characters: Record<string, Character>
   outline: {

@@ -56,7 +56,7 @@ export default function App() {
     // Step 4–8: API call
     setWpLoading(true)
     try {
-      const projectContext = buildProjectContext(project.state)
+      const projectContext = buildProjectContext(project.state, messageToSend)
       const response = await postWPChat({ personaId, message: messageToSend, projectContext, conversationHistory })
       const speakerName = PERSONAS[personaId]?.name ?? 'Writing Partner'
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
@@ -74,7 +74,7 @@ export default function App() {
     project.addMessage(specialistId, makeMessage('user', text, 'Writer'))
 
     try {
-      const projectContext = buildProjectContext(project.state)
+      const projectContext = buildProjectContext(project.state, text)
       const response = await postWPChat({ personaId: specialistId, message: text, projectContext, conversationHistory })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))

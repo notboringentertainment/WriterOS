@@ -103,7 +103,7 @@ function selectDialogueSamples(
   characterNames: string[],
   userMessage: string,
 ): string[] {
-  // Bridge behavior until Phase 2 script retrieval can use full scene/page spans instead of capped samples.
+  // Server fallback for legacy/capped script packs; client retrieval sends focused samples when it can.
   const filledSamples = samples.filter(filled);
   const speakers = requestedSpeakers(filledSamples, characterNames, userMessage);
   if (!speakers.length) return filledSamples.slice(0, DIALOGUE_SAMPLE_LIMIT);
@@ -157,7 +157,8 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
     const wordLimit = script?.excerptWordLimit ?? 500;
     const capNote = script?.excerptTruncated ? `, capped at first ${wordLimit} words` : '';
     const sceneNote = sceneCount ? `, ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'}` : '';
-    lines.push(`- Script: ${excerptWords} excerpt words available${capNote}${sceneNote}.`);
+    const pageNote = script?.estimatedPageCount ? `, about ${script.estimatedPageCount} estimated page${script.estimatedPageCount === 1 ? '' : 's'}` : '';
+    lines.push(`- Script: ${excerptWords} excerpt words available${capNote}${sceneNote}${pageNote}.`);
   } else if (sceneCount) {
     lines.push(`- Script: ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'} available; no page excerpt packaged.`);
   }
@@ -246,7 +247,16 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   const scriptExcerpt = filled(rawScriptExcerpt)
     ? `SCRIPT EXCERPT (${script?.excerptWordCount ?? wordCount(rawScriptExcerpt)} words${script?.excerptTruncated ? `, first ${script?.excerptWordLimit ?? 500} words` : ''}):\n${rawScriptExcerpt}`
     : '';
+  const pageRange = script?.pageRange;
+  const scriptContextLine = script?.contextReason
+    ? `SCRIPT CONTEXT:\n- ${[
+      script.contextLabel,
+      pageRange ? `estimated page${pageRange.start === pageRange.end ? '' : 's'} ${pageRange.start === pageRange.end ? pageRange.start : `${pageRange.start}-${pageRange.end}`}` : '',
+      script.contextReason,
+    ].filter(filled).join(' | ')}`
+    : '';
   const scriptBlocks = [
+    scriptContextLine,
     sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
     scriptCharacterNames ? `SCRIPT CHARACTER NAMES:\n- ${scriptCharacterNames}` : '',
     scriptExcerpt,

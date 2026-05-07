@@ -266,6 +266,32 @@ describe('createContextSummary', () => {
     expect(summary).not.toContain('ISAIAH: Line 12.')
   })
 
+  it('includes client-selected script context metadata when present', () => {
+    const summary = createContextSummary(storyMemory({
+      script: {
+        excerpt: 'INT. LIFELINE HQ - DANTE OFFICE - DAY\nDante shuts the office door.',
+        sceneHeadings: ['INT. LIFELINE HQ - DANTE OFFICE - DAY'],
+        dialogueSnippets: ['ISAIAH: So it was you.', 'DANTE: Your war is over, brotha.'],
+        actionSnippets: ['Dante shuts the office door.'],
+        characterNames: ['ISAIAH', 'DANTE'],
+        excerptWordCount: 12,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+        totalWordCount: 12000,
+        estimatedPageCount: 48,
+        sceneCount: 42,
+        contextReason: 'requested-speakers',
+        contextLabel: 'INT. LIFELINE HQ - DANTE OFFICE - DAY',
+        pageRange: { start: 17, end: 18 },
+      },
+    }), 'maya')
+
+    expect(summary).toContain('SCRIPT CONTEXT:')
+    expect(summary).toContain('about 48 estimated pages')
+    expect(summary).toContain('INT. LIFELINE HQ - DANTE OFFICE - DAY | estimated pages 17-18 | requested-speakers')
+    expect(summary).toContain('DANTE: Your war is over, brotha.')
+  })
+
   it('builds a compact Writing Partner brief from script-derived scene headings', () => {
     const brief = createWritingPartnerBrief(storyMemory({
       project: {

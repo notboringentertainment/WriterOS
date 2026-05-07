@@ -128,6 +128,9 @@ describe('buildProjectContext', () => {
     expect(ctx.script.excerpt).toBe('')
     expect(ctx.script.sceneHeadings).toEqual([])
     expect(ctx.script.excerptWordLimit).toBe(SCRIPT_EXCERPT_WORD_LIMIT)
+    expect(ctx.script.totalWordCount).toBe(0)
+    expect(ctx.script.estimatedPageCount).toBe(0)
+    expect(ctx.script.sceneCount).toBe(0)
     expect(ctx.world.setting).toBe('')
     expect(ctx.storyBible.themes).toBe('')
     expect(ctx.storyBible.rules).toBe('')
@@ -213,6 +216,9 @@ describe('buildProjectContext', () => {
     expect(ctx.script.dialogueSnippets).toEqual(['ISAIAH: I can still hear the line breathing.'])
     expect(ctx.script.actionSnippets).toEqual(['Isaiah grips the receiver.'])
     expect(ctx.script.characterNames).toEqual(['ISAIAH'])
+    expect(ctx.script.totalWordCount).toBe(16)
+    expect(ctx.script.estimatedPageCount).toBe(1)
+    expect(ctx.script.sceneCount).toBe(1)
   })
 
   it('defaults sparse legacy story bible fields to empty strings', () => {
@@ -315,5 +321,41 @@ describe('extractScriptContext', () => {
     expect(context.dialogueSnippets).toHaveLength(80)
     expect(context.dialogueSnippets[79]).toBe('CHAR79: Line 79')
     expect(context.dialogueSnippets).not.toContain('CHAR80: Line 80')
+  })
+
+  it('uses indexed scene retrieval when the request names later speakers', () => {
+    const earlyScene = [
+      '<p data-element-type="scene-heading">INT. PROLOGUE ROOM - NIGHT</p>',
+      ...Array.from({ length: 85 }, (_, index) => [
+        '<p data-element-type="character">ISAIAH</p>',
+        `<p data-element-type="dialogue">Early line ${index}.</p>`,
+      ].join('')),
+    ].join('')
+    const danteScene = [
+      '<p data-element-type="scene-heading">INT. LIFELINE HQ - DANTE OFFICE - DAY</p>',
+      '<p data-element-type="action">Dante shuts the office door.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">So it was you. You gave him my direct line.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+    const state = defaultProjectState()
+    state.script.rawHtml = earlyScene + danteScene
+
+    const unfocused = buildProjectContext(state)
+    const focused = buildProjectContext(state, 'Rate the dialogue between Isaiah and Dante.')
+
+    expect(unfocused.script.dialogueSnippets).toHaveLength(80)
+    expect(unfocused.script.dialogueSnippets).not.toContain('DANTE: Your war is over, brotha.')
+    expect(focused.script.contextReason).toBe('requested-speakers')
+    expect(focused.script.contextLabel).toBe('INT. LIFELINE HQ - DANTE OFFICE - DAY')
+    expect(focused.script.sceneHeadings).toEqual(['INT. LIFELINE HQ - DANTE OFFICE - DAY'])
+    expect(focused.script.dialogueSnippets).toEqual([
+      'ISAIAH: So it was you. You gave him my direct line.',
+      'DANTE: Your war is over, brotha.',
+    ])
+    expect(focused.script.actionSnippets).toEqual(['Dante shuts the office door.'])
+    expect(focused.script.excerpt).toContain('Dante shuts the office door.')
+    expect(focused.script.excerpt).not.toContain('Early line 0.')
   })
 })

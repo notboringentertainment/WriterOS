@@ -80,6 +80,15 @@ const scriptContextSchema = z.object({
   excerptWordCount: z.number().default(0),
   excerptWordLimit: z.number().default(500),
   excerptTruncated: z.boolean().default(false),
+  totalWordCount: z.number().default(0),
+  estimatedPageCount: z.number().default(0),
+  sceneCount: z.number().default(0),
+  contextReason: z.string().optional(),
+  contextLabel: z.string().optional(),
+  pageRange: z.object({
+    start: z.number(),
+    end: z.number(),
+  }).optional(),
 }).optional();
 
 const wpChatSchema = z.object({
@@ -231,6 +240,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           excerptWordCount: scriptContext.excerptWordCount,
           excerptWordLimit: scriptContext.excerptWordLimit,
           excerptTruncated: scriptContext.excerptTruncated,
+          totalWordCount: scriptContext.totalWordCount,
+          estimatedPageCount: scriptContext.estimatedPageCount,
+          sceneCount: scriptContext.sceneCount,
+          contextReason: scriptContext.contextReason,
+          contextLabel: scriptContext.contextLabel,
+          pageRange: scriptContext.pageRange,
         } : undefined,
         characters: Object.fromEntries(
           data.projectContext.characters.map(character => [
