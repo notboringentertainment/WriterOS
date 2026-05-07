@@ -52,4 +52,22 @@ describe('OutlineTab', () => {
 
     expect(onReorderBeats).toHaveBeenCalledWith(0, 8)
   })
+
+  it('ignores drops without a valid dragged beat index', () => {
+    const onReorderBeats = vi.fn()
+    render(<OutlineTab outline={defaultOutline} onUpdateBeat={vi.fn()} onReorderBeats={onReorderBeats} />)
+
+    const midpoint = screen.getByText('Midpoint').closest('div[draggable="true"]')!
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: vi.fn(),
+      getData: vi.fn(() => ''),
+    }
+
+    fireEvent.dragOver(midpoint, { dataTransfer })
+    fireEvent.drop(midpoint, { dataTransfer })
+
+    expect(onReorderBeats).not.toHaveBeenCalled()
+  })
 })

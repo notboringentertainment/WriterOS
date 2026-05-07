@@ -69,6 +69,26 @@ describe('WritersRoom', () => {
     expect(screen.getByText('Your midpoint is weak.')).toBeInTheDocument()
   })
 
+  it('calls onClearTranscript for the selected specialist', () => {
+    const state = defaultProjectState()
+    state.agents.oliver.transcript = [
+      { id: '1', role: 'assistant', content: 'Your midpoint is weak.', speaker: 'Oliver', ts: 1 },
+    ]
+    const onClearTranscript = vi.fn()
+
+    render(
+      <WritersRoom
+        projectState={state}
+        onSendToSpecialist={vi.fn()}
+        onClearTranscript={onClearTranscript}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(onClearTranscript).toHaveBeenCalledWith('oliver')
+  })
+
   it('Shift+Enter does not send', () => {
     const onSendToSpecialist = vi.fn()
     render(<WritersRoom {...defaultProps} onSendToSpecialist={onSendToSpecialist} />)

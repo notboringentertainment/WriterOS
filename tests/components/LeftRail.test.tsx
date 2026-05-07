@@ -52,6 +52,26 @@ describe('LeftRail', () => {
     expect(screen.getByText('Sam')).toBeInTheDocument()
   })
 
+  it('calls onClearTranscript from the clear button when transcript has messages', () => {
+    const onClearTranscript = vi.fn()
+    const transcript: TranscriptMessage[] = [
+      makeMsg({ id: '1', role: 'user', content: 'Clear me', speaker: 'Writer' }),
+    ]
+
+    render(
+      <LeftRail
+        {...defaultProps}
+        open={true}
+        transcript={transcript}
+        onClearTranscript={onClearTranscript}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(onClearTranscript).toHaveBeenCalled()
+  })
+
   it('calls onSend with entered text on Enter', () => {
     const onSend = vi.fn()
     render(<LeftRail {...defaultProps} open={true} onSend={onSend} />)

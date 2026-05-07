@@ -24,6 +24,14 @@ describe('ScriptTab', () => {
     ).not.toThrow()
   })
 
+  it('updates toolbar counts from initial script content', async () => {
+    render(
+      <ScriptTab initialScript="<p data-element-type='scene-heading'>INT. ROOM - DAY</p><p data-element-type='action'>Test content</p>" />
+    )
+
+    expect(await screen.findByText(/1 page · 5 words/i)).toBeInTheDocument()
+  })
+
   it('accepts onScriptChange prop without error', () => {
     const onScriptChange = vi.fn()
     expect(() =>

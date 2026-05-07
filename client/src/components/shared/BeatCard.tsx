@@ -30,7 +30,9 @@ export function BeatCard({ beat, onUpdate, onMove, index }: BeatCardProps) {
       }}
       onDrop={e => {
         e.preventDefault()
-        const fromIndex = Number(e.dataTransfer.getData('text/plain'))
+        const fromIndexRaw = e.dataTransfer.getData('text/plain')
+        if (!/^\d+$/.test(fromIndexRaw)) return
+        const fromIndex = Number(fromIndexRaw)
         if (Number.isInteger(fromIndex) && fromIndex !== index) onMove(fromIndex, index)
       }}
     >

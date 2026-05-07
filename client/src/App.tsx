@@ -89,6 +89,7 @@ export default function App() {
         <WritersRoom
           projectState={project.state}
           onSendToSpecialist={handleSpecialistSend}
+          onClearTranscript={project.clearTranscript}
         />
       )
     }
@@ -138,6 +139,7 @@ export default function App() {
     transcript: project.state.agents.writingPartner.transcript,
     loading: wpLoading,
     onSend: handleWPSend,
+    onClearTranscript: () => project.clearTranscript('writingPartner'),
   }
 
   return (

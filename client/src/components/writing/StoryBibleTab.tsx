@@ -44,10 +44,11 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       </div>
 
       {/* Characters */}
-      <section style={styles.section}>
+      <section style={styles.section} onFocusCapture={() => onSectionChange?.('characters')}>
         <div style={styles.sectionHeader} onClick={() => onSectionChange?.('characters')}>
           <h3 style={styles.sectionTitle}>Characters</h3>
-          <p style={styles.sectionHint}>Casey · Wound, Want, Need, Arc</p>
+          <p style={styles.sectionHint}>Wound, Want, Need, Arc</p>
+          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
           <button
             style={styles.addBtn}
             onClick={() => onAddCharacter({ name: 'New Character', role: '', wound: '', want: '', need: '', arc: '' })}
@@ -63,10 +64,11 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       </section>
 
       {/* World */}
-      <section style={styles.section}>
+      <section style={styles.section} onFocusCapture={() => onSectionChange?.('world')}>
         <div style={styles.sectionHeader} onClick={() => onSectionChange?.('world')}>
           <h3 style={styles.sectionTitle}>World</h3>
-          <p style={styles.sectionHint}>Zoe · Setting and tone anchors</p>
+          <p style={styles.sectionHint}>Setting and tone anchors</p>
+          <span style={styles.routeChip} title="Default specialist: Zoe">Zoe</span>
         </div>
         <GuidedSection
           label="Setting"
@@ -83,10 +85,11 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       </section>
 
       {/* Themes */}
-      <section style={styles.section}>
+      <section style={styles.section} onFocusCapture={() => onSectionChange?.('themes')}>
         <div style={styles.sectionHeader} onClick={() => onSectionChange?.('themes')}>
           <h3 style={styles.sectionTitle}>Themes</h3>
-          <p style={styles.sectionHint}>Casey · What is this story really about?</p>
+          <p style={styles.sectionHint}>What is this story really about?</p>
+          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
         </div>
         <GuidedSection
           label="Central Theme"
@@ -97,10 +100,11 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       </section>
 
       {/* Tone & Voice */}
-      <section style={styles.section}>
+      <section style={styles.section} onFocusCapture={() => onSectionChange?.('tone')}>
         <div style={styles.sectionHeader} onClick={() => onSectionChange?.('tone')}>
           <h3 style={styles.sectionTitle}>Tone & Voice</h3>
-          <p style={styles.sectionHint}>Casey · How does this story feel to read?</p>
+          <p style={styles.sectionHint}>How does this story feel to read?</p>
+          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
         </div>
         <GuidedSection
           label="Voice Notes"
@@ -111,10 +115,11 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       </section>
 
       {/* Rules of the World */}
-      <section style={styles.section}>
+      <section style={styles.section} onFocusCapture={() => onSectionChange?.('rules')}>
         <div style={styles.sectionHeader} onClick={() => onSectionChange?.('rules')}>
           <h3 style={styles.sectionTitle}>Rules of the World</h3>
-          <p style={styles.sectionHint}>Zoe · Internal logic and constraints</p>
+          <p style={styles.sectionHint}>Internal logic and constraints</p>
+          <span style={styles.routeChip} title="Default specialist: Zoe">Zoe</span>
         </div>
         <GuidedSection
           label="World Rules"
@@ -144,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg)',
   },
   section: { display: 'flex', flexDirection: 'column', gap: 16 },
-  sectionHeader: { display: 'flex', alignItems: 'baseline', gap: 12 },
+  sectionHeader: { display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' },
   sectionTitle: {
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
@@ -156,6 +161,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: 'var(--fg-muted)',
     flex: 1,
+    minWidth: 180,
+  },
+  routeChip: {
+    border: '1px solid var(--border)',
+    borderRadius: 999,
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    padding: '2px 8px',
+    flexShrink: 0,
   },
   addBtn: {
     background: 'none',

@@ -80,7 +80,9 @@ const styles: Record<string, React.CSSProperties> = {
   tabs: { display: 'flex', gap: 2 },
   tab: {
     background: 'none',
-    border: '1px solid transparent',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'transparent',
     borderRadius: 6,
     color: 'var(--fg-muted)',
     fontFamily: 'var(--font-display)',
@@ -107,7 +109,9 @@ const styles: Record<string, React.CSSProperties> = {
   rightZone: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 },
   writersRoom: {
     background: 'none',
-    border: '1px solid var(--border)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
     borderRadius: 6,
     color: 'var(--fg-muted)',
     fontFamily: 'var(--font-display)',

@@ -22,6 +22,14 @@ describe('StoryBibleTab', () => {
     expect(screen.getByText('Rules of the World')).toBeInTheDocument()
   })
 
+  it('separates specialist chips from writing prompts in section headers', () => {
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} />)
+    expect(screen.getByText('How does this story feel to read?')).toBeInTheDocument()
+    expect(screen.getAllByText('Casey').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Casey ·/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Zoe ·/)).not.toBeInTheDocument()
+  })
+
   it('renders Add Character button', () => {
     render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} />)
     expect(screen.getByText('+ Add Character')).toBeInTheDocument()
@@ -50,10 +58,28 @@ describe('StoryBibleTab', () => {
     expect(onSectionChange).toHaveBeenCalledWith('characters')
   })
 
+  it('calls onSectionChange with "characters" when a character field receives focus', () => {
+    const onSectionChange = vi.fn()
+    const bible = {
+      ...defaultBible,
+      characters: [{ id: '1', name: 'Elena', role: '', wound: '', want: '', need: '', arc: '' }],
+    }
+    render(<StoryBibleTab storyBible={bible} {...defaultProps} onSectionChange={onSectionChange} />)
+    fireEvent.focus(screen.getByPlaceholderText(/character name/i))
+    expect(onSectionChange).toHaveBeenCalledWith('characters')
+  })
+
   it('calls onSectionChange with "world" when World header clicked', () => {
     const onSectionChange = vi.fn()
     render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
     fireEvent.click(screen.getByText('World'))
+    expect(onSectionChange).toHaveBeenCalledWith('world')
+  })
+
+  it('calls onSectionChange with "world" when the Setting field receives focus', () => {
+    const onSectionChange = vi.fn()
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
+    fireEvent.focus(screen.getByPlaceholderText(/write your setting/i))
     expect(onSectionChange).toHaveBeenCalledWith('world')
   })
 
@@ -64,6 +90,13 @@ describe('StoryBibleTab', () => {
     expect(onSectionChange).toHaveBeenCalledWith('themes')
   })
 
+  it('calls onSectionChange with "themes" when the Central Theme field receives focus', () => {
+    const onSectionChange = vi.fn()
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
+    fireEvent.focus(screen.getByPlaceholderText(/write your central theme/i))
+    expect(onSectionChange).toHaveBeenCalledWith('themes')
+  })
+
   it('calls onSectionChange with "tone" when Tone & Voice header clicked', () => {
     const onSectionChange = vi.fn()
     render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
@@ -71,10 +104,24 @@ describe('StoryBibleTab', () => {
     expect(onSectionChange).toHaveBeenCalledWith('tone')
   })
 
+  it('calls onSectionChange with "tone" when the Voice Notes field receives focus', () => {
+    const onSectionChange = vi.fn()
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
+    fireEvent.focus(screen.getByPlaceholderText(/write your voice notes/i))
+    expect(onSectionChange).toHaveBeenCalledWith('tone')
+  })
+
   it('calls onSectionChange with "rules" when Rules header clicked', () => {
     const onSectionChange = vi.fn()
     render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
     fireEvent.click(screen.getByText('Rules of the World'))
+    expect(onSectionChange).toHaveBeenCalledWith('rules')
+  })
+
+  it('calls onSectionChange with "rules" when the World Rules field receives focus', () => {
+    const onSectionChange = vi.fn()
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onSectionChange={onSectionChange} />)
+    fireEvent.focus(screen.getByPlaceholderText(/write your world rules/i))
     expect(onSectionChange).toHaveBeenCalledWith('rules')
   })
 })

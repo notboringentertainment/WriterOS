@@ -41,6 +41,18 @@ export function useProjectState() {
 
   const reorderBeats = useCallback((fromIndex: number, toIndex: number) => {
     update(s => {
+      if (
+        !Number.isInteger(fromIndex) ||
+        !Number.isInteger(toIndex) ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= s.outline.beats.length ||
+        toIndex >= s.outline.beats.length ||
+        fromIndex === toIndex
+      ) {
+        return s
+      }
+
       const beats = [...s.outline.beats]
       const [moved] = beats.splice(fromIndex, 1)
       beats.splice(toIndex, 0, moved)
@@ -96,6 +108,19 @@ export function useProjectState() {
     }))
   }, [update])
 
+  const clearTranscript = useCallback((agentId: AgentId) => {
+    update(s => ({
+      ...s,
+      agents: {
+        ...s.agents,
+        [agentId]: {
+          ...s.agents[agentId],
+          transcript: [],
+        },
+      },
+    }))
+  }, [update])
+
   const updateScript = useCallback((rawHtml: string, scenes: ScriptScene[]) => {
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
   }, [update])
@@ -112,6 +137,7 @@ export function useProjectState() {
     setThemes,
     setRules,
     addMessage,
+    clearTranscript,
     updateScript,
   }
 }

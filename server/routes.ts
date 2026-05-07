@@ -78,9 +78,51 @@ const wpChatSchema = z.object({
     title: z.string().optional(),
     genre: z.string().optional(),
     logline: z.string().optional(),
-    characters: z.array(z.string()),
-    beats: z.array(z.string()),
-    world: z.object({ setting: z.string().optional() }),
+    synopsis: z.object({
+      logline: z.string(),
+      sections: z.object({
+        setup: z.string(),
+        act1Break: z.string(),
+        midpoint: z.string(),
+        act2Break: z.string(),
+        resolution: z.string(),
+      }),
+    }),
+    characters: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      role: z.string(),
+      wound: z.string(),
+      want: z.string(),
+      need: z.string(),
+      arc: z.string(),
+    })),
+    beats: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string(),
+      notes: z.string(),
+      linkedSceneIds: z.array(z.string()).default([]),
+    })),
+    scenes: z.array(z.object({
+      id: z.string(),
+      heading: z.string(),
+      index: z.number(),
+    })),
+    storyBible: z.object({
+      themes: z.string().default(''),
+      rules: z.string().default(''),
+      world: z.object({
+        setting: z.string().default(''),
+        toneAnchors: z.string().default(''),
+        voiceNotes: z.string().default(''),
+      }),
+    }),
+    world: z.object({
+      setting: z.string().default(''),
+      toneAnchors: z.string().default(''),
+      voiceNotes: z.string().default(''),
+    }),
   }),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']),
@@ -163,16 +205,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title: data.projectContext.title,
           genre: data.projectContext.genre,
           logline: data.projectContext.logline,
+          synopsis: Object.values(data.projectContext.synopsis.sections).filter(Boolean).join('\n\n'),
+          synopsisSections: data.projectContext.synopsis.sections,
+          themes: data.projectContext.storyBible.themes,
         },
         characters: Object.fromEntries(
-          data.projectContext.characters.map(name => [name, { id: name, name, role: '' }])
+          data.projectContext.characters.map(character => [
+            character.id,
+            {
+              id: character.id,
+              name: character.name,
+              role: character.role,
+              backstory: character.wound,
+              motivation: character.want || character.need,
+              arc: character.arc,
+            },
+          ])
         ),
         outline: {
           acts: 3,
-          beats: data.projectContext.beats.map((name, i) => ({ id: String(i), act: 1, description: name })),
+          beats: data.projectContext.beats.map((beat, i) => ({
+            id: beat.id,
+            act: i < 5 ? 1 : i < 12 ? 2 : 3,
+            description: beat.notes ? `${beat.name}: ${beat.notes}` : `${beat.name}: ${beat.description}`,
+            purpose: beat.description,
+          })),
+          scenes: data.projectContext.scenes,
         },
-        worldRules: { setting: data.projectContext.world.setting },
-        dialogue: { samples: [] },
+        worldRules: {
+          setting: data.projectContext.world.setting,
+          toneAnchors: data.projectContext.world.toneAnchors,
+          rules: data.projectContext.storyBible.rules,
+        },
+        dialogue: {
+          samples: [],
+          voiceNotes: data.projectContext.world.voiceNotes,
+        },
         userProfile,
         decisions: [],
       };
@@ -200,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const aiHealth = await openaiService.healthCheck();
     res.json({ 
       status: "ok", 
-      ai: !!process.env.OPENAI_API_KEY,
+      ai: aiHealth.status === 'ok',
       aiService: aiHealth
     });
   });

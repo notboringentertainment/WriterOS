@@ -6,9 +6,19 @@ export interface ProjectContext {
   title?: string
   genre?: string
   logline?: string
-  characters: string[]
-  beats: string[]
-  world: { setting?: string }
+  synopsis: {
+    logline: string
+    sections: ProjectState['synopsis']['sections']
+  }
+  characters: Array<Pick<ProjectState['storyBible']['characters'][number], 'id' | 'name' | 'role' | 'wound' | 'want' | 'need' | 'arc'>>
+  beats: Array<Pick<ProjectState['outline']['beats'][number], 'id' | 'name' | 'description' | 'notes' | 'linkedSceneIds'>>
+  scenes: ProjectState['script']['scenes']
+  storyBible: {
+    themes: string
+    rules: string
+    world: ProjectState['storyBible']['world']
+  }
+  world: ProjectState['storyBible']['world']
 }
 
 const SPECIALIST_MENTIONS: Record<string, Exclude<PersonaId, 'writingPartner'>> = {
@@ -35,6 +45,10 @@ export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'story-bible'
 
 const ZOE_SECTIONS = new Set(['world', 'rules'])
 
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
 export function getDefaultPersona(activeTab: ActiveTab, storyBibleSection: string | null): PersonaId {
   switch (activeTab) {
     case 'script':   return 'writingPartner'
@@ -46,12 +60,54 @@ export function getDefaultPersona(activeTab: ActiveTab, storyBibleSection: strin
 }
 
 export function buildProjectContext(state: ProjectState): ProjectContext {
+  const synopsisSections = state.synopsis.sections
+  const storyBible = state.storyBible
+  const world = storyBible.world
+
   return {
-    title: state.meta.title,
-    genre: state.meta.genre,
-    logline: state.synopsis.logline,
-    characters: state.storyBible.characters.map(c => c.name),
-    beats: state.outline.beats.map(b => b.name),
-    world: { setting: state.storyBible.world.setting },
+    title: text(state.meta.title),
+    genre: text(state.meta.genre),
+    logline: text(state.synopsis.logline),
+    synopsis: {
+      logline: text(state.synopsis.logline),
+      sections: {
+        setup: text(synopsisSections.setup),
+        act1Break: text(synopsisSections.act1Break),
+        midpoint: text(synopsisSections.midpoint),
+        act2Break: text(synopsisSections.act2Break),
+        resolution: text(synopsisSections.resolution),
+      },
+    },
+    characters: state.storyBible.characters.map(c => ({
+      id: text(c.id),
+      name: text(c.name),
+      role: text(c.role),
+      wound: text(c.wound),
+      want: text(c.want),
+      need: text(c.need),
+      arc: text(c.arc),
+    })),
+    beats: state.outline.beats.map(b => ({
+      id: text(b.id),
+      name: text(b.name),
+      description: text(b.description),
+      notes: text(b.notes),
+      linkedSceneIds: Array.isArray(b.linkedSceneIds) ? b.linkedSceneIds : [],
+    })),
+    scenes: state.script.scenes,
+    storyBible: {
+      themes: text(storyBible.themes),
+      rules: text(storyBible.rules),
+      world: {
+        setting: text(world.setting),
+        toneAnchors: text(world.toneAnchors),
+        voiceNotes: text(world.voiceNotes),
+      },
+    },
+    world: {
+      setting: text(world.setting),
+      toneAnchors: text(world.toneAnchors),
+      voiceNotes: text(world.voiceNotes),
+    },
   }
 }

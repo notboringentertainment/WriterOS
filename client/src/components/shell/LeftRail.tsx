@@ -11,9 +11,10 @@ interface LeftRailProps {
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void
+  onClearTranscript?: () => void
 }
 
-export function LeftRail({ open, onToggle, projectTitle, transcript, loading, onSend }: LeftRailProps) {
+export function LeftRail({ open, onToggle, projectTitle, transcript, loading, onSend, onClearTranscript }: LeftRailProps) {
   const [hasProactive, setHasProactive] = useState(false)
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -64,7 +65,18 @@ export function LeftRail({ open, onToggle, projectTitle, transcript, loading, on
       {open && (
         <div style={styles.panel}>
           <div style={styles.panelHeader}>
-            <span style={styles.panelTitle}>Writing Partner</span>
+            <div style={styles.panelTitleRow}>
+              <span style={styles.panelTitle}>Writing Partner</span>
+              {transcript.length > 0 && onClearTranscript && (
+                <button
+                  type="button"
+                  style={styles.clearButton}
+                  onClick={onClearTranscript}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             <span style={styles.contextChip}>{projectTitle}</span>
           </div>
           <div ref={transcriptRef} style={styles.transcript} aria-label="Writing Partner conversation">
@@ -186,6 +198,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: 13,
     color: 'var(--wp-amber)',
+  },
+  panelTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  clearButton: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--fg-subtle)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    padding: 0,
   },
   contextChip: {
     fontFamily: 'var(--font-mono)',

@@ -33,6 +33,12 @@ export interface StoryBeat {
   purpose?: string
 }
 
+export interface ScriptScene {
+  id: string
+  heading: string
+  index: number
+}
+
 export interface StoryMemory {
   project: {
     title?: string
@@ -40,21 +46,26 @@ export interface StoryMemory {
     format?: 'screenplay' | 'novel' | 'series' | 'short'
     logline?: string
     synopsis?: string
+    synopsisSections?: Record<string, string>
+    themes?: string
   }
   characters: Record<string, Character>
   outline: {
     acts: number
     beats: StoryBeat[]
-    scenes?: unknown[]
+    scenes?: ScriptScene[]
   }
   worldRules: {
     setting?: string
+    toneAnchors?: string
+    rules?: string
     magicSystem?: string
     technology?: string
   }
   dialogue: {
     samples?: string[]
     characterVoices?: Record<string, string>
+    voiceNotes?: string
   }
   userProfile: AssessmentProfile
   decisions: Array<{

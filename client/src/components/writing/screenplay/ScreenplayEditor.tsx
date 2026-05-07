@@ -48,22 +48,10 @@ export function ScreenplayEditor({
     onPageCountChange?.(pages)
   }, [onPageCountChange])
 
-  const editor = useEditor({
-    extensions: [Document, Paragraph, Text, History, ScreenplayExtension],
-    content: initialContent || '<p data-element-type="scene-heading"></p>',
-
-    onCreate({ editor }) {
-      onEditorReady?.(editor)
-    },
-
-    onUpdate({ editor }) {
+  const publishEditorMetrics = useCallback(
+    (editor: Editor) => {
       onWordCountChange?.(countWords(editor.getText()))
       updatePageCount()
-
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = setTimeout(() => {
-        onContentChangeRef.current?.(editor.getHTML())
-      }, 500)
 
       const headings: Array<{ index: number; text: string; nodePos: number }> = []
       let sceneIndex = 0
@@ -78,6 +66,25 @@ export function ScreenplayEditor({
       })
       onSceneHeadingsChange?.(headings)
     },
+    [onSceneHeadingsChange, onWordCountChange, updatePageCount]
+  )
+
+  const editor = useEditor({
+    extensions: [Document, Paragraph, Text, History, ScreenplayExtension],
+    content: initialContent || '<p data-element-type="scene-heading"></p>',
+
+    onCreate({ editor }) {
+      onEditorReady?.(editor)
+    },
+
+    onUpdate({ editor }) {
+      publishEditorMetrics(editor)
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        onContentChangeRef.current?.(editor.getHTML())
+      }, 500)
+    },
 
     onSelectionUpdate({ editor }) {
       const { $anchor } = editor.state.selection
@@ -87,6 +94,16 @@ export function ScreenplayEditor({
       }
     },
   })
+
+  useEffect(() => {
+    if (!editor) return
+
+    const frame = requestAnimationFrame(() => {
+      publishEditorMetrics(editor)
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [editor, publishEditorMetrics])
 
   return (
     <div ref={editorDivRef} style={styles.page}>

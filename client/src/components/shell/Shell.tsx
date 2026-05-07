@@ -21,6 +21,7 @@ interface RailProps {
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void
+  onClearTranscript?: () => void
 }
 
 interface ShellProps {

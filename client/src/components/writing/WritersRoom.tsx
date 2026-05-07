@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { PERSONAS } from '@shared/personas'
-import type { ProjectState } from '../../lib/projectState'
+import type { AgentId, ProjectState } from '../../lib/projectState'
 
 type SpecialistId = 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
 
@@ -9,6 +9,7 @@ const SPECIALISTS: SpecialistId[] = ['sam', 'casey', 'oliver', 'maya', 'zoe', 'a
 interface WritersRoomProps {
   projectState: ProjectState
   onSendToSpecialist: (specialistId: SpecialistId, text: string) => void
+  onClearTranscript?: (specialistId: AgentId) => void
 }
 
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
@@ -33,7 +34,7 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
   }
 }
 
-export function WritersRoom({ projectState, onSendToSpecialist }: WritersRoomProps) {
+export function WritersRoom({ projectState, onSendToSpecialist, onClearTranscript }: WritersRoomProps) {
   const [selectedId, setSelectedId] = useState<SpecialistId>('oliver')
   const [inputText, setInputText] = useState('')
 
@@ -90,6 +91,18 @@ export function WritersRoom({ projectState, onSendToSpecialist }: WritersRoomPro
 
       {/* Right chat */}
       <div style={styles.chat}>
+        <div style={styles.chatHeader}>
+          <span style={styles.chatTitle}>{persona.name} Chat</span>
+          {transcript.length > 0 && onClearTranscript && (
+            <button
+              type="button"
+              style={styles.clearButton}
+              onClick={() => onClearTranscript(selectedId)}
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <div style={styles.transcript}>
           {transcript.length === 0 ? (
             <p style={styles.emptyState}>Start a conversation with {persona.name}…</p>
@@ -240,6 +253,29 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
+  },
+  chatHeader: {
+    borderBottom: '1px solid var(--border)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '10px 16px',
+  },
+  chatTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--fg-muted)',
+  },
+  clearButton: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--fg-subtle)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    padding: 0,
   },
   transcript: {
     flex: 1,

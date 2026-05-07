@@ -1,16 +1,97 @@
-import OpenAI from "openai";
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
-
-const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini";
-
-function createOpenAIClient() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
+import { createModelProvider, type ModelMessage } from "./modelProvider";
 
 export interface PersonaResponse {
   message: string;
   suggestions?: string[];
   storyUpdates?: Partial<StoryMemory>;
+}
+
+function filled(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function truncate(value: string, max = 220): string {
+  const trimmed = value.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
+export function parseJsonObject(rawContent: string | null | undefined): Record<string, any> {
+  const raw = (rawContent || '{}').trim();
+  const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced ? fenced[1] : raw);
+}
+
+const SECTION_LABELS: Record<string, string> = {
+  setup: 'Setup',
+  act1Break: 'Act 1 Break',
+  midpoint: 'Midpoint',
+  act2Break: 'Act 2 Break',
+  resolution: 'Resolution',
+};
+
+function sectionLines(sections?: Record<string, string>): string[] {
+  if (!sections) return [];
+  return Object.entries(sections)
+    .filter(([, value]) => filled(value))
+    .map(([key, value]) => `- ${SECTION_LABELS[key] ?? key}: ${truncate(value)}`);
+}
+
+type ContextSection = 'synopsis' | 'characters' | 'outline' | 'scenes' | 'storyBible';
+
+const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['synopsis', 'characters', 'outline', 'scenes', 'storyBible'];
+
+const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
+  writingPartner: DEFAULT_CONTEXT_ORDER,
+  sam: ['synopsis', 'outline', 'characters'],
+  casey: ['characters', 'storyBible', 'synopsis'],
+  oliver: ['outline', 'scenes', 'synopsis'],
+  maya: ['scenes', 'characters', 'storyBible'],
+  zoe: ['storyBible', 'scenes', 'characters'],
+  alex: ['outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
+};
+
+export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner'): string {
+  const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
+  const characterLines = Object.values(storyMemory.characters)
+    .filter(character => filled(character.name))
+    .slice(0, 8)
+    .map(character => {
+      const details = [
+        character.role && `role: ${character.role}`,
+        character.backstory && `wound/backstory: ${character.backstory}`,
+        character.motivation && `motivation: ${character.motivation}`,
+        character.arc && `arc: ${character.arc}`,
+      ].filter(Boolean).join('; ');
+      return `- ${character.name}${details ? ` (${truncate(details, 180)})` : ''}`;
+    });
+
+  const beatLines = storyMemory.outline.beats
+    .slice(0, 15)
+    .map(beat => `- ${truncate(beat.description, 220)}`);
+
+  const sceneLines = (storyMemory.outline.scenes ?? [])
+    .slice(0, 12)
+    .map(scene => `- ${scene.index}. ${truncate(scene.heading, 120)}`);
+
+  const synopsisLines = sectionLines(storyMemory.project.synopsisSections);
+  const worldLines = [
+    filled(storyMemory.worldRules.setting) && `- Setting: ${truncate(storyMemory.worldRules.setting)}`,
+    filled(storyMemory.worldRules.toneAnchors) && `- Tone anchors: ${truncate(storyMemory.worldRules.toneAnchors)}`,
+    filled(storyMemory.worldRules.rules) && `- Rules: ${truncate(storyMemory.worldRules.rules)}`,
+    filled(storyMemory.project.themes) && `- Themes: ${truncate(storyMemory.project.themes)}`,
+    filled(storyMemory.dialogue.voiceNotes) && `- Voice notes: ${truncate(storyMemory.dialogue.voiceNotes)}`,
+  ].filter(Boolean);
+
+  const sectionBlocks: Record<ContextSection, string> = {
+    synopsis: synopsisLines.length ? `SYNOPSIS SECTIONS:\n${synopsisLines.join('\n')}` : '',
+    characters: characterLines.length ? `CHARACTERS:\n${characterLines.join('\n')}` : '',
+    outline: beatLines.length ? `OUTLINE BEATS:\n${beatLines.join('\n')}` : '',
+    scenes: sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
+    storyBible: worldLines.length ? `STORY BIBLE:\n${worldLines.join('\n')}` : '',
+  };
+
+  return contextOrder.map(section => sectionBlocks[section]).filter(Boolean).join('\n\n') || 'No structured project details yet.';
 }
 
 export class OpenAIService {
@@ -19,6 +100,7 @@ export class OpenAIService {
     userProfile: AssessmentProfile, 
     storyMemory: StoryMemory
   ): string {
+    const contextSummary = createContextSummary(storyMemory, persona.id);
     const basePrompt = `You are ${persona.name}, a ${persona.role}. ${persona.personality}.
 
 YOUR PERSONALITY TRAITS:
@@ -34,6 +116,9 @@ ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New p
 ${storyMemory.project.genre ? `Genre: ${storyMemory.project.genre}` : ''}
 ${storyMemory.project.logline ? `Logline: ${storyMemory.project.logline}` : ''}
 ${storyMemory.project.synopsis ? `Synopsis: ${storyMemory.project.synopsis}` : ''}
+
+STRUCTURED PROJECT MEMORY:
+${contextSummary}
 
 WRITER'S STATE: ${userProfile.entryState.replace('_', ' ')}
 IMMEDIATE NEED: ${userProfile.immediateNeed}
@@ -171,8 +256,7 @@ IMPORTANT: Respond with JSON in this format:
     try {
       const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory);
       
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
+      const messages: ModelMessage[] = [
         ...conversationHistory.slice(-6).map(msg => ({
           role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
           content: msg.content
@@ -180,18 +264,16 @@ IMPORTANT: Respond with JSON in this format:
         { role: 'user', content: userMessage }
       ];
 
-      const response = await createOpenAIClient().chat.completions.create({
-        model: CHAT_MODEL,
+      const provider = createModelProvider();
+      const rawContent = await provider.generateResponse({
+        systemPrompt,
         messages,
         temperature: 0.7,
-        max_tokens: 800,
-        response_format: { type: "json_object" }
+        maxTokens: 800,
       });
-
-      const rawContent = response.choices[0].message.content;
       
       try {
-        const parsedResponse = JSON.parse(rawContent || '{}');
+        const parsedResponse = parseJsonObject(rawContent);
         return {
           message: parsedResponse.message || "I'm here to help! What would you like to work on?",
           suggestions: parsedResponse.suggestions || [],
@@ -205,7 +287,7 @@ IMPORTANT: Respond with JSON in this format:
         };
       }
     } catch (error) {
-      console.error('OpenAI API error:', error);
+      console.error('AI provider error:', error);
       return {
         message: `I'm having trouble connecting right now, ${userProfile.writerName}. Let me try to help based on what we've discussed so far.`
       };
@@ -281,14 +363,19 @@ Respond with JSON in this format:
 }`;
 
     try {
-      const response = await createOpenAIClient().chat.completions.create({
-        model: CHAT_MODEL,
+      const provider = createModelProvider();
+      const rawContent = await provider.generateResponse({
+        systemPrompt: 'You are Sam, a synopsis specialist for WriterOS. Respond only with valid JSON.',
         messages: [{ role: 'user', content: prompt }],
-        response_format: { type: "json_object" },
-        temperature: 0.7
+        temperature: 0.7,
+        maxTokens: 800,
       });
 
-      return JSON.parse(response.choices[0].message.content || '{}');
+      return parseJsonObject(rawContent) as {
+        feedback: string;
+        suggestions: string[];
+        improvedVersion?: string;
+      };
     } catch (error) {
       console.error('Synopsis assistance error:', error);
       return {
@@ -305,34 +392,35 @@ Respond with JSON in this format:
 
   async healthCheck(): Promise<{ status: string; model: string; error?: string }> {
     try {
-      if (!process.env.OPENAI_API_KEY) {
+      const provider = createModelProvider();
+      if (!provider.isConfigured()) {
         return {
           status: 'error',
-          model: CHAT_MODEL,
-          error: 'OPENAI_API_KEY not configured'
+          model: provider.model,
+          error: `${provider.name === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'} not configured`
         };
       }
 
-      const response = await createOpenAIClient().chat.completions.create({
-        model: CHAT_MODEL,
+      const rawContent = await provider.generateResponse({
+        systemPrompt: 'Respond only with valid JSON.',
         messages: [{ role: 'user', content: 'Test connection. Respond with JSON: {"status": "ok"}' }],
-        response_format: { type: "json_object" },
-        max_tokens: 50
+        maxTokens: 50,
       });
       
-      const result = JSON.parse(response.choices[0].message.content || '{}');
+      const result = parseJsonObject(rawContent);
       if (result.status !== 'ok') {
         throw new Error('AI model did not respond correctly');
       }
       
       return {
         status: 'ok',
-        model: CHAT_MODEL
+        model: provider.model
       };
     } catch (error: any) {
+      const provider = createModelProvider();
       return {
         status: 'error',
-        model: CHAT_MODEL,
+        model: provider.model,
         error: error.message
       };
     }

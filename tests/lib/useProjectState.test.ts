@@ -36,6 +36,31 @@ describe('useProjectState', () => {
     expect(midpoint?.notes).toBe('Hero wins battle, loses war')
   })
 
+  it('reorderBeats moves one beat to another valid position', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.reorderBeats(0, 2))
+    expect(result.current.state.outline.beats[2].id).toBe('opening-image')
+  })
+
+  it('reorderBeats ignores out-of-range indexes', () => {
+    const { result } = renderHook(() => useProjectState())
+    const originalOrder = result.current.state.outline.beats.map(b => b.id)
+
+    act(() => result.current.reorderBeats(-1, 2))
+    act(() => result.current.reorderBeats(0, 99))
+
+    expect(result.current.state.outline.beats.map(b => b.id)).toEqual(originalOrder)
+  })
+
+  it('reorderBeats ignores same-index moves', () => {
+    const { result } = renderHook(() => useProjectState())
+    const originalOrder = result.current.state.outline.beats.map(b => b.id)
+
+    act(() => result.current.reorderBeats(2, 2))
+
+    expect(result.current.state.outline.beats.map(b => b.id)).toEqual(originalOrder)
+  })
+
   it('addCharacter appends to storyBible.characters', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.addCharacter({ name: 'Alex', role: 'Protagonist', wound: '', want: '', need: '', arc: '' }))
@@ -64,6 +89,19 @@ describe('useProjectState', () => {
     act(() => result.current.addMessage('oliver', msg))
     expect(result.current.state.agents.writingPartner.transcript).toHaveLength(0)
     expect(result.current.state.agents.alex.transcript).toHaveLength(0)
+  })
+
+  it('clearTranscript empties only the selected agent transcript', () => {
+    const { result } = renderHook(() => useProjectState())
+    const oliverMsg: TranscriptMessage = { id: 'msg1', role: 'assistant', content: 'hi', speaker: 'Oliver', ts: 1 }
+    const samMsg: TranscriptMessage = { id: 'msg2', role: 'assistant', content: 'hello', speaker: 'Sam', ts: 2 }
+
+    act(() => result.current.addMessage('oliver', oliverMsg))
+    act(() => result.current.addMessage('sam', samMsg))
+    act(() => result.current.clearTranscript('oliver'))
+
+    expect(result.current.state.agents.oliver.transcript).toHaveLength(0)
+    expect(result.current.state.agents.sam.transcript).toHaveLength(1)
   })
 
   it('updateScript stores rawHtml and scenes', () => {
