@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
-import { parseMention, getDefaultPersona, buildProjectContext } from './lib/wpRouting'
+import { parseMention, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { Shell } from './components/shell/Shell'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -10,6 +10,13 @@ import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WritersRoom } from './components/writing/WritersRoom'
 import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
+import type { ScriptFocusState } from './lib/scriptIndex'
+
+type ScriptSnapshot = {
+  rawHtml: string
+  scenes: ScriptScene[]
+  focus?: ScriptFocusState
+}
 
 function makeMessage(role: 'user' | 'assistant', content: string, speaker: string): TranscriptMessage {
   return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now() }
@@ -38,6 +45,38 @@ export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
   const [wpLoading, setWpLoading] = useState(false)
+  const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
+    rawHtml: project.state.script.rawHtml,
+    scenes: project.state.script.scenes,
+  })
+
+  const buildFreshProjectContext = useCallback(
+    (message: string) => buildProjectContext(project.state, message, {
+      script: {
+        ...latestScriptSnapshotRef.current,
+        focus: shellState.activeTab === 'script' && !shellState.writersRoomActive
+          ? latestScriptSnapshotRef.current.focus
+          : undefined,
+      },
+    }),
+    [project.state, shellState.activeTab, shellState.writersRoomActive]
+  )
+
+  const handleScriptSnapshotChange = useCallback((snapshot: ScriptSnapshot) => {
+    latestScriptSnapshotRef.current = snapshot
+  }, [])
+
+  const handleScriptChange = useCallback(
+    (html: string, scenes: ScriptScene[]) => {
+      latestScriptSnapshotRef.current = {
+        ...latestScriptSnapshotRef.current,
+        rawHtml: html,
+        scenes,
+      }
+      project.updateScript(html, scenes)
+    },
+    [project]
+  )
 
   const handleWPSend = useCallback(async (text: string) => {
     // Step 1: snapshot prior history before appending current message
@@ -56,16 +95,16 @@ export default function App() {
     // Step 4–8: API call
     setWpLoading(true)
     try {
-      const projectContext = buildProjectContext(project.state, messageToSend)
+      const projectContext = buildFreshProjectContext(messageToSend)
       const response = await postWPChat({ personaId, message: messageToSend, projectContext, conversationHistory })
-      const speakerName = PERSONAS[personaId]?.name ?? 'Writing Partner'
+      const speakerName = formatWritingPartnerSpeaker(personaId)
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch {
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Writing Partner'))
     } finally {
       setWpLoading(false)
     }
-  }, [project, shellState.activeTab, shellState.storyBibleSection])
+  }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
   const handleSpecialistSend = useCallback(async (specialistId: AgentId, text: string) => {
     // Snapshot BEFORE appending
@@ -74,14 +113,14 @@ export default function App() {
     project.addMessage(specialistId, makeMessage('user', text, 'Writer'))
 
     try {
-      const projectContext = buildProjectContext(project.state, text)
+      const projectContext = buildFreshProjectContext(text)
       const response = await postWPChat({ personaId: specialistId, message: text, projectContext, conversationHistory })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
     } catch {
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
     }
-  }, [project])
+  }, [buildFreshProjectContext, project])
 
   const renderCenter = () => {
     if (shellState.writersRoomActive) {
@@ -100,7 +139,8 @@ export default function App() {
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
             initialScript={project.state.script.rawHtml || undefined}
-            onScriptChange={(html: string, scenes: ScriptScene[]) => project.updateScript(html, scenes)}
+            onScriptChange={handleScriptChange}
+            onScriptSnapshotChange={handleScriptSnapshotChange}
           />
         )
       case 'synopsis':

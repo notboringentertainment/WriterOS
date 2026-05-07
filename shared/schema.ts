@@ -64,6 +64,7 @@ export interface StoryMemory {
     contextReason?: string
     contextLabel?: string
     pageRange?: { start: number; end: number }
+    selectedText?: string
   }
   characters: Record<string, Character>
   outline: {

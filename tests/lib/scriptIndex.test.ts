@@ -3,6 +3,7 @@ import {
   ESTIMATED_SCRIPT_PAGE_WORDS,
   buildScriptIndex,
   getDialogueWindowBySpeakers,
+  getFocusContext,
   speakersFromMessage,
 } from '../../client/src/lib/scriptIndex'
 
@@ -176,6 +177,66 @@ describe('script dialogue windows', () => {
     expect(window).not.toBeNull()
     expect(window!.label).toBe('Script excerpt')
     expect(window!.sceneHeadings).toEqual([])
+    expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+})
+
+describe('script focus windows', () => {
+  it('retrieves the current scene when focus is inside a scene', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">The emergency line rings.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - NIGHT</p>',
+      '<p data-element-type="action">Traffic freezes.</p>',
+    ].join(''))
+
+    const window = getFocusContext(index, { blockIndex: 2, updatedAt: 1 })
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('current-scene')
+    expect(window!.label).toBe('INT. CALL CENTER - NIGHT')
+    expect(window!.sceneHeadings).toEqual(['INT. CALL CENTER - NIGHT'])
+    expect(window!.dialogueSnippets).toEqual(['ISAIAH: I can still hear it breathing.'])
+    expect(window!.blocks.map(block => block.text)).not.toContain('EXT. FREEWAY - NIGHT')
+  })
+
+  it('marks selected text while still sending the surrounding scene', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="action">Dante closes the blinds.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join(''))
+
+    const window = getFocusContext(index, {
+      blockIndex: 3,
+      selectedText: 'war is over',
+      updatedAt: 1,
+    })
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('current-selection')
+    expect(window!.selectedText).toBe('war is over')
+    expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+
+  it('maps focus by source paragraph index when empty paragraphs are filtered out', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="action"></p>',
+      '<p data-element-type="action">Dante closes the blinds.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join(''))
+
+    expect(index.blocks.map(block => block.index)).toEqual([0, 2, 3, 4])
+
+    const window = getFocusContext(index, { blockIndex: 4, updatedAt: 1 })
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('current-scene')
     expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
   })
 })

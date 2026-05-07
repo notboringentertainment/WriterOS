@@ -283,10 +283,13 @@ describe('createContextSummary', () => {
         contextReason: 'requested-speakers',
         contextLabel: 'INT. LIFELINE HQ - DANTE OFFICE - DAY',
         pageRange: { start: 17, end: 18 },
+        selectedText: 'Your war is over, brotha.',
       },
     }), 'maya')
 
     expect(summary).toContain('SCRIPT CONTEXT:')
+    expect(summary).toContain('SELECTED TEXT:')
+    expect(summary).toContain('Your war is over, brotha.')
     expect(summary).toContain('about 48 estimated pages')
     expect(summary).toContain('INT. LIFELINE HQ - DANTE OFFICE - DAY | estimated pages 17-18 | requested-speakers')
     expect(summary).toContain('DANTE: Your war is over, brotha.')

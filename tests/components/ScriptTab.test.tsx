@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { ScriptTab } from '../../client/src/components/writing/ScriptTab'
+import type { Editor } from '@tiptap/core'
 
 describe('ScriptTab', () => {
   it('renders element type toolbar', () => {
@@ -37,5 +38,35 @@ describe('ScriptTab', () => {
     expect(() =>
       render(<ScriptTab onScriptChange={onScriptChange} />)
     ).not.toThrow()
+  })
+
+  it('publishes fresh script snapshots before debounced persistence', async () => {
+    let editor: Editor | undefined
+    const onScriptSnapshotChange = vi.fn()
+    const onScriptChange = vi.fn()
+    const onEditorReady = vi.fn((readyEditor: Editor) => {
+      editor = readyEditor
+    })
+
+    render(
+      <ScriptTab
+        onEditorReady={onEditorReady}
+        onScriptChange={onScriptChange}
+        onScriptSnapshotChange={onScriptSnapshotChange}
+      />
+    )
+
+    await waitFor(() => expect(onEditorReady).toHaveBeenCalledOnce())
+    const persistedCallsBeforeEdit = onScriptChange.mock.calls.length
+
+    act(() => {
+      editor!.commands.insertContent('Fresh visible line')
+    })
+
+    await waitFor(() => {
+      const latestSnapshot = onScriptSnapshotChange.mock.calls.at(-1)?.[0]
+      expect(latestSnapshot.rawHtml).toContain('Fresh visible line')
+    })
+    expect(onScriptChange).toHaveBeenCalledTimes(persistedCallsBeforeEdit)
   })
 })

@@ -5,6 +5,7 @@ import { ScreenplayToolbar } from './screenplay/ScreenplayToolbar'
 import { SceneGutter } from './screenplay/SceneGutter'
 import { ElementType } from '../../lib/screenplay'
 import type { ScriptScene } from '../../lib/projectState'
+import type { ScriptFocusState } from '../../lib/scriptIndex'
 
 interface SceneHeading {
   index: number
@@ -17,6 +18,7 @@ interface ScriptTabProps {
   onToggleFocusMode?: () => void
   initialScript?: string
   onScriptChange?: (html: string, scenes: ScriptScene[]) => void
+  onScriptSnapshotChange?: (snapshot: { rawHtml: string; scenes: ScriptScene[]; focus?: ScriptFocusState }) => void
   onEditorReady?: (editor: Editor) => void
 }
 
@@ -25,6 +27,7 @@ export function ScriptTab({
   onToggleFocusMode = () => {},
   initialScript,
   onScriptChange,
+  onScriptSnapshotChange,
   onEditorReady,
 }: ScriptTabProps) {
   const [elementType, setElementType] = useState<ElementType>('scene-heading')
@@ -68,6 +71,21 @@ export function ScriptTab({
     [onScriptChange]
   )
 
+  const handleContentSnapshotChange = useCallback(
+    (snapshot: { html: string; focus?: ScriptFocusState }) => {
+      onScriptSnapshotChange?.({
+        rawHtml: snapshot.html,
+        scenes: scenesRef.current.map((h, i) => ({
+          id: `scene-${i}`,
+          heading: h.text,
+          index: h.index,
+        })),
+        focus: snapshot.focus,
+      })
+    },
+    [onScriptSnapshotChange]
+  )
+
   const handleSceneClick = useCallback((nodePos: number) => {
     const el = document.querySelector(`[data-node-pos="${nodePos}"]`) as HTMLElement | null
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -95,6 +113,7 @@ export function ScriptTab({
             onPageCountChange={setPageCount}
             onElementTypeChange={setElementType}
             onSceneHeadingsChange={handleSceneHeadingsChange}
+            onContentSnapshotChange={handleContentSnapshotChange}
           />
         </div>
       </div>

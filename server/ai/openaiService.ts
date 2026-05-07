@@ -248,6 +248,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     ? `SCRIPT EXCERPT (${script?.excerptWordCount ?? wordCount(rawScriptExcerpt)} words${script?.excerptTruncated ? `, first ${script?.excerptWordLimit ?? 500} words` : ''}):\n${rawScriptExcerpt}`
     : '';
   const pageRange = script?.pageRange;
+  const selectedText = script?.selectedText?.trim();
   const scriptContextLine = script?.contextReason
     ? `SCRIPT CONTEXT:\n- ${[
       script.contextLabel,
@@ -257,6 +258,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     : '';
   const scriptBlocks = [
     scriptContextLine,
+    selectedText ? `SELECTED TEXT:\n${truncate(selectedText, 600)}` : '',
     sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
     scriptCharacterNames ? `SCRIPT CHARACTER NAMES:\n- ${scriptCharacterNames}` : '',
     scriptExcerpt,

@@ -3,6 +3,7 @@ import {
   SCRIPT_EXCERPT_WORD_LIMIT,
   parseMention,
   getDefaultPersona,
+  formatWritingPartnerSpeaker,
   buildProjectContext,
   extractScriptContext,
 } from '../../client/src/lib/wpRouting'
@@ -17,8 +18,18 @@ describe('parseMention', () => {
     expect(parseMention('')).toBeNull()
   })
 
-  it('returns null for @writingPartner mention', () => {
-    expect(parseMention('@WritingPartner help me')).toBeNull()
+  it('parses @WritingPartner as the general partner override', () => {
+    const result = parseMention('@WritingPartner help me')
+    expect(result).not.toBeNull()
+    expect(result!.personaId).toBe('writingPartner')
+    expect(result!.strippedText).toBe('help me')
+  })
+
+  it('parses @Partner as the general partner override', () => {
+    const result = parseMention('@Partner stay broad')
+    expect(result).not.toBeNull()
+    expect(result!.personaId).toBe('writingPartner')
+    expect(result!.strippedText).toBe('stay broad')
   })
 
   it('returns null for unknown mention', () => {
@@ -73,6 +84,18 @@ describe('parseMention', () => {
     expect(result).not.toBeNull()
     expect(result!.personaId).toBe('sam')
     expect(result!.strippedText).toBe('')
+  })
+})
+
+describe('formatWritingPartnerSpeaker', () => {
+  it('labels general partner responses plainly', () => {
+    expect(formatWritingPartnerSpeaker('writingPartner')).toBe('Writing Partner')
+  })
+
+  it('labels auto-routed specialist responses as writing partner delegates', () => {
+    expect(formatWritingPartnerSpeaker('sam')).toBe('Writing Partner (@Sam)')
+    expect(formatWritingPartnerSpeaker('oliver')).toBe('Writing Partner (@Oliver)')
+    expect(formatWritingPartnerSpeaker('maya')).toBe('Writing Partner (@Maya)')
   })
 })
 
@@ -357,5 +380,101 @@ describe('extractScriptContext', () => {
     expect(focused.script.actionSnippets).toEqual(['Dante shuts the office door.'])
     expect(focused.script.excerpt).toContain('Dante shuts the office door.')
     expect(focused.script.excerpt).not.toContain('Early line 0.')
+  })
+
+  it('uses current scene focus for current-scene requests', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">The emergency line rings.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - NIGHT</p>',
+      '<p data-element-type="action">Traffic freezes.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'What about this scene?', {
+      script: {
+        rawHtml: state.script.rawHtml,
+        scenes: [],
+        focus: { blockIndex: 2, updatedAt: 1 },
+      },
+    })
+
+    expect(ctx.script.contextReason).toBe('current-scene')
+    expect(ctx.script.contextLabel).toBe('INT. CALL CENTER - NIGHT')
+    expect(ctx.script.sceneHeadings).toEqual(['INT. CALL CENTER - NIGHT'])
+    expect(ctx.script.dialogueSnippets).toEqual(['ISAIAH: I can still hear it breathing.'])
+    expect(ctx.script.excerpt).not.toContain('EXT. FREEWAY - NIGHT')
+  })
+
+  it('does not leak unrelated dialogue into an action-only focused scene', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. EMPTY HALL - NIGHT</p>',
+      '<p data-element-type="action">The light above the elevator flickers.</p>',
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'What about this scene?', {
+      script: {
+        rawHtml: state.script.rawHtml,
+        scenes: [],
+        focus: { blockIndex: 1, updatedAt: 1 },
+      },
+    })
+
+    expect(ctx.script.contextReason).toBe('current-scene')
+    expect(ctx.script.contextLabel).toBe('INT. EMPTY HALL - NIGHT')
+    expect(ctx.script.dialogueSnippets).toEqual([])
+    expect(ctx.script.actionSnippets).toEqual(['The light above the elevator flickers.'])
+    expect(ctx.script.excerpt).not.toContain('Your war is over')
+  })
+
+  it('does not treat bare "this" as a current-focus request', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. FOCUSED ROOM - NIGHT</p>',
+      '<p data-element-type="action">The phone rings.</p>',
+      '<p data-element-type="scene-heading">EXT. OTHER STREET - DAY</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Is this working?', {
+      script: {
+        rawHtml: state.script.rawHtml,
+        scenes: [],
+        focus: { blockIndex: 1, updatedAt: 1 },
+      },
+    })
+
+    expect(ctx.script.contextReason).toBeUndefined()
+    expect(ctx.script.sceneHeadings).toEqual(['INT. FOCUSED ROOM - NIGHT', 'EXT. OTHER STREET - DAY'])
+    expect(ctx.script.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+
+  it('privileges selected script text when present', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="action">Dante closes the blinds.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Polish this line.', {
+      script: {
+        rawHtml: state.script.rawHtml,
+        scenes: [],
+        focus: { blockIndex: 3, selectedText: 'Your war is over', updatedAt: 1 },
+      },
+    })
+
+    expect(ctx.script.contextReason).toBe('current-selection')
+    expect(ctx.script.selectedText).toBe('Your war is over')
+    expect(ctx.script.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
   })
 })

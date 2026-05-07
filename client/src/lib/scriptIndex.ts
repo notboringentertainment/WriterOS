@@ -56,13 +56,20 @@ export interface ScriptIndex {
 }
 
 export interface ScriptContextWindow {
-  reason: 'requested-speakers'
+  reason: 'requested-speakers' | 'current-selection' | 'current-scene' | 'current-block'
   label?: string
   pageRange?: { start: number; end: number }
   sceneHeadings: string[]
   blocks: ScriptBlockIndex[]
   dialogueSnippets: string[]
   actionSnippets: string[]
+  selectedText?: string
+}
+
+export interface ScriptFocusState {
+  blockIndex?: number
+  selectedText?: string
+  updatedAt: number
 }
 
 function normalizeWhitespace(value: string): string {
@@ -119,14 +126,15 @@ function pageRangeForWords(wordStart: number, wordEnd: number): { start: number;
   }
 }
 
-function parseElements(rawHtml: string): Array<{ type: ElementType; text: string }> {
+function parseElements(rawHtml: string): Array<{ sourceIndex: number; type: ElementType; text: string }> {
   if (!rawHtml.trim() || typeof DOMParser === 'undefined') return []
 
   const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
   const elements = Array.from(doc.body.querySelectorAll<HTMLElement>('[data-element-type], p'))
 
   return elements
-    .map(el => ({
+    .map((el, sourceIndex) => ({
+      sourceIndex,
       type: normalizeElementType(el.getAttribute('data-element-type')),
       text: normalizeWhitespace(el.textContent ?? ''),
     }))
@@ -180,11 +188,12 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
   let activeScene: ScriptSceneIndex | undefined
   let totalWordCount = 0
 
-  parsed.forEach((block, index) => {
+  parsed.forEach((block) => {
     const wordStart = totalWordCount
     const blockWordCount = countWords(block.text)
     const wordEnd = wordStart + blockWordCount
     const pageNumber = estimatedPageForWord(wordStart)
+    const sourceIndex = block.sourceIndex
 
     if (block.type === 'scene-heading') {
       activeSpeaker = ''
@@ -194,8 +203,8 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
         index: scenes.length + 1,
         pageStart: pageNumber,
         pageEnd: pageNumber,
-        blockStart: index,
-        blockEnd: index,
+        blockStart: sourceIndex,
+        blockEnd: sourceIndex,
         wordStart,
         wordEnd,
       }
@@ -212,8 +221,8 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
       : undefined
 
     const indexedBlock: ScriptBlockIndex = {
-      id: `block-${index + 1}-${block.type}-${slug(block.text)}`,
-      index,
+      id: `block-${sourceIndex + 1}-${block.type}-${slug(block.text)}`,
+      index: sourceIndex,
       type: block.type,
       text: block.text,
       speaker,
@@ -227,7 +236,7 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
 
     if (activeScene) {
       const scenePages = pageRangeForWords(activeScene.wordStart, wordEnd)
-      activeScene.blockEnd = index
+      activeScene.blockEnd = sourceIndex
       activeScene.wordEnd = wordEnd
       activeScene.pageStart = scenePages.start
       activeScene.pageEnd = scenePages.end
@@ -258,6 +267,43 @@ export function speakersFromMessage(index: ScriptIndex, userMessage: string): st
 
 function dialogueSnippet(block: ScriptBlockIndex): string {
   return block.speaker ? `${block.speaker}: ${block.text}` : block.text
+}
+
+function pageRangeForBlocks(blocks: ScriptBlockIndex[]): { start: number; end: number } | undefined {
+  if (!blocks.length) return undefined
+  const pageNumbers = blocks.map(block => block.pageNumber)
+  return {
+    start: Math.min(...pageNumbers),
+    end: Math.max(...pageNumbers),
+  }
+}
+
+function contextWindowFromBlocks(
+  blocks: ScriptBlockIndex[],
+  reason: ScriptContextWindow['reason'],
+  label?: string,
+  selectedText?: string,
+): ScriptContextWindow | null {
+  if (!blocks.length) return null
+
+  const sceneHeadings = Array.from(new Set(
+    blocks
+      .filter(block => block.type === 'scene-heading')
+      .map(block => block.text)
+  ))
+  const dialogueBlocks = blocks.filter(block => block.type === 'dialogue')
+  const actionBlocks = blocks.filter(block => block.type === 'action')
+
+  return {
+    reason,
+    label,
+    pageRange: pageRangeForBlocks(blocks),
+    sceneHeadings,
+    blocks,
+    dialogueSnippets: dialogueBlocks.map(dialogueSnippet),
+    actionSnippets: actionBlocks.map(block => block.text),
+    selectedText,
+  }
 }
 
 function sceneContainsSpeakers(blocks: ScriptBlockIndex[], speakers: string[]): boolean {
@@ -315,4 +361,33 @@ export function getDialogueWindowBySpeakers(
     dialogueSnippets: dialogueBlocks.slice(0, maxDialogueSnippets).map(dialogueSnippet),
     actionSnippets: actionBlocks.map(block => block.text),
   }
+}
+
+export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): ScriptContextWindow | null {
+  if (!focus || focus.blockIndex === undefined || !index.blocks.length) return null
+
+  const focusedBlock = index.blocks.find(block => block.index === focus.blockIndex)
+  if (!focusedBlock) return null
+
+  const selectedText = focus.selectedText?.trim()
+  if (selectedText) {
+    const selectionBlocks = focusedBlock.sceneId
+      ? index.blocks.filter(block => block.sceneId === focusedBlock.sceneId)
+      : index.blocks.slice(Math.max(0, focusedBlock.index - 3), focusedBlock.index + 4)
+    return contextWindowFromBlocks(
+      selectionBlocks,
+      'current-selection',
+      focusedBlock.sceneHeading ?? 'Current selection',
+      selectedText,
+    )
+  }
+
+  if (focusedBlock.sceneId) {
+    const sceneBlocks = index.blocks.filter(block => block.sceneId === focusedBlock.sceneId)
+    return contextWindowFromBlocks(sceneBlocks, 'current-scene', focusedBlock.sceneHeading)
+  }
+
+  const focusedBlockPosition = index.blocks.findIndex(block => block.index === focusedBlock.index)
+  const nearbyBlocks = index.blocks.slice(Math.max(0, focusedBlockPosition - 3), focusedBlockPosition + 4)
+  return contextWindowFromBlocks(nearbyBlocks, 'current-block', 'Current script position')
 }

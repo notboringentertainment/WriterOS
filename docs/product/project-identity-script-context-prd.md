@@ -92,6 +92,7 @@ The toolbar estimates page count from rendered height, but the page concept is n
 - No background embedding/vector database requirement in this phase.
 - No autonomous agent-to-agent delegation.
 - No destructive rewrite of the existing screenplay editor.
+- No Treatment editor implementation in the current Phase 3/4 slice. Treatment is captured below as a planned surface because it affects context strategy, but it should not interrupt script focus/retrieval work.
 
 ## Current State Review
 
@@ -295,6 +296,39 @@ Specialist Lens should decide how the pack is presented:
 - Sam: synopsis/logline plus overview, not raw page text unless requested.
 - Alex: progress/focus, blockers, and revision scope.
 
+### Planned Treatment Surface
+
+WriterOS should add a Treatment surface in a later phase. A treatment is a prose document that tells the full story of a film, pilot, or screenplay before or alongside script drafting. It is longer and more vivid than a synopsis, but less mechanically structured than an outline.
+
+Treatment should have a distinct product role:
+
+- **Synopsis:** reader/pitch-facing compressed story spine.
+- **Outline:** writer-facing structural map of beats, acts, scenes, or sequences.
+- **Treatment:** writer-facing cinematic prose version of the full story, including major turns, emotional flow, tone, character arcs, and ending when known.
+- **Script:** formatted screenplay pages and line-level craft.
+- **Story Bible:** reference source for characters, world, tone, rules, and continuity.
+
+Alex should be the primary specialist for Treatment because it is the natural bridge between concept/outline and actual pages. Sam may help compress treatment material into pitch-facing synopsis/logline work; Oliver may help diagnose structural gaps; Casey, Maya, and Zoe may use treatment passages through their specialist lenses.
+
+Treatment context should influence retrieval strategy:
+
+- Broad story questions may prefer Treatment before raw Script excerpts.
+- Draft-readiness questions should compare Treatment, Outline, and Script progress.
+- Script craft questions should still prioritize Script context.
+- Pitch questions should prioritize Synopsis, then Treatment as supporting story detail.
+
+Recommended future treatment structure:
+
+- Header: title, writer, format, genre, version/date.
+- Logline.
+- Concept / overview.
+- Main characters with want, need, flaw/wound, secret/contradiction, arc, relationship pressure.
+- Story prose in present-tense cinematic paragraphs, organized by opening / act movements or sequences.
+- Visual and tonal language.
+- Open questions and unsolved decisions.
+
+AI production notes, if added later, should remain separate from treatment prose so the Treatment surface still reads like a story document rather than a prompt sheet.
+
 ## UX Requirements
 
 ### Title Editing
@@ -340,6 +374,18 @@ The script index may be:
 3. Stored in `ProjectState.script.index` only if performance requires it.
 
 Recommendation: build/memoize first; persist only stable metadata such as `pageCount`, `wordCount`, `scenes`, and focus state.
+
+### Storage Boundary
+
+Storage is a tracked architectural concern, but not the next implementation slice.
+
+Current recommendation:
+
+- Persist authored source documents and user-visible state: project title, raw script HTML, story bible, outline, synopsis, transcripts, and later treatment prose.
+- Keep script indexes, estimated pages, scene spans, speaker windows, and retrieval packs derived and rebuildable from source documents.
+- Do not persist large derived retrieval data unless performance forces it.
+- Treat `localStorage` as acceptable short-term project persistence for this branch, but not the long-term storage plan for full scripts, transcripts, summaries, and project memory.
+- Make an explicit storage decision before implementing generated summaries, durable agent memory, or multi-project libraries.
 
 ### Schema Versioning
 
@@ -536,6 +582,25 @@ Success criteria:
 
 - Agents can answer first-act / whole-script / continuity questions with meaningful context.
 - Summary staleness is visible or safely handled.
+
+### Later Phase: Treatment Surface
+
+Goal: add a full-story prose surface that helps writers move from outline to pages and gives agents a stronger whole-story document.
+
+Tasks:
+
+- Add Treatment as a fifth writing surface.
+- Persist treatment prose as authored source text, not derived retrieval data.
+- Provide a treatment template based on title, format, genre, logline, concept, characters, story prose, visual/tonal language, and open questions.
+- Make Alex the primary helper for treatment development, draft readiness, gap diagnosis, and page-generation planning.
+- Update context routing so broad story/process questions can use Treatment before raw Script excerpts when appropriate.
+- Keep AI production notes separate from treatment prose.
+
+Success criteria:
+
+- Writer can develop a story in treatment form before writing a full script.
+- Alex can compare Treatment, Outline, and Script progress.
+- Treatment improves broad story answers without replacing Synopsis, Outline, Script, or Story Bible.
 
 ## Testing Strategy
 

@@ -3,7 +3,9 @@ import { getProjectContextTitle } from './projectIdentity'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
+  getFocusContext,
   speakersFromMessage,
+  type ScriptFocusState,
 } from './scriptIndex'
 
 export type PersonaId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
@@ -47,9 +49,20 @@ export interface ScriptContext {
   contextReason?: string
   contextLabel?: string
   pageRange?: { start: number; end: number }
+  selectedText?: string
 }
 
-const SPECIALIST_MENTIONS: Record<string, Exclude<PersonaId, 'writingPartner'>> = {
+export interface ProjectContextOptions {
+  script?: {
+    rawHtml?: string
+    scenes?: ProjectState['script']['scenes']
+    focus?: ScriptFocusState
+  }
+}
+
+const PERSONA_MENTIONS: Record<string, PersonaId> = {
+  partner: 'writingPartner',
+  writingpartner: 'writingPartner',
   sam: 'sam',
   casey: 'casey',
   oliver: 'oliver',
@@ -64,7 +77,7 @@ export function parseMention(text: string): { personaId: PersonaId; strippedText
   const match = MENTION_RE.exec(text)
   if (!match) return null
   const key = match[1].toLowerCase()
-  const personaId = SPECIALIST_MENTIONS[key]
+  const personaId = PERSONA_MENTIONS[key]
   if (!personaId) return null
   return { personaId, strippedText: text.slice(match[0].length) }
 }
@@ -72,6 +85,21 @@ export function parseMention(text: string): { personaId: PersonaId; strippedText
 export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'story-bible'
 
 const ZOE_SECTIONS = new Set(['world', 'rules'])
+
+const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
+  writingPartner: 'Writing Partner',
+  sam: 'Sam',
+  casey: 'Casey',
+  oliver: 'Oliver',
+  maya: 'Maya',
+  zoe: 'Zoe',
+  alex: 'Alex',
+}
+
+export function formatWritingPartnerSpeaker(personaId: PersonaId): string {
+  if (personaId === 'writingPartner') return 'Writing Partner'
+  return `Writing Partner (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
+}
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -89,25 +117,33 @@ function capWords(value: string, maxWords: number): { text: string; wordCount: n
   return { text: trimmed.slice(0, end).trim(), wordCount: maxWords, truncated: true }
 }
 
-export function extractScriptContext(rawHtml: string, userMessage = ''): ScriptContext {
+function wantsCurrentFocus(userMessage: string): boolean {
+  return /\b(this scene|this page|this line|these lines|current scene|current page|current line|selected text|selection|on the page|right here|here in the script)\b/i.test(userMessage)
+}
+
+export function extractScriptContext(rawHtml: string, userMessage = '', focus?: ScriptFocusState): ScriptContext {
   const index = buildScriptIndex(rawHtml)
   const requestedSpeakers = speakersFromMessage(index, userMessage)
   const dialogueWindow = getDialogueWindowBySpeakers(index, requestedSpeakers, SCRIPT_CONTEXT_LIST_LIMIT)
-  const sourceBlocks = dialogueWindow?.blocks.length ? dialogueWindow.blocks : index.blocks
+  const focusWindow = !dialogueWindow && (focus?.selectedText?.trim() || wantsCurrentFocus(userMessage))
+    ? getFocusContext(index, focus)
+    : null
+  const contextWindow = dialogueWindow ?? focusWindow
+  const sourceBlocks = contextWindow?.blocks.length ? contextWindow.blocks : index.blocks
   const plainText = sourceBlocks.length
     ? sourceBlocks.map(block => block.text).join('\n')
     : index.plainText
   const excerpt = capWords(plainText, SCRIPT_EXCERPT_WORD_LIMIT)
-  const sceneHeadings = dialogueWindow?.sceneHeadings.length
-    ? dialogueWindow.sceneHeadings
+  const sceneHeadings = contextWindow
+    ? contextWindow.sceneHeadings
     : index.scenes.map(scene => scene.heading)
-  const dialogueSnippets = dialogueWindow?.dialogueSnippets.length
-    ? dialogueWindow.dialogueSnippets
+  const dialogueSnippets = contextWindow
+    ? contextWindow.dialogueSnippets
     : index.blocks
       .filter(block => block.type === 'dialogue')
       .map(block => block.speaker ? `${block.speaker}: ${block.text}` : block.text)
-  const actionSnippets = dialogueWindow?.actionSnippets.length
-    ? dialogueWindow.actionSnippets
+  const actionSnippets = contextWindow
+    ? contextWindow.actionSnippets
     : index.blocks
       .filter(block => block.type === 'action')
       .map(block => block.text)
@@ -124,9 +160,10 @@ export function extractScriptContext(rawHtml: string, userMessage = ''): ScriptC
     totalWordCount: index.totalWordCount,
     estimatedPageCount: index.estimatedPageCount,
     sceneCount: index.scenes.length,
-    contextReason: dialogueWindow?.reason,
-    contextLabel: dialogueWindow?.label,
-    pageRange: dialogueWindow?.pageRange,
+    contextReason: contextWindow?.reason,
+    contextLabel: contextWindow?.label,
+    pageRange: contextWindow?.pageRange,
+    selectedText: contextWindow?.selectedText,
   }
 }
 
@@ -140,16 +177,18 @@ export function getDefaultPersona(activeTab: ActiveTab, storyBibleSection: strin
   }
 }
 
-export function buildProjectContext(state: ProjectState, userMessage = ''): ProjectContext {
+export function buildProjectContext(state: ProjectState, userMessage = '', options: ProjectContextOptions = {}): ProjectContext {
   const synopsisSections = state.synopsis.sections
   const storyBible = state.storyBible
   const world = storyBible.world
+  const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
+  const scriptScenes = options.script?.scenes ?? state.script.scenes
 
   return {
     title: getProjectContextTitle(state.meta.title),
     genre: text(state.meta.genre),
     logline: text(state.synopsis.logline),
-    script: extractScriptContext(text(state.script.rawHtml), userMessage),
+    script: extractScriptContext(text(scriptRawHtml), userMessage, options.script?.focus),
     synopsis: {
       logline: text(state.synopsis.logline),
       sections: {
@@ -176,7 +215,7 @@ export function buildProjectContext(state: ProjectState, userMessage = ''): Proj
       notes: text(b.notes),
       linkedSceneIds: Array.isArray(b.linkedSceneIds) ? b.linkedSceneIds : [],
     })),
-    scenes: state.script.scenes,
+    scenes: scriptScenes,
     storyBible: {
       themes: text(storyBible.themes),
       rules: text(storyBible.rules),

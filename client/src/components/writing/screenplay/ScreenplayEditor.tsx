@@ -7,6 +7,7 @@ import Text from '@tiptap/extension-text'
 import History from '@tiptap/extension-history'
 import { ScreenplayExtension } from './ScreenplayExtension'
 import { ElementType, countWords } from '../../../lib/screenplay'
+import type { ScriptFocusState } from '../../../lib/scriptIndex'
 import './screenplay.css'
 
 interface ScreenplayEditorProps {
@@ -17,6 +18,7 @@ interface ScreenplayEditorProps {
   onPageCountChange?: (count: number) => void
   onElementTypeChange?: (type: ElementType) => void
   onSceneHeadingsChange?: (headings: Array<{ index: number; text: string; nodePos: number }>) => void
+  onContentSnapshotChange?: (snapshot: { html: string; focus?: ScriptFocusState }) => void
 }
 
 export function ScreenplayEditor({
@@ -27,12 +29,15 @@ export function ScreenplayEditor({
   onPageCountChange,
   onElementTypeChange,
   onSceneHeadingsChange,
+  onContentSnapshotChange,
 }: ScreenplayEditorProps) {
   const editorDivRef = useRef<HTMLDivElement>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Stable ref so the debounced callback always calls the latest prop value
   const onContentChangeRef = useRef(onContentChange)
   onContentChangeRef.current = onContentChange
+  const onContentSnapshotChangeRef = useRef(onContentSnapshotChange)
+  onContentSnapshotChangeRef.current = onContentSnapshotChange
 
   // Clean up debounce timer on unmount
   useEffect(() => {
@@ -69,16 +74,42 @@ export function ScreenplayEditor({
     [onSceneHeadingsChange, onWordCountChange, updatePageCount]
   )
 
+  const getFocusState = useCallback((editor: Editor): ScriptFocusState | undefined => {
+    const { selection } = editor.state
+    const { $anchor } = selection
+    const node = $anchor.parent
+    if (node.type.name !== 'paragraph') return undefined
+
+    const selectedText = selection.empty
+      ? ''
+      : editor.state.doc.textBetween(selection.from, selection.to, '\n').trim()
+
+    return {
+      blockIndex: $anchor.index(0),
+      selectedText,
+      updatedAt: Date.now(),
+    }
+  }, [])
+
+  const publishContentSnapshot = useCallback((editor: Editor) => {
+    onContentSnapshotChangeRef.current?.({
+      html: editor.getHTML(),
+      focus: getFocusState(editor),
+    })
+  }, [getFocusState])
+
   const editor = useEditor({
     extensions: [Document, Paragraph, Text, History, ScreenplayExtension],
     content: initialContent || '<p data-element-type="scene-heading"></p>',
 
     onCreate({ editor }) {
       onEditorReady?.(editor)
+      publishContentSnapshot(editor)
     },
 
     onUpdate({ editor }) {
       publishEditorMetrics(editor)
+      publishContentSnapshot(editor)
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
@@ -91,6 +122,7 @@ export function ScreenplayEditor({
       const node = $anchor.parent
       if (node.type.name === 'paragraph') {
         onElementTypeChange?.((node.attrs.elementType as ElementType) ?? 'action')
+        publishContentSnapshot(editor)
       }
     },
   })
@@ -100,6 +132,7 @@ export function ScreenplayEditor({
 
     const frame = requestAnimationFrame(() => {
       publishEditorMetrics(editor)
+      publishContentSnapshot(editor)
     })
 
     return () => cancelAnimationFrame(frame)

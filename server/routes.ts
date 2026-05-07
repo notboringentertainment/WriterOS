@@ -89,6 +89,7 @@ const scriptContextSchema = z.object({
     start: z.number(),
     end: z.number(),
   }).optional(),
+  selectedText: z.string().optional(),
 }).optional();
 
 const wpChatSchema = z.object({
@@ -246,6 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           contextReason: scriptContext.contextReason,
           contextLabel: scriptContext.contextLabel,
           pageRange: scriptContext.pageRange,
+          selectedText: scriptContext.selectedText,
         } : undefined,
         characters: Object.fromEntries(
           data.projectContext.characters.map(character => [
