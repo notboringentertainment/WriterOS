@@ -4,6 +4,7 @@ import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
   getFocusContext,
+  getPageRangeContext,
   speakersFromMessage,
 } from '../../client/src/lib/scriptIndex'
 
@@ -178,6 +179,74 @@ describe('script dialogue windows', () => {
     expect(window!.label).toBe('Script excerpt')
     expect(window!.sceneHeadings).toEqual([])
     expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+})
+
+describe('page range windows', () => {
+  function buildTwoPageScript() {
+    const fillerHtml = Array.from({ length: ESTIMATED_SCRIPT_PAGE_WORDS }, (_, i) =>
+      `<p data-element-type="action">filler${i}</p>`
+    ).join('')
+    const page2Html = [
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">End of the line.</p>',
+    ].join('')
+    return fillerHtml + page2Html
+  }
+
+  it('retrieves blocks on the requested page', () => {
+    const index = buildScriptIndex(buildTwoPageScript())
+    expect(index.estimatedPageCount).toBeGreaterThanOrEqual(2)
+
+    const window = getPageRangeContext(index, 2)
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('requested-page-range')
+    expect(window!.label).toBe('Page 2')
+    expect(window!.pageRange).toEqual({ start: 2, end: 2 })
+    expect(window!.sceneHeadings).toEqual(['EXT. ROOFTOP - DAY'])
+    expect(window!.dialogueSnippets).toEqual(['ISAIAH: End of the line.'])
+    expect(window!.blocks.every(b => b.pageNumber === 2)).toBe(true)
+  })
+
+  it('retrieves a block that starts earlier but overlaps the requested page', () => {
+    const longAction = Array.from({ length: ESTIMATED_SCRIPT_PAGE_WORDS + 20 }, (_, i) => `road${i}`).join(' ')
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">EXT. DESERT ROAD - DAY</p>',
+      `<p data-element-type="action">${longAction}</p>`,
+    ].join(''))
+
+    const window = getPageRangeContext(index, 2)
+
+    expect(window).not.toBeNull()
+    expect(window!.label).toBe('Page 2')
+    expect(window!.pageRange).toEqual({ start: 2, end: 2 })
+    expect(window!.sceneHeadings).toEqual(['EXT. DESERT ROAD - DAY'])
+    expect(window!.actionSnippets[0]).toContain('road260')
+    expect(window!.blocks.some(block => block.pageNumber === 1)).toBe(true)
+  })
+
+  it('retrieves blocks spanning a page range', () => {
+    const index = buildScriptIndex(buildTwoPageScript())
+
+    const window = getPageRangeContext(index, 1, 2)
+
+    expect(window).not.toBeNull()
+    expect(window!.label).toBe('Pages 1–2')
+    expect(window!.pageRange).toEqual({ start: 1, end: 2 })
+    expect(window!.sceneHeadings).toContain('EXT. ROOFTOP - DAY')
+    expect(window!.blocks.length).toBeGreaterThan(ESTIMATED_SCRIPT_PAGE_WORDS)
+  })
+
+  it('returns null when the requested page exceeds the script', () => {
+    const index = buildScriptIndex('<p data-element-type="action">Short script.</p>')
+    expect(getPageRangeContext(index, 5)).toBeNull()
+  })
+
+  it('returns null for an empty index', () => {
+    const index = buildScriptIndex('')
+    expect(getPageRangeContext(index, 1)).toBeNull()
   })
 })
 

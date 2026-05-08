@@ -523,4 +523,75 @@ describe('extractScriptContext', () => {
     expect(ctx.script.selectedText).toBe('Your war is over')
     expect(ctx.script.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
   })
+
+  it('uses page range context when user requests a specific page number', () => {
+    const state = defaultProjectState()
+    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+      `<p data-element-type="action">filler${i}</p>`
+    ).join('')
+    const page2Html = [
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">End of the line.</p>',
+    ].join('')
+    state.script.rawHtml = fillerHtml + page2Html
+
+    const ctx = buildProjectContext(state, 'What is happening on page 2?')
+
+    expect(ctx.script.contextReason).toBe('requested-page-range')
+    expect(ctx.script.contextLabel).toBe('Page 2')
+    expect(ctx.script.pageRange).toEqual({ start: 2, end: 2 })
+    expect(ctx.script.sceneHeadings).toContain('EXT. ROOFTOP - DAY')
+    expect(ctx.script.dialogueSnippets).toContain('ISAIAH: End of the line.')
+    expect(ctx.script.excerpt).not.toContain('filler0')
+  })
+
+  it('uses page range context when user requests a page range', () => {
+    const state = defaultProjectState()
+    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+      `<p data-element-type="action">filler${i}</p>`
+    ).join('')
+    const page2Html = [
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="dialogue">End of the line.</p>',
+    ].join('')
+    state.script.rawHtml = fillerHtml + page2Html
+
+    const ctx = buildProjectContext(state, 'Can you review pages 1 to 2?')
+
+    expect(ctx.script.contextReason).toBe('requested-page-range')
+    expect(ctx.script.contextLabel).toBe('Pages 1–2')
+    expect(ctx.script.pageRange).toEqual({ start: 1, end: 2 })
+    expect(ctx.script.sceneHeadings).toContain('EXT. ROOFTOP - DAY')
+  })
+
+  it('does not fall back to unrelated script context when a requested page is missing', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'What happens on page 40 with Dante?')
+
+    expect(ctx.script.contextReason).toBe('requested-page-range')
+    expect(ctx.script.contextLabel).toBe('Page 40')
+    expect(ctx.script.pageRange).toEqual({ start: 40, end: 40 })
+    expect(ctx.script.excerpt).toBe('')
+    expect(ctx.script.sceneHeadings).toEqual([])
+    expect(ctx.script.dialogueSnippets).toEqual([])
+  })
+
+  it('does not treat "page" without a number as a page range request', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="dialogue">Some dialogue.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Is this page layout correct?')
+
+    expect(ctx.script.contextReason).toBeUndefined()
+  })
 })

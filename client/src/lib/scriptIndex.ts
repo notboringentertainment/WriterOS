@@ -56,7 +56,7 @@ export interface ScriptIndex {
 }
 
 export interface ScriptContextWindow {
-  reason: 'requested-speakers' | 'current-selection' | 'current-scene' | 'current-block'
+  reason: 'requested-speakers' | 'requested-page-range' | 'current-selection' | 'current-scene' | 'current-block'
   label?: string
   pageRange?: { start: number; end: number }
   sceneHeadings: string[]
@@ -124,6 +124,12 @@ function pageRangeForWords(wordStart: number, wordEnd: number): { start: number;
     start: estimatedPageForWord(wordStart),
     end: estimatedPageForWord(Math.max(wordStart, wordEnd - 1)),
   }
+}
+
+export function pageRangeLabel(pageRange: { start: number; end: number }): string {
+  return pageRange.start === pageRange.end
+    ? `Page ${pageRange.start}`
+    : `Pages ${pageRange.start}–${pageRange.end}`
 }
 
 function parseElements(rawHtml: string): Array<{ sourceIndex: number; type: ElementType; text: string }> {
@@ -288,8 +294,8 @@ function contextWindowFromBlocks(
 
   const sceneHeadings = Array.from(new Set(
     blocks
-      .filter(block => block.type === 'scene-heading')
-      .map(block => block.text)
+      .map(block => block.type === 'scene-heading' ? block.text : block.sceneHeading)
+      .filter((heading): heading is string => Boolean(heading))
   ))
   const dialogueBlocks = blocks.filter(block => block.type === 'dialogue')
   const actionBlocks = blocks.filter(block => block.type === 'action')
@@ -361,6 +367,22 @@ export function getDialogueWindowBySpeakers(
     dialogueSnippets: dialogueBlocks.slice(0, maxDialogueSnippets).map(dialogueSnippet),
     actionSnippets: actionBlocks.map(block => block.text),
   }
+}
+
+export function getPageRangeContext(
+  index: ScriptIndex,
+  startPage: number,
+  endPage?: number,
+): ScriptContextWindow | null {
+  if (!index.blocks.length) return null
+  const end = endPage ?? startPage
+  const wordStart = (startPage - 1) * ESTIMATED_SCRIPT_PAGE_WORDS
+  const wordEnd = end * ESTIMATED_SCRIPT_PAGE_WORDS
+  const pageBlocks = index.blocks.filter(block => block.wordStart < wordEnd && block.wordEnd > wordStart)
+  if (!pageBlocks.length) return null
+  const requestedRange = { start: startPage, end }
+  const window = contextWindowFromBlocks(pageBlocks, 'requested-page-range', pageRangeLabel(requestedRange))
+  return window ? { ...window, pageRange: requestedRange } : null
 }
 
 export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): ScriptContextWindow | null {
