@@ -56,7 +56,7 @@ export interface ScriptIndex {
 }
 
 export interface ScriptContextWindow {
-  reason: 'requested-speakers' | 'requested-page-range' | 'current-selection' | 'current-scene' | 'current-block'
+  reason: 'requested-speakers' | 'requested-page-range' | 'requested-scene' | 'current-selection' | 'current-scene' | 'current-block'
   label?: string
   pageRange?: { start: number; end: number }
   sceneHeadings: string[]
@@ -93,6 +93,46 @@ function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+const SCENE_QUERY_STOPWORDS = new Set([
+  'about',
+  'again',
+  'and',
+  'are',
+  'can',
+  'could',
+  'day',
+  'does',
+  'evening',
+  'exchange',
+  'ext',
+  'exterior',
+  'for',
+  'from',
+  'happens',
+  'happening',
+  'how',
+  'int',
+  'interior',
+  'into',
+  'later',
+  'look',
+  'moment',
+  'morning',
+  'night',
+  'review',
+  'same',
+  'scene',
+  'sequence',
+  'the',
+  'this',
+  'through',
+  'to',
+  'what',
+  'with',
+  'work',
+  'working',
+])
+
 function speakerAliases(speaker: string): string[] {
   const normalized = normalizeName(speaker)
   const tokens = normalized.split(/\s+/).filter(Boolean)
@@ -101,6 +141,14 @@ function speakerAliases(speaker: string): string[] {
     normalized,
     lastToken.length >= 3 ? lastToken : '',
   ].filter(Boolean)))
+}
+
+function sceneQueryTokens(value: string): string[] {
+  return Array.from(new Set(
+    normalizeName(value)
+      .split(/\s+/)
+      .filter(token => token.length >= 3 && !SCENE_QUERY_STOPWORDS.has(token))
+  ))
 }
 
 function slug(value: string): string {
@@ -321,6 +369,45 @@ function sceneContainsSpeakers(blocks: ScriptBlockIndex[], speakers: string[]): 
   return speakers.every(speaker => normalizedSpeakers.has(normalizeName(speaker)))
 }
 
+function sceneBlocks(index: ScriptIndex, scene: ScriptSceneIndex): ScriptBlockIndex[] {
+  return index.blocks.filter(block => block.index >= scene.blockStart && block.index <= scene.blockEnd)
+}
+
+function contextWindowFromScene(
+  index: ScriptIndex,
+  scene: ScriptSceneIndex,
+  reason: ScriptContextWindow['reason'],
+  selectedText?: string,
+): ScriptContextWindow | null {
+  const window = contextWindowFromBlocks(sceneBlocks(index, scene), reason, scene.heading, selectedText)
+  return window
+    ? {
+      ...window,
+      pageRange: { start: scene.pageStart, end: scene.pageEnd },
+      sceneHeadings: [scene.heading],
+    }
+    : null
+}
+
+function sceneBlocksContainSpeakers(blocks: ScriptBlockIndex[], speakers: string[]): boolean {
+  return speakers.length > 0 && sceneContainsSpeakers(blocks, speakers)
+}
+
+function sceneHeadingScore(scene: ScriptSceneIndex, queryTokens: string[]): number {
+  if (!queryTokens.length) return 0
+
+  const headingTokens = sceneQueryTokens(scene.heading)
+  if (!headingTokens.length) return 0
+
+  const headingTokenSet = new Set(headingTokens)
+  const matchedTokens = queryTokens.filter(token => headingTokenSet.has(token))
+  if (!matchedTokens.length) return 0
+
+  const coverage = matchedTokens.length / Math.min(queryTokens.length, headingTokens.length)
+  const strongTokenBonus = matchedTokens.some(token => token.length >= 5) ? 0.5 : 0
+  return matchedTokens.length + coverage + strongTokenBonus
+}
+
 export function getDialogueWindowBySpeakers(
   index: ScriptIndex,
   speakers: string[],
@@ -332,7 +419,7 @@ export function getDialogueWindowBySpeakers(
   const scenesWithBlocks = index.scenes.length
     ? index.scenes.map(scene => ({
       scene,
-      blocks: index.blocks.filter(block => block.index >= scene.blockStart && block.index <= scene.blockEnd),
+      blocks: sceneBlocks(index, scene),
     }))
     : [{
       scene: {
@@ -369,6 +456,48 @@ export function getDialogueWindowBySpeakers(
   }
 }
 
+export function getSceneContext(
+  index: ScriptIndex,
+  userMessage: string,
+  requestedSpeakers: string[] = [],
+): ScriptContextWindow | null {
+  if (!index.scenes.length || !index.blocks.length) return null
+
+  const normalizedMessage = normalizeName(userMessage)
+  const explicitFirstScene = /\b(opening|first)\s+scene\b/.test(normalizedMessage)
+  const explicitLastScene = /\b(final|last|ending)\s+scene\b/.test(normalizedMessage)
+  const selectedScene = explicitFirstScene
+    ? index.scenes[0]
+    : explicitLastScene
+      ? index.scenes[index.scenes.length - 1]
+      : undefined
+
+  if (selectedScene) {
+    return contextWindowFromScene(index, selectedScene, 'requested-scene')
+  }
+
+  const queryTokens = sceneQueryTokens(userMessage)
+  if (!queryTokens.length) return null
+
+  const scoredScenes = index.scenes
+    .map(scene => {
+      const blocks = sceneBlocks(index, scene)
+      const speakerBonus = sceneBlocksContainSpeakers(blocks, requestedSpeakers) ? 0.75 : 0
+      return {
+        scene,
+        blocks,
+        score: sceneHeadingScore(scene, queryTokens) + speakerBonus,
+      }
+    })
+    .filter(result => result.score >= 1.5)
+    .sort((a, b) => b.score - a.score || a.scene.index - b.scene.index)
+
+  const best = scoredScenes[0]
+  if (!best) return null
+
+  return contextWindowFromScene(index, best.scene, 'requested-scene')
+}
+
 export function getPageRangeContext(
   index: ScriptIndex,
   startPage: number,
@@ -396,6 +525,12 @@ export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): S
     const selectionBlocks = focusedBlock.sceneId
       ? index.blocks.filter(block => block.sceneId === focusedBlock.sceneId)
       : index.blocks.slice(Math.max(0, focusedBlock.index - 3), focusedBlock.index + 4)
+    const focusedScene = focusedBlock.sceneId
+      ? index.scenes.find(scene => scene.id === focusedBlock.sceneId)
+      : undefined
+    if (focusedScene) {
+      return contextWindowFromScene(index, focusedScene, 'current-selection', selectedText)
+    }
     return contextWindowFromBlocks(
       selectionBlocks,
       'current-selection',
@@ -405,8 +540,8 @@ export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): S
   }
 
   if (focusedBlock.sceneId) {
-    const sceneBlocks = index.blocks.filter(block => block.sceneId === focusedBlock.sceneId)
-    return contextWindowFromBlocks(sceneBlocks, 'current-scene', focusedBlock.sceneHeading)
+    const focusedScene = index.scenes.find(scene => scene.id === focusedBlock.sceneId)
+    if (focusedScene) return contextWindowFromScene(index, focusedScene, 'current-scene')
   }
 
   const focusedBlockPosition = index.blocks.findIndex(block => block.index === focusedBlock.index)

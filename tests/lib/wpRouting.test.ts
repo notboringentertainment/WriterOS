@@ -428,6 +428,92 @@ describe('extractScriptContext', () => {
     expect(focused.script.excerpt).not.toContain('Early line 0.')
   })
 
+  it('uses requested-scene context when the user names a scene heading', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">The phones blink in the dark.</p>',
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">End of the line.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Can you review the rooftop scene?')
+
+    expect(ctx.script.contextReason).toBe('requested-scene')
+    expect(ctx.script.contextLabel).toBe('EXT. ROOFTOP - DAY')
+    expect(ctx.script.sceneHeadings).toEqual(['EXT. ROOFTOP - DAY'])
+    expect(ctx.script.dialogueSnippets).toEqual(['ISAIAH: End of the line.'])
+    expect(ctx.script.excerpt).not.toContain('The phones blink in the dark.')
+  })
+
+  it('uses scene wording to choose the named exchange over an earlier speaker match', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. PROLOGUE ROOM - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">Early line.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Early answer.</p>',
+      '<p data-element-type="scene-heading">INT. LIFELINE HQ - DANTE OFFICE - DAY</p>',
+      '<p data-element-type="action">Dante shuts the office door.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">So it was you.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Rate Isaiah and Dante in the office exchange.')
+
+    expect(ctx.script.contextReason).toBe('requested-scene')
+    expect(ctx.script.contextLabel).toBe('INT. LIFELINE HQ - DANTE OFFICE - DAY')
+    expect(ctx.script.dialogueSnippets).toEqual([
+      'ISAIAH: So it was you.',
+      'DANTE: Your war is over, brotha.',
+    ])
+    expect(ctx.script.excerpt).not.toContain('Early line.')
+  })
+
+  it('falls back to speaker retrieval when scene wording has no heading match', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Then stop listening.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Rate the rooftop exchange between Isaiah and Dante.')
+
+    expect(ctx.script.contextReason).toBe('requested-speakers')
+    expect(ctx.script.contextLabel).toBe('INT. CALL CENTER - NIGHT')
+    expect(ctx.script.dialogueSnippets).toEqual([
+      'ISAIAH: I can still hear it breathing.',
+      'DANTE: Then stop listening.',
+    ])
+  })
+
+  it('keeps explicit page requests ahead of scene requests', () => {
+    const state = defaultProjectState()
+    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+      `<p data-element-type="action">filler${i}</p>`
+    ).join('')
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. OFFICE - DAY</p>',
+      '<p data-element-type="action">The first office scene waits.</p>',
+      fillerHtml,
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="action">Wind snaps across the roof.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'What happens on page 2 in the office scene?')
+
+    expect(ctx.script.contextReason).toBe('requested-page-range')
+    expect(ctx.script.contextLabel).toBe('Page 2')
+    expect(ctx.script.excerpt).not.toContain('The first office scene waits.')
+  })
+
   it('uses current scene focus for current-scene requests', () => {
     const state = defaultProjectState()
     state.script.rawHtml = [

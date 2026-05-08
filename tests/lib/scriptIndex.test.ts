@@ -5,6 +5,7 @@ import {
   getDialogueWindowBySpeakers,
   getFocusContext,
   getPageRangeContext,
+  getSceneContext,
   speakersFromMessage,
 } from '../../client/src/lib/scriptIndex'
 
@@ -117,6 +118,67 @@ describe('buildScriptIndex', () => {
     expect(index.pages).toEqual([])
     expect(index.plainText).toBe('Loose notes More notes')
     expect(index.totalWordCount).toBe(4)
+  })
+})
+
+describe('scene windows', () => {
+  it('retrieves a scene from a fuzzy heading reference', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">The phones blink in the dark.</p>',
+      '<p data-element-type="scene-heading">EXT. ROOFTOP - DAY</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">End of the line.</p>',
+    ].join(''))
+
+    const window = getSceneContext(index, 'Can you review the rooftop scene?')
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('requested-scene')
+    expect(window!.label).toBe('EXT. ROOFTOP - DAY')
+    expect(window!.sceneHeadings).toEqual(['EXT. ROOFTOP - DAY'])
+    expect(window!.dialogueSnippets).toEqual(['ISAIAH: End of the line.'])
+    expect(window!.blocks.map(block => block.text)).not.toContain('The phones blink in the dark.')
+  })
+
+  it('uses requested speakers to break ties between similar scene headings', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. OFFICE - MORNING</p>',
+      '<p data-element-type="character">CASEY</p>',
+      '<p data-element-type="dialogue">This room is too quiet.</p>',
+      '<p data-element-type="scene-heading">INT. LIFELINE HQ - DANTE OFFICE - DAY</p>',
+      '<p data-element-type="action">Dante shuts the office door.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">So it was you.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join(''))
+
+    const window = getSceneContext(index, 'Review Isaiah and Dante office exchange.', ['ISAIAH', 'DANTE'])
+
+    expect(window).not.toBeNull()
+    expect(window!.label).toBe('INT. LIFELINE HQ - DANTE OFFICE - DAY')
+    expect(window!.dialogueSnippets).toEqual([
+      'ISAIAH: So it was you.',
+      'DANTE: Your war is over, brotha.',
+    ])
+  })
+
+  it('retrieves opening and final scene references', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. OPENING ROOM - NIGHT</p>',
+      '<p data-element-type="action">Isaiah waits.</p>',
+      '<p data-element-type="scene-heading">EXT. FINAL STREET - DAWN</p>',
+      '<p data-element-type="action">The city exhales.</p>',
+    ].join(''))
+
+    expect(getSceneContext(index, 'Does the opening scene work?')!.label).toBe('INT. OPENING ROOM - NIGHT')
+    expect(getSceneContext(index, 'How does the final scene land?')!.label).toBe('EXT. FINAL STREET - DAWN')
+  })
+
+  it('returns null when a scene request has no heading match', () => {
+    const index = buildScriptIndex('<p data-element-type="scene-heading">INT. OFFICE - DAY</p>')
+    expect(getSceneContext(index, 'Can you review the rooftop scene?')).toBeNull()
   })
 })
 

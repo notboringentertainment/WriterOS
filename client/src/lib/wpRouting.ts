@@ -5,6 +5,7 @@ import {
   getDialogueWindowBySpeakers,
   getFocusContext,
   getPageRangeContext,
+  getSceneContext,
   pageRangeLabel,
   speakersFromMessage,
   type ScriptFocusState,
@@ -139,6 +140,12 @@ function wantsCurrentFocus(userMessage: string): boolean {
   return /\b(this scene|this page|this line|these lines|current scene|current page|current line|selected text|selection|on the page|right here|here in the script)\b/i.test(userMessage)
 }
 
+function wantsSceneRequest(userMessage: string): boolean {
+  return /\b(opening|first|final|last|ending)\s+scene\b/i.test(userMessage) ||
+    /\b(scene|sequence|exchange|moment)\b/i.test(userMessage) ||
+    /\b(int|ext|interior|exterior)\.?\b/i.test(userMessage)
+}
+
 function pageRangeFromMessage(userMessage: string): { start: number; end: number } | null {
   const match = /\bpages?\s+(\d+)(?:\s*(?:[-–]|to)\s*(\d+))?/i.exec(userMessage)
   if (!match) return null
@@ -168,13 +175,16 @@ export function extractScriptContext(rawHtml: string, userMessage = '', focus?: 
     }
     : null
   const requestedSpeakers = !hasPageRequest ? speakersFromMessage(index, userMessage) : []
-  const dialogueWindow = !hasPageRequest
+  const sceneWindow = !hasPageRequest && wantsSceneRequest(userMessage)
+    ? getSceneContext(index, userMessage, requestedSpeakers)
+    : null
+  const dialogueWindow = !hasPageRequest && !sceneWindow
     ? getDialogueWindowBySpeakers(index, requestedSpeakers, SCRIPT_CONTEXT_LIST_LIMIT)
     : null
-  const focusWindow = !hasPageRequest && !dialogueWindow && (focus?.selectedText?.trim() || wantsCurrentFocus(userMessage))
+  const focusWindow = !hasPageRequest && !sceneWindow && !dialogueWindow && (focus?.selectedText?.trim() || wantsCurrentFocus(userMessage))
     ? getFocusContext(index, focus)
     : null
-  const contextWindow = pageRangeWindow ?? missingPageWindow ?? dialogueWindow ?? focusWindow
+  const contextWindow = pageRangeWindow ?? missingPageWindow ?? sceneWindow ?? dialogueWindow ?? focusWindow
   const sourceBlocks = contextWindow ? contextWindow.blocks : index.blocks
   const plainText = sourceBlocks.length
     ? sourceBlocks.map(block => block.text).join('\n')
