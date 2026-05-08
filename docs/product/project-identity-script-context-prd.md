@@ -3,7 +3,9 @@
 **Date:** 2026-05-07  
 **Status:** Draft for review  
 **Branch context:** `feature/screenplay-editor-core`  
-**Related docs:** `docs/product/agent-workflow-prd.md`, `docs/superpowers/specs/2026-05-04-writing-partner-design.md`, `docs/superpowers/plans/2026-05-05-screenplay-editor-core.md`
+**Related docs:** `docs/product/agent-workflow-prd.md`, `docs/product/writeros-future-work-prd.md`, `docs/superpowers/specs/2026-05-04-writing-partner-design.md`, `docs/superpowers/plans/2026-05-05-screenplay-editor-core.md`
+
+> Note: the core project identity and deterministic script retrieval work described here has been implemented through `fd3ab45 feat: add script overview retrieval`. Remaining future work is now tracked separately in `docs/product/writeros-future-work-prd.md`.
 
 ## Summary
 
