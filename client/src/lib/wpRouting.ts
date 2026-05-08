@@ -6,6 +6,7 @@ import {
   getFocusContext,
   getPageRangeContext,
   getSceneContext,
+  getScriptOverviewContext,
   pageRangeLabel,
   speakersFromMessage,
   type ScriptFocusState,
@@ -146,6 +147,10 @@ function wantsSceneRequest(userMessage: string): boolean {
     /\b(int|ext|interior|exterior)\.?\b/i.test(userMessage)
 }
 
+function wantsScriptOverview(userMessage: string): boolean {
+  return /\b(whole script|entire script|full script|script overall|overall script|big picture|draft|first act|second act|third act|act one|act two|act three|structure|structural|pacing|weak spots|weaknesses|climax|opening|ending|arc|throughline|payoff|pay off|setup|resolution)\b/i.test(userMessage)
+}
+
 function pageRangeFromMessage(userMessage: string): { start: number; end: number } | null {
   const match = /\bpages?\s+(\d+)(?:\s*(?:[-–]|to)\s*(\d+))?/i.exec(userMessage)
   if (!match) return null
@@ -178,13 +183,19 @@ export function extractScriptContext(rawHtml: string, userMessage = '', focus?: 
   const sceneWindow = !hasPageRequest && wantsSceneRequest(userMessage)
     ? getSceneContext(index, userMessage, requestedSpeakers)
     : null
-  const dialogueWindow = !hasPageRequest && !sceneWindow
-    ? getDialogueWindowBySpeakers(index, requestedSpeakers, SCRIPT_CONTEXT_LIST_LIMIT)
-    : null
-  const focusWindow = !hasPageRequest && !sceneWindow && !dialogueWindow && (focus?.selectedText?.trim() || wantsCurrentFocus(userMessage))
+  const selectedFocusWindow = !hasPageRequest && !sceneWindow && focus?.selectedText?.trim()
     ? getFocusContext(index, focus)
     : null
-  const contextWindow = pageRangeWindow ?? missingPageWindow ?? sceneWindow ?? dialogueWindow ?? focusWindow
+  const overviewWindow = !hasPageRequest && !sceneWindow && !selectedFocusWindow && wantsScriptOverview(userMessage)
+    ? getScriptOverviewContext(index, SCRIPT_CONTEXT_LIST_LIMIT)
+    : null
+  const dialogueWindow = !hasPageRequest && !sceneWindow && !selectedFocusWindow && !overviewWindow
+    ? getDialogueWindowBySpeakers(index, requestedSpeakers, SCRIPT_CONTEXT_LIST_LIMIT)
+    : null
+  const focusWindow = !hasPageRequest && !sceneWindow && !selectedFocusWindow && !overviewWindow && !dialogueWindow && wantsCurrentFocus(userMessage)
+    ? getFocusContext(index, focus)
+    : null
+  const contextWindow = pageRangeWindow ?? missingPageWindow ?? sceneWindow ?? selectedFocusWindow ?? overviewWindow ?? dialogueWindow ?? focusWindow
   const sourceBlocks = contextWindow ? contextWindow.blocks : index.blocks
   const plainText = sourceBlocks.length
     ? sourceBlocks.map(block => block.text).join('\n')

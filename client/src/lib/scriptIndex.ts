@@ -56,7 +56,7 @@ export interface ScriptIndex {
 }
 
 export interface ScriptContextWindow {
-  reason: 'requested-speakers' | 'requested-page-range' | 'requested-scene' | 'current-selection' | 'current-scene' | 'current-block'
+  reason: 'requested-speakers' | 'requested-page-range' | 'requested-scene' | 'script-overview' | 'current-selection' | 'current-scene' | 'current-block'
   label?: string
   pageRange?: { start: number; end: number }
   sceneHeadings: string[]
@@ -408,6 +408,15 @@ function sceneHeadingScore(scene: ScriptSceneIndex, queryTokens: string[]): numb
   return matchedTokens.length + coverage + strongTokenBonus
 }
 
+function overviewBlocksForScene(index: ScriptIndex, scene: ScriptSceneIndex): ScriptBlockIndex[] {
+  const blocks = sceneBlocks(index, scene)
+  const headingBlock = blocks.find(block => block.type === 'scene-heading')
+  const firstActionBlock = blocks.find(block => block.type === 'action')
+  const firstDialogueBlock = blocks.find(block => block.type === 'dialogue')
+  return [headingBlock, firstActionBlock ?? firstDialogueBlock]
+    .filter((block): block is ScriptBlockIndex => Boolean(block))
+}
+
 export function getDialogueWindowBySpeakers(
   index: ScriptIndex,
   speakers: string[],
@@ -496,6 +505,27 @@ export function getSceneContext(
   if (!best) return null
 
   return contextWindowFromScene(index, best.scene, 'requested-scene')
+}
+
+export function getScriptOverviewContext(index: ScriptIndex, maxScenes = 80): ScriptContextWindow | null {
+  if (!index.blocks.length) return null
+
+  const blocks = index.scenes.length
+    ? index.scenes
+      .slice(0, maxScenes)
+      .flatMap(scene => overviewBlocksForScene(index, scene))
+    : index.blocks.slice(0, maxScenes)
+
+  const window = contextWindowFromBlocks(blocks, 'script-overview', 'Script overview')
+  return window
+    ? {
+      ...window,
+      pageRange: index.estimatedPageCount ? { start: 1, end: index.estimatedPageCount } : undefined,
+      sceneHeadings: index.scenes.length
+        ? index.scenes.slice(0, maxScenes).map(scene => scene.heading)
+        : window.sceneHeadings,
+    }
+    : null
 }
 
 export function getPageRangeContext(

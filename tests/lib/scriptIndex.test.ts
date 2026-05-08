@@ -6,6 +6,7 @@ import {
   getFocusContext,
   getPageRangeContext,
   getSceneContext,
+  getScriptOverviewContext,
   speakersFromMessage,
 } from '../../client/src/lib/scriptIndex'
 
@@ -179,6 +180,55 @@ describe('scene windows', () => {
   it('returns null when a scene request has no heading match', () => {
     const index = buildScriptIndex('<p data-element-type="scene-heading">INT. OFFICE - DAY</p>')
     expect(getSceneContext(index, 'Can you review the rooftop scene?')).toBeNull()
+  })
+})
+
+describe('script overview windows', () => {
+  it('packages a compact scene map for broad script questions', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">Isaiah answers the emergency line.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - DAWN</p>',
+      '<p data-element-type="action">Traffic opens under a bruised sky.</p>',
+      '<p data-element-type="scene-heading">INT. DANTE OFFICE - DAY</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join(''))
+
+    const window = getScriptOverviewContext(index)
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('script-overview')
+    expect(window!.label).toBe('Script overview')
+    expect(window!.sceneHeadings).toEqual([
+      'INT. CALL CENTER - NIGHT',
+      'EXT. FREEWAY - DAWN',
+      'INT. DANTE OFFICE - DAY',
+    ])
+    expect(window!.pageRange).toEqual({ start: 1, end: 1 })
+    expect(window!.actionSnippets).toEqual([
+      'Isaiah answers the emergency line.',
+      'Traffic opens under a bruised sky.',
+    ])
+    expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+
+  it('falls back to initial blocks when no scene headings exist', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="action">A phone rings.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">Hello?</p>',
+    ].join(''))
+
+    const window = getScriptOverviewContext(index)
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('script-overview')
+    expect(window!.sceneHeadings).toEqual([])
+    expect(window!.actionSnippets).toEqual(['A phone rings.'])
+    expect(window!.dialogueSnippets).toEqual(['ISAIAH: Hello?'])
   })
 })
 

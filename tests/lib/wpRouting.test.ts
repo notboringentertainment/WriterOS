@@ -514,6 +514,92 @@ describe('extractScriptContext', () => {
     expect(ctx.script.excerpt).not.toContain('The first office scene waits.')
   })
 
+  it('uses script overview context for broad whole-script questions', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">Isaiah answers the emergency line.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - DAWN</p>',
+      '<p data-element-type="action">Traffic opens under a bruised sky.</p>',
+      '<p data-element-type="scene-heading">INT. DANTE OFFICE - DAY</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Your war is over, brotha.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'What are the weak spots in the script overall?')
+
+    expect(ctx.script.contextReason).toBe('script-overview')
+    expect(ctx.script.contextLabel).toBe('Script overview')
+    expect(ctx.script.sceneHeadings).toEqual([
+      'INT. CALL CENTER - NIGHT',
+      'EXT. FREEWAY - DAWN',
+      'INT. DANTE OFFICE - DAY',
+    ])
+    expect(ctx.script.actionSnippets).toEqual([
+      'Isaiah answers the emergency line.',
+      'Traffic opens under a bruised sky.',
+    ])
+    expect(ctx.script.excerpt).toContain('EXT. FREEWAY - DAWN')
+  })
+
+  it('uses script overview before speaker windows for broad arc questions', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="scene-heading">INT. DANTE OFFICE - DAY</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">So it was you.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, "Does Isaiah's arc track across the draft?")
+
+    expect(ctx.script.contextReason).toBe('script-overview')
+    expect(ctx.script.sceneHeadings).toEqual(['INT. CALL CENTER - NIGHT', 'INT. DANTE OFFICE - DAY'])
+  })
+
+  it('keeps dialogue-specific speaker requests on speaker retrieval', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it breathing.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Then stop listening.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Rate the dialogue between Isaiah and Dante.')
+
+    expect(ctx.script.contextReason).toBe('requested-speakers')
+    expect(ctx.script.dialogueSnippets).toEqual([
+      'ISAIAH: I can still hear it breathing.',
+      'DANTE: Then stop listening.',
+    ])
+  })
+
+  it('keeps selected script text ahead of broad overview wording', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. CALL CENTER - NIGHT</p>',
+      '<p data-element-type="action">Isaiah answers the emergency line.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - DAWN</p>',
+      '<p data-element-type="action">Traffic opens under a bruised sky.</p>',
+    ].join('')
+
+    const ctx = buildProjectContext(state, 'Does this overall moment work?', {
+      script: {
+        rawHtml: state.script.rawHtml,
+        scenes: [],
+        focus: { blockIndex: 1, selectedText: 'emergency line', updatedAt: 1 },
+      },
+    })
+
+    expect(ctx.script.contextReason).toBe('current-selection')
+    expect(ctx.script.selectedText).toBe('emergency line')
+    expect(ctx.script.contextLabel).toBe('INT. CALL CENTER - NIGHT')
+  })
+
   it('uses current scene focus for current-scene requests', () => {
     const state = defaultProjectState()
     state.script.rawHtml = [
