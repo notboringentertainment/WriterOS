@@ -1,253 +1,125 @@
-> A personality-driven, multi-agent writing studio. This document is the
-> canonical task list for the next builder. Read `WriterOS.html` and the
-> `lib/` + `ui/` tree before starting.
+# WriterOS Product / Architecture Handoff
 
----
+- **Date:** 2026-05-08
+- **Branch context:** `feature/screenplay-editor-core`
+- **Related docs:** `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
 
-## What this repo is
+WriterOS is a writing-first studio for screenplay development. It should work for novices and professionals alike: powerful enough for serious drafting, but legible enough that a new writer understands what each surface is for without reading documentation.
 
-A working **prototype UI** of a multi-agent writing studio. Six specialist
-AI agents (Sam, Casey, Oliver, Maya, Zoe, Marcus) coordinated by a Triage
-agent, sharing one ProjectState. The UI is done enough to demo. The backend,
-agents, and editor are not.
+## Core Product Model
 
-## Architecture (keep it)
+WriterOS is not a required pipeline. It is a flexible suite of writing surfaces:
 
-```
-lib/
-  state.mock.js   canonical ProjectState shape (REPLACE with live feed)
-  bridge.js       ONLY outbound-call surface; swap MockBridge → WSBridge
-  store.js        subscribe/select/mutate; UI never fetches directly
-ui/
-  frame.jsx             TopBar + LeftNav + RightDrawer (context-aware)
-  screens-mission.jsx   Mission Control, Triage, Tasks, Handoffs
-  screens-knowledge.jsx Hive Mind, Structure, Cast, World, Scenes, AgentWorkbench
-  screens-system.jsx    State Inspector, Future Modules, Settings
-WriterOS.html    app root + screen router
-```
+- **Script:** screenplay pages and scene-level writing.
+- **Synopsis:** reader/pitch-facing story summary.
+- **Outline:** writer-facing structure, beats, escalation, and causality.
+- **Story Bible:** character, world, rules, tone, and themes.
+- **Treatment:** planned fifth surface for full-story cinematic prose before script drafting.
 
-**Rule:** UI reads state via `useStore(selector)`, writes via
-`window.WOS.store.actions.*`. Nothing else. All networking lives in
-`lib/bridge.js`. Honor this contract and the UI never needs to change when
-the backend is attached.
+Each surface should feel like a real writing workspace, not just form fields around a chatbot.
 
----
+## Agent Model
 
-## Phase 1 — Backend substrate (blocks everything else)
+The left rail remains the persistent Writing Partner thread for the whole project.
 
-- [ ] **Replace `MockBridge` with a real client**
-  - WebSocket primary: `/ws/state` → emits `state.patch`, `state.replace`, `agent.status`, `notification`
-  - REST fallback: `/api/state` (poll 5s), `/api/tasks`, `/api/handoffs`, `/api/memory`
-  - Every `store.actions.*` already optimistically patches — server must echo or reject (add `rollback` path)
-- [ ] **Persist ProjectState** to a single `.wos` file (JSON today; SQLite later)
-  - Autosave on every mutation, debounced 600ms
-  - Versioned by `schemaVersion` — write a migration runner before first bump
-- [ ] **Lock the schema**
-  - Move shapes from the comments in `state.mock.js` into `lib/schema.js` with runtime validation (zod or hand-rolled)
-  - Every mutation validates before it hits the bridge
+However, it is surface-aware:
 
-## Phase 2 — Live agents (the actual product)
+- Script: general Writing Partner unless a specialist is mentioned.
+- Synopsis: Sam is the natural helper.
+- Outline: Oliver is the natural helper.
+- Story Bible: Casey handles character, theme, and psychology; Zoe handles world, rules, and tone anchors.
+- Treatment: Alex is likely the natural helper.
+- Manual mentions like `@Maya` or `@Casey` override the surface default.
+- `@Partner` / `@WritingPartner` force the general partner.
 
-- [ ] **Agent runtime in Claude Code**
-  - One subprocess per specialist, plus Triage as coordinator
-  - System prompt per agent = `role` + `personality` + `capabilities` + scoped `reads`/`writes`
-  - Routing: Haiku-class for Triage and Marcus's scorecard; Sonnet-class for the 6 creatives
-- [ ] **Wire `bridge.invoke(agentId, payload)`** to spawn a Claude call with:
-  - The agent's system prompt
-  - A filtered ProjectState slice per `agent.reads`
-  - The last N entries of memory the agent has witnessed
-  - Return streams → `eventBus.emit('agent.token', …)` so UI can render typing
-- [ ] **Real per-agent chat**
-  - Current `AgentWorkbench` shows focus + tasks + memory — add a chat pane
-  - Messages persist on ProjectState under `agents[id].transcript`
-  - "Attach context" button that pins the selected scene / character / beat into the next prompt
-- [ ] **Triage as a real LLM**
-  - On any unassigned task: Triage reads the task + full project context, outputs `{assignTo, reasoning, blockers}`
-  - Show its reasoning in the Delegation Log
+Important: left-rail transcript stays separate from Writer's Room specialist transcripts. Writer's Room remains the direct specialist space.
 
-## Phase 3 — The missing writing surface
+The UI must make delegation visible:
 
-- [ ] **Manuscript editor** (the one thing the UI doesn't yet have)
-  - Chapter/scene tree on the left, ProseMirror or Tiptap in the middle
-  - Inline "Ask Maya about this line" / "Ask Casey about this beat" context menu
-  - Scene-level metadata (beatId, characters, location, flags) live-bound to `state.scenes`
-  - Word count feeds `project.wordCount` on save
-- [ ] **Reading mode** — full-bleed serif, no chrome, for proofing
+- Assistant messages in the left rail should say `Writing Partner (@Sam)` and similar when routed.
+- The input area should show an Active Helper hint before sending, such as `Writing Partner will ask @Sam`.
+- Each surface should have subtle orientation copy explaining what the surface does and which agent helps there.
 
-## Phase 4 — Memory semantics
+## Context / Retrieval Direction
 
-- [ ] **Confidence decay** — write a nightly job that re-scores memory by age + cite count
-- [ ] **Conflict detection** — Zoe auto-runs on every `scenes` write; files a Canon task if rules break
-- [ ] **Witness injection** — before any agent call, silently prepend unseen high-confidence memory to their context (the Witness Matrix in the Hive Mind UI is the debugger for this)
-- [ ] **User-pinned memory** — the UI has the button; wire it to `bridge.pinMemory`
+A 120-page screenplay cannot be handled by a single first-500-word excerpt. Script context needs addressable retrieval:
 
-## Phase 5 — The future modules (from the Future Modules screen)
+- Script index.
+- Page estimates.
+- Scene windows.
+- Cursor/selection focus.
+- Speaker-scoped retrieval.
+- Eventually broader summaries for wide questions.
 
-Each is a self-contained screen that reads shared state, drop into the router:
+Recent work started this by deriving script index/focus context from TipTap HTML and passing fresher editor snapshots into agent calls.
 
-- [ ] Voice War Room — Maya-led, multi-agent live edit on a single scene
-- [ ] Mobile Inbox — PWA surface for async agent cards
-- [ ] Self-Awareness / Meta-agent — watches the other agents, reports drift
-- [ ] Writing Schedule — calendar + past stall patterns → agent-of-the-day
-- [ ] Staged Reading — voice synthesis per character
-- [ ] External Agents plugin API — spec a manifest format (`agent.json`) and a sandbox
+The current ceiling: retrieval still needs better page-range lookup, scene fuzzy match, broad-question summarization, and stronger current-focus UX.
 
-## Phase 6 — Polish
+## Storage Boundary
 
-- [ ] Keyboard nav (⌘1–⌘5 already labelled in the LeftNav — implement)
-- [ ] ⌘K command palette (labelled in TopBar — implement)
-- [ ] Drag-to-reorder on the Kanban task board
-- [ ] Responsive: collapse drawer under 1280px, collapse nav under 900px
-- [ ] Light mode (all colors are CSS vars — add a theme switcher)
-- [ ] Real auth + multi-project picker
+Do not rush backend persistence yet.
 
----
+Persist authored/user-visible state:
 
-## Hard rules for the next builder
+- Project title.
+- Synopsis.
+- Outline.
+- Story Bible.
+- Script raw HTML/scenes.
+- Eventually treatment.
 
-1. **Do not touch `lib/bridge.js` from UI code.** If you need a new mutation, add an action in `store.js`.
-2. **Do not let agents write outside their declared scope.** `agent.writes` is a real permission boundary, not documentation.
-3. **Every piece of information that more than one agent needs lives in ProjectState.** No side channels.
-4. **Memory class matters.** `canon` is immutable by anything except Zoe. `pinned` needs user approval to delete. Never conflate.
-5. **Triage is the only router.** Specialists never invoke each other directly — they file handoffs.
+Keep indexes, retrieval packs, and context summaries derived unless/until a storage PRD decides otherwise.
 
-## Known debts
+`localStorage` is acceptable short-term, but real multi-project storage/export/import needs a deliberate design pass.
 
-- `lib/state.mock.js` is hand-authored and will drift from the schema as screens evolve. Lock the schema in Phase 1 before that gets painful.
-- The AgentWorkbench has a stub "Open agent chat" button — nothing behind it yet.
-- `Settings` is display-only.
-- No tests. Add Vitest once there's a backend worth testing.
+## Document Preview Direction
 
-## Start here
+For every non-script surface, add an eventual toggle:
 
-1. Read `WriterOS.html` top to bottom — it's ~100 lines and maps every screen.
-2. Open `WriterOS.html` in a browser, click through all screens to feel the contract.
-3. Read `lib/store.js` end to end.
-4. Phase 1, task 1: stand up a WebSocket server that echoes mock state. Point `bridge.js` at it. Verify the UI doesn't need to change.
+- **Edit View:** structured writing workspace.
+- **Document View:** clean formatted preview for sharing/export.
 
-> A personality-driven, multi-agent writing studio. This document is the
-> canonical task list for the next builder. Read `WriterOS.html` and the
-> `lib/` + `ui/` tree before starting.
+This is not PDF-first internally. Treat it as a document preview layer that can later export to PDF, DOCX, Markdown, and other formats.
 
----
+Most important surfaces:
 
-## What this repo is
+- Synopsis document preview.
+- Outline / beat sheet document preview.
+- Story Bible document preview.
+- Treatment document preview.
 
-A working **prototype UI** of a multi-agent writing studio. Six specialist
-AI agents (Sam, Casey, Oliver, Maya, Zoe, Marcus) coordinated by a Triage
-agent, sharing one ProjectState. The UI is done enough to demo. The backend,
-agents, and editor are not.
+Script already behaves more like a document/page surface.
 
-## Architecture (keep it)
+## Treatment Surface
 
-```
-lib/
-  state.mock.js   canonical ProjectState shape (REPLACE with live feed)
-  bridge.js       ONLY outbound-call surface; swap MockBridge → WSBridge
-  store.js        subscribe/select/mutate; UI never fetches directly
-ui/
-  frame.jsx             TopBar + LeftNav + RightDrawer (context-aware)
-  screens-mission.jsx   Mission Control, Triage, Tasks, Handoffs
-  screens-knowledge.jsx Hive Mind, Structure, Cast, World, Scenes, AgentWorkbench
-  screens-system.jsx    State Inspector, Future Modules, Settings
-WriterOS.html    app root + screen router
-```
+Treatment should probably be its own PRD or later phase, not jammed into the current script-context work.
 
-**Rule:** UI reads state via `useStore(selector)`, writes via
-`window.WOS.store.actions.*`. Nothing else. All networking lives in
-`lib/bridge.js`. Honor this contract and the UI never needs to change when
-the backend is attached.
+Treatment is distinct from:
 
----
+- Synopsis: shorter, reader/pitch-facing.
+- Outline: structural beats.
+- Script: formatted screenplay pages.
+- Story Bible: reference material.
 
-## Phase 1 — Backend substrate (blocks everything else)
+Treatment is full-story cinematic prose. It is likely where Alex becomes most useful.
 
-- [ ] **Replace `MockBridge` with a real client**
-  - WebSocket primary: `/ws/state` → emits `state.patch`, `state.replace`, `agent.status`, `notification`
-  - REST fallback: `/api/state` (poll 5s), `/api/tasks`, `/api/handoffs`, `/api/memory`
-  - Every `store.actions.*` already optimistically patches — server must echo or reject (add `rollback` path)
-- [ ] **Persist ProjectState** to a single `.wos` file (JSON today; SQLite later)
-  - Autosave on every mutation, debounced 600ms
-  - Versioned by `schemaVersion` — write a migration runner before first bump
-- [ ] **Lock the schema**
-  - Move shapes from the comments in `state.mock.js` into `lib/schema.js` with runtime validation (zod or hand-rolled)
-  - Every mutation validates before it hits the bridge
+## Design Principle
 
-## Phase 2 — Live agents (the actual product)
+Expert power, beginner legibility.
 
-- [ ] **Agent runtime in Claude Code**
-  - One subprocess per specialist, plus Triage as coordinator
-  - System prompt per agent = `role` + `personality` + `capabilities` + scoped `reads`/`writes`
-  - Routing: Haiku-class for Triage and Marcus's scorecard; Sonnet-class for the 6 creatives
-- [ ] **Wire `bridge.invoke(agentId, payload)`** to spawn a Claude call with:
-  - The agent's system prompt
-  - A filtered ProjectState slice per `agent.reads`
-  - The last N entries of memory the agent has witnessed
-  - Return streams → `eventBus.emit('agent.token', …)` so UI can render typing
-- [ ] **Real per-agent chat**
-  - Current `AgentWorkbench` shows focus + tasks + memory — add a chat pane
-  - Messages persist on ProjectState under `agents[id].transcript`
-  - "Attach context" button that pins the selected scene / character / beat into the next prompt
-- [ ] **Triage as a real LLM**
-  - On any unassigned task: Triage reads the task + full project context, outputs `{assignTo, reasoning, blockers}`
-  - Show its reasoning in the Delegation Log
+The app should reveal its logic gently:
 
-## Phase 3 — The missing writing surface
+- What this surface is for.
+- Who is helping.
+- What document artifact this work can become.
+- How agent context is being focused.
 
-- [ ] **Manuscript editor** (the one thing the UI doesn't yet have)
-  - Chapter/scene tree on the left, ProseMirror or Tiptap in the middle
-  - Inline "Ask Maya about this line" / "Ask Casey about this beat" context menu
-  - Scene-level metadata (beatId, characters, location, flags) live-bound to `state.scenes`
-  - Word count feeds `project.wordCount` on save
-- [ ] **Reading mode** — full-bleed serif, no chrome, for proofing
+Avoid turning the UI into onboarding sludge. Use small, durable orientation cues.
 
-## Phase 4 — Memory semantics
+## Current Implementation Notes
 
-- [ ] **Confidence decay** — write a nightly job that re-scores memory by age + cite count
-- [ ] **Conflict detection** — Zoe auto-runs on every `scenes` write; files a Canon task if rules break
-- [ ] **Witness injection** — before any agent call, silently prepend unseen high-confidence memory to their context (the Witness Matrix in the Hive Mind UI is the debugger for this)
-- [ ] **User-pinned memory** — the UI has the button; wire it to `bridge.pinMemory`
-
-## Phase 5 — The future modules (from the Future Modules screen)
-
-Each is a self-contained screen that reads shared state, drop into the router:
-
-- [ ] Voice War Room — Maya-led, multi-agent live edit on a single scene
-- [ ] Mobile Inbox — PWA surface for async agent cards
-- [ ] Self-Awareness / Meta-agent — watches the other agents, reports drift
-- [ ] Writing Schedule — calendar + past stall patterns → agent-of-the-day
-- [ ] Staged Reading — voice synthesis per character
-- [ ] External Agents plugin API — spec a manifest format (`agent.json`) and a sandbox
-
-## Phase 6 — Polish
-
-- [ ] Keyboard nav (⌘1–⌘5 already labelled in the LeftNav — implement)
-- [ ] ⌘K command palette (labelled in TopBar — implement)
-- [ ] Drag-to-reorder on the Kanban task board
-- [ ] Responsive: collapse drawer under 1280px, collapse nav under 900px
-- [ ] Light mode (all colors are CSS vars — add a theme switcher)
-- [ ] Real auth + multi-project picker
-
----
-
-## Hard rules for the next builder
-
-1. **Do not touch `lib/bridge.js` from UI code.** If you need a new mutation, add an action in `store.js`.
-2. **Do not let agents write outside their declared scope.** `agent.writes` is a real permission boundary, not documentation.
-3. **Every piece of information that more than one agent needs lives in ProjectState.** No side channels.
-4. **Memory class matters.** `canon` is immutable by anything except Zoe. `pinned` needs user approval to delete. Never conflate.
-5. **Triage is the only router.** Specialists never invoke each other directly — they file handoffs.
-
-## Known debts
-
-- `lib/state.mock.js` is hand-authored and will drift from the schema as screens evolve. Lock the schema in Phase 1 before that gets painful.
-- The AgentWorkbench has a stub "Open agent chat" button — nothing behind it yet.
-- `Settings` is display-only.
-- No tests. Add Vitest once there's a backend worth testing.
-
-## Start here
-
-1. Read `WriterOS.html` top to bottom — it's ~100 lines and maps every screen.
-2. Open `WriterOS.html` in a browser, click through all screens to feel the contract.
-3. Read `lib/store.js` end to end.
-4. Phase 1, task 1: stand up a WebSocket server that echoes mock state. Point `bridge.js` at it. Verify the UI doesn't need to change.
+- Writing Partner and Writer's Room transcripts are intentionally separate in `ProjectState`.
+- Left-rail routed responses are labeled as delegated Writing Partner responses, for example `Writing Partner (@Zoe)`.
+- Story Bible routing should use message intent before falling back to focused section, so character psychology questions route to Casey even if the writer last touched World.
+- Script context currently derives an index from raw TipTap HTML and can use live editor snapshots plus cursor/selection focus.
+- Storage, Treatment, document preview, and broad script summarization should remain deliberate future phases rather than opportunistic add-ons.
