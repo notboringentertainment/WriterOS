@@ -136,6 +136,22 @@ describe('getDefaultPersona', () => {
   it('story-bible + null section -> casey', () => {
     expect(getDefaultPersona('story-bible', null)).toBe('casey')
   })
+
+  it('story-bible + world section + character psychology message -> casey', () => {
+    expect(getDefaultPersona('story-bible', 'world', "What about Isaiah's state of mind?")).toBe('casey')
+  })
+
+  it('story-bible + rules section + motivation message -> casey', () => {
+    expect(getDefaultPersona('story-bible', 'rules', 'What is Zalmai motivated by?')).toBe('casey')
+  })
+
+  it('story-bible + characters section + world message -> zoe', () => {
+    expect(getDefaultPersona('story-bible', 'characters', 'How should the celebrity protection world work?')).toBe('zoe')
+  })
+
+  it('story-bible + characters section + rules message -> zoe', () => {
+    expect(getDefaultPersona('story-bible', 'characters', 'What are the rules of Lifeline security?')).toBe('zoe')
+  })
 })
 
 describe('getActiveHelperText', () => {
@@ -159,6 +175,11 @@ describe('getActiveHelperText', () => {
   it('lets a typed manual mention override the surface hint', () => {
     expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Writing Partner will ask @Maya')
     expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Writing Partner')
+  })
+
+  it('updates the Story Bible hint from typed message intent', () => {
+    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Writing Partner will ask @Casey')
+    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Writing Partner will ask @Zoe')
   })
 })
 

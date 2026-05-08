@@ -86,7 +86,7 @@ export default function App() {
     const mentionResult = parseMention(text)
     const personaId = mentionResult
       ? mentionResult.personaId
-      : getDefaultPersona(shellState.activeTab, shellState.storyBibleSection)
+      : getDefaultPersona(shellState.activeTab, shellState.storyBibleSection, text)
     const messageToSend = mentionResult ? mentionResult.strippedText : text
 
     // Step 3: append user message (original text with @mention intact)

@@ -85,6 +85,8 @@ export function parseMention(text: string): { personaId: PersonaId; strippedText
 export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'story-bible'
 
 const ZOE_SECTIONS = new Set(['world', 'rules'])
+const STORY_BIBLE_CASEY_INTENT_RE = /\b(character|protagonist|antagonist|hero|villain|state of mind|psychology|psychological|psyche|mental|emotion|emotional|motivation|motivated|motivate|motivates|motive|want|need|wound|flaw|arc|backstory|trauma|fear|desire|guilt|grief|relationship|theme|thematic|tone|voice)\b/i
+const STORY_BIBLE_ZOE_INTENT_RE = /\b(world|worldbuilding|world-building|setting|location|place|city|environment|culture|cultural|society|rules|rule|logic|constraint|constraints|system|systems|technology|mythology|continuity|geography|politics|institution|institutions)\b/i
 
 const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
   writingPartner: 'Writing Partner',
@@ -109,7 +111,7 @@ export function getActiveHelperText(
   const mentionResult = parseMention(inputText.trimStart())
   const personaId = mentionResult
     ? mentionResult.personaId
-    : getDefaultPersona(activeTab, storyBibleSection)
+    : getDefaultPersona(activeTab, storyBibleSection, inputText)
 
   if (personaId === 'writingPartner') return 'Writing Partner'
   return `Writing Partner will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
@@ -181,13 +183,30 @@ export function extractScriptContext(rawHtml: string, userMessage = '', focus?: 
   }
 }
 
-export function getDefaultPersona(activeTab: ActiveTab, storyBibleSection: string | null): PersonaId {
+function getStoryBiblePersona(storyBibleSection: string | null, userMessage: string): PersonaId {
+  const trimmedMessage = userMessage.trim()
+  if (trimmedMessage) {
+    const wantsCasey = STORY_BIBLE_CASEY_INTENT_RE.test(trimmedMessage)
+    const wantsZoe = STORY_BIBLE_ZOE_INTENT_RE.test(trimmedMessage)
+
+    if (wantsCasey && !wantsZoe) return 'casey'
+    if (wantsZoe && !wantsCasey) return 'zoe'
+  }
+
+  return storyBibleSection && ZOE_SECTIONS.has(storyBibleSection) ? 'zoe' : 'casey'
+}
+
+export function getDefaultPersona(
+  activeTab: ActiveTab,
+  storyBibleSection: string | null,
+  userMessage = ''
+): PersonaId {
   switch (activeTab) {
     case 'script':   return 'writingPartner'
     case 'synopsis': return 'sam'
     case 'outline':  return 'oliver'
     case 'story-bible':
-      return storyBibleSection && ZOE_SECTIONS.has(storyBibleSection) ? 'zoe' : 'casey'
+      return getStoryBiblePersona(storyBibleSection, userMessage)
   }
 }
 

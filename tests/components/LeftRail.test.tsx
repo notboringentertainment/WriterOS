@@ -52,6 +52,17 @@ describe('LeftRail', () => {
     expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner')
   })
 
+  it('updates Story Bible helper hint from message intent', () => {
+    render(<LeftRail {...defaultProps} open={true} activeTab="story-bible" storyBibleSection="world" />)
+    const textarea = screen.getByPlaceholderText(/message/i)
+
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Zoe')
+
+    fireEvent.change(textarea, { target: { value: "What about Isaiah's state of mind?" } })
+
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Casey')
+  })
+
   it('does not show chat panel when closed', () => {
     render(<LeftRail {...defaultProps} open={false} />)
     expect(screen.queryByPlaceholderText(/message/i)).not.toBeInTheDocument()
