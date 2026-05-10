@@ -84,6 +84,20 @@ This PRD assumes the following are complete and should not be rebuilt unless tes
 5. **Do not overpromise pagination.**  
    Current page ranges are estimated retrieval pages. Export-quality pages require measured pagination.
 
+## Roadmap Interaction: Writer Voice Profile
+
+Writer Voice Profile is tracked separately in `docs/product/writer-voice-profile-prd.md` because it is writer-scoped rather than project-scoped.
+
+It does not replace the workstreams in this PRD, but it changes how future UI and storage work should be sequenced:
+
+- **Voice Profile is shell/onboarding work.** It affects first-run experience, profile/settings access, and AI persona context.
+- **Treatment is studio surface work.** It affects the main writing surface navigation, document state, and Alex's project-facing coaching role.
+- **Document Preview is surface rendering work.** It affects how Synopsis, Outline, Story Bible, and Treatment can be read as authored documents.
+- **Storage planning must account for both scopes:** writer-scoped profile data and project-scoped writing documents.
+- **Alex connects both ideas:** Voice Profile gives Alex the writer's process and creative identity; Treatment gives Alex the project's draft-development artifact.
+
+Before implementing a major UI slice, confirm whether the change belongs to the shell/onboarding layer, the project/studio layer, or both. This avoids treating the profile as another writing surface, and avoids forcing Treatment into the first-run assessment flow.
+
 ## Workstream 1: Surface Orientation
 
 Goal: make each writing surface self-explanatory without turning the app into a tutorial.
@@ -301,22 +315,25 @@ Success criteria:
 1. **Manual usability pass.**  
    Play with the current UI and capture friction before new implementation.
 
-2. **Surface orientation polish.**  
+2. **Roadmap coordination with Writer Voice Profile.**  
+   Confirm first-run/profile entry-point decisions before adding major shell or navigation UI. Voice Profile work should follow `docs/product/writer-voice-profile-prd.md`.
+
+3. **Surface orientation polish.**  
    Add concise role/surface copy if testing confirms confusion.
 
-3. **Document Preview PRD or design slice.**  
+4. **Document Preview PRD or design slice.**  
    Define read-only document rendering for Synopsis, Outline, and Story Bible.
 
-4. **Storage PRD.**  
-   Decide durable project model before generated summaries or project libraries.
+5. **Storage PRD.**  
+   Decide durable writer/project storage before generated summaries, project libraries, or assuming profile memory can survive beyond local browser state.
 
-5. **Treatment PRD / implementation slice.**  
+6. **Treatment PRD / implementation slice.**  
    Build the fifth surface after storage implications are clear enough.
 
-6. **Measured pagination / export plan.**  
+7. **Measured pagination / export plan.**  
    Treat page fidelity and export as their own product/technical effort.
 
-7. **Generated summaries.**  
+8. **Generated summaries.**  
    Add only after storage and staleness rules exist.
 
 ## Manual QA Prompts For Current UI
@@ -337,3 +354,4 @@ Use these while gauging usability:
 3. Should Treatment be implemented before or after storage architecture?
 4. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
 5. What is the minimum storage plan needed before generated summaries?
+6. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?
