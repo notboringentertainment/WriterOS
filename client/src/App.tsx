@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
-import { parseMention, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { Shell } from './components/shell/Shell'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -38,6 +38,19 @@ async function postWPChat(body: {
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`wp-chat ${res.status}`)
+  return res.json()
+}
+
+async function postOpenSwarmWritingPartner(body: {
+  message: string
+  projectContext: ReturnType<typeof buildProjectContext>
+}): Promise<{ message: string }> {
+  const res = await fetch('/api/openswarm/writing-partner', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`openswarm writing-partner ${res.status}`)
   return res.json()
 }
 
@@ -79,6 +92,30 @@ export default function App() {
   )
 
   const handleWPSend = useCallback(async (text: string) => {
+    const openSwarmMessage = parseOpenSwarmCommand(text)
+
+    if (openSwarmMessage) {
+      project.addMessage('writingPartner', makeMessage('user', text, 'Writer'))
+      setWpLoading(true)
+      try {
+        const projectContext = buildFreshProjectContext(openSwarmMessage)
+        const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext })
+        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Writing Partner (OpenSwarm)'))
+      } catch {
+        project.addMessage(
+          'writingPartner',
+          makeMessage(
+            'assistant',
+            'OpenSwarm connection error — start the OpenSwarm server on port 8080 and try again.',
+            'Writing Partner (OpenSwarm)'
+          )
+        )
+      } finally {
+        setWpLoading(false)
+      }
+      return
+    }
+
     // Step 1: snapshot prior history before appending current message
     const conversationHistory = historyFromTranscript(project.state.agents.writingPartner.transcript)
 

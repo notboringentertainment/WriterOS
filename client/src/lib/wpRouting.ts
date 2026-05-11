@@ -76,6 +76,7 @@ const PERSONA_MENTIONS: Record<string, PersonaId> = {
 }
 
 const MENTION_RE = /^@(\w+)\s*/
+const OPEN_SWARM_RE = /^\/(?:swarm|openswarm)\s+([\s\S]*)$/i
 
 export function parseMention(text: string): { personaId: PersonaId; strippedText: string } | null {
   const match = MENTION_RE.exec(text)
@@ -84,6 +85,13 @@ export function parseMention(text: string): { personaId: PersonaId; strippedText
   const personaId = PERSONA_MENTIONS[key]
   if (!personaId) return null
   return { personaId, strippedText: text.slice(match[0].length) }
+}
+
+export function parseOpenSwarmCommand(text: string): string | null {
+  const match = OPEN_SWARM_RE.exec(text.trimStart())
+  if (!match) return null
+  const strippedText = match[1].trim()
+  return strippedText || null
 }
 
 export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'story-bible'
@@ -112,6 +120,8 @@ export function getActiveHelperText(
   activeTab: ActiveTab,
   storyBibleSection: string | null
 ): string {
+  if (parseOpenSwarmCommand(inputText)) return 'OpenSwarm Writing Partner'
+
   const mentionResult = parseMention(inputText.trimStart())
   const personaId = mentionResult
     ? mentionResult.personaId

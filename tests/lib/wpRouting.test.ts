@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SCRIPT_EXCERPT_WORD_LIMIT,
   parseMention,
+  parseOpenSwarmCommand,
   getDefaultPersona,
   getActiveHelperText,
   formatWritingPartnerSpeaker,
@@ -85,6 +86,24 @@ describe('parseMention', () => {
     expect(result).not.toBeNull()
     expect(result!.personaId).toBe('sam')
     expect(result!.strippedText).toBe('')
+  })
+})
+
+describe('parseOpenSwarmCommand', () => {
+  it('returns null for normal Writing Partner chat', () => {
+    expect(parseOpenSwarmCommand('does this scene work?')).toBeNull()
+  })
+
+  it('parses /swarm as an OpenSwarm Writing Partner command', () => {
+    expect(parseOpenSwarmCommand('/swarm review this premise')).toBe('review this premise')
+  })
+
+  it('parses /openswarm case-insensitively', () => {
+    expect(parseOpenSwarmCommand('/OpenSwarm compare this to recent films')).toBe('compare this to recent films')
+  })
+
+  it('returns null when the command has no task text', () => {
+    expect(parseOpenSwarmCommand('/swarm')).toBeNull()
   })
 })
 
@@ -175,6 +194,10 @@ describe('getActiveHelperText', () => {
   it('lets a typed manual mention override the surface hint', () => {
     expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Writing Partner will ask @Maya')
     expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Writing Partner')
+  })
+
+  it('shows OpenSwarm Writing Partner for /swarm commands', () => {
+    expect(getActiveHelperText('/swarm review this premise', 'synopsis', null)).toBe('OpenSwarm Writing Partner')
   })
 
   it('updates the Story Bible hint from typed message intent', () => {
