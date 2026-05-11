@@ -4,6 +4,7 @@ import { OpenAIService } from "./ai/openaiService";
 import { PERSONAS } from "@shared/personas";
 import { z } from "zod";
 import type { StoryMemory } from "@shared/schema";
+import type { VoiceProfileDocument } from "@shared/voiceProfile";
 
 const openaiService = new OpenAIService();
 
@@ -144,6 +145,57 @@ const projectContextSchema = z.object({
   }),
 });
 
+const stringArraySchema = z.array(z.string()).default([]);
+
+const voiceProfileDocumentSchema = z.object({
+  version: z.literal(1),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  displayName: z.string().optional(),
+  archetype: z.string(),
+  coreStatement: z.string(),
+  creativeNorthStars: stringArraySchema,
+  storytellingDNA: z.object({
+    principles: stringArraySchema,
+    recurringThemes: stringArraySchema,
+    notes: z.string(),
+  }),
+  influences: z.object({
+    writers: stringArraySchema,
+    directors: stringArraySchema,
+    filmsAndShows: stringArraySchema,
+    scenesAndLines: stringArraySchema,
+    notes: z.string(),
+  }),
+  characterInstincts: z.object({
+    drawnTo: stringArraySchema,
+    rejects: stringArraySchema,
+    notes: z.string(),
+  }),
+  dialogue: z.object({
+    rules: stringArraySchema,
+    instinctsByMode: z.string(),
+    avoidances: stringArraySchema,
+  }),
+  visualLanguage: z.object({
+    instincts: stringArraySchema,
+    notes: z.string(),
+  }),
+  process: z.object({
+    whenFlowing: z.string(),
+    stuckPatterns: stringArraySchema,
+    supportNeeds: stringArraySchema,
+  }),
+  strengths: stringArraySchema,
+  growthEdges: stringArraySchema,
+  collaborationPreferences: z.object({
+    always: stringArraySchema,
+    never: stringArraySchema,
+    feedbackStyle: z.string(),
+  }),
+  alexCoachingNotes: stringArraySchema,
+});
+
 const wpChatSchema = z.object({
   personaId: z.string(),
   message: z.string(),
@@ -157,6 +209,7 @@ const wpChatSchema = z.object({
 const openSwarmWritingPartnerSchema = z.object({
   message: z.string(),
   projectContext: projectContextSchema,
+  voiceProfile: voiceProfileDocumentSchema.optional(),
 });
 
 type ProjectContextForOpenSwarm = z.infer<typeof projectContextSchema>;
@@ -174,7 +227,62 @@ function bulletLines(items: string[]): string {
   return items.length ? items.map(item => `- ${item}`).join('\n') : '- None supplied';
 }
 
-function buildOpenSwarmWritingPartnerPrompt(message: string, projectContext: ProjectContextForOpenSwarm): string {
+function compactList(values: string[], limit = 5): string {
+  const compacted = values.filter(filled).map(value => truncate(value, 120));
+  if (!compacted.length) return '';
+  const visible = compacted.slice(0, limit).join('; ');
+  const extra = compacted.length > limit ? `; +${compacted.length - limit} more` : '';
+  return `${visible}${extra}`;
+}
+
+function labeledLine(label: string, value: string): string | null {
+  return filled(value) ? `${label}: ${truncate(value, 500)}` : null;
+}
+
+function listLine(label: string, values: string[]): string | null {
+  const compacted = compactList(values);
+  return compacted ? `${label}: ${compacted}` : null;
+}
+
+function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
+  if (!voiceProfile) return [];
+
+  return [
+    labeledLine('Display name', voiceProfile.displayName || ''),
+    labeledLine('Archetype', voiceProfile.archetype),
+    labeledLine('Core statement', voiceProfile.coreStatement),
+    listLine('Creative north stars', voiceProfile.creativeNorthStars),
+    listLine('Storytelling principles', voiceProfile.storytellingDNA.principles),
+    listLine('Recurring themes', voiceProfile.storytellingDNA.recurringThemes),
+    labeledLine('Storytelling notes', voiceProfile.storytellingDNA.notes),
+    listLine('Influence writers', voiceProfile.influences.writers),
+    listLine('Influence films/shows', voiceProfile.influences.filmsAndShows),
+    labeledLine('Influence notes', voiceProfile.influences.notes),
+    listLine('Character instincts drawn to', voiceProfile.characterInstincts.drawnTo),
+    listLine('Character instincts rejects', voiceProfile.characterInstincts.rejects),
+    labeledLine('Character notes', voiceProfile.characterInstincts.notes),
+    listLine('Dialogue rules', voiceProfile.dialogue.rules),
+    labeledLine('Dialogue instincts by mode', voiceProfile.dialogue.instinctsByMode),
+    listLine('Dialogue avoidances', voiceProfile.dialogue.avoidances),
+    listLine('Visual instincts', voiceProfile.visualLanguage.instincts),
+    labeledLine('Visual notes', voiceProfile.visualLanguage.notes),
+    labeledLine('Process when flowing', voiceProfile.process.whenFlowing),
+    listLine('Stuck patterns', voiceProfile.process.stuckPatterns),
+    listLine('Support needs', voiceProfile.process.supportNeeds),
+    listLine('Strengths', voiceProfile.strengths),
+    listLine('Growth edges', voiceProfile.growthEdges),
+    listLine('Collaboration always', voiceProfile.collaborationPreferences.always),
+    listLine('Collaboration never', voiceProfile.collaborationPreferences.never),
+    labeledLine('Feedback style', voiceProfile.collaborationPreferences.feedbackStyle),
+    listLine('Alex coaching notes', voiceProfile.alexCoachingNotes),
+  ].filter(filled);
+}
+
+export function buildOpenSwarmWritingPartnerPrompt(
+  message: string,
+  projectContext: ProjectContextForOpenSwarm,
+  voiceProfile?: VoiceProfileDocument
+): string {
   const synopsisSections = Object.entries(projectContext.synopsis.sections)
     .filter(([, value]) => filled(value))
     .map(([key, value]) => `- ${key}: ${truncate(value, 500)}`);
@@ -208,16 +316,18 @@ function buildOpenSwarmWritingPartnerPrompt(message: string, projectContext: Pro
   const storyBibleLines = [
     projectContext.storyBible.world.setting && `Setting: ${projectContext.storyBible.world.setting}`,
     projectContext.storyBible.world.toneAnchors && `Tone anchors: ${projectContext.storyBible.world.toneAnchors}`,
-    projectContext.storyBible.world.voiceNotes && `Voice notes: ${projectContext.storyBible.world.voiceNotes}`,
+    projectContext.storyBible.world.voiceNotes && `Project voice notes: ${projectContext.storyBible.world.voiceNotes}`,
     projectContext.storyBible.themes && `Themes: ${projectContext.storyBible.themes}`,
     projectContext.storyBible.rules && `Rules: ${projectContext.storyBible.rules}`,
   ].filter(filled).map(line => truncate(line, 500));
+  const voiceProfileLines = buildVoiceProfileLines(voiceProfile);
 
   return `You are OpenSwarm Writing Partner. Review only this bounded WriterOS handoff packet.
 
 Boundary rules:
 - Do not claim access to WriterOS transcripts, files, Voice Profile, or project state beyond this packet.
 - Do not mutate WriterOS state.
+- Voice Profile is writer-scoped and project-agnostic. Story Bible voice notes are project-scoped. Keep them separate.
 - Treat this as advisory output that may be shown in the WriterOS Writing Partner transcript.
 - For story development, recommend only WriterOS creative partners: Sam, Casey, Oliver, Maya, Zoe, or Alex.
 - Recommend Deep Research only when the user explicitly asks for current/recent facts, source-backed research, real-world analogs, or market comps.
@@ -238,6 +348,9 @@ Project context supplied by WriterOS:
 - Title: ${projectContext.title || 'Untitled'}
 - Genre: ${projectContext.genre || 'Not supplied'}
 - Logline: ${projectContext.logline || projectContext.synopsis.logline || 'Not supplied'}
+
+Writer Voice Profile supplied by WriterOS:
+${voiceProfileLines.length ? bulletLines(voiceProfileLines) : '- None supplied by WriterOS for this request.'}
 
 Synopsis sections:
 ${synopsisSections.length ? synopsisSections.join('\n') : '- None supplied'}
@@ -425,7 +538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
           body: JSON.stringify({
             recipient_agent: 'Writing Partner',
-            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext),
+            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext, data.voiceProfile),
             chat_history: [],
           }),
           signal: controller.signal,

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import { loadCompletedVoiceProfile } from './lib/voiceProfile'
 import { Shell } from './components/shell/Shell'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -11,6 +12,7 @@ import { WritersRoom } from './components/writing/WritersRoom'
 import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
+import type { VoiceProfileDocument } from '@shared/voiceProfile'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -44,6 +46,7 @@ async function postWPChat(body: {
 async function postOpenSwarmWritingPartner(body: {
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
+  voiceProfile?: VoiceProfileDocument
 }): Promise<{ message: string }> {
   const res = await fetch('/api/openswarm/writing-partner', {
     method: 'POST',
@@ -99,7 +102,8 @@ export default function App() {
       setWpLoading(true)
       try {
         const projectContext = buildFreshProjectContext(openSwarmMessage)
-        const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext })
+        const voiceProfile = loadCompletedVoiceProfile()
+        const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext, voiceProfile })
         project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Writing Partner (OpenSwarm)'))
       } catch {
         project.addMessage(
