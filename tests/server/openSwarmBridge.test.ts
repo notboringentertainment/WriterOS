@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOpenSwarmWritingPartnerPrompt } from '../../server/routes'
+import { buildOpenSwarmWritingPartnerPrompt, openSwarmWritingPartnerSchema } from '../../server/routes'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
@@ -56,6 +56,13 @@ function makeVoiceProfile(): VoiceProfileDocument {
 }
 
 describe('OpenSwarm Writing Partner prompt', () => {
+  it('accepts the current client buildProjectContext output as the bridge request shape', () => {
+    expect(() => openSwarmWritingPartnerSchema.parse({
+      message: 'Review this premise.',
+      projectContext: buildProjectContext(defaultProjectState()),
+    })).not.toThrow()
+  })
+
   it('includes completed Voice Profile as a writer-scoped handoff section', () => {
     const state = defaultProjectState()
     state.storyBible.world.voiceNotes = 'Project-specific: spare, procedural, intimate.'

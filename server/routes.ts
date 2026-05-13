@@ -206,7 +206,7 @@ const wpChatSchema = z.object({
   })),
 });
 
-const openSwarmWritingPartnerSchema = z.object({
+export const openSwarmWritingPartnerSchema = z.object({
   message: z.string(),
   projectContext: projectContextSchema,
   voiceProfile: voiceProfileDocumentSchema.optional(),
@@ -569,6 +569,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: typeof payload.response === 'string' ? payload.response : "OpenSwarm Writing Partner did not return a text response.",
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error("OpenSwarm bridge validation error:", error.flatten());
+        return res.status(400).json({
+          error: "Invalid OpenSwarm bridge request",
+          message: "WriterOS could not build a valid OpenSwarm Writing Partner handoff packet.",
+        });
+      }
+
       console.error("OpenSwarm bridge error:", error);
       res.status(502).json({
         error: "Failed to reach OpenSwarm",
