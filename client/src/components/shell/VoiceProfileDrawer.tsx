@@ -16,7 +16,7 @@ interface VoiceProfileDrawerProps {
   onClose: () => void
 }
 
-type DrawerMode = 'view' | 'edit' | 'assessment'
+type DrawerMode = 'view' | 'edit' | 'assessment' | 'review'
 
 type EditDraft = {
   displayName: string
@@ -150,17 +150,25 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   const [assessmentSaved, setAssessmentSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>(undefined)
   const [clearPending, setClearPending] = useState(false)
+  const [synthesisLoading, setSynthesisLoading] = useState(false)
+  const [synthesisError, setSynthesisError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (!open) return
     const loadedState = loadVoiceProfileState()
     setProfileState(loadedState)
     setAssessmentAnswers(loadedState?.answers ?? {})
-    setMode(loadedState && !loadedState.profile && loadedState.status === 'draft_answers' ? 'assessment' : 'view')
+    setMode(
+      loadedState && !loadedState.profile && loadedState.status === 'draft_answers' ? 'assessment'
+        : loadedState?.status === 'draft_profile' ? 'review'
+        : 'view'
+    )
     setEditDraft(undefined)
     setAssessmentSaved(false)
     setSaveError(undefined)
     setClearPending(false)
+    setSynthesisLoading(false)
+    setSynthesisError(undefined)
   }, [open])
 
   if (!open) return null
@@ -180,7 +188,7 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   function handleCancelEdit() {
     setEditDraft(undefined)
     setSaveError(undefined)
-    setMode('view')
+    setMode(profileState?.status === 'draft_profile' ? 'review' : 'view')
   }
 
   function handleStartAssessment() {
@@ -246,6 +254,55 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
     setMode('view')
   }
 
+  async function handleGenerateProfile() {
+    setSynthesisLoading(true)
+    setSynthesisError(undefined)
+    try {
+      const cleanedAnswers = cleanAssessmentAnswers(assessmentAnswers)
+      const response = await fetch('/api/voice-profile/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: cleanedAnswers }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json() as { message?: string }
+        setSynthesisError(errorData.message ?? 'Synthesis failed. Please try again.')
+        return
+      }
+      const data = await response.json() as { profile: VoiceProfileDocument }
+      const now = new Date().toISOString()
+      const newState: VoiceProfileState = {
+        version: 1,
+        status: 'draft_profile',
+        answers: cleanedAnswers,
+        profile: data.profile,
+        createdAt: profileState?.createdAt ?? now,
+        updatedAt: now,
+        ...(profileState?.deepDiveAnswers ? { deepDiveAnswers: profileState.deepDiveAnswers } : {}),
+        ...(profileState?.refinementAnswers ? { refinementAnswers: profileState.refinementAnswers } : {}),
+      }
+      saveVoiceProfileState(newState)
+      setProfileState(newState)
+      setMode('review')
+    } catch {
+      setSynthesisError('Network error. Please try again.')
+    } finally {
+      setSynthesisLoading(false)
+    }
+  }
+
+  function handleApprove() {
+    if (!profileState?.profile) return
+    const updatedState: VoiceProfileState = {
+      ...profileState,
+      status: 'complete',
+      updatedAt: new Date().toISOString(),
+    }
+    saveVoiceProfileState(updatedState)
+    setProfileState(updatedState)
+    setMode('view')
+  }
+
   return (
     <>
       <div aria-hidden="true" style={styles.backdrop} onClick={onClose} />
@@ -261,20 +318,18 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
         </div>
 
         <div style={styles.body}>
-          {!profile ? (
-            mode === 'assessment' ? (
-              <AssessmentMode answers={assessmentAnswers} onAnswer={handleAssessmentAnswer} />
-            ) : (
-              <EmptyState status={status} answeredCount={answeredCount} />
-            )
-          ) : mode === 'view' ? (
-            <ViewMode profile={profile} />
-          ) : editDraft ? (
+          {mode === 'assessment' ? (
+            <AssessmentMode answers={assessmentAnswers} onAnswer={handleAssessmentAnswer} />
+          ) : mode === 'edit' && editDraft ? (
             <EditMode draft={editDraft} onChange={setEditDraft} error={saveError} />
-          ) : null}
+          ) : profile ? (
+            <ViewMode profile={profile} />
+          ) : (
+            <EmptyState status={status} answeredCount={answeredCount} />
+          )}
         </div>
 
-        {profile && mode === 'view' && (
+        {mode === 'view' && profile && status === 'complete' && (
           <div style={styles.footer}>
             <button type="button" style={styles.editButton} onClick={handleStartEdit}>
               Edit
@@ -294,7 +349,27 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
           </div>
         )}
 
-        {profile && mode === 'edit' && (
+        {mode === 'review' && profile && (
+          <div style={styles.footer}>
+            <button type="button" style={styles.editButton} onClick={handleApprove}>
+              Approve
+            </button>
+            <button type="button" style={styles.cancelButton} onClick={handleStartEdit}>
+              Edit
+            </button>
+            <button
+              type="button"
+              style={styles.cancelButton}
+              onClick={handleGenerateProfile}
+              disabled={synthesisLoading}
+            >
+              {synthesisLoading ? 'Generating…' : 'Regenerate'}
+            </button>
+            {synthesisError && <span style={styles.footerHint}>{synthesisError}</span>}
+          </div>
+        )}
+
+        {mode === 'edit' && profile && (
           <div style={styles.footer}>
             <button type="button" style={styles.editButton} onClick={handleSave}>
               Save
@@ -305,7 +380,7 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
           </div>
         )}
 
-        {!profile && mode === 'view' && (
+        {mode === 'view' && !profile && (
           <div style={styles.footer}>
             <button type="button" style={styles.editButton} onClick={handleStartAssessment}>
               {answeredCount > 0 ? 'Continue assessment' : 'Start assessment'}
@@ -314,16 +389,26 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
           </div>
         )}
 
-        {!profile && mode === 'assessment' && (
+        {mode === 'assessment' && (
           <div style={styles.footer}>
             <button type="button" style={styles.editButton} onClick={handleSaveAssessment}>
               Save answers
             </button>
-            <button type="button" style={styles.cancelButton} onClick={() => setMode('view')}>
+            {answeredCount >= 10 && (
+              <button
+                type="button"
+                style={styles.editButton}
+                onClick={handleGenerateProfile}
+                disabled={synthesisLoading}
+              >
+                {synthesisLoading ? 'Generating…' : 'Generate profile'}
+              </button>
+            )}
+            <button type="button" style={styles.cancelButton} onClick={() => setMode(profile ? 'review' : 'view')}>
               Back
             </button>
             <span style={styles.footerHint}>
-              {assessmentSaved ? 'Saved' : `${answeredCount}/20 answered`}
+              {synthesisError ?? (assessmentSaved ? 'Saved' : `${answeredCount}/20 answered`)}
             </span>
           </div>
         )}
@@ -351,9 +436,13 @@ function StatusBadge({ status }: { status: VoiceProfileState['status'] }) {
 }
 
 function EmptyState({ status, answeredCount }: { status: VoiceProfileState['status']; answeredCount: number }) {
+  const title =
+    status === 'draft_answers' ? 'Assessment in progress'
+    : status === 'draft_profile' ? 'Profile draft ready'
+    : 'No Voice Profile yet'
   return (
     <div style={styles.emptyState}>
-      <p style={styles.emptyTitle}>{status === 'draft_answers' ? 'Assessment in progress' : 'No Voice Profile yet'}</p>
+      <p style={styles.emptyTitle}>{title}</p>
       <p style={styles.emptyBody}>
         {answeredCount > 0 ? `${answeredCount} answers saved.` : 'Start with the questions that reveal your creative wiring.'}
       </p>

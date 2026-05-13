@@ -1,5 +1,174 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
+import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
+
+const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
+  q1: 'First creative impulse (character / image / question / dialogue)',
+  q2: 'Writers and directors whose work matches yours, and what they do',
+  q3: 'How a project started: original spark and early form',
+  q4: 'An unsanitizable protagonist: worst trait and why you kept it',
+  q5: 'What you build first in a new character (backstory / voice / wound / lie / face)',
+  q6: 'A supporting element that refused to stay small, and why',
+  q7: 'Role of humor in serious work, with a specific example',
+  q8: 'Whose side you take when characters disagree — or whether you do',
+  q9: 'Endings you are drawn to and endings you avoid',
+  q10: 'A symbol or object that carries metaphorical weight in your work',
+  q11: 'Your limit for lore / worldbuilding before it stops serving story',
+  q12: 'How much real-world accuracy you demand vs. where you bend',
+  q13: 'Sample action description and what you protect about your prose style',
+  q14: 'A flavor of bad prose you cannot stand and why it bothers you',
+  q15: 'How you handle the gap between what characters say and mean',
+  q16: 'Why you write — what makes you sit down today',
+  q17: 'Themes or wounds you return to without meaning to',
+  q18: 'Whether your characters reflect you or are who you wish to be',
+  q19: 'What kind of collaborator note makes you sit up vs. tune out',
+  q20: 'What AI assistants do that drives you up a wall',
+}
+
+export function buildSynthesisPrompt(answers: Record<string, string>): string {
+  const labeledAnswers = Object.entries(answers)
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([id, answer]) => `### ${SYNTHESIS_QUESTION_LABELS[id] ?? id}\n${answer.trim()}`)
+    .join('\n\n')
+
+  return `You are synthesizing a writer's creative identity from their assessment answers. Study their answers carefully and produce a structured Voice Profile that captures how they actually work, not generic advice.
+
+WRITER ASSESSMENT ANSWERS:
+${labeledAnswers}
+
+Return ONLY a JSON object matching this exact shape — no prose, no markdown fences:
+{
+  "version": 1,
+  "createdAt": "<ISO 8601 timestamp>",
+  "updatedAt": "<ISO 8601 timestamp>",
+  "displayName": "<optional: writer's name if mentioned, else omit>",
+  "archetype": "<2-4 word label that captures their creative identity>",
+  "coreStatement": "<one sentence: what kind of stories they write and why>",
+  "creativeNorthStars": ["<principle>", "..."],
+  "storytellingDNA": {
+    "principles": ["<structural or thematic principle>", "..."],
+    "recurringThemes": ["<theme>", "..."],
+    "notes": "<freeform synthesis of their storytelling approach>"
+  },
+  "influences": {
+    "writers": ["<name>", "..."],
+    "directors": ["<name>", "..."],
+    "filmsAndShows": ["<title>", "..."],
+    "scenesAndLines": ["<reference>", "..."],
+    "notes": "<what these influences reveal about their aesthetic>"
+  },
+  "characterInstincts": {
+    "drawnTo": ["<character type or quality>", "..."],
+    "rejects": ["<character type or quality>", "..."],
+    "notes": "<how they build characters>"
+  },
+  "dialogue": {
+    "rules": ["<dialogue principle>", "..."],
+    "instinctsByMode": "<how their dialogue shifts by emotional context>",
+    "avoidances": ["<what they won't do>", "..."]
+  },
+  "visualLanguage": {
+    "instincts": ["<visual or prose instinct>", "..."],
+    "notes": "<how they think about the page or screen>"
+  },
+  "process": {
+    "whenFlowing": "<what their creative state looks like when it works>",
+    "stuckPatterns": ["<what blocks them>", "..."],
+    "supportNeeds": ["<what kind of help they need>", "..."]
+  },
+  "strengths": ["<strength>", "..."],
+  "growthEdges": ["<growth area>", "..."],
+  "collaborationPreferences": {
+    "always": ["<what they want from collaborators>", "..."],
+    "never": ["<what they don't want>", "..."],
+    "feedbackStyle": "<how they best receive feedback>"
+  },
+  "alexCoachingNotes": ["<note for their writing coach Alex>", "..."]
+}`
+}
+
+export function parseSynthesisResponse(raw: string): VoiceProfileDocument {
+  let parsed: Record<string, unknown>
+  try {
+    parsed = parseJsonObject(raw) as Record<string, unknown>
+  } catch {
+    throw new Error('Voice profile synthesis returned invalid JSON')
+  }
+
+  const str = (v: unknown, fallback = ''): string =>
+    typeof v === 'string' ? v : fallback
+  const strArr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  const obj = (v: unknown): Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : {}
+
+  if (!str(parsed.archetype)) {
+    throw new Error('Voice profile synthesis response missing required field: archetype')
+  }
+  if (!str(parsed.coreStatement)) {
+    throw new Error('Voice profile synthesis response missing required field: coreStatement')
+  }
+
+  const now = new Date().toISOString()
+  const dna = obj(parsed.storytellingDNA)
+  const inf = obj(parsed.influences)
+  const ci = obj(parsed.characterInstincts)
+  const dlg = obj(parsed.dialogue)
+  const vl = obj(parsed.visualLanguage)
+  const proc = obj(parsed.process)
+  const collab = obj(parsed.collaborationPreferences)
+
+  return {
+    version: 1,
+    createdAt: str(parsed.createdAt, now),
+    updatedAt: now,
+    ...(str(parsed.displayName) ? { displayName: str(parsed.displayName) } : {}),
+    archetype: str(parsed.archetype),
+    coreStatement: str(parsed.coreStatement),
+    creativeNorthStars: strArr(parsed.creativeNorthStars),
+    storytellingDNA: {
+      principles: strArr(dna.principles),
+      recurringThemes: strArr(dna.recurringThemes),
+      notes: str(dna.notes),
+    },
+    influences: {
+      writers: strArr(inf.writers),
+      directors: strArr(inf.directors),
+      filmsAndShows: strArr(inf.filmsAndShows),
+      scenesAndLines: strArr(inf.scenesAndLines),
+      notes: str(inf.notes),
+    },
+    characterInstincts: {
+      drawnTo: strArr(ci.drawnTo),
+      rejects: strArr(ci.rejects),
+      notes: str(ci.notes),
+    },
+    dialogue: {
+      rules: strArr(dlg.rules),
+      instinctsByMode: str(dlg.instinctsByMode),
+      avoidances: strArr(dlg.avoidances),
+    },
+    visualLanguage: {
+      instincts: strArr(vl.instincts),
+      notes: str(vl.notes),
+    },
+    process: {
+      whenFlowing: str(proc.whenFlowing),
+      stuckPatterns: strArr(proc.stuckPatterns),
+      supportNeeds: strArr(proc.supportNeeds),
+    },
+    strengths: strArr(parsed.strengths),
+    growthEdges: strArr(parsed.growthEdges),
+    collaborationPreferences: {
+      always: strArr(collab.always),
+      never: strArr(collab.never),
+      feedbackStyle: str(collab.feedbackStyle),
+    },
+    alexCoachingNotes: strArr(parsed.alexCoachingNotes),
+  }
+}
 
 export interface PersonaResponse {
   message: string;
@@ -583,6 +752,18 @@ Respond with JSON in this format:
         ]
       };
     }
+  }
+
+  async synthesizeVoiceProfile(answers: Record<string, string>): Promise<VoiceProfileDocument> {
+    const prompt = buildSynthesisPrompt(answers)
+    const provider = createModelProvider()
+    const rawContent = await provider.generateResponse({
+      systemPrompt: 'You are a voice profile synthesizer for WriterOS. Return only valid JSON. No prose, no markdown.',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      maxTokens: 2000,
+    })
+    return parseSynthesisResponse(rawContent ?? '')
   }
 
   async healthCheck(): Promise<{ status: string; model: string; error?: string }> {

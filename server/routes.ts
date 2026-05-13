@@ -212,6 +212,13 @@ export const openSwarmWritingPartnerSchema = z.object({
   voiceProfile: voiceProfileDocumentSchema.optional(),
 });
 
+export const voiceProfileSynthesizeSchema = z.object({
+  answers: z.record(z.string(), z.string()).refine(
+    v => Object.keys(v).length > 0,
+    { message: 'answers must not be empty' }
+  ),
+});
+
 type ProjectContextForOpenSwarm = z.infer<typeof projectContextSchema>;
 
 function filled(value: unknown): value is string {
@@ -581,6 +588,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(502).json({
         error: "Failed to reach OpenSwarm",
         message: "Start OpenSwarm's FastAPI server on port 8080, then try again.",
+      });
+    }
+  });
+
+  // Voice profile synthesis
+  app.post("/api/voice-profile/synthesize", async (req, res) => {
+    try {
+      const data = voiceProfileSynthesizeSchema.parse(req.body);
+      const profile = await openaiService.synthesizeVoiceProfile(data.answers);
+      res.json({ profile });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "invalid_request",
+          message: "answers must be a non-empty record of string → string",
+        });
+      }
+      console.error("Voice profile synthesis error:", error);
+      res.status(502).json({
+        error: "synthesis_failed",
+        message: error instanceof Error ? error.message : "Voice profile synthesis failed",
       });
     }
   });

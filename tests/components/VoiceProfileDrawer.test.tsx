@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest'
+import { fireEvent, render, screen, act } from '@testing-library/react'
 import { VoiceProfileDrawer } from '../../client/src/components/shell/VoiceProfileDrawer'
 import { VOICE_PROFILE_STORAGE_KEY, type VoiceProfileDocument, type VoiceProfileState } from '@shared/voiceProfile'
 
@@ -224,5 +224,220 @@ describe('VoiceProfileDrawer', () => {
     expect(screen.getByText('Assessment in progress')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue assessment' })).toBeInTheDocument()
     expect(screen.getByText('1/20 answered')).toBeInTheDocument()
+  })
+})
+
+// ── Generate profile + review mode ──────────────────────────────────────────
+
+function fillAnswers(count: number): void {
+  for (let i = 1; i <= count; i++) {
+    const textareas = document.querySelectorAll('textarea')
+    if (i - 1 < textareas.length) {
+      fireEvent.change(textareas[i - 1], { target: { value: `Answer ${i}` } })
+    }
+  }
+}
+
+describe('VoiceProfileDrawer — synthesis and review', () => {
+  const mockProfile: VoiceProfileDocument = makeProfile()
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('hides Generate profile button when fewer than 10 answers', () => {
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+    // answer 9 questions
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 9; i++) {
+      fireEvent.change(textareas[i], { target: { value: `Answer ${i + 1}` } })
+    }
+    expect(screen.queryByRole('button', { name: /generate profile/i })).not.toBeInTheDocument()
+  })
+
+  it('shows Generate profile button when 10 or more answers', () => {
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 10; i++) {
+      fireEvent.change(textareas[i], { target: { value: `Answer ${i + 1}` } })
+    }
+    expect(screen.getByRole('button', { name: /generate profile/i })).toBeInTheDocument()
+  })
+
+  it('calls fetch on Generate profile and enters review mode on success', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ profile: mockProfile }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 10; i++) {
+      fireEvent.change(textareas[i], { target: { value: `Answer ${i + 1}` } })
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /generate profile/i }))
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/voice-profile/synthesize',
+      expect.objectContaining({ method: 'POST' })
+    )
+    // review mode: Approve button visible
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
+    // profile content rendered
+    expect(screen.getByText('The Moral Archaeologist')).toBeInTheDocument()
+    // status badge shows Draft
+    expect(screen.getByText('Draft')).toBeInTheDocument()
+
+    const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
+    expect(saved.status).toBe('draft_profile')
+    expect(saved.profile?.archetype).toBe(mockProfile.archetype)
+  })
+
+  it('stays in assessment mode and shows error when synthesis fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'synthesis_failed', message: 'Model unavailable.' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 10; i++) {
+      fireEvent.change(textareas[i], { target: { value: `Answer ${i + 1}` } })
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /generate profile/i }))
+    })
+
+    expect(screen.getByText('Model unavailable.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+    // Save answers still visible — still in assessment mode
+    expect(screen.getByRole('button', { name: 'Save answers' })).toBeInTheDocument()
+  })
+
+  it('shows error on network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')))
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 10; i++) {
+      fireEvent.change(textareas[i], { target: { value: `Answer ${i + 1}` } })
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /generate profile/i }))
+    })
+
+    expect(screen.getByText('Network error. Please try again.')).toBeInTheDocument()
+  })
+
+  it('Approve sets status to complete and enters view mode', async () => {
+    saveState({
+      version: 1,
+      status: 'draft_profile',
+      answers: { q1: 'test' },
+      profile: mockProfile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+
+    expect(screen.getByText('Complete')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+
+    const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
+    expect(saved.status).toBe('complete')
+  })
+
+  it('Edit in review mode enters edit mode and Cancel returns to review', () => {
+    saveState({
+      version: 1,
+      status: 'draft_profile',
+      answers: { q1: 'test' },
+      profile: mockProfile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByLabelText('Archetype')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  })
+
+  it('Regenerate re-calls fetch with cleaned answers', async () => {
+    saveState({
+      version: 1,
+      status: 'draft_profile',
+      answers: { q1: 'test' },
+      profile: mockProfile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ profile: mockProfile }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/voice-profile/synthesize',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  })
+
+  it('saves cleanAssessmentAnswers (trims whitespace, drops blanks) on generate', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ profile: mockProfile }),
+    }))
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+
+    const textareas = document.querySelectorAll('textarea')
+    for (let i = 0; i < 10; i++) {
+      fireEvent.change(textareas[i], { target: { value: i === 0 ? '  trimmed  ' : `Answer ${i + 1}` } })
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /generate profile/i }))
+    })
+
+    const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
+    expect(saved.answers.q1).toBe('trimmed')
   })
 })

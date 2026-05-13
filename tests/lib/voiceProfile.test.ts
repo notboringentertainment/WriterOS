@@ -199,4 +199,33 @@ describe('Voice Profile state storage', () => {
     expect(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)).toBeNull()
     expect(() => clearVoiceProfileState()).not.toThrow()
   })
+
+  it('round-trips draft_profile state with profile and answers intact', () => {
+    const profile = makeProfile()
+    const state: VoiceProfileState = {
+      version: 1,
+      status: 'draft_profile',
+      answers: { q1: 'A character in a moment of failure.', q3: 'Started with a moral question.' },
+      profile,
+      createdAt: '2026-05-13T00:00:00.000Z',
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    }
+    saveVoiceProfileState(state)
+    const loaded = loadVoiceProfileState()
+    expect(loaded?.status).toBe('draft_profile')
+    expect(loaded?.profile?.archetype).toBe(profile.archetype)
+    expect(loaded?.answers.q1).toBe('A character in a moment of failure.')
+  })
+
+  it('draft_profile is not surfaced by loadCompletedVoiceProfile', () => {
+    const profile = makeProfile()
+    saveVoiceProfileState({
+      version: 1,
+      status: 'draft_profile',
+      answers: {},
+      profile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+    expect(loadCompletedVoiceProfile()).toBeUndefined()
+  })
 })
