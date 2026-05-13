@@ -72,6 +72,7 @@ describe('VoiceProfileDrawer', () => {
     render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
     expect(screen.getByText('No Voice Profile yet')).toBeInTheDocument()
     expect(screen.getByText('No profile')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start assessment' })).toBeInTheDocument()
   })
 
   it('loads and displays a completed profile from localStorage', () => {
@@ -173,5 +174,55 @@ describe('VoiceProfileDrawer', () => {
 
     expect(screen.getByText('Archetype and core statement are required.')).toBeInTheDocument()
     expect(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)).toContain('The Moral Archaeologist')
+  })
+
+  it('starts the assessment and saves draft answers', () => {
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+    fireEvent.change(screen.getByLabelText(/When a story idea hits you/i), {
+      target: { value: 'A character in a moment of moral failure.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save answers' }))
+
+    expect(screen.getByText('Saved')).toBeInTheDocument()
+    const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
+    expect(saved.status).toBe('draft_answers')
+    expect(saved.answers.q1).toBe('A character in a moment of moral failure.')
+    expect(saved.profile).toBeUndefined()
+  })
+
+  it('loads draft answers into assessment mode', () => {
+    saveState({
+      version: 1,
+      status: 'draft_answers',
+      answers: {
+        q1: 'A moral question first.',
+      },
+      updatedAt: '2026-05-12T00:00:00.000Z',
+    })
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    expect(screen.getByText('In progress')).toBeInTheDocument()
+    expect(screen.getByLabelText(/When a story idea hits you/i)).toHaveValue('A moral question first.')
+  })
+
+  it('can return from draft assessment to the progress empty state', () => {
+    saveState({
+      version: 1,
+      status: 'draft_answers',
+      answers: {
+        q1: 'A moral question first.',
+      },
+      updatedAt: '2026-05-12T00:00:00.000Z',
+    })
+
+    render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(screen.getByText('Assessment in progress')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue assessment' })).toBeInTheDocument()
+    expect(screen.getByText('1/20 answered')).toBeInTheDocument()
   })
 })

@@ -5,13 +5,18 @@ import {
   loadVoiceProfileState,
   saveVoiceProfileState,
 } from '../../lib/voiceProfile'
+import {
+  VOICE_PROFILE_ASSESSMENT_SECTIONS,
+  cleanAssessmentAnswers,
+  countAnsweredAssessmentQuestions,
+} from '../../lib/voiceProfileAssessment'
 
 interface VoiceProfileDrawerProps {
   open: boolean
   onClose: () => void
 }
 
-type DrawerMode = 'view' | 'edit'
+type DrawerMode = 'view' | 'edit' | 'assessment'
 
 type EditDraft = {
   displayName: string
@@ -141,14 +146,19 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   const [profileState, setProfileState] = useState<VoiceProfileState | undefined>(undefined)
   const [mode, setMode] = useState<DrawerMode>('view')
   const [editDraft, setEditDraft] = useState<EditDraft | undefined>(undefined)
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string>>({})
+  const [assessmentSaved, setAssessmentSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>(undefined)
   const [clearPending, setClearPending] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setProfileState(loadVoiceProfileState())
-    setMode('view')
+    const loadedState = loadVoiceProfileState()
+    setProfileState(loadedState)
+    setAssessmentAnswers(loadedState?.answers ?? {})
+    setMode(loadedState && !loadedState.profile && loadedState.status === 'draft_answers' ? 'assessment' : 'view')
     setEditDraft(undefined)
+    setAssessmentSaved(false)
     setSaveError(undefined)
     setClearPending(false)
   }, [open])
@@ -157,6 +167,7 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
 
   const profile = profileState?.profile
   const status = profileState?.status ?? 'not_started'
+  const answeredCount = countAnsweredAssessmentQuestions(assessmentAnswers)
 
   function handleStartEdit() {
     if (!profile) return
@@ -170,6 +181,35 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
     setEditDraft(undefined)
     setSaveError(undefined)
     setMode('view')
+  }
+
+  function handleStartAssessment() {
+    setAssessmentAnswers(profileState?.answers ?? {})
+    setAssessmentSaved(false)
+    setClearPending(false)
+    setMode('assessment')
+  }
+
+  function handleAssessmentAnswer(questionId: string, value: string) {
+    setAssessmentSaved(false)
+    setAssessmentAnswers(prev => ({ ...prev, [questionId]: value }))
+  }
+
+  function handleSaveAssessment() {
+    const now = new Date().toISOString()
+    const updatedState: VoiceProfileState = {
+      version: 1,
+      status: 'draft_answers',
+      answers: cleanAssessmentAnswers(assessmentAnswers),
+      createdAt: profileState?.createdAt ?? now,
+      updatedAt: now,
+      ...(profileState?.deepDiveAnswers ? { deepDiveAnswers: profileState.deepDiveAnswers } : {}),
+      ...(profileState?.refinementAnswers ? { refinementAnswers: profileState.refinementAnswers } : {}),
+    }
+    saveVoiceProfileState(updatedState)
+    setProfileState(updatedState)
+    setAssessmentAnswers(updatedState.answers)
+    setAssessmentSaved(true)
   }
 
   function handleSave() {
@@ -200,6 +240,8 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
     }
     clearVoiceProfileState()
     setProfileState(undefined)
+    setAssessmentAnswers({})
+    setAssessmentSaved(false)
     setClearPending(false)
     setMode('view')
   }
@@ -220,7 +262,11 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
 
         <div style={styles.body}>
           {!profile ? (
-            <EmptyState />
+            mode === 'assessment' ? (
+              <AssessmentMode answers={assessmentAnswers} onAnswer={handleAssessmentAnswer} />
+            ) : (
+              <EmptyState status={status} answeredCount={answeredCount} />
+            )
           ) : mode === 'view' ? (
             <ViewMode profile={profile} />
           ) : editDraft ? (
@@ -259,9 +305,26 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
           </div>
         )}
 
-        {!profile && (
+        {!profile && mode === 'view' && (
           <div style={styles.footer}>
-            <span style={styles.footerHint}>No saved writer profile is active.</span>
+            <button type="button" style={styles.editButton} onClick={handleStartAssessment}>
+              {answeredCount > 0 ? 'Continue assessment' : 'Start assessment'}
+            </button>
+            <span style={styles.footerHint}>{answeredCount}/20 answered</span>
+          </div>
+        )}
+
+        {!profile && mode === 'assessment' && (
+          <div style={styles.footer}>
+            <button type="button" style={styles.editButton} onClick={handleSaveAssessment}>
+              Save answers
+            </button>
+            <button type="button" style={styles.cancelButton} onClick={() => setMode('view')}>
+              Back
+            </button>
+            <span style={styles.footerHint}>
+              {assessmentSaved ? 'Saved' : `${answeredCount}/20 answered`}
+            </span>
           </div>
         )}
       </aside>
@@ -277,14 +340,56 @@ function StatusBadge({ status }: { status: VoiceProfileState['status'] }) {
     draft_profile: 'Draft',
     complete: 'Complete',
   }
-  return <span style={styles.badge}>{label[status]}</span>
+  const color: Record<VoiceProfileState['status'], string> = {
+    not_started: 'var(--fg-subtle)',
+    skipped: 'var(--fg-subtle)',
+    draft_answers: 'var(--fg-muted)',
+    draft_profile: 'var(--fg-muted)',
+    complete: 'var(--primary)',
+  }
+  return <span style={{ ...styles.badge, color: color[status] }}>{label[status]}</span>
 }
 
-function EmptyState() {
+function EmptyState({ status, answeredCount }: { status: VoiceProfileState['status']; answeredCount: number }) {
   return (
     <div style={styles.emptyState}>
-      <p style={styles.emptyTitle}>No Voice Profile yet</p>
-      <p style={styles.emptyBody}>A saved profile will appear here when it is ready.</p>
+      <p style={styles.emptyTitle}>{status === 'draft_answers' ? 'Assessment in progress' : 'No Voice Profile yet'}</p>
+      <p style={styles.emptyBody}>
+        {answeredCount > 0 ? `${answeredCount} answers saved.` : 'Start with the questions that reveal your creative wiring.'}
+      </p>
+    </div>
+  )
+}
+
+function AssessmentMode({
+  answers,
+  onAnswer,
+}: {
+  answers: Record<string, string>
+  onAnswer: (questionId: string, value: string) => void
+}) {
+  return (
+    <div style={assessmentStyles.root}>
+      {VOICE_PROFILE_ASSESSMENT_SECTIONS.map(section => (
+        <section key={section.id} style={assessmentStyles.section}>
+          <h3 style={assessmentStyles.sectionTitle}>{section.title}</h3>
+          {section.questions.map(question => (
+            <div key={question.id} style={assessmentStyles.question}>
+              <label htmlFor={`voice-profile-answer-${question.id}`} style={assessmentStyles.questionLabel}>
+                <span style={assessmentStyles.questionNumber}>{question.id.toUpperCase()}</span>
+                {question.text}
+              </label>
+              <textarea
+                id={`voice-profile-answer-${question.id}`}
+                rows={4}
+                value={answers[question.id] ?? ''}
+                onChange={event => onAnswer(question.id, event.target.value)}
+                style={assessmentStyles.textarea}
+              />
+            </div>
+          ))}
+        </section>
+      ))}
     </div>
   )
 }
@@ -748,5 +853,60 @@ const editStyles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: 'var(--error, #c0392b)',
     margin: '0 0 12px',
+  },
+}
+
+const assessmentStyles: Record<string, React.CSSProperties> = {
+  root: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  section: {
+    borderBottom: '1px solid var(--border)',
+    paddingBottom: 16,
+    marginBottom: 18,
+  },
+  sectionTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--fg-subtle)',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    margin: '0 0 12px',
+  },
+  question: {
+    marginBottom: 14,
+  },
+  questionLabel: {
+    display: 'block',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    color: 'var(--fg)',
+    lineHeight: 1.45,
+    marginBottom: 6,
+  },
+  questionNumber: {
+    display: 'inline-block',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    color: 'var(--fg-subtle)',
+    marginRight: 8,
+  },
+  textarea: {
+    width: '100%',
+    background: 'var(--surface-2)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    lineHeight: 1.5,
+    padding: '8px 9px',
+    resize: 'vertical',
+    outline: 'none',
+    boxSizing: 'border-box',
   },
 }
