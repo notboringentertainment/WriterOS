@@ -15,11 +15,14 @@ function makeShellState(overrides = {}) {
     panelOpen: false,
     focusMode: false,
     storyBibleSection: null,
+    voiceProfileOpen: false,
     setActiveTab: vi.fn(),
     togglePanel: vi.fn(),
     enterWritersRoom: vi.fn(),
     exitWritersRoom: vi.fn(),
     toggleFocusMode: vi.fn(),
+    toggleVoiceProfile: vi.fn(),
+    closeVoiceProfile: vi.fn(),
     ...overrides,
   }
 }
@@ -55,6 +58,33 @@ describe('Shell', () => {
     fireEvent.keyDown(window, { key: '5', metaKey: true })
 
     expect(enterWritersRoom).toHaveBeenCalled()
+  })
+
+  it('routes Voice Profile button to shell state', () => {
+    const toggleVoiceProfile = vi.fn()
+    const shellState = makeShellState({ toggleVoiceProfile })
+    render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voice Profile' }))
+
+    expect(toggleVoiceProfile).toHaveBeenCalled()
+  })
+
+  it('closes Voice Profile on Escape before focus mode handling', () => {
+    const closeVoiceProfile = vi.fn()
+    const toggleFocusMode = vi.fn()
+    const shellState = makeShellState({
+      voiceProfileOpen: true,
+      focusMode: true,
+      closeVoiceProfile,
+      toggleFocusMode,
+    })
+    render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(closeVoiceProfile).toHaveBeenCalled()
+    expect(toggleFocusMode).not.toHaveBeenCalled()
   })
 
   it('passes railProps through to LeftRail', () => {

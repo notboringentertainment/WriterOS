@@ -15,6 +15,7 @@ export function useShellState() {
   })
   const [focusMode, setFocusMode] = useState(false)
   const [storyBibleSection, setStoryBibleSectionRaw] = useState<StoryBibleSection | null>(null)
+  const [voiceProfileOpen, setVoiceProfileOpen] = useState(false)
 
   const panelOpen = panelByTab[activeTab]
 
@@ -46,17 +47,28 @@ export function useShellState() {
     setStoryBibleSectionRaw(section)
   }, [])
 
+  const toggleVoiceProfile = useCallback(() => {
+    setVoiceProfileOpen(prev => !prev)
+  }, [])
+
+  const closeVoiceProfile = useCallback(() => {
+    setVoiceProfileOpen(false)
+  }, [])
+
   return {
     activeTab,
     writersRoomActive,
     panelOpen,
     focusMode,
     storyBibleSection,
+    voiceProfileOpen,
     setActiveTab,
     togglePanel,
     enterWritersRoom,
     exitWritersRoom,
     toggleFocusMode,
     setStoryBibleSection,
+    toggleVoiceProfile,
+    closeVoiceProfile,
   }
 }

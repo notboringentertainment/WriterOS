@@ -17,6 +17,8 @@ interface TopBarProps {
   onProjectTitleChange?: (title: string) => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
+  onVoiceProfile: () => void
+  voiceProfileOpen: boolean
 }
 
 export function TopBar({
@@ -26,6 +28,8 @@ export function TopBar({
   onProjectTitleChange,
   onTabChange,
   onWritersRoom,
+  onVoiceProfile,
+  voiceProfileOpen,
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -116,6 +120,15 @@ export function TopBar({
       </div>
 
       <div style={styles.rightZone}>
+        <button
+          type="button"
+          aria-label="Voice Profile"
+          aria-pressed={voiceProfileOpen}
+          style={{ ...styles.cmdK, ...(voiceProfileOpen ? styles.voiceActive : {}) }}
+          onClick={onVoiceProfile}
+        >
+          Voice
+        </button>
         <button
           role="tab"
           aria-selected={writersRoomActive}
@@ -236,9 +249,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderColor: 'var(--primary-dim)',
     background: 'hsla(260, 100%, 80%, 0.08)',
   },
+  voiceActive: {
+    color: 'var(--primary)',
+    borderColor: 'var(--primary-dim)',
+    background: 'hsla(260, 100%, 80%, 0.08)',
+  },
   cmdK: {
     background: 'none',
-    border: '1px solid var(--border)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
     borderRadius: 6,
     color: 'var(--fg-subtle)',
     fontFamily: 'var(--font-mono)',

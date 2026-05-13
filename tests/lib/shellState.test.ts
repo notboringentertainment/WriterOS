@@ -9,6 +9,7 @@ describe('useShellState', () => {
     expect(result.current.panelOpen).toBe(false)
     expect(result.current.focusMode).toBe(false)
     expect(result.current.writersRoomActive).toBe(false)
+    expect(result.current.voiceProfileOpen).toBe(false)
   })
 
   it('storyBibleSection defaults to null', () => {
@@ -81,5 +82,13 @@ describe('useShellState', () => {
     expect(result.current.focusMode).toBe(true)
     act(() => result.current.toggleFocusMode())
     expect(result.current.focusMode).toBe(false)
+  })
+
+  it('toggles and closes the Voice Profile drawer state', () => {
+    const { result } = renderHook(() => useShellState())
+    act(() => result.current.toggleVoiceProfile())
+    expect(result.current.voiceProfileOpen).toBe(true)
+    act(() => result.current.closeVoiceProfile())
+    expect(result.current.voiceProfileOpen).toBe(false)
   })
 })

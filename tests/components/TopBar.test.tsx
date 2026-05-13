@@ -8,6 +8,8 @@ const defaultProps = {
   projectTitle: 'The Long Hallway',
   onTabChange: vi.fn(),
   onWritersRoom: vi.fn(),
+  onVoiceProfile: vi.fn(),
+  voiceProfileOpen: false,
 }
 
 describe('TopBar', () => {
@@ -22,6 +24,11 @@ describe('TopBar', () => {
   it("renders Writer's Room tab", () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText("Writer's Room")).toBeInTheDocument()
+  })
+
+  it('renders Voice Profile button', () => {
+    render(<TopBar {...defaultProps} />)
+    expect(screen.getByRole('button', { name: 'Voice Profile' })).toBeInTheDocument()
   })
 
   it('marks active tab with aria-selected true', () => {
@@ -42,6 +49,18 @@ describe('TopBar', () => {
     render(<TopBar {...defaultProps} onWritersRoom={onWritersRoom} />)
     fireEvent.click(screen.getByText("Writer's Room"))
     expect(onWritersRoom).toHaveBeenCalled()
+  })
+
+  it('calls onVoiceProfile when Voice clicked', () => {
+    const onVoiceProfile = vi.fn()
+    render(<TopBar {...defaultProps} onVoiceProfile={onVoiceProfile} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Voice Profile' }))
+    expect(onVoiceProfile).toHaveBeenCalled()
+  })
+
+  it('marks Voice Profile button pressed when open', () => {
+    render(<TopBar {...defaultProps} voiceProfileOpen={true} />)
+    expect(screen.getByRole('button', { name: 'Voice Profile' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('shows project title', () => {

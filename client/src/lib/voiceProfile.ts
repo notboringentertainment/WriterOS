@@ -16,6 +16,22 @@ function hasStringArray(value: Record<string, unknown>, key: string): boolean {
   return Array.isArray(value[key]) && (value[key] as unknown[]).every(item => typeof item === 'string')
 }
 
+function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === 'string'
+}
+
+function isAnswerMap(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every(item => typeof item === 'string')
+}
+
+const VOICE_PROFILE_STATUSES = new Set<VoiceProfileState['status']>([
+  'not_started',
+  'skipped',
+  'draft_answers',
+  'draft_profile',
+  'complete',
+])
+
 function isVoiceProfileDocument(value: unknown): value is VoiceProfileDocument {
   if (!isRecord(value)) return false
   const storytellingDNA = value.storytellingDNA
@@ -67,6 +83,21 @@ function isVoiceProfileDocument(value: unknown): value is VoiceProfileDocument {
     hasStringArray(value, 'alexCoachingNotes')
 }
 
+function isVoiceProfileState(value: unknown): value is VoiceProfileState {
+  if (!isRecord(value)) return false
+  const status = value.status
+  if (value.version !== 1 || typeof status !== 'string' || !VOICE_PROFILE_STATUSES.has(status as VoiceProfileState['status'])) {
+    return false
+  }
+  if (!isAnswerMap(value.answers) || typeof value.updatedAt !== 'string') return false
+  if (!hasOptionalString(value, 'createdAt') || !hasOptionalString(value, 'skippedAt')) return false
+  if (value.deepDiveAnswers !== undefined && !isAnswerMap(value.deepDiveAnswers)) return false
+  if (value.refinementAnswers !== undefined && !isAnswerMap(value.refinementAnswers)) return false
+  if (value.profile !== undefined && !isVoiceProfileDocument(value.profile)) return false
+  if (status === 'complete' && !isVoiceProfileDocument(value.profile)) return false
+  return true
+}
+
 export function completedVoiceProfileFromState(rawState: unknown): VoiceProfileDocument | undefined {
   if (!isRecord(rawState)) return undefined
   const state = rawState as Partial<VoiceProfileState>
@@ -86,4 +117,30 @@ export function parseCompletedVoiceProfile(rawValue: string | null): VoiceProfil
 export function loadCompletedVoiceProfile(): VoiceProfileDocument | undefined {
   if (typeof localStorage === 'undefined') return undefined
   return parseCompletedVoiceProfile(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY))
+}
+
+export function loadVoiceProfileState(): VoiceProfileState | undefined {
+  if (typeof localStorage === 'undefined') return undefined
+  const raw = localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)
+  if (!raw) return undefined
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return isVoiceProfileState(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function saveVoiceProfileState(state: VoiceProfileState): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(
+    VOICE_PROFILE_STORAGE_KEY,
+    JSON.stringify({ ...state, updatedAt: new Date().toISOString() })
+  )
+}
+
+export function clearVoiceProfileState(): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem(VOICE_PROFILE_STORAGE_KEY)
 }

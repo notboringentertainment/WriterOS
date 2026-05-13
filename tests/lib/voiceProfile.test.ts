@@ -1,9 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { VOICE_PROFILE_STORAGE_KEY, type VoiceProfileDocument } from '@shared/voiceProfile'
+import { VOICE_PROFILE_STORAGE_KEY, type VoiceProfileDocument, type VoiceProfileState } from '@shared/voiceProfile'
 import {
+  clearVoiceProfileState,
   completedVoiceProfileFromState,
   loadCompletedVoiceProfile,
+  loadVoiceProfileState,
   parseCompletedVoiceProfile,
+  saveVoiceProfileState,
 } from '../../client/src/lib/voiceProfile'
 
 function makeProfile(): VoiceProfileDocument {
@@ -115,5 +118,85 @@ describe('Voice Profile loading', () => {
 
   it('survives malformed storage values', () => {
     expect(parseCompletedVoiceProfile('{not json')).toBeUndefined()
+  })
+})
+
+describe('Voice Profile state storage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  const minimalState: VoiceProfileState = {
+    version: 1,
+    status: 'draft_answers',
+    answers: { q1: 'test answer' },
+    updatedAt: '2026-05-12T00:00:00.000Z',
+  }
+
+  it('returns undefined when no profile state has been saved', () => {
+    expect(loadVoiceProfileState()).toBeUndefined()
+  })
+
+  it('returns full state regardless of completion status', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify(minimalState))
+    expect(loadVoiceProfileState()).toEqual(minimalState)
+  })
+
+  it('returns completed state with a valid completed profile', () => {
+    const profile = makeProfile()
+    const state: VoiceProfileState = {
+      version: 1,
+      status: 'complete',
+      answers: {},
+      profile,
+      updatedAt: profile.updatedAt,
+    }
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify(state))
+    expect(loadVoiceProfileState()).toEqual(state)
+  })
+
+  it('rejects malformed JSON', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, '{not json')
+    expect(loadVoiceProfileState()).toBeUndefined()
+  })
+
+  it('rejects objects without the required state shape', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({ foo: 'bar' }))
+    expect(loadVoiceProfileState()).toBeUndefined()
+  })
+
+  it('rejects unknown status values', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({
+      ...minimalState,
+      status: 'uploaded',
+    }))
+    expect(loadVoiceProfileState()).toBeUndefined()
+  })
+
+  it('rejects complete states without a valid profile document', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({
+      ...minimalState,
+      status: 'complete',
+      profile: { version: 1, archetype: 'Incomplete', coreStatement: 'Missing sections' },
+    }))
+    expect(loadVoiceProfileState()).toBeUndefined()
+  })
+
+  it('writes state to the separate Voice Profile storage key with a fresh updatedAt', () => {
+    const before = new Date().toISOString()
+    saveVoiceProfileState(minimalState)
+    const raw = localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)
+    expect(raw).not.toBeNull()
+    const parsed = JSON.parse(raw!)
+    expect(parsed.status).toBe('draft_answers')
+    expect(parsed.answers.q1).toBe('test answer')
+    expect(parsed.updatedAt >= before).toBe(true)
+  })
+
+  it('clears profile state safely', () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify(minimalState))
+    clearVoiceProfileState()
+    expect(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)).toBeNull()
+    expect(() => clearVoiceProfileState()).not.toThrow()
   })
 })

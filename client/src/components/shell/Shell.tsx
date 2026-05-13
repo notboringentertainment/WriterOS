@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { TopBar } from './TopBar'
 import { LeftRail } from './LeftRail'
+import { VoiceProfileDrawer } from './VoiceProfileDrawer'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type { ActiveTab } from '../../lib/wpRouting'
@@ -12,11 +13,14 @@ interface ShellState {
   panelOpen: boolean
   focusMode: boolean
   storyBibleSection: StoryBibleSection | null
+  voiceProfileOpen: boolean
   setActiveTab: (tab: ActiveTab) => void
   togglePanel: () => void
   enterWritersRoom: () => void
   exitWritersRoom: () => void
   toggleFocusMode: () => void
+  toggleVoiceProfile: () => void
+  closeVoiceProfile: () => void
 }
 
 interface RailProps {
@@ -37,7 +41,9 @@ interface ShellProps {
 export function Shell({ shellState, projectTitle, onProjectTitleChange, railProps, children }: ShellProps) {
   const {
     activeTab, writersRoomActive, panelOpen, focusMode,
-    storyBibleSection, setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
+    storyBibleSection, voiceProfileOpen,
+    setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
+    toggleVoiceProfile, closeVoiceProfile,
   } = shellState
 
   // Shell keyboard shortcuts
@@ -54,13 +60,17 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
         if (tab) setActiveTab(tab)
         else enterWritersRoom()
       }
+      if (e.key === 'Escape' && voiceProfileOpen) {
+        closeVoiceProfile()
+        return
+      }
       if (e.key === 'Escape' && focusMode) {
         toggleFocusMode()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePanel, setActiveTab, enterWritersRoom, focusMode, toggleFocusMode])
+  }, [togglePanel, setActiveTab, enterWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
 
   const handleWritersRoom = () => {
     if (writersRoomActive) exitWritersRoom()
@@ -78,6 +88,8 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
           onProjectTitleChange={onProjectTitleChange}
           onTabChange={setActiveTab}
           onWritersRoom={handleWritersRoom}
+          onVoiceProfile={toggleVoiceProfile}
+          voiceProfileOpen={voiceProfileOpen}
         />
       )}
       <div style={styles.body}>
@@ -95,6 +107,7 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
           {children}
         </main>
       </div>
+      <VoiceProfileDrawer open={voiceProfileOpen} onClose={closeVoiceProfile} />
     </div>
   )
 }
