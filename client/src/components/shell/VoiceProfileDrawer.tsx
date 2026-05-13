@@ -142,6 +142,22 @@ function editDraftToProfile(draft: EditDraft, existing: VoiceProfileDocument): V
   }
 }
 
+function buildDraftAssessmentState(
+  answers: Record<string, string>,
+  existingState: VoiceProfileState | undefined
+): VoiceProfileState {
+  const now = new Date().toISOString()
+  return {
+    version: 1,
+    status: 'draft_answers',
+    answers: cleanAssessmentAnswers(answers),
+    createdAt: existingState?.createdAt ?? now,
+    updatedAt: now,
+    ...(existingState?.deepDiveAnswers ? { deepDiveAnswers: existingState.deepDiveAnswers } : {}),
+    ...(existingState?.refinementAnswers ? { refinementAnswers: existingState.refinementAnswers } : {}),
+  }
+}
+
 export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   const [profileState, setProfileState] = useState<VoiceProfileState | undefined>(undefined)
   const [mode, setMode] = useState<DrawerMode>('view')
@@ -199,21 +215,17 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   }
 
   function handleAssessmentAnswer(questionId: string, value: string) {
-    setAssessmentSaved(false)
-    setAssessmentAnswers(prev => ({ ...prev, [questionId]: value }))
+    const nextAnswers = { ...assessmentAnswers, [questionId]: value }
+    const updatedState = buildDraftAssessmentState(nextAnswers, profileState)
+    saveVoiceProfileState(updatedState)
+    setProfileState(updatedState)
+    setAssessmentAnswers(nextAnswers)
+    setAssessmentSaved(true)
+    setSynthesisError(undefined)
   }
 
   function handleSaveAssessment() {
-    const now = new Date().toISOString()
-    const updatedState: VoiceProfileState = {
-      version: 1,
-      status: 'draft_answers',
-      answers: cleanAssessmentAnswers(assessmentAnswers),
-      createdAt: profileState?.createdAt ?? now,
-      updatedAt: now,
-      ...(profileState?.deepDiveAnswers ? { deepDiveAnswers: profileState.deepDiveAnswers } : {}),
-      ...(profileState?.refinementAnswers ? { refinementAnswers: profileState.refinementAnswers } : {}),
-    }
+    const updatedState = buildDraftAssessmentState(assessmentAnswers, profileState)
     saveVoiceProfileState(updatedState)
     setProfileState(updatedState)
     setAssessmentAnswers(updatedState.answers)
@@ -408,7 +420,7 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
               Back
             </button>
             <span style={styles.footerHint}>
-              {synthesisError ?? (assessmentSaved ? 'Saved' : `${answeredCount}/20 answered`)}
+              {synthesisError ?? (assessmentSaved ? `Saved - ${answeredCount}/20 answered` : `${answeredCount}/20 answered`)}
             </span>
           </div>
         )}

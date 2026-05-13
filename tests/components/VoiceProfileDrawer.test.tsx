@@ -185,11 +185,29 @@ describe('VoiceProfileDrawer', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save answers' }))
 
-    expect(screen.getByText('Saved')).toBeInTheDocument()
+    expect(screen.getByText('Saved - 1/20 answered')).toBeInTheDocument()
     const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
     expect(saved.status).toBe('draft_answers')
     expect(saved.answers.q1).toBe('A character in a moment of moral failure.')
     expect(saved.profile).toBeUndefined()
+  })
+
+  it('autosaves draft answers while typing so reopening retains them', () => {
+    const { rerender } = render(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start assessment' }))
+    fireEvent.change(screen.getByLabelText(/When a story idea hits you/i), {
+      target: { value: 'A character in a moment of moral failure.' },
+    })
+
+    const saved = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY)!) as VoiceProfileState
+    expect(saved.status).toBe('draft_answers')
+    expect(saved.answers.q1).toBe('A character in a moment of moral failure.')
+
+    rerender(<VoiceProfileDrawer open={false} onClose={vi.fn()} />)
+    rerender(<VoiceProfileDrawer open={true} onClose={vi.fn()} />)
+
+    expect(screen.getByLabelText(/When a story idea hits you/i)).toHaveValue('A character in a moment of moral failure.')
   })
 
   it('loads draft answers into assessment mode', () => {
