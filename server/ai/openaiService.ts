@@ -36,7 +36,8 @@ export function buildSynthesisPrompt(answers: Record<string, string>): string {
 WRITER ASSESSMENT ANSWERS:
 ${labeledAnswers}
 
-Return ONLY a JSON object matching this exact shape — no prose, no markdown fences:
+Return ONLY a JSON object matching this exact shape — no prose, no markdown fences.
+Keep individual strings concise, and prefer 2-5 items per array unless the answers clearly justify more:
 {
   "version": 1,
   "createdAt": "<ISO 8601 timestamp>",
@@ -191,8 +192,55 @@ function wordCount(value: string): number {
 
 export function parseJsonObject(rawContent: string | null | undefined): Record<string, any> {
   const raw = (rawContent || '{}').trim();
-  const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(fenced ? fenced[1] : raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced) return JSON.parse(fenced[1].trim());
+
+    const extracted = extractFirstJsonObject(raw);
+    if (extracted) return JSON.parse(extracted);
+    throw new Error('Invalid JSON object');
+  }
+}
+
+function extractFirstJsonObject(raw: string): string | undefined {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+
+    if (start === -1) {
+      if (char === '{') {
+        start = i;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === '{') depth += 1;
+    if (char === '}') depth -= 1;
+    if (depth === 0) return raw.slice(start, i + 1);
+  }
+
+  return undefined;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -760,8 +808,8 @@ Respond with JSON in this format:
     const rawContent = await provider.generateResponse({
       systemPrompt: 'You are a voice profile synthesizer for WriterOS. Return only valid JSON. No prose, no markdown.',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      maxTokens: 2000,
+      temperature: 0.4,
+      maxTokens: 5000,
     })
     return parseSynthesisResponse(rawContent ?? '')
   }

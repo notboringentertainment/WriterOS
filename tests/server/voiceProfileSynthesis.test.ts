@@ -133,4 +133,10 @@ describe('parseSynthesisResponse', () => {
     const doc = parseSynthesisResponse(fenced)
     expect(doc.archetype).toBe('Humanist Genre Pressure')
   })
+
+  it('accepts prose-wrapped JSON model output', () => {
+    const wrapped = `Here is the profile:\n\n${makeValidRaw()}\n\nDone.`
+    const doc = parseSynthesisResponse(wrapped)
+    expect(doc.archetype).toBe('Humanist Genre Pressure')
+  })
 })
