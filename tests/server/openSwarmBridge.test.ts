@@ -89,6 +89,10 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('Synopsis: 1 filled field')
     expect(prompt).toContain('Outline: 1 beat note supplied')
     expect(prompt).toContain('Midpoint: The rescue turns personal when the missing patient is family.')
+    expect(prompt).toContain('Task response contract:')
+    expect(prompt).toContain('Treat the user question as a task request')
+    expect(prompt).toContain('Respond like a concise review memo or task report')
+    expect(prompt).toContain('Target 250-450 words')
   })
 
   it('is explicit when no Voice Profile is supplied', () => {
@@ -110,6 +114,8 @@ describe('OpenSwarm Writing Partner prompt', () => {
 
     expect(prompt).toContain('Outline: 0 beat notes supplied')
     expect(prompt).toContain('Outline beats:\n- None supplied')
+    expect(prompt).toContain('Do not ask the user to paste material into chat')
+    expect(prompt).toContain('name the WriterOS surface to fill')
     expect(prompt).not.toContain('Theme Stated: Someone')
     expect(prompt).not.toContain('Opening Image: A single scene')
   })
