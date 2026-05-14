@@ -7,6 +7,14 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+function redactApiLogResponse(path: string, bodyJson: Record<string, any>): Record<string, any> {
+  if (path === "/api/voice-profile/synthesize" && "profile" in bodyJson) {
+    return { ...bodyJson, profile: "[redacted]" };
+  }
+
+  return bodyJson;
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -23,7 +31,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        logLine += ` :: ${JSON.stringify(redactApiLogResponse(path, capturedJsonResponse))}`;
       }
 
       if (logLine.length > 80) {
