@@ -1,5 +1,7 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
+import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
+import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
@@ -508,6 +510,131 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   return contextOrder.map(section => sectionBlocks[section]).filter(Boolean).join('\n\n') || 'No structured project details yet.';
 }
 
+function sourceLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
+  if (!input.sources.length) return '- None supplied'
+  return input.sources
+    .map(source => `- ${source.label}${source.url ? ` (${source.url})` : ''}`)
+    .join('\n')
+}
+
+function findingLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
+  const verified = input.taskResult.findings
+    .filter(finding => finding.verified)
+    .map(finding => {
+      const label = finding.sourceLabel ? ` [${finding.sourceLabel}]` : ''
+      return `- ${truncate(finding.claim, 320)}${label}`
+    })
+  const unverified = [
+    ...input.taskResult.findings
+      .filter(finding => !finding.verified)
+      .map(finding => finding.claim),
+    ...input.taskResult.unverified,
+  ].map(item => `- ${truncate(item, 240)}`)
+
+  return [
+    verified.length ? `Verified findings:\n${verified.join('\n')}` : 'Verified findings:\n- None supplied',
+    unverified.length ? `Unverified notes:\n${unverified.join('\n')}` : 'Unverified notes:\n- None supplied',
+    input.taskResult.missing.length
+      ? `Missing / clarification notes:\n${input.taskResult.missing.map(item => `- ${truncate(item, 220)}`).join('\n')}`
+      : 'Missing / clarification notes:\n- None supplied',
+  ].join('\n\n')
+}
+
+function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
+  const profile = input.voiceProfile
+  if (!profile) return '- None supplied'
+
+  return [
+    profile.displayName && `- Display name: ${truncate(profile.displayName, 100)}`,
+    `- Archetype: ${truncate(profile.archetype, 160)}`,
+    `- Core statement: ${truncate(profile.coreStatement, 240)}`,
+    profile.storytellingDNA.recurringThemes.length
+      ? `- Recurring themes: ${compactList(profile.storytellingDNA.recurringThemes)}`
+      : '',
+    filled(profile.influences.notes) ? `- Influence notes: ${truncate(profile.influences.notes, 220)}` : '',
+    profile.visualLanguage.instincts.length
+      ? `- Visual instincts: ${compactList(profile.visualLanguage.instincts)}`
+      : '',
+    filled(profile.visualLanguage.notes) ? `- Visual notes: ${truncate(profile.visualLanguage.notes, 220)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildPersonaCapabilitySynthesisPrompt(input: PersonaCapabilitySynthesisInput): string {
+  const sourceLabels = input.sources.map(source => source.label).join(', ') || 'none'
+  const statusNote = input.status === 'ok'
+    ? 'The research pass completed.'
+    : `The research pass did not complete cleanly. Status: ${input.status}${input.failureReason ? ` (${input.failureReason})` : ''}.`
+
+  return `You are Zoe, WriterOS's world-building architect. The writer asked you a world-context research question, and WriterOS may have run a bounded research pass behind you.
+
+User request:
+${input.userRequest}
+
+Research status:
+${statusNote}
+
+Source labels allowed in the final reply:
+${sourceLabels}
+
+Research task result:
+${findingLinesForCapability(input)}
+
+Sources:
+${sourceLinesForCapability(input)}
+
+Writer Voice Profile slice, if supplied:
+${profileLinesForCapability(input)}
+
+Project context snapshot:
+- Title: ${input.projectContext.title || 'Untitled'}
+- Genre: ${input.projectContext.genre || 'Not supplied'}
+- Logline: ${input.projectContext.logline || input.projectContext.synopsis.logline || 'Not supplied'}
+- Story Bible setting: ${input.projectContext.storyBible.world.setting || 'Not supplied'}
+- Story Bible rules: ${input.projectContext.storyBible.rules || 'Not supplied'}
+- Script context: ${input.projectContext.script?.contextLabel || (input.projectContext.script?.excerpt ? `${input.projectContext.script.excerptWordCount} excerpt words` : 'Not supplied')}
+
+Rules for Zoe's final response:
+- Sound like Zoe: practical, immersive, precise, and focused on how the world works on the page.
+- Answer the writer directly. Do not mention OpenSwarm, assistant threads, hidden agents, or implementation details.
+- If the research status is not ok, give an in-voice fallback and do not present outside facts as verified.
+- Use bracketed source labels like [label] for any factual claim drawn from verified findings.
+- Only cite labels from the allowed source label list. Never invent a citation.
+- Do not cite Voice Profile content. It is style guidance only.
+- If a note is unverified, either omit it or explicitly call it not yet verified.
+- Use plain text only. Do not use Markdown bold, italics, heading markers, or decorative formatting.
+- Keep the response under 350 words unless the user asked for more.
+
+Return ONLY JSON:
+{
+  "finalMessage": "Zoe's final user-facing answer",
+  "citedLabels": ["source labels actually cited in finalMessage"]
+}`
+}
+
+export function parsePersonaCapabilitySynthesisResponse(
+  rawContent: string,
+  allowedSourceLabels: string[]
+): PersonaCapabilitySynthesisResult {
+  const parsed = parseJsonObject(rawContent)
+  const finalMessage = typeof parsed.finalMessage === 'string' && parsed.finalMessage.trim()
+    ? parsed.finalMessage.trim()
+    : ''
+  if (!finalMessage) throw new Error('Persona capability synthesis missing finalMessage')
+
+  const allowed = new Set(allowedSourceLabels.map(label => label.toLowerCase()))
+  const parsedLabels = Array.isArray(parsed.citedLabels)
+    ? parsed.citedLabels.filter((label): label is string => typeof label === 'string')
+    : []
+  const scannedLabels = allowedSourceLabels.filter(label =>
+    finalMessage.toLowerCase().includes(`[${label.toLowerCase()}]`)
+  )
+
+  const citedLabels = Array.from(new Set([...parsedLabels, ...scannedLabels]))
+    .filter(label => allowed.has(label.toLowerCase()))
+
+  return { finalMessage, citedLabels }
+}
+
 export class OpenAIService {
   private createPersonaSystemPrompt(
     persona: Persona, 
@@ -817,6 +944,39 @@ Respond with JSON in this format:
       maxTokens: 5000,
     })
     return parseSynthesisResponse(rawContent ?? '')
+  }
+
+  async synthesizePersonaCapabilityResponse(
+    input: PersonaCapabilitySynthesisInput
+  ): Promise<PersonaCapabilitySynthesisResult> {
+    if (input.status !== 'ok') {
+      return {
+        finalMessage: buildPersonaCapabilityFallbackMessage(input.status, input.failureReason),
+        citedLabels: [],
+      }
+    }
+
+    try {
+      const provider = createModelProvider()
+      const rawContent = await provider.generateResponse({
+        systemPrompt:
+          'You synthesize a WriterOS capability result into Zoe’s final answer. Return ONLY JSON with finalMessage and citedLabels.',
+        messages: [{ role: 'user', content: buildPersonaCapabilitySynthesisPrompt(input) }],
+        temperature: 0.5,
+        maxTokens: 1200,
+      })
+
+      return parsePersonaCapabilitySynthesisResponse(
+        rawContent ?? '',
+        input.sources.map(source => source.label)
+      )
+    } catch (error) {
+      console.error('Persona capability synthesis error:', error instanceof Error ? error.message : error)
+      return {
+        finalMessage: buildPersonaCapabilityFallbackMessage(input.status, input.failureReason),
+        citedLabels: [],
+      }
+    }
   }
 
   async healthCheck(): Promise<{ status: string; model: string; error?: string }> {

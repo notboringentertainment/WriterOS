@@ -1,3 +1,5 @@
+import type { WorldContextVoiceProfileSlice } from './personaCapability'
+
 export const VOICE_PROFILE_STORAGE_KEY = 'writeros_voice_profile_v1'
 
 export interface VoiceProfileDocument {
@@ -59,4 +61,25 @@ export interface VoiceProfileState {
   profile?: VoiceProfileDocument
   createdAt?: string
   updatedAt: string
+}
+
+export function sliceVoiceProfileForWorldContext(
+  profile: VoiceProfileDocument
+): WorldContextVoiceProfileSlice {
+  return {
+    slice: 'world_context',
+    ...(profile.displayName ? { displayName: profile.displayName } : {}),
+    archetype: profile.archetype,
+    coreStatement: profile.coreStatement,
+    storytellingDNA: {
+      recurringThemes: profile.storytellingDNA.recurringThemes,
+    },
+    influences: {
+      notes: profile.influences.notes,
+    },
+    visualLanguage: {
+      instincts: profile.visualLanguage.instincts,
+      notes: profile.visualLanguage.notes,
+    },
+  }
 }

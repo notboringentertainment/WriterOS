@@ -4,6 +4,7 @@ import {
   clearVoiceProfileState,
   completedVoiceProfileFromState,
   loadCompletedVoiceProfile,
+  loadCompletedVoiceProfileSliced,
   loadVoiceProfileState,
   parseCompletedVoiceProfile,
   saveVoiceProfileState,
@@ -227,5 +228,39 @@ describe('Voice Profile state storage', () => {
       updatedAt: '2026-05-13T00:00:00.000Z',
     })
     expect(loadCompletedVoiceProfile()).toBeUndefined()
+  })
+
+  it('loads only the world-context slice for persona capability calls', () => {
+    const profile = makeProfile()
+    saveVoiceProfileState({
+      version: 1,
+      status: 'complete',
+      answers: {},
+      profile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+
+    const slice = loadCompletedVoiceProfileSliced('world_context')
+    expect(slice?.slice).toBe('world_context')
+    expect(slice?.archetype).toBe(profile.archetype)
+    expect(slice?.visualLanguage.instincts).toEqual(profile.visualLanguage.instincts)
+
+    const serialized = JSON.stringify(slice)
+    expect(serialized).not.toContain('dialogue')
+    expect(serialized).not.toContain('characterInstincts')
+    expect(serialized).not.toContain('alexCoachingNotes')
+  })
+
+  it('does not load a capability slice from a draft profile', () => {
+    const profile = makeProfile()
+    saveVoiceProfileState({
+      version: 1,
+      status: 'draft_profile',
+      answers: {},
+      profile,
+      updatedAt: '2026-05-13T00:00:00.000Z',
+    })
+
+    expect(loadCompletedVoiceProfileSliced('world_context')).toBeUndefined()
   })
 })

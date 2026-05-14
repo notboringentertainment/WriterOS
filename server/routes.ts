@@ -5,6 +5,8 @@ import { PERSONAS } from "@shared/personas";
 import { z } from "zod";
 import type { StoryMemory } from "@shared/schema";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
+import { personaCapabilityRequestSchema } from "@shared/personaCapability";
+import { runPersonaTask } from "./persona-capability/runPersonaTask";
 
 const openaiService = new OpenAIService();
 
@@ -631,6 +633,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(502).json({
         error: "Failed to reach OpenSwarm",
         message: "Start OpenSwarm's FastAPI server on port 8080, then try again.",
+      });
+    }
+  });
+
+  // Persona capability adapter — visible WriterOS persona, hidden bounded task layer
+  app.post("/api/persona-capability/run", async (req, res) => {
+    try {
+      const data = personaCapabilityRequestSchema.parse(req.body);
+      const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
+      const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
+      const response = await runPersonaTask(data, {
+        baseUrl,
+        token,
+        synthesizeFinal: input => openaiService.synthesizePersonaCapabilityResponse(input),
+      });
+
+      res.json(response);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error("Persona capability validation error:", error.flatten());
+        return res.status(400).json({
+          error: "Invalid persona capability request",
+          message: "WriterOS could not build a valid persona capability request.",
+        });
+      }
+
+      console.error("Persona capability route error:", error instanceof Error ? error.message : error);
+      res.status(502).json({
+        error: "Failed to run persona capability",
+        message: "Zoe could not complete that research pass right now.",
       });
     }
   });

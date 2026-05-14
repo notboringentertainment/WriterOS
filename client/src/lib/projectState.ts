@@ -1,4 +1,5 @@
 import { normalizeProjectTitle } from './projectIdentity'
+import type { CapabilityReceipt } from '@shared/personaCapability'
 
 export const CURRENT_SCHEMA_VERSION = 2
 const STORAGE_KEY = 'writeros_project_state'
@@ -11,6 +12,7 @@ export interface TranscriptMessage {
   content: string
   speaker: string
   ts: number
+  capabilityReceipt?: CapabilityReceipt
 }
 
 export interface ScriptScene {

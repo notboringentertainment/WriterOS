@@ -108,6 +108,18 @@ describe('LeftRail', () => {
     expect(onSend).toHaveBeenCalledWith('Help me')
   })
 
+  it('does not send while loading', () => {
+    const onSend = vi.fn()
+    render(<LeftRail {...defaultProps} open={true} loading={true} onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/message/i)
+
+    fireEvent.change(textarea, { target: { value: 'Help me' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(textarea).toBeDisabled()
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
   it('does not call onSend for empty or whitespace text', () => {
     const onSend = vi.fn()
     render(<LeftRail {...defaultProps} open={true} onSend={onSend} />)
@@ -129,5 +141,34 @@ describe('LeftRail', () => {
   it('shows loading indicator when loading is true', () => {
     render(<LeftRail {...defaultProps} open={true} loading={true} />)
     expect(screen.getByLabelText('loading')).toBeInTheDocument()
+  })
+
+  it('renders capability receipt metadata under assistant messages', () => {
+    const transcript: TranscriptMessage[] = [
+      makeMsg({
+        id: '2',
+        role: 'assistant',
+        content: 'Use the gate as a threshold into layered jurisdiction. [Archive]',
+        speaker: 'Writing Partner (@Zoe)',
+        capabilityReceipt: {
+          schemaVersion: 1,
+          taskKind: 'research_world_context',
+          personaId: 'zoe',
+          startedAt: '2026-05-14T20:00:00.000Z',
+          completedAt: '2026-05-14T20:00:01.000Z',
+          durationMs: 1000,
+          status: 'ok',
+          contextChips: ['storyBible'],
+          voiceProfile: { included: true, slice: 'world_context' },
+          missingSurfaces: ['characters'],
+          sources: [{ label: 'Archive', citedInFinal: true }],
+        },
+      }),
+    ]
+
+    render(<LeftRail {...defaultProps} open={true} transcript={transcript} />)
+
+    expect(screen.getByText('Writing Partner (@Zoe)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /world-context research receipt/i })).toHaveTextContent('Research · 1 source · completed')
   })
 })

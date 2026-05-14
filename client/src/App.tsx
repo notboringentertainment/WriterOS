@@ -2,7 +2,9 @@ import React, { useState, useCallback, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
-import { loadCompletedVoiceProfile } from './lib/voiceProfile'
+import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
+import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
+import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
 import { Shell } from './components/shell/Shell'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -13,6 +15,7 @@ import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
+import type { CapabilityReceipt } from '@shared/personaCapability'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -20,8 +23,13 @@ type ScriptSnapshot = {
   focus?: ScriptFocusState
 }
 
-function makeMessage(role: 'user' | 'assistant', content: string, speaker: string): TranscriptMessage {
-  return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now() }
+function makeMessage(
+  role: 'user' | 'assistant',
+  content: string,
+  speaker: string,
+  options: { capabilityReceipt?: CapabilityReceipt } = {}
+): TranscriptMessage {
+  return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...options }
 }
 
 function historyFromTranscript(transcript: TranscriptMessage[]) {
@@ -129,6 +137,7 @@ export default function App() {
       ? mentionResult.personaId
       : getDefaultPersona(shellState.activeTab, shellState.storyBibleSection, text)
     const messageToSend = mentionResult ? mentionResult.strippedText : text
+    const capabilityKind = classifyPersonaCapability({ personaId, message: messageToSend })
 
     // Step 3: append user message (original text with @mention intact)
     project.addMessage('writingPartner', makeMessage('user', text, 'Writer'))
@@ -137,10 +146,34 @@ export default function App() {
     setWpLoading(true)
     try {
       const projectContext = buildFreshProjectContext(messageToSend)
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext, conversationHistory })
       const speakerName = formatWritingPartnerSpeaker(personaId)
+
+      if (capabilityKind === 'research_world_context' && personaId === 'zoe') {
+        const response = await postPersonaCapability({
+          personaId: 'zoe',
+          taskKind: 'research_world_context',
+          message: messageToSend,
+          projectContext,
+          voiceProfile: loadCompletedVoiceProfileSliced('world_context'),
+          sourceSurface: 'writingPartner',
+          clientRequestId: crypto.randomUUID(),
+        })
+
+        if (response.status !== 'cancelled' && response.finalMessage.trim()) {
+          project.addMessage(
+            'writingPartner',
+            makeMessage('assistant', response.finalMessage, speakerName, {
+              capabilityReceipt: response.receipt,
+            })
+          )
+        }
+        return
+      }
+
+      const response = await postWPChat({ personaId, message: messageToSend, projectContext, conversationHistory })
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
-    } catch {
+    } catch (error) {
+      if (isAbortError(error)) return
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Writing Partner'))
     } finally {
       setWpLoading(false)

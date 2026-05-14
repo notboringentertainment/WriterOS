@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getActiveHelperText, type ActiveTab } from '../../lib/wpRouting'
 import type { StoryBibleSection } from '../../lib/shellState'
+import { CapabilityReceiptChip } from '../transcript/CapabilityReceiptChip'
 
 interface LeftRailProps {
   open: boolean
@@ -46,7 +47,7 @@ export function LeftRail({
 
   function handleSend() {
     const text = inputText.trim()
-    if (!text) return
+    if (!text || loading) return
     onSend(text)
     setInputText('')
   }
@@ -106,6 +107,9 @@ export function LeftRail({
                     <div style={msg.role === 'user' ? styles.userBubble : styles.assistantBubble}>
                       {msg.content}
                     </div>
+                    {msg.role === 'assistant' && msg.capabilityReceipt && (
+                      <CapabilityReceiptChip receipt={msg.capabilityReceipt} />
+                    )}
                   </div>
                 ))}
                 {loading && (
@@ -123,6 +127,8 @@ export function LeftRail({
               style={styles.input}
               rows={2}
               value={inputText}
+              disabled={loading}
+              aria-disabled={loading}
               onChange={e => setInputText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

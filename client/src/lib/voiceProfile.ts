@@ -1,8 +1,10 @@
 import {
   VOICE_PROFILE_STORAGE_KEY,
+  sliceVoiceProfileForWorldContext,
   type VoiceProfileDocument,
   type VoiceProfileState,
 } from '@shared/voiceProfile'
+import type { WorldContextVoiceProfileSlice } from '@shared/personaCapability'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -117,6 +119,16 @@ export function parseCompletedVoiceProfile(rawValue: string | null): VoiceProfil
 export function loadCompletedVoiceProfile(): VoiceProfileDocument | undefined {
   if (typeof localStorage === 'undefined') return undefined
   return parseCompletedVoiceProfile(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY))
+}
+
+export function loadCompletedVoiceProfileSliced(
+  slice: 'world_context'
+): WorldContextVoiceProfileSlice | undefined {
+  const profile = loadCompletedVoiceProfile()
+  if (!profile) return undefined
+  return slice === 'world_context'
+    ? sliceVoiceProfileForWorldContext(profile)
+    : undefined
 }
 
 export function loadVoiceProfileState(): VoiceProfileState | undefined {

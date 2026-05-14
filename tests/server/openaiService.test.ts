@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { createContextSummary, createWritingPartnerBrief, parseJsonObject } from '../../server/ai/openaiService'
+import {
+  buildPersonaCapabilitySynthesisPrompt,
+  createContextSummary,
+  createWritingPartnerBrief,
+  parseJsonObject,
+  parsePersonaCapabilitySynthesisResponse,
+} from '../../server/ai/openaiService'
 import type { StoryMemory } from '../../shared/schema'
+import { defaultProjectState } from '../../client/src/lib/projectState'
+import { buildProjectContext } from '../../client/src/lib/wpRouting'
 
 function storyMemory(overrides: Partial<StoryMemory> = {}): StoryMemory {
   return {
@@ -348,6 +356,54 @@ describe('createContextSummary', () => {
     expect(samSummary).toContain('SYNOPSIS SECTIONS:')
     expect(samSummary).not.toContain('SCRIPT EXCERPT')
     expect(samSummary).not.toContain(sensitiveLine)
+  })
+})
+
+describe('persona capability synthesis prompt', () => {
+  it('requires citations only from verified capability sources and protects Voice Profile citations', () => {
+    const prompt = buildPersonaCapabilitySynthesisPrompt({
+      personaId: 'zoe',
+      taskKind: 'research_world_context',
+      userRequest: 'Research Damascus Gate.',
+      projectContext: buildProjectContext(defaultProjectState()),
+      voiceProfile: {
+        slice: 'world_context',
+        archetype: 'Humanist genre pressure',
+        coreStatement: 'I write intimate stories where big ideas corner people into moral choices.',
+        storytellingDNA: { recurringThemes: ['identity under pressure'] },
+        influences: { notes: 'Measured, humane, precise.' },
+        visualLanguage: { instincts: ['clean frames'], notes: 'Beauty with restraint.' },
+      },
+      taskResult: {
+        findings: [
+          { claim: 'The current gate dates to the Ottoman period.', sourceLabel: 'Archive', verified: true },
+          { claim: 'A disputed legend belongs in texture only.', verified: false },
+        ],
+        sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
+        missing: [],
+        unverified: ['Tour-guide patter needs a local source.'],
+      },
+      sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
+      status: 'ok',
+    })
+
+    expect(prompt).toContain('Use bracketed source labels like [label]')
+    expect(prompt).toContain('Only cite labels from the allowed source label list')
+    expect(prompt).toContain('Do not cite Voice Profile content')
+    expect(prompt).toContain('Use plain text only')
+    expect(prompt).toContain('A disputed legend belongs in texture only')
+  })
+
+  it('filters cited labels to known receipt sources', () => {
+    const parsed = parsePersonaCapabilitySynthesisResponse(
+      JSON.stringify({
+        finalMessage: 'Use the Ottoman threshold as verified texture. [Archive] Do not cite this. [Invented]',
+        citedLabels: ['Archive', 'Invented'],
+      }),
+      ['Archive']
+    )
+
+    expect(parsed.citedLabels).toEqual(['Archive'])
   })
 })
 
