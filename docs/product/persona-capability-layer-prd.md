@@ -190,6 +190,42 @@ WriterOS client
 
 This proved the transport, schema, Voice Profile inclusion, context inventory, and blank-surface behavior.
 
+### Capability Preservation
+
+Useful OpenSwarm agents from the original repo should be preserved when they provide durable capabilities that WriterOS personas can call.
+
+The preservation rule:
+
+- do not preserve old agents as competing user-facing personas
+- do preserve useful agents as callable tools behind WriterOS personas
+- expose the WriterOS persona as the collaborator and the OpenSwarm capability as the workshop/tool
+- keep generated assets, documents, task packets, and receipts separate from conversational transcript state
+
+Priority capability candidates:
+
+| Original capability | Priority | WriterOS use | Visible persona examples |
+| --- | --- | --- | --- |
+| Document / Docs Agent | High | render, transform, export, or polish professional documents such as outlines, synopses, treatments, story bibles, pitch pages, PDFs, DOCX, and markdown | Writing Partner, Sam, Oliver, Alex |
+| Image Creation Agent | High | create visual references, mood frames, office/location references, character or prop studies, visual style boards, and AI-production reference assets | Zoe, Writing Partner, Alex |
+| Video Creation Agent | Later | create mood reels, motion tests, transition studies, animatics, or visual proof-of-concept clips when cost/latency/asset review is acceptable | Alex, Zoe, Writing Partner |
+| Generic original swarm personas | Low | keep only if they provide a distinct capability that WriterOS personas do not already cover | none by default |
+
+Example:
+
+```text
+User: Zoe, I need a visual reference of Isaiah's office.
+```
+
+Expected behavior:
+
+- Zoe remains the visible collaborator.
+- Zoe builds or requests a visual-reference task packet from project context.
+- The image capability generates one or more reference options.
+- Zoe returns with the image(s), scene-useful notes, and any continuity caveats.
+- The image task receipt is inspectable, but the user does not experience "Image Agent" as a separate collaborator.
+
+Document capability should also support the structured-surface page view direction. WriterOS should own the deterministic document schema and renderer; the document capability can help evaluate, polish, transform, or export the authored artifact without reinventing formatting per project.
+
 ### Next Abstraction
 
 Add a higher-level persona task layer above the raw bridge.
@@ -374,19 +410,30 @@ Initial matrix:
 
 | Persona | Capability examples |
 | --- | --- |
-| Writing Partner | broad task triage, packet review, routing brief |
-| Sam | comps research, pitch-market framing, synopsis audit |
-| Casey | psychology/relationship research when explicitly needed |
-| Oliver | structure audit, beat causality report |
-| Maya | dialogue style references, dialect/period language research |
-| Zoe | world/history/continuity research, setting logic |
-| Alex | process planning, treatment-to-pages readiness audit |
+| Writing Partner | broad task triage, packet review, routing brief, document/export routing, visual-reference routing |
+| Sam | comps research, pitch-market framing, synopsis audit, pitch document polish/export |
+| Casey | psychology/relationship research when explicitly needed, character dossier audit |
+| Oliver | structure audit, beat causality report, outline document polish/export |
+| Maya | dialogue style references, dialect/period language research, dialogue sample transformation |
+| Zoe | world/history/continuity research, setting logic, visual reference and style-board generation |
+| Alex | process planning, treatment-to-pages readiness audit, treatment document polish/export, mood-reel or proof-of-concept planning |
+
+Capability class matrix:
+
+| Capability class | Priority | Primary value |
+| --- | --- | --- |
+| Research | High | source-backed context for history, setting, markets, comps, technical details, and real-world analogs |
+| Document | High | consistent page/document artifacts from WriterOS structured surfaces |
+| Image | High | visual reference generation for settings, characters, props, tone, and AI-production continuity |
+| Video | Later | expensive/slow visual proof-of-concept work after asset management and review flows exist |
 
 Success criteria:
 
 - each capability has clear trigger rules
 - each capability returns bounded task output
 - final responses stay in persona voice
+- capability outputs are stored, displayed, or discarded according to artifact type, not silently merged into transcripts
+- document formatting remains deterministic from WriterOS schemas rather than model-invented per project
 
 ### Phase 4: Context Visibility And Controls
 
