@@ -1,6 +1,6 @@
 # WriterOS Persona Capability Layer PRD
 
-**Date:** 2026-05-13  
+**Date:** 2026-05-14  
 **Status:** Draft for product alignment  
 **Branch context:** `feature/screenplay-editor-core`  
 **Related docs:** `docs/product/agent-workflow-prd.md`, `docs/product/writer-voice-profile-prd.md`, `docs/product/writeros-future-work-prd.md`
@@ -230,6 +230,8 @@ Document capability should also support the structured-surface page view directi
 
 Add a higher-level persona task layer above the raw bridge.
 
+Illustrative shape only; the final signature should be decided in Phase 2 design.
+
 Possible shape:
 
 ```typescript
@@ -347,6 +349,118 @@ Purpose:
 - users can see when a tool was used
 - debugging does not require reading server logs
 
+## Decisions Required Before Phase 2 Coding
+
+The conceptual model is approved, but Phase 2 should not begin until these decisions are treated as product requirements rather than open questions.
+
+### 1. Routing Authority
+
+WriterOS owns routing authority.
+
+Rules:
+
+- The visible persona may suggest that a capability is needed.
+- A model may classify intent only inside a narrow allowlist.
+- The WriterOS orchestration layer decides whether a capability can run.
+- OpenSwarm cannot self-route into new WriterOS-visible personas.
+- Ambiguous requests should stay as direct persona answers or ask for confirmation.
+
+Phase 2 should start with one explicit allowlisted path, preferably Zoe plus research/world-context, before broad automatic routing.
+
+### 2. Tool Invocation Mode
+
+Phase 2 supports limited automatic invocation only when intent is clear and the capability is allowlisted.
+
+Also supported:
+
+- explicit user requests such as "research this" or "generate a visual reference"
+- `/swarm` as manual/debug task-report command
+
+Not supported in Phase 2:
+
+- autonomous multi-step agent planning
+- model-selected arbitrary tools
+- hidden chaining across multiple capabilities
+
+### 3. Voice Profile Boundary
+
+Completed Voice Profile may cross the capability boundary only when relevant to the task.
+
+Rules:
+
+- draft profiles are never sent
+- completed profiles are sliced by persona/task need
+- capability packets should label the profile as writer identity, not project canon
+- receipts may show a `Voice Profile used` chip, but should not expose raw profile text by default
+- users should eventually be able to disable profile injection for a capability call
+
+Acceptance:
+
+- if profile injection is disabled or no completed profile exists, the capability packet contains no `voiceProfile` field
+- final persona response should not imply a profile was used when it was not
+
+### 4. Minimum Task Receipt Moves To Phase 2
+
+Phase 4 can own rich context controls, but Phase 2 needs a minimum receipt so tool use is trustworthy from the first production slice.
+
+Minimum Phase 2 receipt:
+
+- visible persona
+- capability class
+- task status: started, completed, failed, canceled, or timed out
+- context chips, including supplied surfaces and missing surfaces
+- whether Voice Profile was used, without raw profile text
+- source count for research tasks
+- artifact ids for generated documents/images/videos when persisted
+
+The receipt may live in transcript metadata or a lightweight inspector. It should not be pasted into the assistant message body unless the user asks.
+
+### 5. Asset And Document Storage
+
+Capability outputs must follow artifact-specific storage rules.
+
+Rules:
+
+- final persona responses live in WriterOS transcripts
+- intermediate task packets and raw capability output do not become transcript messages
+- generated images, videos, PDFs, DOCX files, and other assets need a project-scoped asset registry before they are persisted
+- until an asset registry exists, image/video capabilities may return a brief, prompt, or temporary preview, but should not silently create durable project assets
+- document page views generated from WriterOS structured surfaces should use deterministic WriterOS renderers, not model-invented formatting
+- exported documents should be explicit user actions and should reference the same deterministic document renderer
+
+Acceptance:
+
+- generated assets are not embedded directly in transcript message bodies
+- persisted assets survive reload and are referenced by artifact id
+- deleting or clearing a transcript does not delete project artifacts unless the user explicitly asks
+
+### 6. Writer's Room Availability
+
+Capability invocation inside Writer's Room specialist transcripts is deferred until Phase 3.
+
+Phase 2 scope:
+
+- capability invocation happens through the main WriterOS persona path, likely the left rail / Writing Partner-mediated flow
+- Writer's Room specialist transcripts remain direct specialist chat without capability calls
+
+Reason:
+
+- one surface at a time keeps transcript ownership, receipts, and failure handling testable
+
+### 7. Source And Citation Discipline
+
+Research-backed capability calls must not launder unsourced claims into confident persona answers.
+
+Rules:
+
+- research task outputs should include source metadata where possible
+- final persona responses should cite or summarize sources when source-backed claims matter
+- if a claim is useful but unsourced, the persona must label it as unsourced or treat it as a creative assumption
+
+Acceptance:
+
+- a research task that returns a factual claim without a source cannot be presented as established fact
+
 ## Implementation Phases
 
 ### Phase 0: PRD Alignment
@@ -389,10 +503,14 @@ Goal: make personas able to use OpenSwarm without exposing a second identity.
 Tasks:
 
 - Add a small orchestration layer for persona tasks.
+- Implement the Phase 2 decision gate above: routing authority, profile boundary, minimum receipt, storage rules, Writer's Room deferral, and source discipline.
 - Start with one persona/tool pair.
 - Recommended first slice: Zoe + research/world-context task.
+- Limit Phase 2 invocation to the main WriterOS persona path; defer Writer's Room specialist capability calls.
 - Return task result to the visible persona path.
 - Store only the final persona answer in the WriterOS transcript.
+- Store a minimum task receipt outside the assistant message body.
+- Add failure, cancel, and timeout handling before enabling user-facing capability calls.
 
 Success criteria:
 
@@ -401,6 +519,7 @@ Success criteria:
 - Zoe answers as Zoe.
 - Context/task receipt is inspectable.
 - OpenSwarm thread state is not imported into WriterOS transcript state.
+- Failed, canceled, or timed-out capability calls produce in-voice fallback responses and do not create orphan transcript entries.
 
 ### Phase 3: Expand Capability Matrix
 
@@ -437,13 +556,14 @@ Success criteria:
 
 ### Phase 4: Context Visibility And Controls
 
-Goal: make tool use trustworthy without cluttering the writing flow.
+Goal: expand the minimum Phase 2 receipt into richer user controls without cluttering the writing flow.
 
 Tasks:
 
-- Add `Context sent` / `Task used` receipt UI.
+- Upgrade `Context sent` / `Task used` receipt UI.
 - Allow user to inspect task packet summary.
 - Show missing WriterOS surfaces.
+- Add controls for profile inclusion, selected context, and explicit task retry where appropriate.
 - Avoid exposing raw private Voice Profile content by default.
 
 Success criteria:
@@ -496,16 +616,23 @@ Historical/current research needs source discipline. Persona synthesis should no
 | Draft Voice Profile exists | No profile is sent to capability layer |
 | OpenSwarm task completes | Only final persona response enters WriterOS transcript |
 | User inspects context | UI shows packet summary and tool receipt without exposing raw private profile by default |
+| Capability call errors mid-turn | Persona returns an in-voice fallback; receipt shows `Task: failed`; no orphan transcript entry is created |
+| User cancels mid-capability | OpenSwarm task is aborted; no transcript entry is created; no asset is persisted |
+| Capability call times out | Persona returns an in-voice fallback; receipt shows timeout; no orphan task state is imported |
+| Two consecutive Zoe research calls | Calls use distinct OpenSwarm thread ids; no cross-call memory leaks into WriterOS |
+| Receipt inspected with Voice Profile included | Presence chip is shown; raw profile text is not shown by default |
+| User-facing UI string check | The literal `OpenSwarm` appears only in debug/developer UI or explicit technical receipts, not normal persona copy |
+| Image capability output is persisted | Asset is stored in a project-level asset registry, survives reload, and is referenced from transcript metadata rather than embedded in message body |
+| Research task returns claim without source | Final persona response either includes source context or labels the claim as unsourced/assumption; it is never presented as established fact |
+| Writer's Room specialist asks for capability in Phase 2 | Specialist gives an in-voice explanation that capability calls are available through the main persona path for now, or asks the user to run the task there |
 
 ## Open Questions
 
-1. Should tool invocation be automatic, explicit, or both?
-2. What user-facing indicator should show that a persona used a capability?
-3. Should `/swarm` remain visible to users, or become developer-only later?
-4. Which persona/tool pair should be the first production slice after Writing Partner bridge testing?
-5. Should sourced research require citations in final persona responses, task receipts, or both?
-6. How much of the intermediate task report should be stored, if any?
-7. Should the context/task receipt live in transcript metadata, a side panel, or a debug inspector?
+1. Which persona/tool pair should be the first production slice after Writing Partner bridge testing?
+2. What exact source/citation UI should research-backed persona responses use?
+3. Should `/swarm` become developer-only after one production persona capability path and minimum task receipts ship?
+4. Should the minimum receipt live first in transcript metadata, a side-panel inspector, or both?
+5. What is the minimum viable project asset registry for persisted images, videos, PDFs, and DOCX exports?
 
 ## Recommended Next Step
 
