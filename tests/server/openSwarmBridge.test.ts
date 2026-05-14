@@ -66,6 +66,12 @@ describe('OpenSwarm Writing Partner prompt', () => {
   it('includes completed Voice Profile as a writer-scoped handoff section', () => {
     const state = defaultProjectState()
     state.storyBible.world.voiceNotes = 'Project-specific: spare, procedural, intimate.'
+    state.synopsis.logline = 'A medic must expose a corrupt rescue network before her brother disappears.'
+    state.outline.beats = state.outline.beats.map(beat =>
+      beat.id === 'midpoint'
+        ? { ...beat, notes: 'The rescue turns personal when the missing patient is family.' }
+        : beat
+    )
 
     const prompt = buildOpenSwarmWritingPartnerPrompt(
       'Review this against my voice.',
@@ -78,6 +84,11 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('Dialogue rules: subtext before explanation')
     expect(prompt).toContain('Voice Profile is writer-scoped and project-agnostic')
     expect(prompt).toContain('Project voice notes: Project-specific: spare, procedural, intimate.')
+    expect(prompt).toContain('Context inventory:')
+    expect(prompt).toContain('Voice Profile: supplied')
+    expect(prompt).toContain('Synopsis: 1 filled field')
+    expect(prompt).toContain('Outline: 1 beat note supplied')
+    expect(prompt).toContain('Midpoint: The rescue turns personal when the missing patient is family.')
   })
 
   it('is explicit when no Voice Profile is supplied', () => {
@@ -88,5 +99,18 @@ describe('OpenSwarm Writing Partner prompt', () => {
 
     expect(prompt).toContain('Writer Voice Profile supplied by WriterOS:')
     expect(prompt).toContain('None supplied by WriterOS for this request')
+  })
+
+  it('does not treat default outline beat descriptions as project-authored context', () => {
+    const prompt = buildOpenSwarmWritingPartnerPrompt(
+      'Review this premise.',
+      buildProjectContext(defaultProjectState()),
+      makeVoiceProfile()
+    )
+
+    expect(prompt).toContain('Outline: 0 beat notes supplied')
+    expect(prompt).toContain('Outline beats:\n- None supplied')
+    expect(prompt).not.toContain('Theme Stated: Someone')
+    expect(prompt).not.toContain('Opening Image: A single scene')
   })
 })

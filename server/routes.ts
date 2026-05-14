@@ -251,6 +251,10 @@ function listLine(label: string, values: string[]): string | null {
   return compacted ? `${label}: ${compacted}` : null;
 }
 
+function countFilled(values: string[]): number {
+  return values.filter(filled).length;
+}
+
 function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
   if (!voiceProfile) return [];
 
@@ -309,8 +313,9 @@ export function buildOpenSwarmWritingPartnerPrompt(
     });
 
   const beatLines = projectContext.beats
+    .filter(beat => filled(beat.notes))
     .slice(0, 12)
-    .map(beat => `${beat.name}: ${truncate(beat.notes || beat.description, 260)}`);
+    .map(beat => `${beat.name}: ${truncate(beat.notes, 260)}`);
 
   const script = projectContext.script;
   const scriptLines = [
@@ -328,6 +333,26 @@ export function buildOpenSwarmWritingPartnerPrompt(
     projectContext.storyBible.rules && `Rules: ${projectContext.storyBible.rules}`,
   ].filter(filled).map(line => truncate(line, 500));
   const voiceProfileLines = buildVoiceProfileLines(voiceProfile);
+  const synopsisFilledCount = countFilled([
+    projectContext.synopsis.logline,
+    ...Object.values(projectContext.synopsis.sections),
+  ]);
+  const storyBibleFilledCount = countFilled([
+    projectContext.storyBible.themes,
+    projectContext.storyBible.rules,
+    projectContext.storyBible.world.setting,
+    projectContext.storyBible.world.toneAnchors,
+    projectContext.storyBible.world.voiceNotes,
+  ]);
+  const contextInventory = [
+    `Voice Profile: ${voiceProfileLines.length ? 'supplied' : 'not supplied'}`,
+    `Project identity: ${compactList([projectContext.title || '', projectContext.genre || '', projectContext.logline || projectContext.synopsis.logline || '']) || 'not supplied'}`,
+    `Synopsis: ${synopsisFilledCount} filled field${synopsisFilledCount === 1 ? '' : 's'}`,
+    `Characters: ${characterLines.length} named character${characterLines.length === 1 ? '' : 's'}`,
+    `Outline: ${beatLines.length} beat note${beatLines.length === 1 ? '' : 's'} supplied`,
+    `Story Bible: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
+    `Script: ${script?.excerptWordCount || 0} excerpt word${script?.excerptWordCount === 1 ? '' : 's'}, ${script?.sceneCount || 0} scene${script?.sceneCount === 1 ? '' : 's'}${script?.contextLabel ? ` (${script.contextLabel})` : ''}`,
+  ];
 
   return `You are OpenSwarm Writing Partner. Review only this bounded WriterOS handoff packet.
 
@@ -339,6 +364,9 @@ Boundary rules:
 - For story development, recommend only WriterOS creative partners: Sam, Casey, Oliver, Maya, Zoe, or Alex.
 - Recommend Deep Research only when the user explicitly asks for current/recent facts, source-backed research, real-world analogs, or market comps.
 - If current/recent web research is explicitly required, do not guess; provide a Deep Research brief.
+- Use the context inventory below to distinguish writer-authored project material from empty WriterOS surfaces.
+- If project material is missing, say which WriterOS surface needs material instead of implying you can see more in-app context than the packet contains.
+- Do not treat default outline beat labels or descriptions as story content unless writer-authored beat notes are supplied.
 
 Creative partner lanes:
 - Sam: loglines, synopsis, pitch language, hook, stakes, comps framing.
@@ -350,6 +378,9 @@ Creative partner lanes:
 
 User question:
 ${message}
+
+Context inventory:
+${bulletLines(contextInventory)}
 
 Project context supplied by WriterOS:
 - Title: ${projectContext.title || 'Untitled'}
