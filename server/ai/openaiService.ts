@@ -92,7 +92,11 @@ export function parseSynthesisResponse(raw: string): VoiceProfileDocument {
   let parsed: Record<string, unknown>
   try {
     parsed = parseJsonObject(raw) as Record<string, unknown>
-  } catch {
+  } catch (err) {
+    console.error(
+      'Voice profile synthesis JSON parse failed:',
+      err instanceof Error ? err.message : err,
+    )
     throw new Error('Voice profile synthesis returned invalid JSON')
   }
 
@@ -204,7 +208,7 @@ export function parseJsonObject(rawContent: string | null | undefined): Record<s
   }
 }
 
-function extractFirstJsonObject(raw: string): string | undefined {
+export function extractFirstJsonObject(raw: string): string | undefined {
   let start = -1;
   let depth = 0;
   let inString = false;
@@ -806,7 +810,8 @@ Respond with JSON in this format:
     const prompt = buildSynthesisPrompt(answers)
     const provider = createModelProvider()
     const rawContent = await provider.generateResponse({
-      systemPrompt: 'You are a voice profile synthesizer for WriterOS. Return only valid JSON. No prose, no markdown.',
+      systemPrompt:
+        'You are a voice profile synthesizer for WriterOS. Return ONLY a single JSON object. No prose before or after, no markdown fences, no explanations. Begin your response with `{` and end with `}`.',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       maxTokens: 5000,

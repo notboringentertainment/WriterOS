@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSynthesisPrompt, parseSynthesisResponse } from '../../server/ai/openaiService'
+import { buildSynthesisPrompt, extractFirstJsonObject, parseSynthesisResponse } from '../../server/ai/openaiService'
 import { voiceProfileSynthesizeSchema } from '../../server/routes'
 
 // ── schema validation (covers route 400 path) ───────────────────────────────
@@ -138,5 +138,47 @@ describe('parseSynthesisResponse', () => {
     const wrapped = `Here is the profile:\n\n${makeValidRaw()}\n\nDone.`
     const doc = parseSynthesisResponse(wrapped)
     expect(doc.archetype).toBe('Humanist Genre Pressure')
+  })
+
+  it('accepts JSON followed by a markdown explanation', () => {
+    const wrapped = `${makeValidRaw()}\n\n## Notes\nLots of analysis here.`
+    const doc = parseSynthesisResponse(wrapped)
+    expect(doc.archetype).toBe('Humanist Genre Pressure')
+  })
+})
+
+// ── extractFirstJsonObject ───────────────────────────────────────────────────
+
+describe('extractFirstJsonObject', () => {
+  it('extracts a bare JSON object', () => {
+    expect(extractFirstJsonObject('{"a":1}')).toBe('{"a":1}')
+  })
+
+  it('strips leading prose', () => {
+    expect(extractFirstJsonObject('Here you go: {"a":1}')).toBe('{"a":1}')
+  })
+
+  it('strips trailing prose', () => {
+    expect(extractFirstJsonObject('{"a":1}\n\nThat is the profile.')).toBe('{"a":1}')
+  })
+
+  it('handles nested braces correctly', () => {
+    expect(extractFirstJsonObject('{"a":{"b":{"c":1}},"d":2}')).toBe('{"a":{"b":{"c":1}},"d":2}')
+  })
+
+  it('ignores braces inside strings', () => {
+    expect(extractFirstJsonObject('{"a":"has } brace","b":1}')).toBe('{"a":"has } brace","b":1}')
+  })
+
+  it('ignores escaped quotes inside strings', () => {
+    expect(extractFirstJsonObject('{"a":"with \\"quote\\" }","b":1}')).toBe('{"a":"with \\"quote\\" }","b":1}')
+  })
+
+  it('returns undefined when no JSON object present', () => {
+    expect(extractFirstJsonObject('no json here')).toBeUndefined()
+  })
+
+  it('returns undefined on unterminated object', () => {
+    expect(extractFirstJsonObject('{"a":1')).toBeUndefined()
   })
 })
