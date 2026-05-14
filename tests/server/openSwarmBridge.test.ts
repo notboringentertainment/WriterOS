@@ -92,6 +92,9 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('Task response contract:')
     expect(prompt).toContain('Treat the user question as a task request')
     expect(prompt).toContain('Respond like a concise review memo or task report')
+    expect(prompt).toContain('Use plain text only')
+    expect(prompt).toContain('Do not use Markdown heading markers')
+    expect(prompt).toContain('Use compact section labels that end with a colon')
     expect(prompt).toContain('Target 250-450 words')
   })
 
