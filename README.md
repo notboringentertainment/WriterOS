@@ -39,7 +39,20 @@ Run the app:
 npm run dev
 ```
 
-By default the server listens on `127.0.0.1:5000`. Override with `PORT` or `HOST` if needed.
+This starts the full local development stack:
+
+- WriterOS on `127.0.0.1:5177`
+- OpenSwarm on `127.0.0.1:8080` when `/Users/ben/OpenSwarm` is present
+
+Use `npm run dev:status` to check whether both services are already running.
+
+The WriterOS app-only server is still available with:
+
+```bash
+npm run dev:writeros
+```
+
+Override WriterOS with `PORT` or `HOST` if needed. If OpenSwarm lives somewhere other than `/Users/ben/OpenSwarm`, set `OPENSWARM_DIR=/path/to/OpenSwarm`.
 
 AI chat requires:
 
@@ -71,4 +84,4 @@ npm run build
 - No Supabase or Postgres persistence.
 - No Replit runtime configuration.
 - No Drizzle/Neon/auth/session scaffold.
-- No production auth or multi-project picker yet.
+- No production auth.
