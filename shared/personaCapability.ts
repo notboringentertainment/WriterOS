@@ -293,7 +293,10 @@ export const capabilityReceiptSchema: z.ZodType<CapabilityReceipt> = z.object({
   missingSurfaces: z.array(z.enum(['logline', 'synopsis', 'storyBible', 'characters'])),
   sources: z.array(z.object({
     label: z.string(),
-    url: z.string().optional(),
+    url: z.string().url().refine(
+      value => value.startsWith('http://') || value.startsWith('https://'),
+      { message: 'url must be http(s)' }
+    ).optional(),
     citedInFinal: z.boolean(),
   })),
   failureReason: z.enum(['timeout', 'upstream_error', 'invalid_upstream', 'aborted']).optional(),

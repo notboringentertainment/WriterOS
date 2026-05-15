@@ -121,6 +121,19 @@ function parseJsonObject(value: string): Record<string, unknown> {
   }
 }
 
+function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined
+    return parsed.href
+  } catch {
+    return undefined
+  }
+}
+
 function normalizeSources(sources: ResearchSource[]): ResearchSource[] {
   const seen = new Set<string>()
   const result: ResearchSource[] = []
@@ -131,9 +144,10 @@ function normalizeSources(sources: ResearchSource[]): ResearchSource[] {
     const key = label.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
+    const url = safeHttpUrl(source.url)
     result.push({
       label,
-      ...(source.url?.trim() ? { url: source.url.trim() } : {}),
+      ...(url ? { url } : {}),
     })
   }
 
@@ -150,32 +164,43 @@ export function parseResearchTaskResult(rawResponse: unknown): ResearchTaskResul
   }
 
   const data = researchTaskResultSchema.parse(parsed)
-  const findings: ResearchFinding[] = data.findings
-    .flatMap(item => {
-      const claim = (item.claim || item.text || '').trim()
-      if (!claim) return []
-      const finding: ResearchFinding = {
-        claim,
-        verified: item.unverified ? false : item.verified !== false,
-      }
-      const sourceLabel = (item.sourceLabel || item.label || '').trim()
-      if (sourceLabel) finding.sourceLabel = sourceLabel
-      if (item.url?.trim()) finding.url = item.url.trim()
-      return [finding]
-    })
+  const findings: ResearchFinding[] = []
+  const demotedUnverified: string[] = []
 
-  const sourceFromFindings = findings
-    .filter(finding => finding.sourceLabel)
-    .map(finding => ({
-      label: finding.sourceLabel as string,
-      ...(finding.url ? { url: finding.url } : {}),
-    }))
+  for (const item of data.findings) {
+    const claim = (item.claim || item.text || '').trim()
+    if (!claim) continue
+    const sourceLabel = (item.sourceLabel || item.label || '').trim()
+    const explicitlyUnverified = item.unverified === true || item.verified === false
+
+    if (!sourceLabel || explicitlyUnverified) {
+      demotedUnverified.push(claim)
+      continue
+    }
+
+    const finding: ResearchFinding = {
+      claim,
+      verified: true,
+      sourceLabel,
+    }
+    const url = safeHttpUrl(item.url)
+    if (url) finding.url = url
+    findings.push(finding)
+  }
+
+  const sourceFromFindings = findings.map(finding => ({
+    label: finding.sourceLabel as string,
+    ...(finding.url ? { url: finding.url } : {}),
+  }))
 
   return {
     findings,
     sources: normalizeSources([...data.sources, ...sourceFromFindings]),
     missing: data.missing.filter(item => item.trim().length > 0),
-    unverified: data.unverified.filter(item => item.trim().length > 0),
+    unverified: [
+      ...data.unverified.filter(item => item.trim().length > 0),
+      ...demotedUnverified,
+    ],
   }
 }
 
