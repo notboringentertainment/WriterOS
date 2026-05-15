@@ -159,7 +159,7 @@ export const PERSONA_CAPABILITY_ALLOWLIST: readonly PersonaCapabilityAllowlistEn
     taskKind: 'research_world_context',
     voiceProfileSlice: 'world_context',
     upstreamRecipient: 'Writing Partner',
-    softTimeoutMs: 45_000,
+    softTimeoutMs: 120_000,
   },
 ] as const
 

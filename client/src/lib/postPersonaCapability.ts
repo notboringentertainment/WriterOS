@@ -24,7 +24,7 @@ export async function postPersonaCapability(
   options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<PersonaCapabilityResponse> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 70_000)
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 150_000)
   const abortFromCaller = () => controller.abort()
 
   if (options.signal?.aborted) controller.abort()
