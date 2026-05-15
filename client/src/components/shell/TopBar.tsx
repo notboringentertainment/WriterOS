@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { getDisplayProjectTitle, normalizeProjectTitle } from '../../lib/projectIdentity'
+import type { ProjectSummary } from '../../lib/projectLibrary'
 
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
 
@@ -14,7 +15,11 @@ interface TopBarProps {
   activeTab: WritingTab
   writersRoomActive: boolean
   projectTitle: string
+  activeProjectId?: string
+  projectSummaries?: ProjectSummary[]
   onProjectTitleChange?: (title: string) => void
+  onProjectChange?: (projectId: string) => void
+  onNewProject?: () => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
   onVoiceProfile: () => void
@@ -25,7 +30,11 @@ export function TopBar({
   activeTab,
   writersRoomActive,
   projectTitle,
+  activeProjectId,
+  projectSummaries = [],
   onProjectTitleChange,
+  onProjectChange,
+  onNewProject,
   onTabChange,
   onWritersRoom,
   onVoiceProfile,
@@ -35,6 +44,7 @@ export function TopBar({
   const [draftTitle, setDraftTitle] = useState('')
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
+  const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
 
   function startTitleEdit() {
     if (!onProjectTitleChange) return
@@ -86,6 +96,21 @@ export function TopBar({
       </nav>
 
       <div style={styles.projectTitleSlot}>
+        {canSwitchProjects && (
+          <select
+            aria-label="Project library"
+            value={activeProjectId}
+            onChange={e => onProjectChange(e.target.value)}
+            style={styles.projectSelect}
+          >
+            {projectSummaries.map(summary => (
+              <option key={summary.id} value={summary.id}>
+                {formatProjectOptionLabel(summary, projectSummaries)}
+              </option>
+            ))}
+          </select>
+        )}
+
         {editingTitle ? (
           <input
             aria-label="Project title"
@@ -117,6 +142,18 @@ export function TopBar({
         ) : (
           <div style={styles.projectTitleText}>{displayTitle}</div>
         )}
+
+        {onNewProject && (
+          <button
+            type="button"
+            aria-label="New script"
+            title="Start a new saved script"
+            style={styles.newProjectButton}
+            onClick={onNewProject}
+          >
+            New script
+          </button>
+        )}
       </div>
 
       <div style={styles.rightZone}>
@@ -141,6 +178,17 @@ export function TopBar({
       </div>
     </header>
   )
+}
+
+function formatProjectOptionLabel(summary: ProjectSummary, summaries: ProjectSummary[]) {
+  const title = getDisplayProjectTitle(summary.title)
+  const duplicateTitleCount = summaries.filter(candidate => getDisplayProjectTitle(candidate.title) === title).length
+  if (duplicateTitleCount <= 1) return title
+
+  return `${title} · ${new Date(summary.updatedAt).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })}`
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -189,6 +237,8 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     display: 'flex',
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
     minWidth: 0,
   },
   projectTitleText: {
@@ -230,6 +280,32 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '3px 8px',
     textAlign: 'center',
     outline: 'none',
+  },
+  projectSelect: {
+    maxWidth: 180,
+    background: 'var(--surface-2)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 12,
+    padding: '3px 8px',
+    outline: 'none',
+  },
+  newProjectButton: {
+    background: 'none',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 12,
+    padding: '3px 8px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
   rightZone: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 },
   writersRoom: {

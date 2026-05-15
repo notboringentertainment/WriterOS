@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
@@ -73,6 +73,13 @@ export default function App() {
     rawHtml: project.state.script.rawHtml,
     scenes: project.state.script.scenes,
   })
+
+  useEffect(() => {
+    latestScriptSnapshotRef.current = {
+      rawHtml: project.state.script.rawHtml,
+      scenes: project.state.script.scenes,
+    }
+  }, [project.activeProjectId, project.state.script.rawHtml, project.state.script.scenes])
 
   const buildFreshProjectContext = useCallback(
     (message: string) => buildProjectContext(project.state, message, {
@@ -210,6 +217,7 @@ export default function App() {
       case 'script':
         return (
           <ScriptTab
+            key={project.activeProjectId}
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
             initialScript={project.state.script.rawHtml || undefined}
@@ -263,7 +271,11 @@ export default function App() {
     <Shell
       shellState={shellState}
       projectTitle={project.state.meta.title}
+      activeProjectId={project.activeProjectId}
+      projectSummaries={project.projects}
       onProjectTitleChange={title => project.setMeta({ title })}
+      onProjectChange={project.switchProject}
+      onNewProject={project.createProject}
       railProps={railProps}
     >
       {renderCenter()}

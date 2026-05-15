@@ -1,18 +1,28 @@
 import { useState, useCallback } from 'react'
-import { defaultProjectState, loadProjectState, saveProjectState } from './projectState'
+import { defaultProjectState } from './projectState'
+import {
+  createBlankProject,
+  getStoredProject,
+  loadActiveProjectLibrary,
+  saveProjectToLibrary,
+  summarizeProjects,
+} from './projectLibrary'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 
 export function useProjectState() {
-  const [state, setState] = useState<ProjectState>(() => loadProjectState())
+  const [initialLibrary] = useState(() => loadActiveProjectLibrary())
+  const [state, setState] = useState<ProjectState>(() => initialLibrary.state)
+  const [activeProjectId, setActiveProjectId] = useState(() => initialLibrary.activeProjectId)
+  const [projects, setProjects] = useState(() => initialLibrary.projects)
 
   const update = useCallback((updater: (s: ProjectState) => ProjectState) => {
     setState(prev => {
       const next = updater(prev)
-      saveProjectState(next)
+      setProjects(currentProjects => saveProjectToLibrary(activeProjectId, next, currentProjects))
       return next
     })
-  }, [])
+  }, [activeProjectId])
 
   const setMeta = useCallback((patch: Partial<ProjectState['meta']>) => {
     update(s => ({
@@ -145,8 +155,31 @@ export function useProjectState() {
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
   }, [update])
 
+  const createProject = useCallback(() => {
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const next = createBlankProject(savedProjects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [activeProjectId, projects, state])
+
+  const switchProject = useCallback((projectId: string) => {
+    if (projectId === activeProjectId) return
+
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const project = getStoredProject(projectId, savedProjects)
+    if (!project) return
+
+    const nextProjects = saveProjectToLibrary(project.id, project.state, savedProjects)
+    setActiveProjectId(project.id)
+    setState(project.state)
+    setProjects(nextProjects)
+  }, [activeProjectId, projects, state])
+
   return {
     state,
+    activeProjectId,
+    projects: summarizeProjects(projects),
     setMeta,
     setSynopsisSection,
     clearSynopsis,
@@ -162,5 +195,7 @@ export function useProjectState() {
     addMessage,
     clearTranscript,
     updateScript,
+    createProject,
+    switchProject,
   }
 }

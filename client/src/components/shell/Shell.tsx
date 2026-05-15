@@ -4,6 +4,7 @@ import { LeftRail } from './LeftRail'
 import { VoiceProfileDrawer } from './VoiceProfileDrawer'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
+import type { ProjectSummary } from '../../lib/projectLibrary'
 import type { ActiveTab } from '../../lib/wpRouting'
 import type { StoryBibleSection } from '../../lib/shellState'
 
@@ -33,12 +34,26 @@ interface RailProps {
 interface ShellProps {
   shellState: ShellState
   projectTitle: string
+  activeProjectId?: string
+  projectSummaries?: ProjectSummary[]
   onProjectTitleChange?: (title: string) => void
+  onProjectChange?: (projectId: string) => void
+  onNewProject?: () => void
   railProps: RailProps
   children: React.ReactNode
 }
 
-export function Shell({ shellState, projectTitle, onProjectTitleChange, railProps, children }: ShellProps) {
+export function Shell({
+  shellState,
+  projectTitle,
+  activeProjectId,
+  projectSummaries,
+  onProjectTitleChange,
+  onProjectChange,
+  onNewProject,
+  railProps,
+  children,
+}: ShellProps) {
   const {
     activeTab, writersRoomActive, panelOpen, focusMode,
     storyBibleSection, voiceProfileOpen,
@@ -85,7 +100,11 @@ export function Shell({ shellState, projectTitle, onProjectTitleChange, railProp
           activeTab={activeTab}
           writersRoomActive={writersRoomActive}
           projectTitle={projectTitle}
+          activeProjectId={activeProjectId}
+          projectSummaries={projectSummaries}
           onProjectTitleChange={onProjectTitleChange}
+          onProjectChange={onProjectChange}
+          onNewProject={onNewProject}
           onTabChange={setActiveTab}
           onWritersRoom={handleWritersRoom}
           onVoiceProfile={toggleVoiceProfile}

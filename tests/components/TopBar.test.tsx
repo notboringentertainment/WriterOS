@@ -109,4 +109,34 @@ describe('TopBar', () => {
     expect(onProjectTitleChange).not.toHaveBeenCalled()
     expect(screen.getByText('Lifeline')).toBeInTheDocument()
   })
+
+  it('calls onNewProject when New script is clicked', () => {
+    const onNewProject = vi.fn()
+    render(<TopBar {...defaultProps} onNewProject={onNewProject} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'New script' }))
+
+    expect(onNewProject).toHaveBeenCalled()
+  })
+
+  it('shows a project library selector when multiple projects exist', () => {
+    const onProjectChange = vi.fn()
+    render(
+      <TopBar
+        {...defaultProps}
+        activeProjectId="project-1"
+        projectSummaries={[
+          { id: 'project-1', title: 'First Script', createdAt: 1, updatedAt: 1 },
+          { id: 'project-2', title: 'Second Script', createdAt: 2, updatedAt: 2 },
+        ]}
+        onProjectChange={onProjectChange}
+      />
+    )
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Project library' }), {
+      target: { value: 'project-2' },
+    })
+
+    expect(onProjectChange).toHaveBeenCalledWith('project-2')
+  })
 })

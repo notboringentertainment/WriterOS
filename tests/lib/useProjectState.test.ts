@@ -170,6 +170,26 @@ describe('useProjectState', () => {
     expect(stored.script.rawHtml).toBe('<p>persisted</p>')
   })
 
+  it('createProject starts a fresh project without deleting the current script', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setMeta({ title: 'First Script' }))
+    act(() => result.current.updateScript('<p data-element-type="action">Keep this page.</p>', []))
+    const firstProjectId = result.current.activeProjectId
+
+    act(() => result.current.createProject())
+
+    expect(result.current.activeProjectId).not.toBe(firstProjectId)
+    expect(result.current.state.meta.title).toBe('')
+    expect(result.current.state.script.rawHtml).toBe('')
+    expect(result.current.projects).toHaveLength(2)
+
+    act(() => result.current.switchProject(firstProjectId))
+
+    expect(result.current.state.meta.title).toBe('First Script')
+    expect(result.current.state.script.rawHtml).toBe('<p data-element-type="action">Keep this page.</p>')
+  })
+
   it('addMessage persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     const msg: TranscriptMessage = { id: 'msg3', role: 'user', content: 'persist me', speaker: 'Writer', ts: 3 }
