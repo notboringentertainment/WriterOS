@@ -9,6 +9,11 @@ describe('ScriptTab', () => {
     expect(screen.getByRole('combobox', { name: /element type/i })).toBeInTheDocument()
   })
 
+  it('leaves vertical scrolling to the main pane so the element toolbar can stick', () => {
+    render(<ScriptTab />)
+    expect(screen.getByTestId('script-tab-surface')).not.toHaveStyle({ overflowX: 'auto' })
+  })
+
   it('accepts onEditorReady prop and calls it with editor instance', async () => {
     const onEditorReady = vi.fn()
     render(<ScriptTab onEditorReady={onEditorReady} />)

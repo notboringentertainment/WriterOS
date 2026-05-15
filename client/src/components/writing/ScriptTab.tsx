@@ -92,7 +92,7 @@ export function ScriptTab({
   }, [])
 
   return (
-    <div style={styles.wrapper}>
+    <div data-testid="script-tab-surface" style={styles.wrapper}>
       <div style={styles.pageWrapper}>
         {!focusMode && (
           <p style={styles.surfaceNote}>
@@ -130,7 +130,6 @@ const styles: Record<string, React.CSSProperties> = {
   wrapper: {
     minHeight: '100%',
     background: 'var(--bg)',
-    overflowX: 'auto',   // horizontal scroll on narrow viewports instead of clipping
     padding: '0 24px 80px',
   },
   pageWrapper: {
