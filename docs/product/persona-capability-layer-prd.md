@@ -67,6 +67,42 @@ OpenSwarm may run task-oriented capabilities behind the current persona:
 
 OpenSwarm output is an intermediate artifact unless the user explicitly asks to see the raw task report.
 
+### Routing Architecture Decision
+
+WriterOS personas are the user-facing creative collaborators. OpenSwarm agents are hidden capability providers.
+
+Core rule:
+
+> A WriterOS persona should call the OpenSwarm agent that best matches the task, not the OpenSwarm agent that shares the visible persona framing.
+
+This means WriterOS owns a persona skillset to OpenSwarm capability map. Routing is keyed by visible persona, task kind, and capability need. It is not keyed by which OpenSwarm agent sounds most like the visible persona.
+
+Example routing map:
+
+| Visible WriterOS request | Internal capability route |
+| --- | --- |
+| Zoe + world research | Deep Research Agent |
+| Zoe + visual reference | Image Agent |
+| Sam + comps or current market context | Deep Research Agent |
+| Alex + formatted document or PDF-style export | Docs Agent |
+| Maya + dialogue craft | WriterOS-only unless external reference is requested |
+| Oliver + outline logic | WriterOS-only unless external research or document generation is requested |
+
+Implementation implications:
+
+- Preserve WriterOS persona continuity in the transcript, labels, final answer, and user-facing UI.
+- Preserve original OpenSwarm agents when they provide durable agency: research, docs, image, video, data, slides, and other specialized task capabilities.
+- Do not collapse OpenSwarm agents into WriterOS characters. They are capability providers, not collaborators.
+- The capability allowlist must store the upstream OpenSwarm recipient explicitly for each `{personaId, taskKind}` pair.
+- Tests for each routed capability must assert the selected upstream recipient, so a Zoe research call cannot accidentally route through OpenSwarm Writing Partner again.
+
+Why this matters:
+
+- It preserves the illusion and usefulness of WriterOS: the user asks Zoe, Sam, Maya, Oliver, Alex, Casey, or Writing Partner.
+- WriterOS internally chooses the right tool for the job.
+- Natural interaction stays intact while avoiding slow, indirect OpenSwarm routing.
+- OpenSwarm remains useful agency behind the scenes rather than becoming a competing cast of visible characters.
+
 ### Final Response Layer
 
 The visible WriterOS persona synthesizes the task result into the user's current conversation.
@@ -549,6 +585,8 @@ Capability class matrix:
 Success criteria:
 
 - each capability has clear trigger rules
+- each routed capability names its upstream OpenSwarm recipient explicitly
+- route tests assert the selected upstream recipient for every allowlisted persona/task pair
 - each capability returns bounded task output
 - final responses stay in persona voice
 - capability outputs are stored, displayed, or discarded according to artifact type, not silently merged into transcripts
