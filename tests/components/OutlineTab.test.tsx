@@ -32,6 +32,26 @@ describe('OutlineTab', () => {
     expect(screen.getByDisplayValue('Hero defeats henchman but loses ally.')).toBeInTheDocument()
   })
 
+  it('clears the whole outline in one click when content exists', () => {
+    const onClear = vi.fn()
+    const outline = {
+      ...defaultOutline,
+      beats: defaultOutline.beats.map((b: any) =>
+        b.id === 'midpoint' ? { ...b, notes: 'Hero defeats henchman but loses ally.' } : b
+      ),
+    }
+
+    render(<OutlineTab outline={outline} onUpdateBeat={vi.fn()} onReorderBeats={vi.fn()} onClear={onClear} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear outline' }))
+
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables clear outline when the outline is empty', () => {
+    render(<OutlineTab outline={defaultOutline} onUpdateBeat={vi.fn()} onReorderBeats={vi.fn()} onClear={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Clear outline' })).toBeDisabled()
+  })
+
   it('calls onReorderBeats when a beat is dragged onto another beat', () => {
     const onReorderBeats = vi.fn()
     const data = new Map<string, string>()

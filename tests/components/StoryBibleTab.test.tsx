@@ -42,6 +42,24 @@ describe('StoryBibleTab', () => {
     expect(onAddCharacter).toHaveBeenCalledWith({ name: 'New Character', role: '', wound: '', want: '', need: '', arc: '' })
   })
 
+  it('clears the whole story bible in one click when content exists', () => {
+    const onClear = vi.fn()
+    const bible = {
+      ...defaultBible,
+      world: { ...defaultBible.world, setting: 'A sealed city' },
+    }
+
+    render(<StoryBibleTab storyBible={bible} {...defaultProps} onClear={onClear} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear story bible' }))
+
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables clear story bible when the story bible is empty', () => {
+    render(<StoryBibleTab storyBible={defaultBible} {...defaultProps} onClear={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Clear story bible' })).toBeDisabled()
+  })
+
   it('renders existing characters', () => {
     const bible = {
       ...defaultBible,

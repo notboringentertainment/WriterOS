@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
+import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 
 beforeEach(() => localStorage.clear())
@@ -58,6 +59,19 @@ describe('useProjectState', () => {
     expect(midpoint?.notes).toBe('Hero wins battle, loses war')
   })
 
+  it('clearOutline resets beat notes, links, and order, then persists the change', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setBeat('midpoint', { notes: 'Hero wins battle, loses war', linkedSceneIds: ['scene-1'] }))
+    act(() => result.current.reorderBeats(0, 2))
+    act(() => result.current.clearOutline())
+
+    expect(result.current.state.outline).toEqual(defaultProjectState().outline)
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.outline).toEqual(result.current.state.outline)
+  })
+
   it('reorderBeats moves one beat to another valid position', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.reorderBeats(0, 2))
@@ -88,6 +102,21 @@ describe('useProjectState', () => {
     act(() => result.current.addCharacter({ name: 'Alex', role: 'Protagonist', wound: '', want: '', need: '', arc: '' }))
     expect(result.current.state.storyBible.characters).toHaveLength(1)
     expect(result.current.state.storyBible.characters[0].name).toBe('Alex')
+  })
+
+  it('clearStoryBible empties characters and story bible fields, then persists the change', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.addCharacter({ name: 'Alex', role: 'Protagonist', wound: '', want: '', need: '', arc: '' }))
+    act(() => result.current.setWorld({ setting: 'A sealed city', toneAnchors: 'Heat', voiceNotes: 'Spare' }))
+    act(() => result.current.setThemes('Mercy under pressure'))
+    act(() => result.current.setRules('No one leaves after sunset'))
+    act(() => result.current.clearStoryBible())
+
+    expect(result.current.state.storyBible).toEqual(defaultProjectState().storyBible)
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.storyBible).toEqual(result.current.state.storyBible)
   })
 
   it('persists state to localStorage on update', () => {

@@ -34,13 +34,39 @@ interface StoryBibleTabProps {
   onSetThemes: (value: string) => void
   onSetRules: (value: string) => void
   onSectionChange?: (section: StoryBibleSection) => void
+  onClear?: () => void
 }
 
-export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, onSetWorld, onSetThemes, onSetRules, onSectionChange }: StoryBibleTabProps) {
+export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, onSetWorld, onSetThemes, onSetRules, onSectionChange, onClear }: StoryBibleTabProps) {
+  const hasContent = Boolean(
+    storyBible.characters.length > 0 ||
+    storyBible.world.setting.trim() ||
+    storyBible.world.toneAnchors.trim() ||
+    storyBible.world.voiceNotes.trim() ||
+    storyBible.themes.trim() ||
+    storyBible.rules.trim()
+  )
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>Story Bible</h2>
+        <div style={styles.titleRow}>
+          <h2 style={styles.title}>Story Bible</h2>
+          {onClear && (
+            <button
+              type="button"
+              style={{
+                ...styles.clearButton,
+                ...(!hasContent ? styles.clearButtonDisabled : {}),
+              }}
+              onClick={onClear}
+              disabled={!hasContent}
+              title="Clear every story bible field"
+            >
+              Clear story bible
+            </button>
+          )}
+        </div>
         <p style={styles.subtitle}>
           A reference home for identity, continuity, tone, and rules. @Casey helps with characters, theme, and voice; @Zoe helps with world logic and constraints.
         </p>
@@ -145,12 +171,34 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 40,
   },
   header: { marginBottom: 0 },
+  titleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 6,
+  },
   title: {
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
     fontSize: 24,
     color: 'var(--fg)',
-    marginBottom: 6,
+    margin: 0,
+  },
+  clearButton: {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '7px 10px',
+    cursor: 'pointer',
+  },
+  clearButtonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
   subtitle: {
     fontFamily: 'var(--font-body)',

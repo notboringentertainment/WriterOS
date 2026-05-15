@@ -231,6 +231,7 @@ export default function App() {
             outline={project.state.outline}
             onUpdateBeat={project.setBeat}
             onReorderBeats={project.reorderBeats}
+            onClear={project.clearOutline}
           />
         )
       case 'story-bible':
@@ -243,6 +244,7 @@ export default function App() {
             onSetThemes={project.setThemes}
             onSetRules={project.setRules}
             onSectionChange={shellState.setStoryBibleSection}
+            onClear={project.clearStoryBible}
           />
         )
       default:

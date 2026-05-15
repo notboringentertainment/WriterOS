@@ -1,5 +1,6 @@
 import React from 'react'
 import { BeatCard } from '../shared/BeatCard'
+import { defaultProjectState } from '../../lib/projectState'
 
 interface Beat {
   id: string
@@ -18,13 +19,41 @@ interface OutlineTabProps {
   outline: OutlineData
   onUpdateBeat: (beatId: string, patch: { notes: string }) => void
   onReorderBeats: (fromIndex: number, toIndex: number) => void
+  onClear?: () => void
 }
 
-export function OutlineTab({ outline, onUpdateBeat, onReorderBeats }: OutlineTabProps) {
+const DEFAULT_BEAT_IDS = defaultProjectState().outline.beats.map(beat => beat.id)
+
+export function OutlineTab({ outline, onUpdateBeat, onReorderBeats, onClear }: OutlineTabProps) {
+  const hasContent = Boolean(
+    outline.beatType !== 'save-the-cat' ||
+    outline.beats.some((beat, index) =>
+      beat.notes.trim() ||
+      beat.linkedSceneIds.length > 0 ||
+      beat.id !== DEFAULT_BEAT_IDS[index]
+    )
+  )
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>Outline</h2>
+        <div style={styles.titleRow}>
+          <h2 style={styles.title}>Outline</h2>
+          {onClear && (
+            <button
+              type="button"
+              style={{
+                ...styles.clearButton,
+                ...(!hasContent ? styles.clearButtonDisabled : {}),
+              }}
+              onClick={onClear}
+              disabled={!hasContent}
+              title="Clear every outline field"
+            >
+              Clear outline
+            </button>
+          )}
+        </div>
         <p style={styles.subtitle}>
           A writer-facing structural map for beats, reversals, and missing turns. Writing Partner naturally asks @Oliver here.
         </p>
@@ -51,12 +80,34 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '32px 24px 64px',
   },
   header: { marginBottom: 28 },
+  titleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 6,
+  },
   title: {
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
     fontSize: 24,
     color: 'var(--fg)',
-    marginBottom: 6,
+    margin: 0,
+  },
+  clearButton: {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '7px 10px',
+    cursor: 'pointer',
+  },
+  clearButtonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
   subtitle: {
     fontFamily: 'var(--font-mono)',

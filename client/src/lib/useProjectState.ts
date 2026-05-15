@@ -51,6 +51,10 @@ export function useProjectState() {
     }))
   }, [update])
 
+  const clearOutline = useCallback(() => {
+    update(s => ({ ...s, outline: defaultProjectState().outline }))
+  }, [update])
+
   const reorderBeats = useCallback((fromIndex: number, toIndex: number) => {
     update(s => {
       if (
@@ -107,6 +111,10 @@ export function useProjectState() {
     update(s => ({ ...s, storyBible: { ...s.storyBible, rules: value } }))
   }, [update])
 
+  const clearStoryBible = useCallback(() => {
+    update(s => ({ ...s, storyBible: defaultProjectState().storyBible }))
+  }, [update])
+
   const addMessage = useCallback((agentId: AgentId, msg: TranscriptMessage) => {
     update(s => ({
       ...s,
@@ -143,12 +151,14 @@ export function useProjectState() {
     setSynopsisSection,
     clearSynopsis,
     setBeat,
+    clearOutline,
     reorderBeats,
     addCharacter,
     updateCharacter,
     setWorld,
     setThemes,
     setRules,
+    clearStoryBible,
     addMessage,
     clearTranscript,
     updateScript,
