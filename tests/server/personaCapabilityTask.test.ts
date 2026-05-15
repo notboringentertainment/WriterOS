@@ -120,7 +120,7 @@ describe('runPersonaTask', () => {
     )
     const upstreamBody = JSON.parse(fetchImpl.mock.calls[0][1].body)
     expect(upstreamBody).toMatchObject({
-      recipient_agent: 'Writing Partner',
+      recipient_agent: 'Deep Research Agent',
       chat_history: [],
     })
     expect(upstreamBody).not.toHaveProperty('thread_id')

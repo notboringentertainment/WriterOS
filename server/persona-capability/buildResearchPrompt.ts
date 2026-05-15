@@ -113,6 +113,9 @@ Task:
 ${request.message}
 
 Hard boundaries:
+- This is a quick capability lookup, not a comprehensive research report.
+- Prefer 1-2 targeted web searches; stop once you have enough evidence for 3-5 useful findings.
+- Do not ask clarifying questions. Put missing inputs in "missing" and continue with the supplied packet.
 - Return source-grounded findings only. Do not invent citations.
 - If a claim is useful but not source-backed, put it in "unverified" instead of "findings".
 - Do not speak as Zoe. This is intermediate task output, not the final user-facing answer.

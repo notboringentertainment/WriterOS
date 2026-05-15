@@ -24,7 +24,7 @@ export interface PersonaCapabilityAllowlistEntry {
   personaId: PersonaCapabilityPersonaId
   taskKind: PersonaCapabilityId
   voiceProfileSlice: VoiceProfileSliceKind
-  upstreamRecipient: 'Writing Partner'
+  upstreamRecipient: 'Deep Research Agent' | 'Writing Partner'
   softTimeoutMs: number
 }
 
@@ -158,7 +158,7 @@ export const PERSONA_CAPABILITY_ALLOWLIST: readonly PersonaCapabilityAllowlistEn
     personaId: 'zoe',
     taskKind: 'research_world_context',
     voiceProfileSlice: 'world_context',
-    upstreamRecipient: 'Writing Partner',
+    upstreamRecipient: 'Deep Research Agent',
     softTimeoutMs: 240_000,
   },
 ] as const
