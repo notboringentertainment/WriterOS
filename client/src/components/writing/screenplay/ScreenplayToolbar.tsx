@@ -57,14 +57,19 @@ export function ScreenplayToolbar({
 
 const styles: Record<string, React.CSSProperties> = {
   toolbar: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 4,
     width: 816,
     display: 'flex',
     alignItems: 'center',
     gap: 12,
     padding: '8px 0',
+    background: 'var(--bg)',
     borderBottom: '1px solid var(--border)',
     marginBottom: 32,
     flexShrink: 0,
+    boxShadow: '0 8px 20px hsla(38, 24%, 12%, 0.06)',
   },
   select: {
     background: 'none',

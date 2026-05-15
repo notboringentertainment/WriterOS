@@ -41,4 +41,10 @@ describe('ScreenplayToolbar', () => {
     const { container } = render(<ScreenplayToolbar {...defaultProps} focusMode={true} />)
     expect(container.firstChild).toBeNull()
   })
+
+  it('sticks to the top of the script scroll area', () => {
+    render(<ScreenplayToolbar {...defaultProps} />)
+    const toolbar = screen.getByRole('combobox', { name: /element type/i }).closest('div')
+    expect(toolbar).toHaveStyle({ position: 'sticky', top: '0px' })
+  })
 })
