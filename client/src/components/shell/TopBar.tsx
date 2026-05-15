@@ -182,13 +182,29 @@ export function TopBar({
 
 function formatProjectOptionLabel(summary: ProjectSummary, summaries: ProjectSummary[]) {
   const title = getDisplayProjectTitle(summary.title)
-  const duplicateTitleCount = summaries.filter(candidate => getDisplayProjectTitle(candidate.title) === title).length
-  if (duplicateTitleCount <= 1) return title
+  const duplicateTitles = summaries.filter(candidate => getDisplayProjectTitle(candidate.title) === title)
+  if (duplicateTitles.length <= 1) return title
 
-  return `${title} · ${new Date(summary.updatedAt).toLocaleDateString(undefined, {
+  const timestamp = formatProjectTimestamp(summary.updatedAt)
+  const timestampLabel = `${title} · ${timestamp}`
+  const duplicateTimestamps = duplicateTitles.filter(candidate => formatProjectTimestamp(candidate.updatedAt) === timestamp)
+  if (duplicateTimestamps.length <= 1) return timestampLabel
+
+  const duplicateIndex = duplicateTitles
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    .findIndex(candidate => candidate.id === summary.id) + 1
+
+  return `${timestampLabel} · #${duplicateIndex}`
+}
+
+function formatProjectTimestamp(timestamp: number) {
+  return new Date(timestamp).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
-  })}`
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -282,7 +298,7 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
   },
   projectSelect: {
-    maxWidth: 180,
+    maxWidth: 240,
     background: 'var(--surface-2)',
     borderWidth: 1,
     borderStyle: 'solid',

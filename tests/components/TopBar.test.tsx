@@ -139,4 +139,24 @@ describe('TopBar', () => {
 
     expect(onProjectChange).toHaveBeenCalledWith('project-2')
   })
+
+  it('disambiguates duplicate untitled projects in the selector', () => {
+    render(
+      <TopBar
+        {...defaultProps}
+        projectTitle=""
+        activeProjectId="project-1"
+        projectSummaries={[
+          { id: 'project-1', title: '', createdAt: 1, updatedAt: 1000 },
+          { id: 'project-2', title: '', createdAt: 2, updatedAt: 1000 },
+        ]}
+        onProjectChange={vi.fn()}
+      />
+    )
+
+    const options = screen.getAllByRole('option').map(option => option.textContent)
+    expect(options[0]).toContain('Untitled Project')
+    expect(options[0]).toContain('#1')
+    expect(options[1]).toContain('#2')
+  })
 })
