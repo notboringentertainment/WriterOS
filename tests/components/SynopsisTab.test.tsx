@@ -35,4 +35,22 @@ describe('SynopsisTab', () => {
     expect(screen.getByDisplayValue('A detective confronts her past.')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Set in 1970s Chicago.')).toBeInTheDocument()
   })
+
+  it('clears the whole synopsis in one click when content exists', () => {
+    const onClear = vi.fn()
+    const synopsis = {
+      logline: 'A detective confronts her past.',
+      sections: { setup: 'Set in 1970s Chicago.', act1Break: '', midpoint: '', act2Break: '', resolution: '' },
+    }
+
+    render(<SynopsisTab synopsis={synopsis} onUpdate={vi.fn()} onClear={onClear} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear synopsis' }))
+
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables clear synopsis when the synopsis is empty', () => {
+    render(<SynopsisTab synopsis={defaultSynopsis} onUpdate={vi.fn()} onClear={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Clear synopsis' })).toBeDisabled()
+  })
 })

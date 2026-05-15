@@ -35,6 +35,22 @@ describe('useProjectState', () => {
     expect(result.current.state.synopsis.sections.setup).toBe('Set in Chicago.')
   })
 
+  it('clearSynopsis empties every synopsis field and persists the change', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setSynopsisSection('logline', 'A hero rises.'))
+    act(() => result.current.setSynopsisSection('setup', 'Set in Chicago.'))
+    act(() => result.current.clearSynopsis())
+
+    expect(result.current.state.synopsis).toEqual({
+      logline: '',
+      sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' },
+    })
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.synopsis).toEqual(result.current.state.synopsis)
+  })
+
   it('setBeat updates a single beat by id', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setBeat('midpoint', { notes: 'Hero wins battle, loses war' }))

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { loadProjectState, saveProjectState } from './projectState'
+import { defaultProjectState, loadProjectState, saveProjectState } from './projectState'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 
@@ -35,6 +35,10 @@ export function useProjectState() {
           : { sections: { ...s.synopsis.sections, [key]: value } }),
       },
     }))
+  }, [update])
+
+  const clearSynopsis = useCallback(() => {
+    update(s => ({ ...s, synopsis: defaultProjectState().synopsis }))
   }, [update])
 
   const setBeat = useCallback((beatId: string, patch: Partial<Beat>) => {
@@ -137,6 +141,7 @@ export function useProjectState() {
     state,
     setMeta,
     setSynopsisSection,
+    clearSynopsis,
     setBeat,
     reorderBeats,
     addCharacter,

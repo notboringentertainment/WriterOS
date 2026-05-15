@@ -222,6 +222,7 @@ export default function App() {
           <SynopsisTab
             synopsis={project.state.synopsis}
             onUpdate={project.setSynopsisSection}
+            onClear={project.clearSynopsis}
           />
         )
       case 'outline':

@@ -15,6 +15,7 @@ interface SynopsisData {
 interface SynopsisTabProps {
   synopsis: SynopsisData
   onUpdate: (key: string, value: string) => void
+  onClear?: () => void
 }
 
 const SYNOPSIS_SECTIONS = [
@@ -56,16 +57,36 @@ const SYNOPSIS_SECTIONS = [
   },
 ]
 
-export function SynopsisTab({ synopsis, onUpdate }: SynopsisTabProps) {
+export function SynopsisTab({ synopsis, onUpdate, onClear }: SynopsisTabProps) {
   const getValue = (key: string): string => {
     if (key === 'logline') return synopsis.logline
     return synopsis.sections[key as keyof typeof synopsis.sections] ?? ''
   }
+  const hasContent = Boolean(
+    synopsis.logline.trim() ||
+    Object.values(synopsis.sections).some(value => value.trim())
+  )
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>Synopsis</h2>
+        <div style={styles.titleRow}>
+          <h2 style={styles.title}>Synopsis</h2>
+          {onClear && (
+            <button
+              type="button"
+              style={{
+                ...styles.clearButton,
+                ...(!hasContent ? styles.clearButtonDisabled : {}),
+              }}
+              onClick={onClear}
+              disabled={!hasContent}
+              title="Clear every synopsis field"
+            >
+              Clear synopsis
+            </button>
+          )}
+        </div>
         <p style={styles.subtitle}>
           A pitch-facing story spine: logline, turns, stakes, and ending in compressed prose. Writing Partner naturally asks @Sam here.
         </p>
@@ -93,12 +114,34 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '32px 24px 64px',
   },
   header: { marginBottom: 28 },
+  titleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 6,
+  },
   title: {
     fontFamily: 'var(--font-display)',
     fontWeight: 600,
     fontSize: 24,
     color: 'var(--fg)',
-    marginBottom: 6,
+    margin: 0,
+  },
+  clearButton: {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '7px 10px',
+    cursor: 'pointer',
+  },
+  clearButtonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
   subtitle: {
     fontFamily: 'var(--font-body)',
