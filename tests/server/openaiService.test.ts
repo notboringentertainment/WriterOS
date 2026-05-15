@@ -5,6 +5,7 @@ import {
   createWritingPartnerBrief,
   parseJsonObject,
   parsePersonaCapabilitySynthesisResponse,
+  sanitizePersonaMessageFormatting,
 } from '../../server/ai/openaiService'
 import type { StoryMemory } from '../../shared/schema'
 import { defaultProjectState } from '../../client/src/lib/projectState'
@@ -404,6 +405,20 @@ describe('persona capability synthesis prompt', () => {
     )
 
     expect(parsed.citedLabels).toEqual(['Archive'])
+  })
+})
+
+describe('sanitizePersonaMessageFormatting', () => {
+  it('removes markdown emphasis from persona messages before transcript display', () => {
+    expect(
+      sanitizePersonaMessageFormatting(
+        "Based on Lifeline, the theme is **trust versus betrayal** and *human connection*."
+      )
+    ).toBe('Based on Lifeline, the theme is trust versus betrayal and human connection.')
+  })
+
+  it('removes markdown heading markers while keeping readable text', () => {
+    expect(sanitizePersonaMessageFormatting('### Verdict\nThis works.')).toBe('Verdict\nThis works.')
   })
 })
 

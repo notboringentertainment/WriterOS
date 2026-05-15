@@ -183,6 +183,23 @@ export interface PersonaResponse {
   storyUpdates?: Partial<StoryMemory>;
 }
 
+const PLAIN_TEXT_PERSONA_RESPONSE_RULES = `OUTPUT FORMAT RULES:
+- Use plain text only for the message field.
+- Do not use Markdown bold, italics, heading markers, decorative markdown, or Markdown tables.
+- Simple hyphen bullets are allowed when they make the answer easier to scan.`;
+
+export function sanitizePersonaMessageFormatting(message: unknown): string {
+  if (typeof message !== 'string') return '';
+
+  return message
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .replace(/(^|[\s([{])\*([^*\n]+?)\*([\s.,!?;:)\]}]|$)/g, '$1$2$3')
+    .replace(/(^|[\s([{])_([^_\n]+?)_([\s.,!?;:)\]}]|$)/g, '$1$2$3')
+    .trim();
+}
+
 function filled(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -666,6 +683,8 @@ ${contextSummary}
 WRITER'S STATE: ${userProfile.entryState.replace('_', ' ')}
 IMMEDIATE NEED: ${userProfile.immediateNeed}
 
+${PLAIN_TEXT_PERSONA_RESPONSE_RULES}
+
 EXPERTISE-SPECIFIC GUIDELINES:`;
 
     // Add persona-specific expertise
@@ -818,14 +837,14 @@ IMPORTANT: Respond with JSON in this format:
       try {
         const parsedResponse = parseJsonObject(rawContent);
         return {
-          message: parsedResponse.message || "I'm here to help! What would you like to work on?",
+          message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
           suggestions: parsedResponse.suggestions || [],
           storyUpdates: parsedResponse.storyUpdates
         };
       } catch (parseError) {
         // Fallback if JSON parsing fails
         return {
-          message: rawContent || "I'm here to help! What would you like to work on?",
+          message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
           suggestions: []
         };
       }
