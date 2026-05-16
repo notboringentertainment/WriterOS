@@ -1,7 +1,9 @@
 import { normalizeProjectTitle } from './projectIdentity'
+import { legacyToDocuments } from './documentMigration'
+import type { ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 const STORAGE_KEY = 'writeros_project_state'
 
 export type AgentId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
@@ -46,6 +48,7 @@ export interface ProjectState {
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
+  documents: ProjectDocuments
   agents: {
     writingPartner: { transcript: TranscriptMessage[]; lastActive: number | null }
     sam:    { transcript: TranscriptMessage[]; lastTouched: number | null }
@@ -77,7 +80,7 @@ const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
 ]
 
 export function defaultProjectState(): ProjectState {
-  return {
+  const base = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
     script: { rawHtml: '', scenes: [], revisionHistory: [] },
@@ -105,6 +108,11 @@ export function defaultProjectState(): ProjectState {
       alex:   { transcript: [], lastTouched: null },
     },
     memory: { decisions: [], flags: [], handoffs: [] },
+  } as Omit<ProjectState, 'documents'>
+
+  return {
+    ...base,
+    documents: legacyToDocuments(base as ProjectState),
   }
 }
 
@@ -163,11 +171,23 @@ export function migrateState(raw: unknown): ProjectState {
     revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
   }
 
+  const rawDocuments = obj.documents
+  if (version < 3 || !rawDocuments || typeof rawDocuments !== 'object') {
+    ;(state as Record<string, unknown>).documents = legacyToDocuments(state as unknown as ProjectState)
+  } else {
+    ;(state as Record<string, unknown>).documents = rawDocuments
+  }
+
   return state as unknown as ProjectState
 }
 
 export function saveProjectState(state: ProjectState): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  const stateToSave: ProjectState = {
+    ...state,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    documents: legacyToDocuments(state),
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
 }
 
 export function loadProjectState(): ProjectState {

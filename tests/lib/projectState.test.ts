@@ -7,6 +7,7 @@ import {
   loadProjectState,
 } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
+import { legacyToDocuments } from '../../client/src/lib/documentMigration'
 
 describe('defaultProjectState', () => {
   it('has schemaVersion equal to CURRENT_SCHEMA_VERSION', () => {
@@ -140,5 +141,56 @@ describe('saveProjectState / loadProjectState', () => {
   it('loadProjectState returns default state when nothing stored', () => {
     const loaded = loadProjectState()
     expect(loaded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+  })
+})
+
+describe('migrateState — v2 to v3 hydrates documents', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('populates documents from legacy synopsis/outline/storyBible when documents are absent', () => {
+    const v2 = defaultProjectState() as any
+    v2.schemaVersion = 2
+    v2.synopsis.logline = 'A widow returns home.'
+    v2.synopsis.sections.setup = 'OPENING'
+    delete v2.documents
+
+    const migrated = migrateState(v2)
+
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.schemaVersion).toBe(3)
+    expect(migrated.documents.synopsis.content.logline.text).toBe('A widow returns home.')
+    expect(migrated.documents.synopsis.content.prose.opening).toBe('OPENING')
+    expect(migrated.synopsis.logline).toBe('A widow returns home.')
+    expect(migrated.synopsis.sections.setup).toBe('OPENING')
+  })
+
+  it('does not overwrite existing documents on already-v3 state', () => {
+    const v3 = defaultProjectState() as any
+    v3.documents.synopsis.content.logline.text = 'EXISTING'
+    v3.synopsis.logline = 'LEGACY'
+
+    const migrated = migrateState(v3)
+
+    expect(migrated.documents.synopsis.content.logline.text).toBe('EXISTING')
+    expect(migrated.synopsis.logline).toBe('LEGACY')
+  })
+
+  it('round-trips v3 state through localStorage', () => {
+    const state = defaultProjectState()
+    state.synopsis.logline = 'persisted logline'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.logline.text).toBe('persisted logline')
+  })
+
+  it('defaultProjectState includes documents matching legacyToDocuments(defaultProjectState())', () => {
+    const state = defaultProjectState()
+    const fromLegacy = legacyToDocuments(state, () => state.documents.synopsis.updatedAt)
+    expect(state.documents.synopsis.content).toEqual(fromLegacy.synopsis.content)
+    expect(state.documents.outline.content).toEqual(fromLegacy.outline.content)
+    expect(state.documents.storyBible.content).toEqual(fromLegacy.storyBible.content)
+    expect(state.documents.treatment.content).toEqual(fromLegacy.treatment.content)
   })
 })
