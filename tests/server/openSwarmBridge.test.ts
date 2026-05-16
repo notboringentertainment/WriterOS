@@ -122,4 +122,37 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).not.toContain('Theme Stated: Someone')
     expect(prompt).not.toContain('Opening Image: A single scene')
   })
+
+  it('emits format and showOverview in the project context block', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header.format = 'series'
+    state.documents.synopsis.content.series = {
+      seriesType: 'ongoing',
+      episodeLength: 'hour',
+      showOverview: 'A renewable conflict in a sealed city.',
+      pilot: { logline: '', prose: '' },
+      seasonOneArc: '',
+      futureSeasons: [],
+      characters: [],
+      compsAndWhyThisShowNow: '',
+    }
+
+    const prompt = buildOpenSwarmWritingPartnerPrompt(
+      'Review this series premise.',
+      buildProjectContext(state)
+    )
+
+    expect(prompt).toContain('- Format: series')
+    expect(prompt).toContain('- Show Overview: A renewable conflict in a sealed city.')
+  })
+
+  it('falls back to feature and Not supplied when format and showOverview are empty', () => {
+    const prompt = buildOpenSwarmWritingPartnerPrompt(
+      'Review this premise.',
+      buildProjectContext(defaultProjectState())
+    )
+
+    expect(prompt).toContain('- Format: feature')
+    expect(prompt).toContain('- Show Overview: Not supplied')
+  })
 })

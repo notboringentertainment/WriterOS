@@ -22,6 +22,8 @@ export interface ProjectContext {
   synopsis: {
     logline: string
     sections: ProjectState['synopsis']['sections']
+    format: string
+    showOverview: string
   }
   characters: Array<Pick<ProjectState['storyBible']['characters'][number], 'id' | 'name' | 'role' | 'wound' | 'want' | 'need' | 'arc'>>
   beats: Array<Pick<ProjectState['outline']['beats'][number], 'id' | 'name' | 'description' | 'notes' | 'linkedSceneIds'>>
@@ -292,6 +294,8 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
         act2Break: text(synopsisSections.act2Break),
         resolution: text(synopsisSections.resolution),
       },
+      format: text(state.documents.synopsis.content.header.format),
+      showOverview: text(state.documents.synopsis.content.series?.showOverview ?? ''),
     },
     characters: state.storyBible.characters.map(c => ({
       id: text(c.id),

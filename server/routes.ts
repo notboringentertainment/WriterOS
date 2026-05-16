@@ -109,6 +109,8 @@ const projectContextSchema = z.object({
       act2Break: z.string(),
       resolution: z.string(),
     }),
+    format: z.string().optional(),
+    showOverview: z.string().optional(),
   }),
   characters: z.array(z.object({
     id: z.string(),
@@ -400,6 +402,8 @@ Project context supplied by WriterOS:
 - Title: ${projectContext.title || 'Untitled'}
 - Genre: ${projectContext.genre || 'Not supplied'}
 - Logline: ${projectContext.logline || projectContext.synopsis.logline || 'Not supplied'}
+- Format: ${projectContext.synopsis.format || 'feature'}
+- Show Overview: ${projectContext.synopsis.showOverview || 'Not supplied'}
 
 Writer Voice Profile supplied by WriterOS:
 ${voiceProfileLines.length ? bulletLines(voiceProfileLines) : '- None supplied by WriterOS for this request.'}

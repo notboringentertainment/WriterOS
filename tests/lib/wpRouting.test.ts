@@ -790,3 +790,52 @@ describe('extractScriptContext', () => {
     expect(ctx.script.contextReason).toBeUndefined()
   })
 })
+
+describe('buildProjectContext — synopsis format and showOverview', () => {
+  it('exposes header.format on synopsis context', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header.format = 'series'
+    const ctx = buildProjectContext(state)
+    expect(ctx.synopsis.format).toBe('series')
+  })
+
+  it('exposes empty string when format is empty', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header.format = ''
+    const ctx = buildProjectContext(state)
+    expect(ctx.synopsis.format).toBe('')
+  })
+
+  it('exposes series.showOverview when populated', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header.format = 'series'
+    state.documents.synopsis.content.series = {
+      seriesType: 'ongoing',
+      episodeLength: 'hour',
+      showOverview: 'A renewable conflict in a sealed city.',
+      pilot: { logline: '', prose: '' },
+      seasonOneArc: '',
+      futureSeasons: [],
+      characters: [],
+      compsAndWhyThisShowNow: '',
+    }
+    const ctx = buildProjectContext(state)
+    expect(ctx.synopsis.showOverview).toBe('A renewable conflict in a sealed city.')
+  })
+
+  it('exposes empty string for showOverview when content.series is undefined', () => {
+    const state = defaultProjectState()
+    expect(state.documents.synopsis.content.series).toBeUndefined()
+    const ctx = buildProjectContext(state)
+    expect(ctx.synopsis.showOverview).toBe('')
+  })
+
+  it('does NOT change synopsis.logline or synopsis.sections', () => {
+    const state = defaultProjectState()
+    state.synopsis.logline = 'Legacy logline.'
+    state.synopsis.sections.setup = 'Setup text.'
+    const ctx = buildProjectContext(state)
+    expect(ctx.synopsis.logline).toBe('Legacy logline.')
+    expect(ctx.synopsis.sections.setup).toBe('Setup text.')
+  })
+})
