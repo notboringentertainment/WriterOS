@@ -17,6 +17,13 @@ import {
   createEmptyDocuments,
   type ProjectDocuments,
   DocumentViewPreferencesSchema,
+  SynopsisSeriesContentSchema,
+  SynopsisSeriesTypeSchema,
+  SynopsisEpisodeLengthSchema,
+  SynopsisFutureSeasonSchema,
+  SynopsisSeriesCharacterSchema,
+  createEmptySeriesContent,
+  type SynopsisSeriesContent,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -304,5 +311,106 @@ describe('DocumentViewPreferencesSchema — synopsisComposeMode', () => {
   it('rejects an unknown synopsisComposeMode value', () => {
     const result = DocumentViewPreferencesSchema.safeParse({ synopsisComposeMode: 'outline' })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('SynopsisSeriesContent', () => {
+  it('createEmptySeriesContent returns a Zod-valid empty content object', () => {
+    const empty = createEmptySeriesContent()
+    expect(SynopsisSeriesContentSchema.safeParse(empty).success).toBe(true)
+  })
+
+  it('createEmptySeriesContent defaults seriesType to ongoing', () => {
+    expect(createEmptySeriesContent().seriesType).toBe('ongoing')
+  })
+
+  it('createEmptySeriesContent defaults episodeLength to hour', () => {
+    expect(createEmptySeriesContent().episodeLength).toBe('hour')
+  })
+
+  it('createEmptySeriesContent has empty futureSeasons and characters arrays', () => {
+    const empty = createEmptySeriesContent()
+    expect(empty.futureSeasons).toEqual([])
+    expect(empty.characters).toEqual([])
+  })
+
+  it('accepts a populated series content object', () => {
+    const populated: SynopsisSeriesContent = {
+      seriesType: 'limited',
+      episodeLength: 'half_hour',
+      showOverview: 'A renewable conflict in a sealed city.',
+      pilot: { logline: 'P', prose: 'PROSE' },
+      seasonOneArc: 'Arc text.',
+      futureSeasons: [
+        { id: 's1', label: 'Season 2', summary: 'Two sentences.' },
+        { id: 's2', label: 'Season 3', summary: 'Two sentences.' },
+      ],
+      characters: [
+        {
+          id: 'c1',
+          name: 'Sara',
+          role: 'Protagonist',
+          bio: 'Short bio.',
+          arcPerSeason: ['Season 1: guilt -> mercy', 'Season 2: mercy tested'],
+        },
+      ],
+      compsAndWhyThisShowNow: 'Like X meets Y.',
+    }
+    expect(SynopsisSeriesContentSchema.safeParse(populated).success).toBe(true)
+  })
+
+  it('rejects bad seriesType', () => {
+    const bad = { ...createEmptySeriesContent(), seriesType: 'mini' as any }
+    expect(SynopsisSeriesContentSchema.safeParse(bad).success).toBe(false)
+  })
+
+  it('rejects bad episodeLength', () => {
+    const bad = { ...createEmptySeriesContent(), episodeLength: 'two_hour' as any }
+    expect(SynopsisSeriesContentSchema.safeParse(bad).success).toBe(false)
+  })
+
+  it('SynopsisSeriesTypeSchema accepts limited and ongoing', () => {
+    expect(SynopsisSeriesTypeSchema.safeParse('limited').success).toBe(true)
+    expect(SynopsisSeriesTypeSchema.safeParse('ongoing').success).toBe(true)
+    expect(SynopsisSeriesTypeSchema.safeParse('mini').success).toBe(false)
+  })
+
+  it('SynopsisEpisodeLengthSchema accepts half_hour, hour, other', () => {
+    expect(SynopsisEpisodeLengthSchema.safeParse('half_hour').success).toBe(true)
+    expect(SynopsisEpisodeLengthSchema.safeParse('hour').success).toBe(true)
+    expect(SynopsisEpisodeLengthSchema.safeParse('other').success).toBe(true)
+    expect(SynopsisEpisodeLengthSchema.safeParse('feature').success).toBe(false)
+  })
+
+  it('SynopsisFutureSeasonSchema requires id, label, summary as strings', () => {
+    expect(SynopsisFutureSeasonSchema.safeParse({ id: 'x', label: 'L', summary: 'S' }).success).toBe(true)
+    expect(SynopsisFutureSeasonSchema.safeParse({ id: 'x', label: 'L' }).success).toBe(false)
+  })
+
+  it('SynopsisSeriesCharacterSchema requires arcPerSeason array', () => {
+    const valid = { id: 'c1', name: 'N', role: 'R', bio: 'B', arcPerSeason: [] }
+    expect(SynopsisSeriesCharacterSchema.safeParse(valid).success).toBe(true)
+    const bad = { id: 'c1', name: 'N', role: 'R', bio: 'B' }
+    expect(SynopsisSeriesCharacterSchema.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('SynopsisDocumentContent — optional series field', () => {
+  it('SynopsisDocumentContent without series is still Zod-valid', () => {
+    const content = createEmptySynopsisContent()
+    expect(SynopsisDocumentContentSchema.safeParse(content).success).toBe(true)
+  })
+
+  it('SynopsisDocumentContent with populated series is Zod-valid', () => {
+    const content = { ...createEmptySynopsisContent(), series: createEmptySeriesContent() }
+    expect(SynopsisDocumentContentSchema.safeParse(content).success).toBe(true)
+  })
+
+  it('SynopsisDocumentContent with bad series content is rejected', () => {
+    const content = {
+      ...createEmptySynopsisContent(),
+      series: { ...createEmptySeriesContent(), seriesType: 'mini' as any },
+    }
+    expect(SynopsisDocumentContentSchema.safeParse(content).success).toBe(false)
   })
 })

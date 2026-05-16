@@ -44,12 +44,65 @@ export const SynopsisAiProductionSchema = z.object({
   likelyReferenceImageNeeds: z.string(),
 })
 
+export const SynopsisSeriesTypeSchema = z.enum(['limited', 'ongoing'])
+export type SynopsisSeriesType = z.infer<typeof SynopsisSeriesTypeSchema>
+
+export const SynopsisEpisodeLengthSchema = z.enum(['half_hour', 'hour', 'other'])
+export type SynopsisEpisodeLength = z.infer<typeof SynopsisEpisodeLengthSchema>
+
+export const SynopsisFutureSeasonSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  summary: z.string(),
+})
+export type SynopsisFutureSeason = z.infer<typeof SynopsisFutureSeasonSchema>
+
+export const SynopsisSeriesCharacterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.string(),
+  bio: z.string(),
+  arcPerSeason: z.array(z.string()),
+})
+export type SynopsisSeriesCharacter = z.infer<typeof SynopsisSeriesCharacterSchema>
+
+export const SynopsisPilotSchema = z.object({
+  logline: z.string(),
+  prose: z.string(),
+})
+
+export const SynopsisSeriesContentSchema = z.object({
+  seriesType: SynopsisSeriesTypeSchema,
+  episodeLength: SynopsisEpisodeLengthSchema,
+  showOverview: z.string(),
+  pilot: SynopsisPilotSchema,
+  seasonOneArc: z.string(),
+  futureSeasons: z.array(SynopsisFutureSeasonSchema),
+  characters: z.array(SynopsisSeriesCharacterSchema),
+  compsAndWhyThisShowNow: z.string(),
+})
+export type SynopsisSeriesContent = z.infer<typeof SynopsisSeriesContentSchema>
+
+export function createEmptySeriesContent(): SynopsisSeriesContent {
+  return {
+    seriesType: 'ongoing',
+    episodeLength: 'hour',
+    showOverview: '',
+    pilot: { logline: '', prose: '' },
+    seasonOneArc: '',
+    futureSeasons: [],
+    characters: [],
+    compsAndWhyThisShowNow: '',
+  }
+}
+
 export const SynopsisDocumentContentSchema = z.object({
   header: SynopsisHeaderSchema,
   logline: SynopsisLoglineSchema,
   prose: SynopsisProseSchema,
   qa: SynopsisQaSchema,
   aiProductionImplications: SynopsisAiProductionSchema.optional(),
+  series: SynopsisSeriesContentSchema.optional(),
 })
 
 export type SynopsisDocumentContent = z.infer<typeof SynopsisDocumentContentSchema>
