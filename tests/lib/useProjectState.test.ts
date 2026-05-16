@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
+import { documentsToLegacy } from '../../client/src/lib/documentMigration'
 
 beforeEach(() => localStorage.clear())
 
@@ -197,5 +198,115 @@ describe('useProjectState', () => {
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.agents.writingPartner.transcript).toHaveLength(1)
     expect(stored.agents.writingPartner.transcript[0].content).toBe('persist me')
+  })
+})
+
+describe('useProjectState — setSynopsisDocument', () => {
+  it('applies the updater to documents.synopsis.content', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(content => ({
+      ...content,
+      header: { ...content.header, title: 'My Film' },
+    })))
+    expect(result.current.state.documents.synopsis.content.header.title).toBe('My Film')
+  })
+
+  it('refreshes documents.synopsis.updatedAt', () => {
+    const { result } = renderHook(() => useProjectState())
+    const before = result.current.state.documents.synopsis.updatedAt
+    act(() => result.current.setSynopsisDocument(content => ({
+      ...content,
+      logline: { ...content.logline, text: 'A new logline.' },
+    })))
+    const after = result.current.state.documents.synopsis.updatedAt
+    expect(after).not.toBe(before)
+  })
+
+  it('mirrors the legacy slice into state.synopsis after every mutation', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(content => ({
+      ...content,
+      logline: { ...content.logline, text: 'Mirror me.' },
+      prose: {
+        opening: 'OPEN',
+        escalation: 'ESC',
+        middle: 'MID',
+        climax: 'CLI',
+        resolution: 'RES',
+      },
+    })))
+    expect(result.current.state.synopsis).toEqual(
+      documentsToLegacy(result.current.state.documents).synopsis,
+    )
+    expect(result.current.state.synopsis.logline).toBe('Mirror me.')
+    expect(result.current.state.synopsis.sections.setup).toBe('OPEN')
+    expect(result.current.state.synopsis.sections.resolution).toBe('RES')
+  })
+
+  it('persists documents.synopsis content to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(content => ({
+      ...content,
+      header: { ...content.header, title: 'Persisted Film' },
+    })))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.synopsis.content.header.title).toBe('Persisted Film')
+  })
+
+  it('does not mutate other documents', () => {
+    const { result } = renderHook(() => useProjectState())
+    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
+    const treatmentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
+    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
+
+    act(() => result.current.setSynopsisDocument(content => ({
+      ...content,
+      header: { ...content.header, title: 'X' },
+    })))
+
+    expect(result.current.state.documents.outline).toEqual(outlineBefore)
+    expect(result.current.state.documents.treatment).toEqual(treatmentBefore)
+    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
+  })
+
+  it('preserves mirror invariant across arbitrary edit sequence', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, logline: { ...c.logline, text: 'L1' } })))
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, opening: 'O1' } })))
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, resolution: 'R1' } })))
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, header: { ...c.header, title: 'T1' } })))
+    expect(result.current.state.synopsis).toEqual(
+      documentsToLegacy(result.current.state.documents).synopsis,
+    )
+  })
+})
+
+describe('useProjectState — setSynopsisViewPreferences', () => {
+  it('merges activeView into viewPreferences', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
+    expect(result.current.state.documents.synopsis.viewPreferences?.activeView).toBe('document')
+  })
+
+  it('merges synopsisComposeMode into viewPreferences', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisViewPreferences({ synopsisComposeMode: 'paragraphs' }))
+    expect(result.current.state.documents.synopsis.viewPreferences?.synopsisComposeMode).toBe('paragraphs')
+  })
+
+  it('preserves other view preferences when patching one key', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
+    act(() => result.current.setSynopsisViewPreferences({ synopsisComposeMode: 'prose' }))
+    const prefs = result.current.state.documents.synopsis.viewPreferences
+    expect(prefs?.activeView).toBe('document')
+    expect(prefs?.synopsisComposeMode).toBe('prose')
+  })
+
+  it('persists viewPreferences to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.synopsis.viewPreferences?.activeView).toBe('document')
   })
 })

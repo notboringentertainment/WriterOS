@@ -9,6 +9,8 @@ import {
 } from './projectLibrary'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
+import type { SynopsisDocumentContent, DocumentViewPreferences } from '@shared/documents'
+import { documentsToLegacy } from './documentMigration'
 
 export function useProjectState() {
   const [initialLibrary] = useState(() => loadActiveProjectLibrary())
@@ -50,6 +52,47 @@ export function useProjectState() {
   const clearSynopsis = useCallback(() => {
     update(s => ({ ...s, synopsis: defaultProjectState().synopsis }))
   }, [update])
+
+  const setSynopsisDocument = useCallback(
+    (updater: (content: SynopsisDocumentContent) => SynopsisDocumentContent) => {
+      update(s => {
+        const nextContent = updater(s.documents.synopsis.content)
+        const prevUpdatedAt = new Date(s.documents.synopsis.updatedAt).getTime()
+        const nextSynopsisDoc = {
+          ...s.documents.synopsis,
+          updatedAt: new Date(Math.max(Date.now(), prevUpdatedAt + 1)).toISOString(),
+          content: nextContent,
+        }
+        const nextDocuments = { ...s.documents, synopsis: nextSynopsisDoc }
+        const nextLegacySlice = documentsToLegacy(nextDocuments).synopsis
+        return {
+          ...s,
+          documents: nextDocuments,
+          synopsis: nextLegacySlice,
+        }
+      })
+    },
+    [update],
+  )
+
+  const setSynopsisViewPreferences = useCallback(
+    (patch: Partial<DocumentViewPreferences>) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          synopsis: {
+            ...s.documents.synopsis,
+            viewPreferences: {
+              ...(s.documents.synopsis.viewPreferences ?? {}),
+              ...patch,
+            },
+          },
+        },
+      }))
+    },
+    [update],
+  )
 
   const setBeat = useCallback((beatId: string, patch: Partial<Beat>) => {
     update(s => ({
@@ -183,6 +226,8 @@ export function useProjectState() {
     setMeta,
     setSynopsisSection,
     clearSynopsis,
+    setSynopsisDocument,
+    setSynopsisViewPreferences,
     setBeat,
     clearOutline,
     reorderBeats,
