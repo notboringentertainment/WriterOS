@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { SynopsisTab } from '../../client/src/components/writing/SynopsisTab'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
+import { createEmptySeriesContent } from '@shared/documents'
 
 function makeDocument(
   proseOverrides: Partial<SynopsisDocumentContent['prose']> = {},
@@ -211,5 +212,113 @@ describe('SynopsisTab', () => {
     // Second click confirms and fires onClear
     fireEvent.click(screen.getByRole('button', { name: /click again to confirm/i }))
     expect(onClear).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('SynopsisTab — format routing', () => {
+  it('legacy format = "" renders feature edit view + QA checklist', () => {
+    const doc = makeDocument()
+    doc.content.header.format = ''
+    render(
+      <SynopsisTab
+        document={doc}
+        onContentPatch={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    // Feature: QA "Protagonist named early" item is present
+    expect(screen.getByText(/protagonist named early/i)).toBeTruthy()
+    // No Show Overview in feature mode
+    expect(screen.queryByText(/show overview/i)).toBeNull()
+  })
+
+  it('format = "series" routes to series edit view and hides QA', () => {
+    const doc = makeDocument()
+    doc.content.header.format = 'series'
+    render(
+      <SynopsisTab
+        document={doc}
+        onContentPatch={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/show overview/i)).toBeTruthy()
+    expect(screen.queryByText(/protagonist named early/i)).toBeNull()
+  })
+
+  it('lazy-init: flipping format to "series" while content.series is undefined initializes it via onContentPatch', () => {
+    const onContentPatch = vi.fn()
+    const doc = makeDocument()
+    expect(doc.content.series).toBeUndefined()
+    doc.content.header.format = 'feature'
+    render(
+      <SynopsisTab
+        document={doc}
+        onContentPatch={onContentPatch}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    // Simulate the format dropdown in the feature header firing: header.format = 'series'
+    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'series' } })
+    // Expect the wrapped patcher to lazy-init content.series
+    expect(onContentPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        header: expect.objectContaining({ format: 'series' }),
+        series: expect.objectContaining({
+          seriesType: 'ongoing',
+          episodeLength: 'hour',
+          showOverview: '',
+        }),
+      }),
+    )
+  })
+
+  it('lazy-init is idempotent: when content.series already exists, format=series patches do NOT re-init', () => {
+    const onContentPatch = vi.fn()
+    const doc = makeDocument()
+    doc.content.header.format = 'series'
+    doc.content.series = { ...createEmptySeriesContent(), showOverview: 'pre-existing overview' }
+    render(
+      <SynopsisTab
+        document={doc}
+        onContentPatch={onContentPatch}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    // Simulate user re-selecting series in the dropdown
+    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'series' } })
+    const lastCall = onContentPatch.mock.calls.find(call => call[0].header?.format === 'series')
+    expect(lastCall).toBeDefined()
+    // If series is in the patch, it must NOT equal a fresh empty series (pre-existing data preserved)
+    if (lastCall && 'series' in lastCall[0]) {
+      expect(lastCall[0].series).not.toEqual(createEmptySeriesContent())
+    }
+  })
+
+  it('flipping series → feature does NOT delete content.series', () => {
+    const onContentPatch = vi.fn()
+    const doc = makeDocument()
+    doc.content.header.format = 'series'
+    doc.content.series = { ...createEmptySeriesContent(), showOverview: 'pre-existing' }
+    render(
+      <SynopsisTab
+        document={doc}
+        onContentPatch={onContentPatch}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'feature' } })
+    const lastCall = onContentPatch.mock.calls.find(call => call[0].header?.format === 'feature')
+    expect(lastCall).toBeDefined()
+    // No series-clearing field in the patch
+    expect(lastCall![0].series).toBeUndefined()
   })
 })

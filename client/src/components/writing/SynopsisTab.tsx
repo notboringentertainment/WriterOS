@@ -1,6 +1,8 @@
 import React from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
+import { createEmptySeriesContent } from '@shared/documents'
 import { SynopsisEditView } from './synopsis/SynopsisEditView'
+import { SynopsisSeriesEditView } from './synopsis/SynopsisSeriesEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
 import { SynopsisViewToggle } from './synopsis/SynopsisViewToggle'
 
@@ -45,6 +47,17 @@ export function SynopsisTab({
 }: SynopsisTabProps) {
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const composeMode = deriveComposeMode(document)
+
+  const activeFormat: 'feature' | 'series' =
+    document.content.header.format === 'series' ? 'series' : 'feature'
+
+  function handleContentPatch(patch: Partial<SynopsisDocumentContent>) {
+    if (patch.header?.format === 'series' && document.content.series === undefined) {
+      onContentPatch({ ...patch, series: createEmptySeriesContent() })
+    } else {
+      onContentPatch(patch)
+    }
+  }
 
   return (
     <div
@@ -97,12 +110,18 @@ export function SynopsisTab({
       </div>
 
       {/* Content */}
-      {activeView === 'edit' ? (
+      {activeView === 'edit' && activeFormat === 'feature' ? (
         <SynopsisEditView
           content={document.content}
           composeMode={composeMode}
-          onContentPatch={onContentPatch}
+          onContentPatch={handleContentPatch}
           onComposeModeChange={(next) => onViewPreferencesPatch({ synopsisComposeMode: next })}
+          onClear={onClear}
+        />
+      ) : activeView === 'edit' && activeFormat === 'series' ? (
+        <SynopsisSeriesEditView
+          content={document.content}
+          onContentPatch={handleContentPatch}
           onClear={onClear}
         />
       ) : (
