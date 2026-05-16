@@ -3,9 +3,11 @@ import { defaultProjectState } from '../../client/src/lib/projectState'
 import { documentsToLegacy, legacyToDocuments, mirrorSynopsisFromLegacy } from '../../client/src/lib/documentMigration'
 import {
   createEmptySynopsisContent,
+  createEmptySeriesContent,
   DOCUMENT_SCHEMA_VERSION,
   type AuthoredDocumentState,
   type SynopsisDocumentContent,
+  type SynopsisSeriesContent,
 } from '../../shared/documents'
 
 const FIXED_TS = '2026-05-15T00:00:00.000Z'
@@ -281,5 +283,64 @@ describe('mirrorSynopsisFromLegacy', () => {
     const legacy = { logline: 'L', sections: { setup: 'x', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
     mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
     expect(existing).toEqual(snapshot)
+  })
+})
+
+describe('mirrorSynopsisFromLegacy — series content preservation', () => {
+  it('preserves populated content.series through the mirror', () => {
+    const series: SynopsisSeriesContent = {
+      ...createEmptySeriesContent(),
+      seriesType: 'limited' as const,
+      episodeLength: 'half_hour' as const,
+      showOverview: 'A renewable conflict in a sealed city.',
+      pilot: { logline: 'P', prose: 'PROSE' },
+      seasonOneArc: 'Arc text.',
+      futureSeasons: [
+        { id: 's1', label: 'Season 2', summary: 'Two sentences.' },
+      ],
+      characters: [
+        { id: 'c1', name: 'Sara', role: 'Protagonist', bio: 'Short bio.', arcPerSeason: ['Season 1: guilt -> mercy'] },
+      ],
+      compsAndWhyThisShowNow: 'Like X meets Y.',
+    }
+
+    const existing = makeDoc({ series })
+    const legacy = {
+      logline: 'A widow returns home.',
+      sections: { setup: 'O', act1Break: '', midpoint: '', act2Break: '', resolution: '' },
+    }
+
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.series).toEqual(series)
+  })
+
+  it('preserves series when legacy logline and sections are also populated', () => {
+    const series: SynopsisSeriesContent = {
+      ...createEmptySeriesContent(),
+      showOverview: 'Engine described here.',
+    }
+
+    const existing = makeDoc({ series })
+    const legacy = {
+      logline: 'L',
+      sections: { setup: 'O', act1Break: 'E', midpoint: 'M', act2Break: 'C', resolution: 'R' },
+    }
+
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    // legacy mirror applied to feature fields
+    expect(result.content.logline.text).toBe('L')
+    expect(result.content.prose.opening).toBe('O')
+    expect(result.content.prose.resolution).toBe('R')
+    // series field preserved
+    expect(result.content.series).toEqual(series)
+  })
+
+  it('passes through undefined series (no auto-creation)', () => {
+    const existing = makeDoc()
+    // makeDoc sets content via createEmptySynopsisContent which does NOT include series
+    expect(existing.content.series).toBeUndefined()
+    const legacy = { logline: '', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.series).toBeUndefined()
   })
 })
