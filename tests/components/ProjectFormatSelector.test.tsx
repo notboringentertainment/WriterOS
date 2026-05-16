@@ -30,4 +30,10 @@ describe('ProjectFormatSelector', () => {
 
     expect(screen.getByLabelText(/project format/i)).toHaveValue('series')
   })
+
+  it('supports inline variant for document headers', () => {
+    render(<ProjectFormatSelector value="feature" variant="inline" onChange={vi.fn()} />)
+
+    expect(screen.getByLabelText(/^format$/i)).toHaveStyle({ background: 'transparent' })
+  })
 })

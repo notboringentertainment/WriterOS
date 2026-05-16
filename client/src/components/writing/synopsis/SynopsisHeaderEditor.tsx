@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { SynopsisDocumentContent } from '@shared/documents'
 import type { SynopsisSeriesType, SynopsisEpisodeLength } from '@shared/documents'
+import { ProjectFormatSelector } from '../../shared/ProjectFormatSelector'
 
 type Header = SynopsisDocumentContent['header']
 
@@ -185,14 +186,12 @@ export function SynopsisHeaderEditor({
       </div>
       <div style={rowStyle}>
         <span style={labelStyle}>Format</span>
-        <InlineSelect
-          aria-label="Format"
+        <ProjectFormatSelector
+          ariaLabel="Format"
           value={formatValue}
-          onChange={e => onChange({ format: e.target.value })}
-        >
-          <option value="feature">Feature</option>
-          <option value="series">Series</option>
-        </InlineSelect>
+          variant="inline"
+          onChange={next => onChange({ format: next })}
+        />
       </div>
       <div style={rowStyle}>
         <span style={labelStyle}>Genre</span>
