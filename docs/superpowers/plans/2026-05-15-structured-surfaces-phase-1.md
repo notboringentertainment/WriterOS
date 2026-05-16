@@ -1610,7 +1610,7 @@ Add `documents` to `ProjectState`, bump `CURRENT_SCHEMA_VERSION 2 → 3`, hydrat
 
 **Important: this is the single most data-sensitive task.** The order is: write the failing test that proves no user data is lost when an existing v2 state is loaded, then implement the migration.
 
-- [ ] **Step 1: Append failing test for v2-to-v3 migration**
+- [x] **Step 1: Append failing test for v2-to-v3 migration**
 
 Append to `tests/lib/projectState.test.ts`:
 
@@ -1667,12 +1667,12 @@ describe('migrateState — v2 to v3 hydrates documents', () => {
 })
 ```
 
-- [ ] **Step 2: Run test, verify it fails**
+- [x] **Step 2: Run test, verify it fails**
 
 Run: `npm run test:run -- tests/lib/projectState.test.ts`
 Expected: FAIL — `documents` is not a property of `ProjectState`, `CURRENT_SCHEMA_VERSION` is 2 not 3, etc.
 
-- [ ] **Step 3: Edit `client/src/lib/projectState.ts` — bump schema version**
+- [x] **Step 3: Edit `client/src/lib/projectState.ts` — bump schema version**
 
 Change:
 
@@ -1686,7 +1686,7 @@ to:
 export const CURRENT_SCHEMA_VERSION = 3
 ```
 
-- [ ] **Step 4: Edit `client/src/lib/projectState.ts` — add imports and documents to interface**
+- [x] **Step 4: Edit `client/src/lib/projectState.ts` — add imports and documents to interface**
 
 Add near the existing imports at the top:
 
@@ -1719,7 +1719,7 @@ export interface ProjectState {
 }
 ```
 
-- [ ] **Step 5: Edit `defaultProjectState` to include documents**
+- [x] **Step 5: Edit `defaultProjectState` to include documents**
 
 Inside `defaultProjectState()`, **after** the `storyBible` field literal is built but before the `agents` field, you need a value derivable from the rest of the state. The clean pattern: build the legacy slice first, then call `legacyToDocuments`. Restructure `defaultProjectState` to:
 
@@ -1754,7 +1754,7 @@ export function defaultProjectState(): ProjectState {
 
 Note: This refactor pulls the existing beats literal into a named constant `DEFAULT_SAVE_THE_CAT_BEATS` if not already extracted. If the current `defaultProjectState` inlines the array of beats, leave it inline inside the `outline` literal — the only required change is splitting the object construction so `documents` can be derived from the rest.
 
-- [ ] **Step 6: Edit `migrateState` to hydrate documents**
+- [x] **Step 6: Edit `migrateState` to hydrate documents**
 
 Inside `migrateState`, **after** all the existing field migrations (meta, agents, script) and **immediately before** `return state as unknown as ProjectState`, add:
 
@@ -1769,17 +1769,17 @@ if (!rawDocuments || typeof rawDocuments !== 'object') {
 
 Verify the existing `state.schemaVersion = CURRENT_SCHEMA_VERSION` line stays in place — that handles the version bump for both empty and partial state.
 
-- [ ] **Step 7: Run tests, verify they pass**
+- [x] **Step 7: Run tests, verify they pass**
 
 Run: `npm run test:run -- tests/lib/projectState.test.ts tests/lib/documentMigration.test.ts tests/shared/documents.test.ts`
 Expected: PASS — all new migration tests green, existing project-state tests still green.
 
-- [ ] **Step 8: Run full type check**
+- [x] **Step 8: Run full type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add client/src/lib/projectState.ts tests/lib/projectState.test.ts
