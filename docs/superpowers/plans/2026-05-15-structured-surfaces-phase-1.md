@@ -965,7 +965,7 @@ git commit -m "feat(documents): add AuthoredDocumentState wrapper and ProjectDoc
 
 Map current `synopsis`/`outline`/`storyBible` into the new document shapes. Treatment is not derivable — return empty. Each adapter is pure and deterministic; pass `now()` as a parameter so tests are reproducible.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/lib/documentMigration.test.ts`:
 
@@ -1075,12 +1075,12 @@ describe('legacyToDocuments — treatment', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm run test:run -- tests/lib/documentMigration.test.ts`
 Expected: FAIL — `documentMigration` module not found.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 Create `client/src/lib/documentMigration.ts`:
 
@@ -1195,17 +1195,17 @@ If `@shared` alias is missing for any of `tsconfig.json` / `vite.config.ts` / `v
 
 (Confirmed working pattern based on existing `import type { CapabilityReceipt } from '@shared/personaCapability'` in `projectState.ts` — alias is set; relative fallback is only if alias is missing.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm run test:run -- tests/lib/documentMigration.test.ts`
 Expected: PASS, all migration tests green.
 
-- [ ] **Step 5: Run type check**
+- [x] **Step 5: Run type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/lib/documentMigration.ts tests/lib/documentMigration.test.ts
