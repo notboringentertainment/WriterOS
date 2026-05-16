@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { documentsToLegacy, legacyToDocuments } from '../../client/src/lib/documentMigration'
+import { documentsToLegacy, legacyToDocuments, mirrorSynopsisFromLegacy } from '../../client/src/lib/documentMigration'
+import {
+  createEmptySynopsisContent,
+  DOCUMENT_SCHEMA_VERSION,
+  type AuthoredDocumentState,
+  type SynopsisDocumentContent,
+} from '../../shared/documents'
 
 const FIXED_TS = '2026-05-15T00:00:00.000Z'
 const now = () => FIXED_TS
@@ -155,5 +161,125 @@ describe('documentsToLegacy round-trip', () => {
     const docs = legacyToDocuments(original, now)
     const reverted = documentsToLegacy(docs)
     expect(reverted.storyBible).toEqual(original.storyBible)
+  })
+})
+
+const MIRROR_FIXED_TS = '2026-05-16T12:00:00.000Z'
+const mirrorNow = () => MIRROR_FIXED_TS
+
+function makeDoc(overrides: Partial<SynopsisDocumentContent> = {}): AuthoredDocumentState<SynopsisDocumentContent> {
+  const content = { ...createEmptySynopsisContent(), ...overrides }
+  return {
+    version: DOCUMENT_SCHEMA_VERSION,
+    mode: 'prose',
+    updatedAt: '2026-05-15T00:00:00.000Z',
+    content,
+  }
+}
+
+describe('mirrorSynopsisFromLegacy', () => {
+  it('mirrors legacy logline into content.logline.text', () => {
+    const existing = makeDoc()
+    const legacy = { logline: 'A widow returns home.', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.logline.text).toBe('A widow returns home.')
+  })
+
+  it('mirrors all five legacy sections into prose paragraphs in order', () => {
+    const existing = makeDoc()
+    const legacy = {
+      logline: '',
+      sections: { setup: 'OPENING', act1Break: 'ESCALATION', midpoint: 'MIDDLE', act2Break: 'CLIMAX', resolution: 'RESOLUTION' },
+    }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.prose).toEqual({
+      opening: 'OPENING',
+      escalation: 'ESCALATION',
+      middle: 'MIDDLE',
+      climax: 'CLIMAX',
+      resolution: 'RESOLUTION',
+    })
+  })
+
+  it('preserves header fields from existingDoc', () => {
+    const existing = makeDoc({
+      header: { title: 'My Film', writer: 'Ben', format: 'feature', genre: 'drama', targetRuntime: '100m', comps: ['Heat', 'Manchester'] },
+    })
+    const legacy = { logline: 'L', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.header).toEqual(existing.content.header)
+  })
+
+  it('preserves content.qa from existingDoc', () => {
+    const existing = makeDoc()
+    existing.content.qa.protagonistNamedEarly = true
+    existing.content.qa.endingRevealed = true
+    const legacy = { logline: 'L', sections: { setup: 's', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.qa.protagonistNamedEarly).toBe(true)
+    expect(result.content.qa.endingRevealed).toBe(true)
+  })
+
+  it('preserves content.aiProductionImplications when set', () => {
+    const existing = makeDoc({
+      aiProductionImplications: {
+        visuallyImportantSequences: 'climax fire',
+        continuitySensitiveMoments: 'sister reveal',
+        difficultWorldOrVfx: 'wall of fire',
+        likelyReferenceImageNeeds: 'firehouse interior',
+      },
+    })
+    const legacy = { logline: 'L', sections: { setup: 's', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.aiProductionImplications).toEqual(existing.content.aiProductionImplications)
+  })
+
+  it('preserves logline sub-fields (protagonist, goal, obstacle, stakes, hook) from existingDoc', () => {
+    const existing = makeDoc()
+    existing.content.logline.protagonist = 'Sara'
+    existing.content.logline.goal = 'find her son'
+    existing.content.logline.obstacle = 'a corrupt city'
+    existing.content.logline.stakes = 'the boy dies'
+    existing.content.logline.hook = 'told in reverse'
+    const legacy = { logline: 'NEW LINE', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.content.logline.text).toBe('NEW LINE')
+    expect(result.content.logline.protagonist).toBe('Sara')
+    expect(result.content.logline.goal).toBe('find her son')
+    expect(result.content.logline.obstacle).toBe('a corrupt city')
+    expect(result.content.logline.stakes).toBe('the boy dies')
+    expect(result.content.logline.hook).toBe('told in reverse')
+  })
+
+  it('preserves version, mode, and viewPreferences from existingDoc', () => {
+    const existing: AuthoredDocumentState<SynopsisDocumentContent> = {
+      version: DOCUMENT_SCHEMA_VERSION,
+      mode: 'prose',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      content: createEmptySynopsisContent(),
+      viewPreferences: { activeView: 'document', synopsisComposeMode: 'paragraphs' },
+    }
+    const legacy = { logline: '', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.version).toBe(existing.version)
+    expect(result.mode).toBe('prose')
+    expect(result.viewPreferences).toEqual({ activeView: 'document', synopsisComposeMode: 'paragraphs' })
+  })
+
+  it('refreshes updatedAt to now()', () => {
+    const existing = makeDoc()
+    const legacy = { logline: '', sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    const result = mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(result.updatedAt).toBe(MIRROR_FIXED_TS)
+  })
+
+  it('does not mutate the existingDoc', () => {
+    const existing = makeDoc({
+      header: { title: 'Orig', writer: '', format: '', genre: '', targetRuntime: '', comps: [] },
+    })
+    const snapshot = JSON.parse(JSON.stringify(existing))
+    const legacy = { logline: 'L', sections: { setup: 'x', act1Break: '', midpoint: '', act2Break: '', resolution: '' } }
+    mirrorSynopsisFromLegacy(existing, legacy, mirrorNow)
+    expect(existing).toEqual(snapshot)
   })
 })

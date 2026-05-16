@@ -6,6 +6,7 @@ import {
   createEmptySynopsisContent,
   createEmptyTreatmentContent,
   DOCUMENT_SCHEMA_VERSION,
+  type AuthoredDocumentState,
   type OutlineDocumentContent,
   type ProjectDocuments,
   type StoryBibleDocumentContent,
@@ -106,6 +107,31 @@ export function legacyToDocuments(state: ProjectState, now: NowFn = () => new Da
       mode: 'development',
       updatedAt: ts,
       content: storyBibleLegacyToContent(state.storyBible),
+    },
+  }
+}
+
+export function mirrorSynopsisFromLegacy(
+  existingDoc: AuthoredDocumentState<SynopsisDocumentContent>,
+  legacy: ProjectState['synopsis'],
+  now: NowFn = () => new Date().toISOString(),
+): AuthoredDocumentState<SynopsisDocumentContent> {
+  return {
+    ...existingDoc,
+    updatedAt: now(),
+    content: {
+      ...existingDoc.content,
+      logline: {
+        ...existingDoc.content.logline,
+        text: legacy.logline,
+      },
+      prose: {
+        opening: legacy.sections.setup,
+        escalation: legacy.sections.act1Break,
+        middle: legacy.sections.midpoint,
+        climax: legacy.sections.act2Break,
+        resolution: legacy.sections.resolution,
+      },
     },
   }
 }
