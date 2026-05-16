@@ -1367,7 +1367,7 @@ git commit -m "feat(documents): add documentsToLegacy round-trip adapter"
 
 Pure functions. Deterministic. Stable section ordering. Empty optional sections skip entirely (no empty headings).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/lib/documentMarkdown.test.ts`:
 
@@ -1479,12 +1479,12 @@ describe('documentsToMarkdown', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm run test:run -- tests/lib/documentMarkdown.test.ts`
 Expected: FAIL — `documentMarkdown` module not found.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 Create `client/src/lib/documentMarkdown.ts`:
 
@@ -1581,17 +1581,17 @@ export function documentsToMarkdown(docs: ProjectDocuments): Record<keyof Projec
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm run test:run -- tests/lib/documentMarkdown.test.ts`
 Expected: PASS — all Markdown tests green.
 
-- [ ] **Step 5: Run type check**
+- [x] **Step 5: Run type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/lib/documentMarkdown.ts tests/lib/documentMarkdown.test.ts
