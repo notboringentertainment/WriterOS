@@ -1,7 +1,9 @@
 import React from 'react'
 import { CharacterCard } from '../shared/CharacterCard'
 import { GuidedSection } from '../shared/GuidedSection'
+import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import type { StoryBibleSection } from '../../lib/shellState'
+import type { ProjectFormat } from '@shared/projectFormat'
 
 interface Character {
   id: string
@@ -28,6 +30,8 @@ interface StoryBibleData {
 
 interface StoryBibleTabProps {
   storyBible: StoryBibleData
+  projectFormat?: ProjectFormat
+  onProjectFormatChange?: (next: ProjectFormat) => void
   onAddCharacter: (character: Omit<Character, 'id'>) => void
   onUpdateCharacter: (id: string, patch: Partial<Character>) => void
   onSetWorld: (patch: Partial<WorldData>) => void
@@ -37,7 +41,18 @@ interface StoryBibleTabProps {
   onClear?: () => void
 }
 
-export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, onSetWorld, onSetThemes, onSetRules, onSectionChange, onClear }: StoryBibleTabProps) {
+export function StoryBibleTab({
+  storyBible,
+  projectFormat,
+  onProjectFormatChange,
+  onAddCharacter,
+  onUpdateCharacter,
+  onSetWorld,
+  onSetThemes,
+  onSetRules,
+  onSectionChange,
+  onClear,
+}: StoryBibleTabProps) {
   const hasContent = Boolean(
     storyBible.characters.length > 0 ||
     storyBible.world.setting.trim() ||
@@ -52,19 +67,29 @@ export function StoryBibleTab({ storyBible, onAddCharacter, onUpdateCharacter, o
       <div style={styles.header}>
         <div style={styles.titleRow}>
           <h2 style={styles.title}>Story Bible</h2>
-          {onClear && (
-            <button
-              type="button"
-              style={{
-                ...styles.clearButton,
-                ...(!hasContent ? styles.clearButtonDisabled : {}),
-              }}
-              onClick={onClear}
-              disabled={!hasContent}
-              title="Clear every story bible field"
-            >
-              Clear story bible
-            </button>
+          {(projectFormat !== undefined || onClear) && (
+            <div style={styles.titleControls}>
+              {projectFormat !== undefined && onProjectFormatChange && (
+                <ProjectFormatSelector
+                  value={projectFormat}
+                  onChange={onProjectFormatChange}
+                />
+              )}
+              {onClear && (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.clearButton,
+                    ...(!hasContent ? styles.clearButtonDisabled : {}),
+                  }}
+                  onClick={onClear}
+                  disabled={!hasContent}
+                  title="Clear every story bible field"
+                >
+                  Clear story bible
+                </button>
+              )}
+            </div>
           )}
         </div>
         <p style={styles.subtitle}>
@@ -184,6 +209,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 24,
     color: 'var(--fg)',
     margin: 0,
+  },
+  titleControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   clearButton: {
     border: '1px solid var(--border)',

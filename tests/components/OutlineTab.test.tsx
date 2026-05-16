@@ -52,6 +52,37 @@ describe('OutlineTab', () => {
     expect(screen.getByRole('button', { name: 'Clear outline' })).toBeDisabled()
   })
 
+  it('renders project format selector when format props are supplied', () => {
+    render(
+      <OutlineTab
+        outline={defaultOutline}
+        projectFormat="series"
+        onProjectFormatChange={vi.fn()}
+        onUpdateBeat={vi.fn()}
+        onReorderBeats={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText(/^format$/i)).toHaveValue('series')
+  })
+
+  it('calls onProjectFormatChange when the project format selector changes', () => {
+    const onProjectFormatChange = vi.fn()
+    render(
+      <OutlineTab
+        outline={defaultOutline}
+        projectFormat="feature"
+        onProjectFormatChange={onProjectFormatChange}
+        onUpdateBeat={vi.fn()}
+        onReorderBeats={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText(/^format$/i), { target: { value: 'series' } })
+
+    expect(onProjectFormatChange).toHaveBeenCalledWith('series')
+  })
+
   it('calls onReorderBeats when a beat is dragged onto another beat', () => {
     const onReorderBeats = vi.fn()
     const data = new Map<string, string>()

@@ -60,6 +60,35 @@ describe('StoryBibleTab', () => {
     expect(screen.getByRole('button', { name: 'Clear story bible' })).toBeDisabled()
   })
 
+  it('renders project format selector when format props are supplied', () => {
+    render(
+      <StoryBibleTab
+        storyBible={defaultBible}
+        {...defaultProps}
+        projectFormat="series"
+        onProjectFormatChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText(/^format$/i)).toHaveValue('series')
+  })
+
+  it('calls onProjectFormatChange when the project format selector changes', () => {
+    const onProjectFormatChange = vi.fn()
+    render(
+      <StoryBibleTab
+        storyBible={defaultBible}
+        {...defaultProps}
+        projectFormat="feature"
+        onProjectFormatChange={onProjectFormatChange}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText(/^format$/i), { target: { value: 'series' } })
+
+    expect(onProjectFormatChange).toHaveBeenCalledWith('series')
+  })
+
   it('renders existing characters', () => {
     const bible = {
       ...defaultBible,

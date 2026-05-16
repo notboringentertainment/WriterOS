@@ -1,6 +1,8 @@
 import React from 'react'
 import { BeatCard } from '../shared/BeatCard'
+import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import { defaultProjectState } from '../../lib/projectState'
+import type { ProjectFormat } from '@shared/projectFormat'
 
 interface Beat {
   id: string
@@ -17,6 +19,8 @@ interface OutlineData {
 
 interface OutlineTabProps {
   outline: OutlineData
+  projectFormat?: ProjectFormat
+  onProjectFormatChange?: (next: ProjectFormat) => void
   onUpdateBeat: (beatId: string, patch: { notes: string }) => void
   onReorderBeats: (fromIndex: number, toIndex: number) => void
   onClear?: () => void
@@ -24,7 +28,14 @@ interface OutlineTabProps {
 
 const DEFAULT_BEAT_IDS = defaultProjectState().outline.beats.map(beat => beat.id)
 
-export function OutlineTab({ outline, onUpdateBeat, onReorderBeats, onClear }: OutlineTabProps) {
+export function OutlineTab({
+  outline,
+  projectFormat,
+  onProjectFormatChange,
+  onUpdateBeat,
+  onReorderBeats,
+  onClear,
+}: OutlineTabProps) {
   const hasContent = Boolean(
     outline.beatType !== 'save-the-cat' ||
     outline.beats.some((beat, index) =>
@@ -39,19 +50,29 @@ export function OutlineTab({ outline, onUpdateBeat, onReorderBeats, onClear }: O
       <div style={styles.header}>
         <div style={styles.titleRow}>
           <h2 style={styles.title}>Outline</h2>
-          {onClear && (
-            <button
-              type="button"
-              style={{
-                ...styles.clearButton,
-                ...(!hasContent ? styles.clearButtonDisabled : {}),
-              }}
-              onClick={onClear}
-              disabled={!hasContent}
-              title="Clear every outline field"
-            >
-              Clear outline
-            </button>
+          {(projectFormat !== undefined || onClear) && (
+            <div style={styles.titleControls}>
+              {projectFormat !== undefined && onProjectFormatChange && (
+                <ProjectFormatSelector
+                  value={projectFormat}
+                  onChange={onProjectFormatChange}
+                />
+              )}
+              {onClear && (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.clearButton,
+                    ...(!hasContent ? styles.clearButtonDisabled : {}),
+                  }}
+                  onClick={onClear}
+                  disabled={!hasContent}
+                  title="Clear every outline field"
+                >
+                  Clear outline
+                </button>
+              )}
+            </div>
           )}
         </div>
         <p style={styles.subtitle}>
@@ -93,6 +114,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 24,
     color: 'var(--fg)',
     margin: 0,
+  },
+  titleControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   clearButton: {
     border: '1px solid var(--border)',
