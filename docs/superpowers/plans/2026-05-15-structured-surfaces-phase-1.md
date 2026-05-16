@@ -1794,22 +1794,24 @@ git commit -m "feat(documents): wire documents into ProjectState (schema v3) wit
 
 Existing consumers (`wpRouting.ts`, all tab components, `useProjectState`, server tests) read legacy fields. They should be unaffected because `documents` is purely additive. Confirm by running the full suite.
 
-- [ ] **Step 1: Run full unit test suite**
+- [x] **Step 1: Run full unit test suite**
 
 Run: `npm run test:run`
 Expected: ALL tests pass. Note pre-existing pass count from session memory: 338+ tests. Expected after this plan: 338 + (~3 from synopsis + ~3 from outline + ~2 from treatment + ~2 from storyBible + ~4 from wrapper + ~9 from migration + ~7 from markdown + ~4 from projectState additions) ≈ 372 passing.
 
-- [ ] **Step 2: Run type check**
+- [x] **Step 2: Run type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 3: Run production build**
+- [x] **Step 3: Run production build**
 
 Run: `npm run build`
 Expected: clean build, no warnings about unresolved imports.
 
-- [ ] **Step 4: Manual smoke test localStorage migration**
+Observed: build passed; Vite emitted the existing chunk-size warning only, with no unresolved imports.
+
+- [x] **Step 4: Manual smoke test localStorage migration**
 
 Run: `npm run dev:writeros`
 In a separate terminal: open the app in a browser tab, then in browser devtools console:
@@ -1828,7 +1830,9 @@ Expected: string (likely empty for a fresh project, or matches whatever logline 
 
 Then mutate the synopsis logline through the UI, refresh the browser, and verify the legacy field still drives the displayed value (proof that `documents` did not break or override existing behavior).
 
-- [ ] **Step 5: No commit (verification-only task)**
+Observed: direct console-style localStorage read was unavailable in browser automation, so the smoke verified the user-facing persistence path instead: edit Synopsis logline, reload app, confirm the displayed logline persists. Schema v3 and document hydration are covered by `tests/lib/projectState.test.ts`.
+
+- [x] **Step 5: No commit (verification-only task)**
 
 If any test fails or the build is dirty, stop and fix before continuing to Task 11. The migration must produce a clean tree.
 
@@ -1841,7 +1845,7 @@ If any test fails or the build is dirty, stop and fix before continuing to Task 
 
 Update the Phase 1 section to record the concrete decisions this plan locked in, plus the success criteria evidence.
 
-- [ ] **Step 1: Edit the Phase 1 section**
+- [x] **Step 1: Edit the Phase 1 section**
 
 Find this block in `docs/product/structured-writing-surfaces-prd.md`:
 
@@ -1896,7 +1900,7 @@ Success criteria — evidence:
 - New shapes support Document View and future export — `documentsToMarkdown(state.documents)` returns one Markdown string per surface in stable order.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docs/product/structured-writing-surfaces-prd.md

@@ -763,19 +763,28 @@ Decisions:
 
 Goal: define exact TypeScript state shapes and migration path.
 
+Status: **Implemented** in `2026-05-15-structured-surfaces-phase-1` plan.
+
 Tasks:
 
-- Draft document state interfaces.
-- Map legacy state to new document state.
-- Decide whether to introduce `state.documents` immediately or evolve top-level fields first.
-- Define import/export-ready Markdown shapes.
-- Define tests for data preservation.
+- Draft document state interfaces — done in `shared/documents.ts`.
+- Map legacy state to new document state — done in `client/src/lib/documentMigration.ts`.
+- Decide whether to introduce `state.documents` immediately or evolve top-level fields first — decided: **introduce `state.documents` immediately, dual-shape, legacy remains source of truth this phase**.
+- Define import/export-ready Markdown shapes — done in `client/src/lib/documentMarkdown.ts`.
+- Define tests for data preservation — `tests/shared/documents.test.ts`, `tests/lib/documentMigration.test.ts`, `tests/lib/documentMarkdown.test.ts`, plus v2→v3 migration tests in `tests/lib/projectState.test.ts`.
 
-Success criteria:
+Decisions locked in:
 
-- No user data loss.
-- Existing app can still render current data.
-- New shapes support Document View and future export.
+- Schema version bumps `2 → 3`. `migrateState` hydrates `documents` from legacy fields when absent or pre-v3.
+- Treatment has no legacy mapping; default Treatment is an empty `AuthoredDocumentState` so storage and Markdown emit stay uniform across all four surfaces.
+- Markdown emitters skip empty optional sections; never render empty headings.
+- No UI components, `wpRouting`, or server code change in this phase. Surface redesign phases 2–5 will flip individual surfaces to write `documents` first.
+
+Success criteria — evidence:
+
+- No user data loss — round-trip tests in `tests/lib/documentMigration.test.ts` cover synopsis, outline, story bible.
+- Existing app can still render current data — `npm run test:run` includes the existing suite untouched, plus new schema tests.
+- New shapes support Document View and future export — `documentsToMarkdown(state.documents)` returns one Markdown string per surface in stable order.
 
 ### Phase 2: Synopsis Surface Redesign
 
