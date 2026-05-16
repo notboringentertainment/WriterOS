@@ -824,7 +824,7 @@ git commit -m "feat(documents): add Story Bible document content type and Zod sc
 
 Wrap each content type in `AuthoredDocumentState<T>` providing `version`, `mode`, `updatedAt`, `content`, `viewPreferences`, `qa.warnings`. Aggregate into `ProjectDocuments` for ProjectState.
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 ```ts
 import {
@@ -866,12 +866,12 @@ describe('AuthoredDocumentState wrapper', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: FAIL — `AuthoredDocumentStateSchema`, `ProjectDocumentsSchema`, `createEmptyDocuments` not exported.
 
-- [ ] **Step 3: Append implementation**
+- [x] **Step 3: Append implementation**
 
 ```ts
 export const DocumentWarningSchema = z.object({
@@ -938,17 +938,17 @@ export function createEmptyDocuments(now: () => string = () => new Date().toISOS
 }
 ```
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: PASS — all wrapper tests green.
 
-- [ ] **Step 5: Run type check**
+- [x] **Step 5: Run type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add shared/documents.ts tests/shared/documents.test.ts
