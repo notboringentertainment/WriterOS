@@ -459,7 +459,7 @@ git commit -m "feat(documents): add Outline document content type and Zod schema
 
 Treatment has no legacy mapping; the type exists so storage and Markdown emit are uniform. Per PRD: header metadata, logline, concept (premise/tone/theme/emotional promise), main characters, treatment prose sections, visual/tonal language, open questions, optional AI production implications.
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 ```ts
 import {
@@ -509,12 +509,12 @@ describe('TreatmentDocumentContent', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: FAIL — `TreatmentDocumentContentSchema` not exported.
 
-- [ ] **Step 3: Append implementation**
+- [x] **Step 3: Append implementation**
 
 ```ts
 export const TreatmentHeaderSchema = z.object({
@@ -611,12 +611,12 @@ export function createEmptyTreatmentContent(): TreatmentDocumentContent {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/documents.ts tests/shared/documents.test.ts
