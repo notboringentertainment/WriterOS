@@ -228,8 +228,11 @@ export default function App() {
       case 'synopsis':
         return (
           <SynopsisTab
-            synopsis={project.state.synopsis}
-            onUpdate={project.setSynopsisSection}
+            document={project.state.documents.synopsis}
+            onContentPatch={(patch) =>
+              project.setSynopsisDocument((content) => ({ ...content, ...patch }))
+            }
+            onViewPreferencesPatch={(patch) => project.setSynopsisViewPreferences(patch)}
             onClear={project.clearSynopsis}
           />
         )

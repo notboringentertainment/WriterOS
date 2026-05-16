@@ -1,153 +1,116 @@
 import React from 'react'
-import { GuidedSection } from '../shared/GuidedSection'
+import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
+import { SynopsisEditView } from './synopsis/SynopsisEditView'
+import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
+import { SynopsisViewToggle } from './synopsis/SynopsisViewToggle'
 
-interface SynopsisData {
-  logline: string
-  sections: {
-    setup: string
-    act1Break: string
-    midpoint: string
-    act2Break: string
-    resolution: string
-  }
+export interface SynopsisTabProps {
+  document: AuthoredDocumentState<SynopsisDocumentContent>
+  onContentPatch: (patch: Partial<SynopsisDocumentContent>) => void
+  onViewPreferencesPatch: (patch: {
+    activeView?: 'edit' | 'document'
+    synopsisComposeMode?: 'prose' | 'paragraphs'
+  }) => void
+  onClear: () => void
 }
 
-interface SynopsisTabProps {
-  synopsis: SynopsisData
-  onUpdate: (key: string, value: string) => void
-  onClear?: () => void
+function deriveComposeMode(
+  document: AuthoredDocumentState<SynopsisDocumentContent>,
+): 'prose' | 'paragraphs' {
+  // Stored preference always wins
+  const stored = document.viewPreferences?.synopsisComposeMode
+  if (stored != null) return stored
+
+  // Default-mode heuristic per plan §2:
+  // If prose.opening is non-empty AND escalation/middle/climax/resolution are ALL empty → 'prose'
+  // Otherwise → 'paragraphs'
+  const { opening, escalation, middle, climax, resolution } = document.content.prose
+  if (
+    opening.trim() !== '' &&
+    escalation.trim() === '' &&
+    middle.trim() === '' &&
+    climax.trim() === '' &&
+    resolution.trim() === ''
+  ) {
+    return 'prose'
+  }
+  return 'paragraphs'
 }
 
-const SYNOPSIS_SECTIONS = [
-  {
-    key: 'logline',
-    label: 'Logline',
-    guidance: '1–2 sentences. Character + goal + obstacle + stakes. Present tense, third person.',
-    placeholder: 'When [protagonist] discovers [inciting incident], they must [goal] before [stakes].',
-  },
-  {
-    key: 'setup',
-    label: 'Setup',
-    guidance: 'Who is the protagonist? Where and when is this set? What is the inciting incident that disrupts their world?',
-    placeholder: "Establish the world and the protagonist's life before everything changes…",
-  },
-  {
-    key: 'act1Break',
-    label: 'Act One Break',
-    guidance: 'The moment the protagonist commits to the journey. No going back. What is the decision, and what does it cost them?',
-    placeholder: 'The protagonist chooses to…',
-  },
-  {
-    key: 'midpoint',
-    label: 'Midpoint',
-    guidance: 'False victory or false defeat. Stakes escalate. The protagonist can no longer avoid the central conflict.',
-    placeholder: 'Halfway through, it seems like…',
-  },
-  {
-    key: 'act2Break',
-    label: 'Act Two Break',
-    guidance: "All is lost. The protagonist's lowest moment — a death (literal or symbolic), a failure, a betrayal.",
-    placeholder: 'Everything falls apart when…',
-  },
-  {
-    key: 'resolution',
-    label: 'Resolution',
-    guidance: 'How does the protagonist defeat the antagonist? How have they changed? What is the final image of the world?',
-    placeholder: 'In the end…',
-  },
-]
-
-export function SynopsisTab({ synopsis, onUpdate, onClear }: SynopsisTabProps) {
-  const getValue = (key: string): string => {
-    if (key === 'logline') return synopsis.logline
-    return synopsis.sections[key as keyof typeof synopsis.sections] ?? ''
-  }
-  const hasContent = Boolean(
-    synopsis.logline.trim() ||
-    Object.values(synopsis.sections).some(value => value.trim())
-  )
+export function SynopsisTab({
+  document,
+  onContentPatch,
+  onViewPreferencesPatch,
+  onClear,
+}: SynopsisTabProps) {
+  const activeView = document.viewPreferences?.activeView ?? 'edit'
+  const composeMode = deriveComposeMode(document)
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.titleRow}>
-          <h2 style={styles.title}>Synopsis</h2>
-          {onClear && (
-            <button
-              type="button"
+    <div
+      style={{
+        maxWidth: 760,
+        margin: '0 auto',
+        padding: '32px 24px 64px',
+      }}
+    >
+      {/* Header row */}
+      <div style={{ marginBottom: 28 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            marginBottom: 6,
+          }}
+        >
+          <div>
+            <h2
               style={{
-                ...styles.clearButton,
-                ...(!hasContent ? styles.clearButtonDisabled : {}),
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: 24,
+                color: 'var(--fg)',
+                margin: 0,
               }}
-              onClick={onClear}
-              disabled={!hasContent}
-              title="Clear every synopsis field"
             >
-              Clear synopsis
-            </button>
-          )}
-        </div>
-        <p style={styles.subtitle}>
-          A pitch-facing story spine: logline, turns, stakes, and ending in compressed prose. Writing Partner naturally asks @Sam here.
-        </p>
-      </div>
-      <div style={styles.sections}>
-        {SYNOPSIS_SECTIONS.map(section => (
-          <GuidedSection
-            key={section.key}
-            label={section.label}
-            guidance={section.guidance}
-            placeholder={section.placeholder}
-            value={getValue(section.key)}
-            onChange={value => onUpdate(section.key, value)}
+              Synopsis
+            </h2>
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 13,
+                color: 'var(--fg-muted)',
+                fontStyle: 'italic',
+                margin: '4px 0 0',
+              }}
+            >
+              Reader-facing story spine.
+            </p>
+          </div>
+          <SynopsisViewToggle
+            value={activeView}
+            onChange={(next) => onViewPreferencesPatch({ activeView: next })}
           />
-        ))}
+        </div>
       </div>
+
+      {/* Content */}
+      {activeView === 'edit' ? (
+        <SynopsisEditView
+          content={document.content}
+          composeMode={composeMode}
+          onContentPatch={onContentPatch}
+          onComposeModeChange={(next) => onViewPreferencesPatch({ synopsisComposeMode: next })}
+          onClear={onClear}
+        />
+      ) : (
+        <SynopsisDocumentView
+          content={document.content}
+          updatedAt={document.updatedAt}
+        />
+      )}
     </div>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: 760,
-    margin: '0 auto',
-    padding: '32px 24px 64px',
-  },
-  header: { marginBottom: 28 },
-  titleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 6,
-  },
-  title: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: 24,
-    color: 'var(--fg)',
-    margin: 0,
-  },
-  clearButton: {
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    background: 'var(--surface-2)',
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-body)',
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '7px 10px',
-    cursor: 'pointer',
-  },
-  clearButtonDisabled: {
-    opacity: 0.45,
-    cursor: 'not-allowed',
-  },
-  subtitle: {
-    fontFamily: 'var(--font-body)',
-    fontSize: 13,
-    color: 'var(--fg-muted)',
-    fontStyle: 'italic',
-  },
-  sections: { display: 'flex', flexDirection: 'column', gap: 16 },
 }
