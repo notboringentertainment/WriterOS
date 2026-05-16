@@ -1,5 +1,5 @@
 import { normalizeProjectTitle } from './projectIdentity'
-import { legacyToDocuments } from './documentMigration'
+import { legacyToDocuments, mirrorSynopsisFromLegacy } from './documentMigration'
 import type { ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 
@@ -185,7 +185,12 @@ export function saveProjectState(state: ProjectState): void {
   const stateToSave: ProjectState = {
     ...state,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    documents: legacyToDocuments(state),
+    documents: {
+      synopsis: mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis),
+      outline: state.documents.outline,
+      treatment: state.documents.treatment,
+      storyBible: state.documents.storyBible,
+    },
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
 }

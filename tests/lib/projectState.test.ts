@@ -194,3 +194,145 @@ describe('migrateState — v2 to v3 hydrates documents', () => {
     expect(state.documents.treatment.content).toEqual(fromLegacy.treatment.content)
   })
 })
+
+describe('saveProjectState — preserves document-only Synopsis fields', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('preserves documents.synopsis.content.header.title across save/load', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header.title = 'My Film'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.header.title).toBe('My Film')
+  })
+
+  it('preserves all six header fields including comps across save/load', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.header = {
+      title: 'My Film',
+      writer: 'Ben',
+      format: 'feature',
+      genre: 'drama',
+      targetRuntime: '100m',
+      comps: ['Heat', 'Manchester by the Sea'],
+    }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.header).toEqual(state.documents.synopsis.content.header)
+  })
+
+  it('preserves every key in content.qa across save/load', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.qa = {
+      protagonistNamedEarly: true,
+      goalClear: true,
+      obstacleClear: false,
+      stakesClear: true,
+      endingRevealed: true,
+      paragraphsConnectCausally: false,
+      toneMatchesProject: true,
+      noUnnecessarySubplot: false,
+    }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.qa).toEqual(state.documents.synopsis.content.qa)
+  })
+
+  it('preserves content.aiProductionImplications when set', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.aiProductionImplications = {
+      visuallyImportantSequences: 'climax fire',
+      continuitySensitiveMoments: 'sister reveal',
+      difficultWorldOrVfx: 'wall of fire',
+      likelyReferenceImageNeeds: 'firehouse interior',
+    }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.aiProductionImplications).toEqual(
+      state.documents.synopsis.content.aiProductionImplications,
+    )
+  })
+
+  it('preserves viewPreferences.activeView across save/load', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.viewPreferences = { activeView: 'document' }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.viewPreferences?.activeView).toBe('document')
+  })
+
+  it('preserves viewPreferences.synopsisComposeMode across save/load', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.viewPreferences = { synopsisComposeMode: 'paragraphs' }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.viewPreferences?.synopsisComposeMode).toBe('paragraphs')
+  })
+
+  it('mirrors state.synopsis.logline into documents.synopsis.content.logline.text', () => {
+    const state = defaultProjectState()
+    state.synopsis.logline = 'A widow returns home.'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.logline.text).toBe('A widow returns home.')
+  })
+
+  it('mirrors all five legacy state.synopsis.sections into documents.synopsis.content.prose', () => {
+    const state = defaultProjectState()
+    state.synopsis.sections = {
+      setup: 'OPENING',
+      act1Break: 'ESCALATION',
+      midpoint: 'MIDDLE',
+      act2Break: 'CLIMAX',
+      resolution: 'RESOLUTION',
+    }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.content.prose).toEqual({
+      opening: 'OPENING',
+      escalation: 'ESCALATION',
+      middle: 'MIDDLE',
+      climax: 'CLIMAX',
+      resolution: 'RESOLUTION',
+    })
+  })
+
+  it('does NOT mutate documents.outline on save', () => {
+    const state = defaultProjectState()
+    // mutate outline document with content the legacy slice couldn't reproduce
+    state.documents.outline.content.spine.protagonist = 'Sara'
+    state.documents.outline.content.spine.theme = 'mercy under pressure'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.outline.content.spine.protagonist).toBe('Sara')
+    expect(loaded.documents.outline.content.spine.theme).toBe('mercy under pressure')
+  })
+
+  it('does NOT mutate documents.treatment on save', () => {
+    const state = defaultProjectState()
+    state.documents.treatment.content.logline = 'Treatment-only logline'
+    state.documents.treatment.content.concept.premise = 'P'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.treatment.content.logline).toBe('Treatment-only logline')
+    expect(loaded.documents.treatment.content.concept.premise).toBe('P')
+  })
+
+  it('does NOT mutate documents.storyBible on save', () => {
+    const state = defaultProjectState()
+    state.documents.storyBible.content.cover.title = 'Bible Title'
+    state.documents.storyBible.content.onePagePitch.logline = 'Bible logline'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.storyBible.content.cover.title).toBe('Bible Title')
+    expect(loaded.documents.storyBible.content.onePagePitch.logline).toBe('Bible logline')
+  })
+
+  it('refreshes documents.synopsis.updatedAt on save', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.updatedAt = '2020-01-01T00:00:00.000Z'
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.documents.synopsis.updatedAt).not.toBe('2020-01-01T00:00:00.000Z')
+  })
+})
