@@ -246,3 +246,142 @@ export function createEmptyTreatmentContent(): TreatmentDocumentContent {
     openQuestions: { story: [], character: [], worldOrMythology: [], production: [] },
   }
 }
+
+export const StoryBibleStatusSchema = z.enum(['pitch', 'development', 'production', 'living_canon'])
+export type StoryBibleStatus = z.infer<typeof StoryBibleStatusSchema>
+
+export const StoryBibleCoverSchema = z.object({
+  title: z.string(),
+  writer: z.string(),
+  format: z.string(),
+  genre: z.string(),
+  version: z.string(),
+  dateUpdated: z.string(),
+  status: StoryBibleStatusSchema,
+})
+
+export const StoryBibleOnePagePitchSchema = z.object({
+  logline: z.string(),
+  inANutshell: z.string(),
+  whyThisMatters: z.string(),
+  corePromise: z.string(),
+  centralQuestion: z.string(),
+  whatMakesItDifferent: z.string(),
+})
+
+export const StoryBibleToneAndStyleSchema = z.object({
+  toneWords: z.array(z.string()),
+  comps: z.array(z.string()),
+  antiComps: z.array(z.string()),
+  pacingRules: z.string(),
+  humorRules: z.string(),
+  violenceOrIntensityRules: z.string(),
+  dialogueStyle: z.string(),
+  visualStyle: z.string(),
+  soundOrMusicStyle: z.string(),
+  mustNeverFeelLike: z.string(),
+})
+
+export const StoryBiblePremiseAndWorldSchema = z.object({
+  premise: z.string(),
+  worldRules: z.string(),
+  publicHistory: z.string(),
+  hiddenHistory: z.string(),
+  mythologyReveals: z.string(),
+})
+
+export const StoryBibleCharacterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.string(),
+  want: z.string(),
+  need: z.string(),
+  flaw: z.string(),
+  secret: z.string(),
+  contradiction: z.string(),
+  arc: z.string(),
+  relationshipPressure: z.string(),
+  behavioralAnchors: z.string(),
+  speechPatterns: z.string(),
+  neverWriteThemAs: z.string(),
+  continuityFacts: z.string(),
+})
+export type StoryBibleCharacter = z.infer<typeof StoryBibleCharacterSchema>
+
+export const StoryBibleStoryEngineSchema = z.object({
+  featurePropulsion: z.string(),
+  seriesEngine: z.string(),
+  pilotEngine: z.string(),
+  seasonArc: z.string(),
+  futureSeasonPotential: z.string(),
+  whatKeepsThePremiseAlive: z.string(),
+})
+
+export const StoryBibleMapEntrySchema = z.object({
+  id: z.string(),
+  unit: z.string(),
+  title: z.string(),
+  storyEvents: z.string(),
+})
+
+export const StoryBibleDocumentContentSchema = z.object({
+  cover: StoryBibleCoverSchema,
+  onePagePitch: StoryBibleOnePagePitchSchema,
+  toneAndStyle: StoryBibleToneAndStyleSchema,
+  premiseAndWorld: StoryBiblePremiseAndWorldSchema,
+  characters: z.array(StoryBibleCharacterSchema),
+  storyEngine: StoryBibleStoryEngineSchema,
+  episodeOrSequenceMap: z.array(StoryBibleMapEntrySchema),
+})
+export type StoryBibleDocumentContent = z.infer<typeof StoryBibleDocumentContentSchema>
+
+export function createEmptyStoryBibleContent(): StoryBibleDocumentContent {
+  return {
+    cover: {
+      title: '',
+      writer: '',
+      format: '',
+      genre: '',
+      version: '',
+      dateUpdated: '',
+      status: 'development',
+    },
+    onePagePitch: {
+      logline: '',
+      inANutshell: '',
+      whyThisMatters: '',
+      corePromise: '',
+      centralQuestion: '',
+      whatMakesItDifferent: '',
+    },
+    toneAndStyle: {
+      toneWords: [],
+      comps: [],
+      antiComps: [],
+      pacingRules: '',
+      humorRules: '',
+      violenceOrIntensityRules: '',
+      dialogueStyle: '',
+      visualStyle: '',
+      soundOrMusicStyle: '',
+      mustNeverFeelLike: '',
+    },
+    premiseAndWorld: {
+      premise: '',
+      worldRules: '',
+      publicHistory: '',
+      hiddenHistory: '',
+      mythologyReveals: '',
+    },
+    characters: [],
+    storyEngine: {
+      featurePropulsion: '',
+      seriesEngine: '',
+      pilotEngine: '',
+      seasonArc: '',
+      futureSeasonPotential: '',
+      whatKeepsThePremiseAlive: '',
+    },
+    episodeOrSequenceMap: [],
+  }
+}

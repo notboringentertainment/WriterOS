@@ -9,6 +9,9 @@ import {
   TreatmentDocumentContentSchema,
   type TreatmentDocumentContent,
   createEmptyTreatmentContent,
+  StoryBibleDocumentContentSchema,
+  type StoryBibleDocumentContent,
+  createEmptyStoryBibleContent,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -163,5 +166,80 @@ describe('TreatmentDocumentContent', () => {
       openQuestions: { story: [], character: [], worldOrMythology: [], production: [] },
     }
     expect(TreatmentDocumentContentSchema.safeParse(populated).success).toBe(true)
+  })
+})
+
+describe('StoryBibleDocumentContent', () => {
+  it('createEmptyStoryBibleContent returns a Zod-valid empty content object', () => {
+    expect(StoryBibleDocumentContentSchema.safeParse(createEmptyStoryBibleContent()).success).toBe(true)
+  })
+
+  it('accepts a populated story bible with one character', () => {
+    const populated: StoryBibleDocumentContent = {
+      cover: {
+        title: 't',
+        writer: 'w',
+        format: 'feature',
+        genre: 'drama',
+        version: '1',
+        dateUpdated: '2026-05-15',
+        status: 'development',
+      },
+      onePagePitch: {
+        logline: '',
+        inANutshell: '',
+        whyThisMatters: '',
+        corePromise: '',
+        centralQuestion: '',
+        whatMakesItDifferent: '',
+      },
+      toneAndStyle: {
+        toneWords: [],
+        comps: [],
+        antiComps: [],
+        pacingRules: '',
+        humorRules: '',
+        violenceOrIntensityRules: '',
+        dialogueStyle: '',
+        visualStyle: '',
+        soundOrMusicStyle: '',
+        mustNeverFeelLike: '',
+      },
+      premiseAndWorld: {
+        premise: '',
+        worldRules: '',
+        publicHistory: '',
+        hiddenHistory: '',
+        mythologyReveals: '',
+      },
+      characters: [
+        {
+          id: 'c1',
+          name: 'Sara',
+          role: 'Protagonist',
+          want: '',
+          need: '',
+          flaw: '',
+          secret: '',
+          contradiction: '',
+          arc: '',
+          relationshipPressure: '',
+          behavioralAnchors: '',
+          speechPatterns: '',
+          neverWriteThemAs: '',
+          continuityFacts: '',
+        },
+      ],
+      storyEngine: {
+        featurePropulsion: '',
+        seriesEngine: '',
+        pilotEngine: '',
+        seasonArc: '',
+        futureSeasonPotential: '',
+        whatKeepsThePremiseAlive: '',
+      },
+      episodeOrSequenceMap: [],
+    }
+    expect(StoryBibleDocumentContentSchema.safeParse(populated).success).toBe(true)
   })
 })
