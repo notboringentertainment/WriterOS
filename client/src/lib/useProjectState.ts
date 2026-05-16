@@ -10,6 +10,7 @@ import {
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type { SynopsisDocumentContent, DocumentViewPreferences } from '@shared/documents'
+import { createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '@shared/documents'
 import { documentsToLegacy } from './documentMigration'
 
 export function useProjectState() {
@@ -50,7 +51,25 @@ export function useProjectState() {
   }, [update])
 
   const clearSynopsis = useCallback(() => {
-    update(s => ({ ...s, synopsis: defaultProjectState().synopsis }))
+    update(s => {
+      const ts = new Date(
+        Math.max(Date.now(), new Date(s.documents.synopsis.updatedAt).getTime() + 1),
+      ).toISOString()
+      return {
+        ...s,
+        synopsis: defaultProjectState().synopsis,
+        documents: {
+          ...s.documents,
+          synopsis: {
+            version: DOCUMENT_SCHEMA_VERSION,
+            mode: 'prose' as const,
+            updatedAt: ts,
+            content: createEmptySynopsisContent(),
+            // viewPreferences intentionally omitted on clear
+          },
+        },
+      }
+    })
   }, [update])
 
   const setSynopsisDocument = useCallback(

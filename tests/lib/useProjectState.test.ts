@@ -4,6 +4,7 @@ import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
+import { createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '../../shared/documents'
 
 beforeEach(() => localStorage.clear())
 
@@ -308,5 +309,82 @@ describe('useProjectState — setSynopsisViewPreferences', () => {
     act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.documents.synopsis.viewPreferences?.activeView).toBe('document')
+  })
+})
+
+describe('useProjectState — clearSynopsis dual reset', () => {
+  it('resets state.synopsis to defaultProjectState().synopsis', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      logline: { ...c.logline, text: 'A logline.' },
+      prose: { opening: 'O', escalation: 'E', middle: 'M', climax: 'C', resolution: 'R' },
+    })))
+    act(() => result.current.clearSynopsis())
+    expect(result.current.state.synopsis).toEqual(defaultProjectState().synopsis)
+  })
+
+  it('resets documents.synopsis.content to empty', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      header: { ...c.header, title: 'My Film' },
+      logline: { ...c.logline, text: 'A logline.' },
+    })))
+    act(() => result.current.clearSynopsis())
+    expect(result.current.state.documents.synopsis.content).toEqual(createEmptySynopsisContent())
+  })
+
+  it('clears documents.synopsis viewPreferences', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document', synopsisComposeMode: 'paragraphs' }))
+    act(() => result.current.clearSynopsis())
+    // After clear, viewPreferences should be absent or empty.
+    const prefs = result.current.state.documents.synopsis.viewPreferences
+    expect(prefs === undefined || Object.keys(prefs).length === 0).toBe(true)
+  })
+
+  it('preserves mirror invariant after clear', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      logline: { ...c.logline, text: 'Hello.' },
+    })))
+    act(() => result.current.clearSynopsis())
+    expect(result.current.state.synopsis).toEqual(
+      documentsToLegacy(result.current.state.documents).synopsis,
+    )
+  })
+
+  it('does not affect other documents', () => {
+    const { result } = renderHook(() => useProjectState())
+    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
+    const treatmentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
+    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
+    act(() => result.current.clearSynopsis())
+    expect(result.current.state.documents.outline).toEqual(outlineBefore)
+    expect(result.current.state.documents.treatment).toEqual(treatmentBefore)
+    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
+  })
+
+  it('persists the cleared state to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      header: { ...c.header, title: 'Persisted' },
+    })))
+    act(() => result.current.clearSynopsis())
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.synopsis).toEqual(defaultProjectState().synopsis)
+    expect(stored.documents.synopsis.content).toEqual(createEmptySynopsisContent())
+  })
+
+  it('refreshes documents.synopsis.updatedAt on clear', () => {
+    const { result } = renderHook(() => useProjectState())
+    const before = result.current.state.documents.synopsis.updatedAt
+    act(() => result.current.clearSynopsis())
+    const after = result.current.state.documents.synopsis.updatedAt
+    expect(after).not.toBe(before)
+    expect(typeof after).toBe('string')
   })
 })
