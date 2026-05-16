@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { legacyToDocuments } from '../../client/src/lib/documentMigration'
+import { documentsToLegacy, legacyToDocuments } from '../../client/src/lib/documentMigration'
 
 const FIXED_TS = '2026-05-15T00:00:00.000Z'
 const now = () => FIXED_TS
@@ -104,5 +104,56 @@ describe('legacyToDocuments — treatment', () => {
     const docs = legacyToDocuments(legacy, now)
     expect(docs.treatment.content.logline).toBe('')
     expect(docs.treatment.content.prose.opening).toBe('')
+  })
+})
+
+describe('documentsToLegacy round-trip', () => {
+  it('synopsis: legacy -> documents -> legacy preserves logline and all five sections', () => {
+    const original = defaultProjectState()
+    original.synopsis.logline = 'A widow returns home.'
+    original.synopsis.sections.setup = 'OPENING'
+    original.synopsis.sections.act1Break = 'ESCALATION'
+    original.synopsis.sections.midpoint = 'MIDDLE'
+    original.synopsis.sections.act2Break = 'CLIMAX'
+    original.synopsis.sections.resolution = 'RESOLUTION'
+
+    const docs = legacyToDocuments(original, now)
+    const reverted = documentsToLegacy(docs)
+    expect(reverted.synopsis).toEqual(original.synopsis)
+  })
+
+  it('outline: legacy -> documents -> legacy preserves beat ids, notes, and links', () => {
+    const original = defaultProjectState()
+    original.outline.beats[0].notes = 'Hook the audience.'
+    original.outline.beats[0].linkedSceneIds = ['scene-1']
+
+    const docs = legacyToDocuments(original, now)
+    const reverted = documentsToLegacy(docs)
+    expect(reverted.outline.beatType).toBe(original.outline.beatType)
+    expect(reverted.outline.beats.map(b => b.id)).toEqual(original.outline.beats.map(b => b.id))
+    expect(reverted.outline.beats[0].notes).toBe('Hook the audience.')
+    expect(reverted.outline.beats[0].linkedSceneIds).toEqual(['scene-1'])
+  })
+
+  it('storyBible: legacy -> documents -> legacy preserves characters, world, themes, rules', () => {
+    const original = defaultProjectState()
+    original.storyBible.world.setting = 'A sealed city'
+    original.storyBible.world.toneAnchors = 'Chinatown meets Nope'
+    original.storyBible.world.voiceNotes = 'Spare and cold'
+    original.storyBible.themes = 'Mercy under pressure'
+    original.storyBible.rules = 'No one leaves after sunset'
+    original.storyBible.characters.push({
+      id: 'c1',
+      name: 'Sara',
+      role: 'Protagonist',
+      wound: 'guilt',
+      want: 'home',
+      need: 'forgive',
+      arc: 'guilt -> mercy',
+    })
+
+    const docs = legacyToDocuments(original, now)
+    const reverted = documentsToLegacy(docs)
+    expect(reverted.storyBible).toEqual(original.storyBible)
   })
 })
