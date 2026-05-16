@@ -242,6 +242,8 @@ export default function App() {
         return (
           <OutlineTab
             outline={project.state.outline}
+            projectFormat={project.state.meta.format}
+            onProjectFormatChange={project.setProjectFormat}
             onUpdateBeat={project.setBeat}
             onReorderBeats={project.reorderBeats}
             onClear={project.clearOutline}
@@ -251,6 +253,8 @@ export default function App() {
         return (
           <StoryBibleTab
             storyBible={project.state.storyBible}
+            projectFormat={project.state.meta.format}
+            onProjectFormatChange={project.setProjectFormat}
             onAddCharacter={project.addCharacter}
             onUpdateCharacter={project.updateCharacter}
             onSetWorld={project.setWorld}
