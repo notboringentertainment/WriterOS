@@ -38,18 +38,6 @@ export function useProjectState() {
     }))
   }, [update])
 
-  const setSynopsisSection = useCallback((key: string, value: string) => {
-    update(s => ({
-      ...s,
-      synopsis: {
-        ...s.synopsis,
-        ...(key === 'logline'
-          ? { logline: value }
-          : { sections: { ...s.synopsis.sections, [key]: value } }),
-      },
-    }))
-  }, [update])
-
   const clearSynopsis = useCallback(() => {
     update(s => {
       const ts = new Date(
@@ -243,7 +231,6 @@ export function useProjectState() {
     activeProjectId,
     projects: summarizeProjects(projects),
     setMeta,
-    setSynopsisSection,
     clearSynopsis,
     setSynopsisDocument,
     setSynopsisViewPreferences,

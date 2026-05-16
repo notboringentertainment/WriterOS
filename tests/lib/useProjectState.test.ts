@@ -26,23 +26,11 @@ describe('useProjectState', () => {
     expect(result.current.state.meta.title).toBe('')
   })
 
-  it('setSynopsisSection updates logline', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisSection('logline', 'A hero rises.'))
-    expect(result.current.state.synopsis.logline).toBe('A hero rises.')
-  })
-
-  it('setSynopsisSection updates a section', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisSection('setup', 'Set in Chicago.'))
-    expect(result.current.state.synopsis.sections.setup).toBe('Set in Chicago.')
-  })
-
   it('clearSynopsis empties every synopsis field and persists the change', () => {
     const { result } = renderHook(() => useProjectState())
 
-    act(() => result.current.setSynopsisSection('logline', 'A hero rises.'))
-    act(() => result.current.setSynopsisSection('setup', 'Set in Chicago.'))
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, logline: { ...c.logline, text: 'A hero rises.' } })))
+    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, opening: 'Set in Chicago.' } })))
     act(() => result.current.clearSynopsis())
 
     expect(result.current.state.synopsis).toEqual({
