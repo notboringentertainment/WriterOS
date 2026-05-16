@@ -11,12 +11,12 @@
 | 1 | Series schema + `createEmptySeriesContent` factory | ✅ DONE | `fe200b7` |
 | 2 | `mirrorSynopsisFromLegacy` series-preservation regression test | ✅ DONE | `2e2a0ba` |
 | 3 | `SynopsisHeaderEditor` format dropdown + series rows | ✅ DONE | `e2ea097` |
-| 4 | Six series editor components | 🟡 IN PROGRESS | — |
-| 5 | `SynopsisSeriesEditView` orchestrator | ⬜ OPEN | — |
-| 6 | `SynopsisDocumentView` series branch | ⬜ OPEN | — |
-| 7 | `SynopsisTab` routing + lazy-init `content.series` | ⬜ OPEN | — |
-| 8 | `wpRouting` + `server/routes` Sam context upgrade | ⬜ OPEN | — |
-| 9 | PRD update + full verify (`npm run test:run`, `check`, `build`) | ⬜ OPEN | — |
+| 4 | Six series editor components | ✅ DONE | `7ded362`, `125b9d3`, `6cc3287`, `726eb75`, `0ff9a54`, `974fc87` (6 commits) |
+| 5 | `SynopsisSeriesEditView` orchestrator | ✅ DONE | `9e08dac` |
+| 6 | `SynopsisDocumentView` series branch | ✅ DONE | `7f75474` |
+| 7 | `SynopsisTab` routing + lazy-init `content.series` | ✅ DONE | `cdaf53d` |
+| 8 | `wpRouting` + `server/routes` Sam context upgrade | ✅ DONE | `59ae8bf` |
+| 9 | PRD update + full verify (`npm run test:run`, `check`, `build`) | ✅ DONE | see below |
 
 ## Files touched per task
 

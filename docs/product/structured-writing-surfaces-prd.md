@@ -205,6 +205,44 @@ Recommended V1 sections:
   - difficult world/VFX element
   - likely reference image needs
 
+#### Series mode
+
+Enabled by the format selector in the Synopsis header (`header.format === 'series'`).
+
+Eight sections in stable composition order:
+
+1. Logline
+2. Show Overview — renewable conflict, world, and tone.
+3. Pilot Synopsis — pilot logline + pilot prose body.
+4. Season One Arc — season-level story arc prose.
+5. Where It Goes — future-season summaries (variable list, no auto-seed).
+6. Characters — variable list with name, role, bio, and arc-per-season entries.
+7. Comps & Why This Show Now — optional comp set and positioning statement.
+8. Metadata block — header fields including Series Type and Episode Length.
+
+Header additions when `format === 'series'`:
+
+- **Series Type:** `limited` or `ongoing`.
+- **Episode Length:** `half_hour`, `hour`, or `other`.
+- Target Runtime row hidden (replaced by Episode Length).
+
+QA checklist:
+
+- Hidden in series mode. Feature QA data in storage is preserved untouched.
+
+Format-flip safety:
+
+- Feature ↔ series flips are non-destructive. Both `content.prose` / `content.qa` (feature) and `content.series` (series) are preserved in storage across every flip.
+- `content.series` is lazy-initialized only when the user first switches to series mode and it is currently absent. Feature-only projects never gain a `series` key.
+
+Clear button:
+
+- Wipes BOTH feature AND series blobs (existing `clearSynopsis` semantics). A future "clear only series" affordance is a separate slice.
+
+Sam context in this slice:
+
+- Sam receives `format` and `showOverview` only. Pilot synopsis, season arc, future seasons, characters, and comps are not exposed to AI in this slice.
+
 Edit View behavior:
 
 - Offer a guided prose builder rather than only independent boxes.
@@ -808,6 +846,8 @@ Decisions locked in:
 - `DocumentViewPreferencesSchema` gained an optional `synopsisComposeMode: 'prose' | 'paragraphs'`. Backward-compatible.
 - Two-click clear matches the Voice Profile Drawer pattern; resets both `state.synopsis` and `state.documents.synopsis`.
 - Markdown export, logline sub-fields, AI Production Implications surface, and Sam context upgrade are deferred to later phases per plan §8.
+
+**Series variant added in `2026-05-16-synopsis-series-variant` slice.** Format dropdown drives `header.format`; series block stored under `content.series` (optional). Sam context now receives `format` + `showOverview`. See `docs/superpowers/plans/2026-05-16-synopsis-series-variant.md` for implementation status.
 
 Success criteria — evidence:
 
