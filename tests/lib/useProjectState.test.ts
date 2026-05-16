@@ -66,6 +66,45 @@ describe('useProjectState', () => {
     expect(result.current.state.documents.synopsis.content.series).toEqual(existingSeries)
   })
 
+  it('setProjectFormat does not mutate outline or story bible content', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setBeat('midpoint', { notes: 'The bargain collapses.' }))
+    act(() => result.current.addCharacter({
+      name: 'Elena',
+      role: 'Lead',
+      wound: 'Lost her city',
+      want: 'Expose the council',
+      need: 'Trust someone else',
+      arc: 'Learns shared power',
+    }))
+    act(() => result.current.setWorld({
+      setting: 'A sealed city with ritual gates',
+      toneAnchors: 'Pressure, ceremony, glass',
+      voiceNotes: 'Precise and humane',
+    }))
+    act(() => result.current.setThemes('Mercy under civic pressure'))
+    act(() => result.current.setRules('No one crosses the east gate after dusk.'))
+
+    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.outline))
+    const storyBibleBefore = JSON.parse(JSON.stringify(result.current.state.storyBible))
+    const outlineDocumentBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
+    const storyBibleDocumentBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
+
+    act(() => result.current.setProjectFormat('series'))
+
+    expect(result.current.state.outline).toEqual(outlineBefore)
+    expect(result.current.state.storyBible).toEqual(storyBibleBefore)
+    expect(result.current.state.documents.outline).toEqual(outlineDocumentBefore)
+    expect(result.current.state.documents.storyBible).toEqual(storyBibleDocumentBefore)
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.outline).toEqual(outlineBefore)
+    expect(stored.storyBible).toEqual(storyBibleBefore)
+    expect(stored.documents.outline).toEqual(outlineDocumentBefore)
+    expect(stored.documents.storyBible).toEqual(storyBibleDocumentBefore)
+  })
+
   it('setMeta normalizes default display title to unset stored title', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'Untitled Project' }))
