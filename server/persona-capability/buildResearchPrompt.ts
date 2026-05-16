@@ -85,6 +85,7 @@ function formatProjectContext(projectContext: PersonaCapabilityProjectContext): 
   return [
     `Project: ${projectContext.title || 'Untitled'}`,
     `Genre: ${projectContext.genre || 'Not supplied'}`,
+    `Format: ${projectContext.format}`,
     `Logline: ${projectContext.logline || projectContext.synopsis.logline || 'Not supplied'}`,
     '',
     'Synopsis:',

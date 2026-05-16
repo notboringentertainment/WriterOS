@@ -791,24 +791,35 @@ describe('extractScriptContext', () => {
   })
 })
 
-describe('buildProjectContext — synopsis format and showOverview', () => {
-  it('exposes header.format on synopsis context', () => {
+describe('buildProjectContext — project format and showOverview', () => {
+  it('exposes meta.format on the top-level project context', () => {
     const state = defaultProjectState()
-    state.documents.synopsis.content.header.format = 'series'
+    state.meta.format = 'series'
     const ctx = buildProjectContext(state)
+    expect(ctx.format).toBe('series')
     expect(ctx.synopsis.format).toBe('series')
   })
 
-  it('exposes empty string when format is empty', () => {
+  it('normalizes unknown meta.format values to feature', () => {
     const state = defaultProjectState()
-    state.documents.synopsis.content.header.format = ''
+    ;(state.meta as any).format = 'pilot'
     const ctx = buildProjectContext(state)
-    expect(ctx.synopsis.format).toBe('')
+    expect(ctx.format).toBe('feature')
+    expect(ctx.synopsis.format).toBe('feature')
+  })
+
+  it('does not let synopsis header format override meta.format', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    state.documents.synopsis.content.header.format = 'series'
+    const ctx = buildProjectContext(state)
+    expect(ctx.format).toBe('feature')
+    expect(ctx.synopsis.format).toBe('feature')
   })
 
   it('exposes series.showOverview when populated', () => {
     const state = defaultProjectState()
-    state.documents.synopsis.content.header.format = 'series'
+    state.meta.format = 'series'
     state.documents.synopsis.content.series = {
       seriesType: 'ongoing',
       episodeLength: 'hour',

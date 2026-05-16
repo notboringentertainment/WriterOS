@@ -125,7 +125,8 @@ describe('OpenSwarm Writing Partner prompt', () => {
 
   it('emits format and showOverview in the project context block', () => {
     const state = defaultProjectState()
-    state.documents.synopsis.content.header.format = 'series'
+    state.meta.format = 'series'
+    state.documents.synopsis.content.header.format = 'feature'
     state.documents.synopsis.content.series = {
       seriesType: 'ongoing',
       episodeLength: 'hour',

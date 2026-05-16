@@ -233,12 +233,13 @@ describe('SynopsisTab — format routing', () => {
     expect(screen.queryByText(/show overview/i)).toBeNull()
   })
 
-  it('format = "series" routes to series edit view and hides QA', () => {
+  it('project format = "series" routes to series edit view and hides QA', () => {
     const doc = makeDocument()
-    doc.content.header.format = 'series'
+    doc.content.header.format = 'feature'
     render(
       <SynopsisTab
         document={doc}
+        projectFormat="series"
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
@@ -248,14 +249,17 @@ describe('SynopsisTab — format routing', () => {
     expect(screen.queryByText(/protagonist named early/i)).toBeNull()
   })
 
-  it('lazy-init: flipping format to "series" while content.series is undefined initializes it via onContentPatch', () => {
+  it('format dropdown delegates project format changes without a second content patch', () => {
     const onContentPatch = vi.fn()
+    const onProjectFormatChange = vi.fn()
     const doc = makeDocument()
     expect(doc.content.series).toBeUndefined()
     doc.content.header.format = 'feature'
     render(
       <SynopsisTab
         document={doc}
+        projectFormat="feature"
+        onProjectFormatChange={onProjectFormatChange}
         onContentPatch={onContentPatch}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
@@ -264,7 +268,29 @@ describe('SynopsisTab — format routing', () => {
     // Simulate the format dropdown in the feature header firing: header.format = 'series'
     const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
     fireEvent.change(select, { target: { value: 'series' } })
-    // Expect the wrapped patcher to lazy-init content.series
+
+    expect(onProjectFormatChange).toHaveBeenCalledWith('series')
+    expect(onContentPatch).not.toHaveBeenCalled()
+  })
+
+  it('fallback lazy-init: flipping format to "series" initializes content.series when no project callback is supplied', () => {
+    const onContentPatch = vi.fn()
+    const doc = makeDocument()
+    expect(doc.content.series).toBeUndefined()
+    doc.content.header.format = 'feature'
+    render(
+      <SynopsisTab
+        document={doc}
+        projectFormat="feature"
+        onContentPatch={onContentPatch}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'series' } })
+
     expect(onContentPatch).toHaveBeenCalledWith(
       expect.objectContaining({
         header: expect.objectContaining({ format: 'series' }),
@@ -285,6 +311,7 @@ describe('SynopsisTab — format routing', () => {
     render(
       <SynopsisTab
         document={doc}
+        projectFormat="series"
         onContentPatch={onContentPatch}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
@@ -303,12 +330,15 @@ describe('SynopsisTab — format routing', () => {
 
   it('flipping series → feature does NOT delete content.series', () => {
     const onContentPatch = vi.fn()
+    const onProjectFormatChange = vi.fn()
     const doc = makeDocument()
     doc.content.header.format = 'series'
     doc.content.series = { ...createEmptySeriesContent(), showOverview: 'pre-existing' }
     render(
       <SynopsisTab
         document={doc}
+        projectFormat="series"
+        onProjectFormatChange={onProjectFormatChange}
         onContentPatch={onContentPatch}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
@@ -316,9 +346,7 @@ describe('SynopsisTab — format routing', () => {
     )
     const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
     fireEvent.change(select, { target: { value: 'feature' } })
-    const lastCall = onContentPatch.mock.calls.find(call => call[0].header?.format === 'feature')
-    expect(lastCall).toBeDefined()
-    // No series-clearing field in the patch
-    expect(lastCall![0].series).toBeUndefined()
+    expect(onProjectFormatChange).toHaveBeenCalledWith('feature')
+    expect(onContentPatch).not.toHaveBeenCalled()
   })
 })

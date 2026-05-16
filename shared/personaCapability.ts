@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeProjectFormat, type ProjectFormat } from './projectFormat'
 
 export type PersonaCapabilityId = 'research_world_context'
 export type PersonaCapabilityPersonaId = 'zoe'
@@ -72,6 +73,7 @@ export interface CapabilityReceipt {
 export interface PersonaCapabilityProjectContext {
   title?: string
   genre?: string
+  format: ProjectFormat
   logline?: string
   script?: {
     excerpt: string
@@ -206,6 +208,7 @@ const scriptContextSchema = z.object({
 export const personaCapabilityProjectContextSchema = z.object({
   title: z.string().optional(),
   genre: z.string().optional(),
+  format: z.string().default('feature').transform(normalizeProjectFormat),
   logline: z.string().optional(),
   script: scriptContextSchema,
   synopsis: z.object({

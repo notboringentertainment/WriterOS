@@ -229,6 +229,8 @@ export default function App() {
         return (
           <SynopsisTab
             document={project.state.documents.synopsis}
+            projectFormat={project.state.meta.format}
+            onProjectFormatChange={project.setProjectFormat}
             onContentPatch={(patch) =>
               project.setSynopsisDocument((content) => ({ ...content, ...patch }))
             }

@@ -33,6 +33,44 @@ describe('persona capability contracts', () => {
     })
 
     expect(parsed.personaId).toBe('zoe')
+    expect(parsed.projectContext.format).toBe('feature')
+  })
+
+  it('normalizes missing and unknown project format values but rejects null', () => {
+    const base = {
+      personaId: 'zoe',
+      taskKind: 'research_world_context',
+      message: 'research this',
+      projectContext: buildProjectContext(defaultProjectState()),
+      sourceSurface: 'writingPartner',
+      clientRequestId: 'req-1',
+    }
+
+    const missing = {
+      ...base,
+      projectContext: {
+        ...base.projectContext,
+        format: undefined,
+      },
+    }
+    const unknown = {
+      ...base,
+      projectContext: {
+        ...base.projectContext,
+        format: 'pilot',
+      },
+    }
+    const nullish = {
+      ...base,
+      projectContext: {
+        ...base.projectContext,
+        format: null,
+      },
+    }
+
+    expect(personaCapabilityRequestSchema.parse(missing).projectContext.format).toBe('feature')
+    expect(personaCapabilityRequestSchema.parse(unknown).projectContext.format).toBe('feature')
+    expect(personaCapabilityRequestSchema.safeParse(nullish).success).toBe(false)
   })
 
   it('rejects disallowed persona/task pairs and Writer Room surfaces', () => {

@@ -1,7 +1,8 @@
 import { normalizeProjectTitle } from './projectIdentity'
 import { legacyToDocuments, mirrorSynopsisFromLegacy } from './documentMigration'
-import type { ProjectDocuments } from '@shared/documents'
+import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 
 export const CURRENT_SCHEMA_VERSION = 3
 const STORAGE_KEY = 'writeros_project_state'
@@ -43,7 +44,7 @@ export interface Character {
 
 export interface ProjectState {
   schemaVersion: number
-  meta: { title: string; genre: string; format: string; wordCount: number; pageCount: number }
+  meta: { title: string; genre: string; format: ProjectFormat; wordCount: number; pageCount: number }
   script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
@@ -116,6 +117,40 @@ export function defaultProjectState(): ProjectState {
   }
 }
 
+function rawSynopsisHeaderFormat(rawDocuments: unknown): unknown {
+  if (!rawDocuments || typeof rawDocuments !== 'object') return undefined
+  const documents = rawDocuments as Record<string, unknown>
+  const synopsis = documents.synopsis
+  if (!synopsis || typeof synopsis !== 'object') return undefined
+  const content = (synopsis as Record<string, unknown>).content
+  if (!content || typeof content !== 'object') return undefined
+  const header = (content as Record<string, unknown>).header
+  if (!header || typeof header !== 'object') return undefined
+  return (header as Record<string, unknown>).format
+}
+
+function syncSynopsisFormatMirror(
+  synopsis: ProjectDocuments['synopsis'],
+  format: ProjectFormat,
+): ProjectDocuments['synopsis'] {
+  const seriesPatch =
+    format === 'series' && synopsis.content.series === undefined
+      ? { series: createEmptySeriesContent() }
+      : {}
+
+  return {
+    ...synopsis,
+    content: {
+      ...synopsis.content,
+      ...seriesPatch,
+      header: {
+        ...synopsis.content.header,
+        format,
+      },
+    },
+  }
+}
+
 export function migrateState(raw: unknown): ProjectState {
   if (!raw || typeof raw !== 'object') return defaultProjectState()
   const obj = raw as Record<string, unknown>
@@ -133,13 +168,18 @@ export function migrateState(raw: unknown): ProjectState {
     state.meta && typeof state.meta === 'object'
       ? (state.meta as Record<string, unknown>)
       : {}
+  const rawDocuments = obj.documents
+  const promotedFormat: ProjectFormat =
+    rawMeta.format === 'series' || rawSynopsisHeaderFormat(rawDocuments) === 'series'
+      ? 'series'
+      : normalizeProjectFormat(rawMeta.format)
   state.meta = {
     ...defaults.meta,
     ...rawMeta,
     // Intentional for every loaded state: this must stay idempotent as title semantics evolve.
     title: normalizeProjectTitle(rawMeta.title),
     genre: typeof rawMeta.genre === 'string' ? rawMeta.genre : defaults.meta.genre,
-    format: typeof rawMeta.format === 'string' ? rawMeta.format : defaults.meta.format,
+    format: promotedFormat,
     wordCount: typeof rawMeta.wordCount === 'number' ? rawMeta.wordCount : defaults.meta.wordCount,
     pageCount: typeof rawMeta.pageCount === 'number' ? rawMeta.pageCount : defaults.meta.pageCount,
   }
@@ -171,22 +211,32 @@ export function migrateState(raw: unknown): ProjectState {
     revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
   }
 
-  const rawDocuments = obj.documents
   if (version < 3 || !rawDocuments || typeof rawDocuments !== 'object') {
     ;(state as Record<string, unknown>).documents = legacyToDocuments(state as unknown as ProjectState)
   } else {
     ;(state as Record<string, unknown>).documents = rawDocuments
+  }
+  const migratedDocuments = (state as Record<string, unknown>).documents as ProjectDocuments
+  ;(state as Record<string, unknown>).documents = {
+    ...migratedDocuments,
+    synopsis: syncSynopsisFormatMirror(migratedDocuments.synopsis, promotedFormat),
   }
 
   return state as unknown as ProjectState
 }
 
 export function saveProjectState(state: ProjectState): void {
+  const projectFormat = normalizeProjectFormat(state.meta.format)
+  const mirroredSynopsis = mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis)
   const stateToSave: ProjectState = {
     ...state,
     schemaVersion: CURRENT_SCHEMA_VERSION,
+    meta: {
+      ...state.meta,
+      format: projectFormat,
+    },
     documents: {
-      synopsis: mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis),
+      synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),
       outline: state.documents.outline,
       treatment: state.documents.treatment,
       storyBible: state.documents.storyBible,

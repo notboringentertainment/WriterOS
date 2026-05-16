@@ -4,7 +4,7 @@ import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
-import { createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '../../shared/documents'
+import { createEmptySeriesContent, createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '../../shared/documents'
 
 beforeEach(() => localStorage.clear())
 
@@ -18,6 +18,52 @@ describe('useProjectState', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'My Film' }))
     expect(result.current.state.meta.title).toBe('My Film')
+  })
+
+  it('setProjectFormat updates the canonical project format', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    expect(result.current.state.meta.format).toBe('series')
+    expect(result.current.state.documents.synopsis.content.header.format).toBe('series')
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.meta.format).toBe('series')
+    expect(stored.documents.synopsis.content.header.format).toBe('series')
+  })
+
+  it('setProjectFormat lazily initializes series content when entering series', () => {
+    const { result } = renderHook(() => useProjectState())
+    expect(result.current.state.documents.synopsis.content.series).toBeUndefined()
+
+    act(() => result.current.setProjectFormat('series'))
+
+    expect(result.current.state.documents.synopsis.content.series).toEqual(createEmptySeriesContent())
+  })
+
+  it('setProjectFormat preserves feature and existing series synopsis data', () => {
+    const existingSeries = { ...createEmptySeriesContent(), showOverview: 'Existing overview' }
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      prose: { ...c.prose, opening: 'Feature opening.' },
+      qa: { ...c.qa, endingRevealed: true },
+      aiProductionImplications: {
+        visuallyImportantSequences: 'Bridge chase',
+        continuitySensitiveMoments: 'Ring changes hands',
+        difficultWorldOrVfx: 'Floating city',
+        likelyReferenceImageNeeds: 'Old maps',
+      },
+      series: existingSeries,
+    })))
+
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setProjectFormat('feature'))
+
+    expect(result.current.state.documents.synopsis.content.prose.opening).toBe('Feature opening.')
+    expect(result.current.state.documents.synopsis.content.qa.endingRevealed).toBe(true)
+    expect(result.current.state.documents.synopsis.content.aiProductionImplications?.visuallyImportantSequences).toBe('Bridge chase')
+    expect(result.current.state.documents.synopsis.content.series).toEqual(existingSeries)
   })
 
   it('setMeta normalizes default display title to unset stored title', () => {
@@ -320,7 +366,26 @@ describe('useProjectState — clearSynopsis dual reset', () => {
       logline: { ...c.logline, text: 'A logline.' },
     })))
     act(() => result.current.clearSynopsis())
-    expect(result.current.state.documents.synopsis.content).toEqual(createEmptySynopsisContent())
+    const expected = createEmptySynopsisContent()
+    expected.header.format = 'feature'
+    expect(result.current.state.documents.synopsis.content).toEqual(expected)
+  })
+
+  it('resets documents.synopsis.content to empty series shape when project format is series', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setSynopsisDocument(c => ({
+      ...c,
+      logline: { ...c.logline, text: 'A logline.' },
+      series: { ...createEmptySeriesContent(), showOverview: 'To be cleared.' },
+    })))
+
+    act(() => result.current.clearSynopsis())
+
+    const expected = createEmptySynopsisContent()
+    expected.header.format = 'series'
+    expected.series = createEmptySeriesContent()
+    expect(result.current.state.documents.synopsis.content).toEqual(expected)
   })
 
   it('clears documents.synopsis viewPreferences', () => {
@@ -363,8 +428,10 @@ describe('useProjectState — clearSynopsis dual reset', () => {
     })))
     act(() => result.current.clearSynopsis())
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    const expected = createEmptySynopsisContent()
+    expected.header.format = 'feature'
     expect(stored.synopsis).toEqual(defaultProjectState().synopsis)
-    expect(stored.documents.synopsis.content).toEqual(createEmptySynopsisContent())
+    expect(stored.documents.synopsis.content).toEqual(expected)
   })
 
   it('refreshes documents.synopsis.updatedAt on clear', () => {

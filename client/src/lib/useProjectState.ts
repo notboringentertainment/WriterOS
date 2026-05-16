@@ -10,8 +10,41 @@ import {
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type { SynopsisDocumentContent, DocumentViewPreferences } from '@shared/documents'
-import { createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '@shared/documents'
+import { createEmptySeriesContent, createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '@shared/documents'
 import { documentsToLegacy } from './documentMigration'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+
+function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
+  const format = normalizeProjectFormat(value)
+  const prevUpdatedAt = new Date(state.documents.synopsis.updatedAt).getTime()
+  const seriesPatch =
+    format === 'series' && state.documents.synopsis.content.series === undefined
+      ? { series: createEmptySeriesContent() }
+      : {}
+
+  return {
+    ...state,
+    meta: {
+      ...state.meta,
+      format,
+    },
+    documents: {
+      ...state.documents,
+      synopsis: {
+        ...state.documents.synopsis,
+        updatedAt: new Date(Math.max(Date.now(), prevUpdatedAt + 1)).toISOString(),
+        content: {
+          ...state.documents.synopsis.content,
+          ...seriesPatch,
+          header: {
+            ...state.documents.synopsis.content.header,
+            format,
+          },
+        },
+      },
+    },
+  }
+}
 
 export function useProjectState() {
   const [initialLibrary] = useState(() => loadActiveProjectLibrary())
@@ -28,14 +61,24 @@ export function useProjectState() {
   }, [activeProjectId])
 
   const setMeta = useCallback((patch: Partial<ProjectState['meta']>) => {
-    update(s => ({
-      ...s,
-      meta: {
-        ...s.meta,
-        ...patch,
-        ...(patch.title !== undefined ? { title: normalizeProjectTitle(patch.title) } : {}),
-      },
-    }))
+    update(s => {
+      const next = {
+        ...s,
+        meta: {
+          ...s.meta,
+          ...patch,
+          ...(patch.title !== undefined ? { title: normalizeProjectTitle(patch.title) } : {}),
+        },
+      }
+
+      return patch.format !== undefined
+        ? withProjectFormat(next, patch.format)
+        : next
+    })
+  }, [update])
+
+  const setProjectFormat = useCallback((format: ProjectFormat) => {
+    update(s => withProjectFormat(s, format))
   }, [update])
 
   const clearSynopsis = useCallback(() => {
@@ -43,6 +86,12 @@ export function useProjectState() {
       const ts = new Date(
         Math.max(Date.now(), new Date(s.documents.synopsis.updatedAt).getTime() + 1),
       ).toISOString()
+      const format = normalizeProjectFormat(s.meta.format)
+      const content = createEmptySynopsisContent()
+      content.header.format = format
+      if (format === 'series') {
+        content.series = createEmptySeriesContent()
+      }
       return {
         ...s,
         synopsis: defaultProjectState().synopsis,
@@ -52,7 +101,7 @@ export function useProjectState() {
             version: DOCUMENT_SCHEMA_VERSION,
             mode: 'prose' as const,
             updatedAt: ts,
-            content: createEmptySynopsisContent(),
+            content,
             // viewPreferences intentionally omitted on clear
           },
         },
@@ -231,6 +280,7 @@ export function useProjectState() {
     activeProjectId,
     projects: summarizeProjects(projects),
     setMeta,
+    setProjectFormat,
     clearSynopsis,
     setSynopsisDocument,
     setSynopsisViewPreferences,

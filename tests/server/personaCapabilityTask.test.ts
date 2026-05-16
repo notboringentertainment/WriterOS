@@ -88,6 +88,28 @@ describe('parseResearchTaskResult', () => {
 })
 
 describe('runPersonaTask', () => {
+  it('includes project format in the bounded research prompt', async () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse({
+      response: JSON.stringify({
+        findings: [],
+        sources: [],
+        missing: [],
+        unverified: [],
+      }),
+    }))
+
+    await runPersonaTask(makeRequest({ projectContext: buildProjectContext(state) }), {
+      fetchImpl,
+      synthesizeFinal: vi.fn(async () => ({ finalMessage: 'Zoe final.', citedLabels: [] })),
+      baseUrl: 'http://localhost:8080',
+    })
+
+    const upstreamBody = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(upstreamBody.message).toContain('Format: series')
+  })
+
   it('calls OpenSwarm with a fresh bounded task and returns only synthesized final text plus receipt', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(okResponse({
       response: JSON.stringify({

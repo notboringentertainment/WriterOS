@@ -1,5 +1,6 @@
 import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
@@ -17,12 +18,14 @@ export type PersonaId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' |
 export interface ProjectContext {
   title?: string
   genre?: string
+  format: ProjectFormat
   logline?: string
   script: ScriptContext
   synopsis: {
     logline: string
     sections: ProjectState['synopsis']['sections']
-    format: string
+    /** @deprecated Use top-level ProjectContext.format. TODO: remove after Outline/Story Bible format selectors land. */
+    format: ProjectFormat
     showOverview: string
   }
   characters: Array<Pick<ProjectState['storyBible']['characters'][number], 'id' | 'name' | 'role' | 'wound' | 'want' | 'need' | 'arc'>>
@@ -279,10 +282,12 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
   const world = storyBible.world
   const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
   const scriptScenes = options.script?.scenes ?? state.script.scenes
+  const projectFormat = normalizeProjectFormat(state.meta.format)
 
   return {
     title: getProjectContextTitle(state.meta.title),
     genre: text(state.meta.genre),
+    format: projectFormat,
     logline: text(state.synopsis.logline),
     script: extractScriptContext(text(scriptRawHtml), userMessage, options.script?.focus),
     synopsis: {
@@ -294,7 +299,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
         act2Break: text(synopsisSections.act2Break),
         resolution: text(synopsisSections.resolution),
       },
-      format: text(state.documents.synopsis.content.header.format),
+      format: projectFormat,
       showOverview: text(state.documents.synopsis.content.series?.showOverview ?? ''),
     },
     characters: state.storyBible.characters.map(c => ({

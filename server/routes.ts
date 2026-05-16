@@ -7,6 +7,7 @@ import type { StoryMemory } from "@shared/schema";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import { personaCapabilityRequestSchema } from "@shared/personaCapability";
 import { runPersonaTask } from "./persona-capability/runPersonaTask";
+import { normalizeProjectFormat } from "@shared/projectFormat";
 
 const openaiService = new OpenAIService();
 
@@ -98,6 +99,7 @@ const scriptContextSchema = z.object({
 const projectContextSchema = z.object({
   title: z.string().optional(),
   genre: z.string().optional(),
+  format: z.string().default('feature').transform(normalizeProjectFormat),
   logline: z.string().optional(),
   script: scriptContextSchema,
   synopsis: z.object({
@@ -402,7 +404,7 @@ Project context supplied by WriterOS:
 - Title: ${projectContext.title || 'Untitled'}
 - Genre: ${projectContext.genre || 'Not supplied'}
 - Logline: ${projectContext.logline || projectContext.synopsis.logline || 'Not supplied'}
-- Format: ${projectContext.synopsis.format || 'feature'}
+- Format: ${projectContext.format}
 - Show Overview: ${projectContext.synopsis.showOverview || 'Not supplied'}
 
 Writer Voice Profile supplied by WriterOS:
@@ -499,6 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         project: {
           title: data.projectContext.title,
           genre: data.projectContext.genre,
+          format: data.projectContext.format,
           logline: data.projectContext.logline,
           synopsis: Object.values(data.projectContext.synopsis.sections).filter(Boolean).join('\n\n'),
           synopsisSections: data.projectContext.synopsis.sections,

@@ -1,3 +1,5 @@
+import type { ProjectFormat } from './projectFormat'
+
 export type EntryState =
   | 'blank_slate'
   | 'idea_only'
@@ -43,7 +45,8 @@ export interface StoryMemory {
   project: {
     title?: string
     genre?: string
-    format?: 'screenplay' | 'novel' | 'series' | 'short'
+    // WriterOS project format is intentionally narrowed to the V1 project-wide modes.
+    format?: ProjectFormat
     logline?: string
     synopsis?: string
     synopsisSections?: Record<string, string>

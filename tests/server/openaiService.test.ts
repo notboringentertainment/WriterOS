@@ -358,6 +358,15 @@ describe('createContextSummary', () => {
     expect(samSummary).not.toContain('SCRIPT EXCERPT')
     expect(samSummary).not.toContain(sensitiveLine)
   })
+
+  it('includes project format in the Writing Partner brief when supplied', () => {
+    const brief = createWritingPartnerBrief(storyMemory({
+      project: { title: 'Lifeline', genre: 'Thriller', format: 'series' },
+    }))
+
+    expect(brief).toContain('Project: "Lifeline" | Thriller')
+    expect(brief).toContain('Format: series')
+  })
 })
 
 describe('persona capability synthesis prompt', () => {

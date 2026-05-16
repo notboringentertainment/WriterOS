@@ -8,6 +8,7 @@ import {
 } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { legacyToDocuments } from '../../client/src/lib/documentMigration'
+import { createEmptySeriesContent } from '../../shared/documents'
 
 describe('defaultProjectState', () => {
   it('has schemaVersion equal to CURRENT_SCHEMA_VERSION', () => {
@@ -29,6 +30,10 @@ describe('defaultProjectState', () => {
 
   it('outline has 15 save-the-cat beats by default', () => {
     expect(defaultProjectState().outline.beats).toHaveLength(15)
+  })
+
+  it('defaults project format to feature', () => {
+    expect(defaultProjectState().meta.format).toBe('feature')
   })
 
   it('default agents include alex', () => {
@@ -94,6 +99,53 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.agents.zoe).toEqual({ transcript: [], lastTouched: null })
+  })
+
+  it('normalizes unknown project formats to feature', () => {
+    const state = defaultProjectState() as any
+    state.meta.format = 'pilot'
+
+    const result = migrateState(state)
+
+    expect(result.meta.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe('feature')
+  })
+
+  it('preserves explicit series project format', () => {
+    const state = defaultProjectState() as any
+    state.meta.format = 'series'
+
+    const result = migrateState(state)
+
+    expect(result.meta.format).toBe('series')
+    expect(result.documents.synopsis.content.header.format).toBe('series')
+  })
+
+  it('promotes legacy synopsis header series format to project format', () => {
+    const state = defaultProjectState() as any
+    state.meta.format = 'feature'
+    state.documents.synopsis.content.header.format = 'series'
+    state.documents.synopsis.content.series = {
+      ...createEmptySeriesContent(),
+      showOverview: 'A renewable conflict in a sealed city.',
+    }
+
+    const result = migrateState(state)
+
+    expect(result.meta.format).toBe('series')
+    expect(result.documents.synopsis.content.header.format).toBe('series')
+    expect(result.documents.synopsis.content.series).toEqual(state.documents.synopsis.content.series)
+  })
+
+  it('normalizes stale synopsis header format mirrors during migration', () => {
+    const state = defaultProjectState() as any
+    state.meta.format = ''
+    state.documents.synopsis.content.header.format = 'feature_film'
+
+    const result = migrateState(state)
+
+    expect(result.meta.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe('feature')
   })
 })
 
@@ -219,6 +271,19 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     saveProjectState(state)
     const loaded = loadProjectState()
     expect(loaded.documents.synopsis.content.header).toEqual(state.documents.synopsis.content.header)
+  })
+
+  it('saves synopsis header format as a mirror of canonical meta.format', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    state.documents.synopsis.content.header.format = 'feature'
+    state.documents.synopsis.content.series = createEmptySeriesContent()
+
+    saveProjectState(state)
+    const loaded = loadProjectState()
+
+    expect(loaded.meta.format).toBe('series')
+    expect(loaded.documents.synopsis.content.header.format).toBe('series')
   })
 
   it('preserves every key in content.qa across save/load', () => {

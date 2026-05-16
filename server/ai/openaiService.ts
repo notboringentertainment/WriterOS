@@ -384,6 +384,7 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
     storyMemory.project.genre,
   ].filter(Boolean).join(' | ');
   if (titleGenre) lines.push(`- Project: ${titleGenre}`);
+  if (filled(storyMemory.project.format)) lines.push(`- Format: ${storyMemory.project.format}`);
   if (filled(storyMemory.project.logline)) lines.push(`- Logline: ${truncate(storyMemory.project.logline, 180)}`);
 
   const characterNames = compactList(Object.values(storyMemory.characters).map(character => character.name));
@@ -605,6 +606,7 @@ ${profileLinesForCapability(input)}
 Project context snapshot:
 - Title: ${input.projectContext.title || 'Untitled'}
 - Genre: ${input.projectContext.genre || 'Not supplied'}
+- Format: ${input.projectContext.format}
 - Logline: ${input.projectContext.logline || input.projectContext.synopsis.logline || 'Not supplied'}
 - Story Bible setting: ${input.projectContext.storyBible.world.setting || 'Not supplied'}
 - Story Bible rules: ${input.projectContext.storyBible.rules || 'Not supplied'}
@@ -674,6 +676,7 @@ YOUR PERSONALITY TRAITS:
 CURRENT PROJECT CONTEXT:
 ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New project'}
 ${storyMemory.project.genre ? `Genre: ${storyMemory.project.genre}` : ''}
+${storyMemory.project.format ? `Format: ${storyMemory.project.format}` : ''}
 ${storyMemory.project.logline ? `Logline: ${storyMemory.project.logline}` : ''}
 ${storyMemory.project.synopsis ? `Synopsis: ${storyMemory.project.synopsis}` : ''}
 

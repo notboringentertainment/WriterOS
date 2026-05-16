@@ -1,6 +1,7 @@
 import React from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { SynopsisEditView } from './synopsis/SynopsisEditView'
 import { SynopsisSeriesEditView } from './synopsis/SynopsisSeriesEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
@@ -8,6 +9,8 @@ import { SynopsisViewToggle } from './synopsis/SynopsisViewToggle'
 
 export interface SynopsisTabProps {
   document: AuthoredDocumentState<SynopsisDocumentContent>
+  projectFormat?: ProjectFormat
+  onProjectFormatChange?: (next: ProjectFormat) => void
   onContentPatch: (patch: Partial<SynopsisDocumentContent>) => void
   onViewPreferencesPatch: (patch: {
     activeView?: 'edit' | 'document'
@@ -41,6 +44,8 @@ function deriveComposeMode(
 
 export function SynopsisTab({
   document,
+  projectFormat = 'feature',
+  onProjectFormatChange,
   onContentPatch,
   onViewPreferencesPatch,
   onClear,
@@ -48,14 +53,26 @@ export function SynopsisTab({
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const composeMode = deriveComposeMode(document)
 
-  const activeFormat: 'feature' | 'series' =
-    document.content.header.format === 'series' ? 'series' : 'feature'
+  const activeFormat = normalizeProjectFormat(projectFormat)
 
   function handleContentPatch(patch: Partial<SynopsisDocumentContent>) {
-    if (patch.header?.format === 'series' && document.content.series === undefined) {
-      onContentPatch({ ...patch, series: createEmptySeriesContent() })
+    const nextFormat = patch.header?.format !== undefined
+      ? normalizeProjectFormat(patch.header.format)
+      : undefined
+
+    if (nextFormat !== undefined && nextFormat !== activeFormat && onProjectFormatChange) {
+      onProjectFormatChange(nextFormat)
+      return
+    }
+
+    const normalizedPatch = nextFormat === undefined
+      ? patch
+      : { ...patch, header: { ...patch.header!, format: nextFormat } }
+
+    if (nextFormat === 'series' && document.content.series === undefined) {
+      onContentPatch({ ...normalizedPatch, series: createEmptySeriesContent() })
     } else {
-      onContentPatch(patch)
+      onContentPatch(normalizedPatch)
     }
   }
 
