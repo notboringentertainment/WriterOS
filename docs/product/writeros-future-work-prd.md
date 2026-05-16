@@ -1,9 +1,10 @@
 # WriterOS Future Work PRD
 
-**Date:** 2026-05-08  
-**Status:** Draft for post-Phase-4 planning  
-**Branch context:** `feature/screenplay-editor-core`  
+**Date:** 2026-05-08
+**Status:** Draft for post-Phase-4 planning
+**Branch context:** `feature/screenplay-editor-core`
 **Current baseline:** `fd3ab45 feat: add script overview retrieval`
+**Related surface redesign:** `docs/product/structured-writing-surfaces-prd.md`
 
 ## Summary
 
@@ -34,7 +35,7 @@ The app is becoming technically capable, but the next risks are product clarity,
 ## Goals
 
 - Make WriterOS easier to understand for both novices and professionals.
-- Add a document-preview direction for non-script writing surfaces.
+- Redesign non-script writing surfaces as professional document types before generic preview/export work.
 - Define Treatment as a future fifth surface.
 - Decide storage architecture before durable summaries or project libraries.
 - Plan measured pagination and export separately from estimated retrieval pages.
@@ -69,19 +70,19 @@ This PRD assumes the following are complete and should not be rebuilt unless tes
 
 ## Product Principles
 
-1. **Expert power, beginner legibility.**  
+1. **Expert power, beginner legibility.**
    A novice should know what a surface is for. A professional should not feel slowed down by onboarding.
 
-2. **Structured surfaces should become real documents.**  
+2. **Structured surfaces should become real documents.**
    Synopsis, Outline, Story Bible, and Treatment should be useful as authored artifacts, not just context forms for agents.
 
-3. **Authored source beats derived context.**  
+3. **Authored source beats derived context.**
    Persist user-authored documents and visible state. Keep indexes, retrieval packs, and summaries derived unless a storage PRD says otherwise.
 
-4. **Retrieval should be visible when trust matters.**  
+4. **Retrieval should be visible when trust matters.**
    If an agent comments on page 12 or the office scene, the UI should eventually be able to show that scope.
 
-5. **Do not overpromise pagination.**  
+5. **Do not overpromise pagination.**
    Current page ranges are estimated retrieval pages. Export-quality pages require measured pagination.
 
 ## Roadmap Interaction: Writer Voice Profile
@@ -122,12 +123,14 @@ Success criteria:
 - A returning user can ignore the copy without losing space or focus.
 - Story Bible clearly communicates Casey vs Zoe.
 
-## Workstream 2: Document Preview Mode
+## Workstream 2: Professional Structured Writing Surfaces
 
-Goal: let structured surfaces be read as shareable writing documents.
+Goal: replace the simplistic Synopsis, Outline, and Story Bible field model with professional document surfaces, then let those surfaces be read as shareable writing documents.
 
 Recommended behavior:
 
+- Follow `docs/product/structured-writing-surfaces-prd.md`.
+- Treat Synopsis, Outline, Treatment, and Story Bible as separate document types.
 - Add `Edit View` / `Document View` toggle for:
   - Synopsis
   - Outline
@@ -152,6 +155,7 @@ Future export targets:
 
 Success criteria:
 
+- Writer can build Synopsis, Outline, Treatment, and Story Bible artifacts that match their professional document jobs.
 - Writer can review a synopsis or outline as a coherent artifact.
 - Document View uses the same stored source as Edit View.
 - Export remains a later explicit step.
@@ -312,28 +316,28 @@ Success criteria:
 
 ## Suggested Sequence
 
-1. **Manual usability pass.**  
+1. **Manual usability pass.**
    Play with the current UI and capture friction before new implementation.
 
-2. **Roadmap coordination with Writer Voice Profile.**  
+2. **Roadmap coordination with Writer Voice Profile.**
    Confirm first-run/profile entry-point decisions before adding major shell or navigation UI. Voice Profile work should follow `docs/product/writer-voice-profile-prd.md`.
 
-3. **Surface orientation polish.**  
+3. **Surface orientation polish.**
    Add concise role/surface copy if testing confirms confusion.
 
-4. **Document Preview PRD or design slice.**  
-   Define read-only document rendering for Synopsis, Outline, and Story Bible.
+4. **Structured Writing Surfaces implementation slice.**
+   Redesign Synopsis, Outline, Treatment, and Story Bible around professional document models before doing generic preview/export work.
 
-5. **Storage PRD.**  
+5. **Storage PRD.**
    Decide durable writer/project storage before generated summaries, project libraries, or assuming profile memory can survive beyond local browser state.
 
-6. **Treatment PRD / implementation slice.**  
+6. **Treatment PRD / implementation slice.**
    Build the fifth surface after storage implications are clear enough.
 
-7. **Measured pagination / export plan.**  
+7. **Measured pagination / export plan.**
    Treat page fidelity and export as their own product/technical effort.
 
-8. **Generated summaries.**  
+8. **Generated summaries.**
    Add only after storage and staleness rules exist.
 
 ## Manual QA Prompts For Current UI
