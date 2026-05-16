@@ -385,3 +385,92 @@ export function createEmptyStoryBibleContent(): StoryBibleDocumentContent {
     episodeOrSequenceMap: [],
   }
 }
+
+export const DocumentWarningSchema = z.object({
+  id: z.string(),
+  message: z.string(),
+  severity: z.enum(['info', 'warn', 'error']),
+})
+export type DocumentWarning = z.infer<typeof DocumentWarningSchema>
+
+export const DocumentViewPreferencesSchema = z.object({
+  activeView: z.enum(['edit', 'document']).optional(),
+  collapsedSections: z.array(z.string()).optional(),
+  visibleDepth: z.enum(['core', 'advanced', 'continuity', 'ai_production']).optional(),
+})
+export type DocumentViewPreferences = z.infer<typeof DocumentViewPreferencesSchema>
+
+export function AuthoredDocumentStateSchema<TContent extends z.ZodTypeAny>(content: TContent) {
+  return z.object({
+    version: z.number().int().nonnegative(),
+    mode: z.string(),
+    updatedAt: z.string(),
+    content,
+    viewPreferences: DocumentViewPreferencesSchema.optional(),
+    qa: z
+      .object({
+        lastCheckedAt: z.string().optional(),
+        warnings: z.array(DocumentWarningSchema),
+      })
+      .optional(),
+  })
+}
+
+export interface AuthoredDocumentState<TContent> {
+  version: number
+  mode: string
+  updatedAt: string
+  content: TContent
+  viewPreferences?: DocumentViewPreferences
+  qa?: {
+    lastCheckedAt?: string
+    warnings: DocumentWarning[]
+  }
+}
+
+export const ProjectDocumentsSchema = z.object({
+  synopsis: AuthoredDocumentStateSchema(SynopsisDocumentContentSchema),
+  outline: AuthoredDocumentStateSchema(OutlineDocumentContentSchema),
+  treatment: AuthoredDocumentStateSchema(TreatmentDocumentContentSchema),
+  storyBible: AuthoredDocumentStateSchema(StoryBibleDocumentContentSchema),
+})
+
+export interface ProjectDocuments {
+  synopsis: AuthoredDocumentState<SynopsisDocumentContent>
+  outline: AuthoredDocumentState<OutlineDocumentContent>
+  treatment: AuthoredDocumentState<TreatmentDocumentContent>
+  storyBible: AuthoredDocumentState<StoryBibleDocumentContent>
+}
+
+export const DOCUMENT_SCHEMA_VERSION = 1
+
+export function createEmptyDocuments(now: () => string = () => new Date().toISOString()): ProjectDocuments {
+  const ts = now()
+
+  return {
+    synopsis: {
+      version: DOCUMENT_SCHEMA_VERSION,
+      mode: 'prose',
+      updatedAt: ts,
+      content: createEmptySynopsisContent(),
+    },
+    outline: {
+      version: DOCUMENT_SCHEMA_VERSION,
+      mode: 'beat_sheet_save_the_cat',
+      updatedAt: ts,
+      content: createEmptyOutlineContent(),
+    },
+    treatment: {
+      version: DOCUMENT_SCHEMA_VERSION,
+      mode: 'three_act_prose',
+      updatedAt: ts,
+      content: createEmptyTreatmentContent(),
+    },
+    storyBible: {
+      version: DOCUMENT_SCHEMA_VERSION,
+      mode: 'development',
+      updatedAt: ts,
+      content: createEmptyStoryBibleContent(),
+    },
+  }
+}

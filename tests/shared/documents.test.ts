@@ -12,6 +12,10 @@ import {
   StoryBibleDocumentContentSchema,
   type StoryBibleDocumentContent,
   createEmptyStoryBibleContent,
+  AuthoredDocumentStateSchema,
+  ProjectDocumentsSchema,
+  createEmptyDocuments,
+  type ProjectDocuments,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -241,5 +245,36 @@ describe('StoryBibleDocumentContent', () => {
       episodeOrSequenceMap: [],
     }
     expect(StoryBibleDocumentContentSchema.safeParse(populated).success).toBe(true)
+  })
+})
+
+describe('AuthoredDocumentState wrapper', () => {
+  it('createEmptyDocuments returns a Zod-valid ProjectDocuments', () => {
+    const empty = createEmptyDocuments()
+    expect(ProjectDocumentsSchema.safeParse(empty).success).toBe(true)
+  })
+
+  it('each surface wrapper has version 1 and an updatedAt ISO string', () => {
+    const empty = createEmptyDocuments()
+    for (const surface of ['synopsis', 'outline', 'treatment', 'storyBible'] as const) {
+      expect(empty[surface].version).toBe(1)
+      expect(typeof empty[surface].updatedAt).toBe('string')
+      expect(empty[surface].updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    }
+  })
+
+  it('viewPreferences.activeView accepts edit or document', () => {
+    const empty = createEmptyDocuments()
+    const docs: ProjectDocuments = {
+      ...empty,
+      synopsis: { ...empty.synopsis, viewPreferences: { activeView: 'document' } },
+    }
+    expect(ProjectDocumentsSchema.safeParse(docs).success).toBe(true)
+  })
+
+  it('AuthoredDocumentState rejects negative version', () => {
+    const empty = createEmptyDocuments()
+    const bad = { ...empty.synopsis, version: -1 }
+    expect(AuthoredDocumentStateSchema(SynopsisDocumentContentSchema).safeParse(bad).success).toBe(false)
   })
 })
