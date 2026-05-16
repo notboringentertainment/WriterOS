@@ -6,6 +6,9 @@ import {
   OutlineDocumentContentSchema,
   type OutlineDocumentContent,
   createEmptyOutlineContent,
+  TreatmentDocumentContentSchema,
+  type TreatmentDocumentContent,
+  createEmptyTreatmentContent,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -120,5 +123,45 @@ describe('OutlineDocumentContent', () => {
   it('rejects an outline with unknown mode', () => {
     const broken = { ...createEmptyOutlineContent(), mode: 'not_a_real_mode' }
     expect(OutlineDocumentContentSchema.safeParse(broken).success).toBe(false)
+  })
+})
+
+describe('TreatmentDocumentContent', () => {
+  it('createEmptyTreatmentContent returns a Zod-valid empty content object', () => {
+    const empty = createEmptyTreatmentContent()
+    expect(TreatmentDocumentContentSchema.safeParse(empty).success).toBe(true)
+  })
+
+  it('accepts a populated treatment', () => {
+    const populated: TreatmentDocumentContent = {
+      header: { title: 'X', writer: 'Y', format: 'feature', genre: 'drama', version: '1', date: '2026-05-15' },
+      logline: 'A widow returns home.',
+      concept: { premise: 'p', tone: 't', theme: 'th', emotionalPromise: 'e' },
+      mainCharacters: [
+        {
+          id: 'c1',
+          name: 'Sara',
+          role: 'Protagonist',
+          externalWant: 'home',
+          internalNeed: 'forgiveness',
+          flawOrWound: 'guilt',
+          secretOrContradiction: 'killed her sister',
+          arc: 'guilt -> mercy',
+          relationshipPressure: 'distant father',
+        },
+      ],
+      prose: { opening: 'a', actOne: 'b', actTwo: 'c', actThree: 'd', customSections: [] },
+      visualAndTonal: {
+        overallTone: '',
+        visualWorld: '',
+        recurringImagesOrMotifs: '',
+        musicOrSoundFeeling: '',
+        pacing: '',
+        genreRules: '',
+        compsAndReferences: '',
+      },
+      openQuestions: { story: [], character: [], worldOrMythology: [], production: [] },
+    }
+    expect(TreatmentDocumentContentSchema.safeParse(populated).success).toBe(true)
   })
 })

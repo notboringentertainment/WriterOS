@@ -153,3 +153,96 @@ export function createEmptyOutlineContent(): OutlineDocumentContent {
     aiProductionColumns: { enabled: false },
   }
 }
+
+export const TreatmentHeaderSchema = z.object({
+  title: z.string(),
+  writer: z.string(),
+  format: z.string(),
+  genre: z.string(),
+  version: z.string(),
+  date: z.string(),
+})
+
+export const TreatmentConceptSchema = z.object({
+  premise: z.string(),
+  tone: z.string(),
+  theme: z.string(),
+  emotionalPromise: z.string(),
+})
+
+export const TreatmentMainCharacterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.string(),
+  externalWant: z.string(),
+  internalNeed: z.string(),
+  flawOrWound: z.string(),
+  secretOrContradiction: z.string(),
+  arc: z.string(),
+  relationshipPressure: z.string(),
+})
+
+export const TreatmentProseSchema = z.object({
+  opening: z.string(),
+  actOne: z.string(),
+  actTwo: z.string(),
+  actThree: z.string(),
+  customSections: z.array(z.object({ id: z.string(), heading: z.string(), body: z.string() })),
+})
+
+export const TreatmentVisualAndTonalSchema = z.object({
+  overallTone: z.string(),
+  visualWorld: z.string(),
+  recurringImagesOrMotifs: z.string(),
+  musicOrSoundFeeling: z.string(),
+  pacing: z.string(),
+  genreRules: z.string(),
+  compsAndReferences: z.string(),
+})
+
+export const TreatmentOpenQuestionsSchema = z.object({
+  story: z.array(z.string()),
+  character: z.array(z.string()),
+  worldOrMythology: z.array(z.string()),
+  production: z.array(z.string()),
+})
+
+export const TreatmentAiProductionSchema = z.object({
+  visualSequenceRisks: z.string(),
+  characterContinuityRisks: z.string(),
+  locationContinuityRisks: z.string(),
+  vfxOrGenerationChallenges: z.string(),
+  referenceAssetsNeeded: z.string(),
+})
+
+export const TreatmentDocumentContentSchema = z.object({
+  header: TreatmentHeaderSchema,
+  logline: z.string(),
+  concept: TreatmentConceptSchema,
+  mainCharacters: z.array(TreatmentMainCharacterSchema),
+  prose: TreatmentProseSchema,
+  visualAndTonal: TreatmentVisualAndTonalSchema,
+  openQuestions: TreatmentOpenQuestionsSchema,
+  aiProductionImplications: TreatmentAiProductionSchema.optional(),
+})
+export type TreatmentDocumentContent = z.infer<typeof TreatmentDocumentContentSchema>
+
+export function createEmptyTreatmentContent(): TreatmentDocumentContent {
+  return {
+    header: { title: '', writer: '', format: '', genre: '', version: '', date: '' },
+    logline: '',
+    concept: { premise: '', tone: '', theme: '', emotionalPromise: '' },
+    mainCharacters: [],
+    prose: { opening: '', actOne: '', actTwo: '', actThree: '', customSections: [] },
+    visualAndTonal: {
+      overallTone: '',
+      visualWorld: '',
+      recurringImagesOrMotifs: '',
+      musicOrSoundFeeling: '',
+      pacing: '',
+      genreRules: '',
+      compsAndReferences: '',
+    },
+    openQuestions: { story: [], character: [], worldOrMythology: [], production: [] },
+  }
+}
