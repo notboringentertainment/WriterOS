@@ -1222,7 +1222,7 @@ git commit -m "feat(documents): add legacyToDocuments adapter for Synopsis, Outl
 
 The reverse path matters for the future surface phases. For Phase 1, define it for the subset of fields that exist on both sides and prove round-trip preserves data. Anything that exists only in the new document model (header.targetRuntime, treatment, story bible extended sections) is intentionally lost when writing back to legacy.
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 ```ts
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
@@ -1274,12 +1274,12 @@ describe('documentsToLegacy round-trip', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `npm run test:run -- tests/lib/documentMigration.test.ts`
 Expected: FAIL — `documentsToLegacy` not exported.
 
-- [ ] **Step 3: Append implementation**
+- [x] **Step 3: Append implementation**
 
 Append to `client/src/lib/documentMigration.ts`:
 
@@ -1340,17 +1340,17 @@ export function documentsToLegacy(docs: ProjectDocuments): LegacyProjectSlice {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `npm run test:run -- tests/lib/documentMigration.test.ts`
 Expected: PASS — round-trip tests green.
 
-- [ ] **Step 5: Run type check**
+- [x] **Step 5: Run type check**
 
 Run: `npm run check`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add client/src/lib/documentMigration.ts tests/lib/documentMigration.test.ts
