@@ -5,7 +5,7 @@ import { SynopsisHeaderEditor } from '../../client/src/components/writing/synops
 const defaultHeader = {
   title: 'Heat',
   writer: 'Michael Mann',
-  format: 'Feature',
+  format: 'feature',
   genre: 'Crime',
   targetRuntime: '170m',
   comps: ['Collateral', 'Thief'],
@@ -35,7 +35,9 @@ describe('SynopsisHeaderEditor', () => {
     render(<SynopsisHeaderEditor value={defaultHeader} onChange={vi.fn()} />)
     expect(screen.getByDisplayValue('Heat')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Michael Mann')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Feature')).toBeInTheDocument()
+    // format is now a <select> — verify via aria-label
+    const formatSelect = screen.getByLabelText(/format/i) as HTMLSelectElement
+    expect(formatSelect.value).toBe('feature')
     expect(screen.getByDisplayValue('Crime')).toBeInTheDocument()
     expect(screen.getByDisplayValue('170m')).toBeInTheDocument()
   })
@@ -98,5 +100,143 @@ describe('SynopsisHeaderEditor', () => {
     fireEvent.change(input, { target: { value: '' } })
     fireEvent.blur(input)
     expect(onChange).toHaveBeenCalledWith({ comps: [] })
+  })
+})
+
+describe('SynopsisHeaderEditor — format dropdown', () => {
+  it('renders the format dropdown with Feature and Series options', () => {
+    render(<SynopsisHeaderEditor value={{ ...emptyHeader, format: '' }} onChange={vi.fn()} />)
+    const select = screen.getByLabelText(/format/i) as HTMLSelectElement
+    expect(select.tagName).toBe('SELECT')
+    const options = Array.from(select.querySelectorAll('option')).map(o => o.value)
+    expect(options).toEqual(['feature', 'series'])
+  })
+
+  it('empty format renders as Feature selected (legacy default)', () => {
+    render(<SynopsisHeaderEditor value={{ ...emptyHeader, format: '' }} onChange={vi.fn()} />)
+    const select = screen.getByLabelText(/format/i) as HTMLSelectElement
+    expect(select.value).toBe('feature')
+  })
+
+  it('format=feature renders Feature selected', () => {
+    render(<SynopsisHeaderEditor value={{ ...emptyHeader, format: 'feature' }} onChange={vi.fn()} />)
+    const select = screen.getByLabelText(/format/i) as HTMLSelectElement
+    expect(select.value).toBe('feature')
+  })
+
+  it('format=series renders Series selected', () => {
+    render(<SynopsisHeaderEditor value={{ ...emptyHeader, format: 'series' }} onChange={vi.fn()} />)
+    const select = screen.getByLabelText(/format/i) as HTMLSelectElement
+    expect(select.value).toBe('series')
+  })
+
+  it('changing the format dropdown fires onChange with the new format', () => {
+    const onChange = vi.fn()
+    render(<SynopsisHeaderEditor value={{ ...emptyHeader, format: 'feature' }} onChange={onChange} />)
+    const select = screen.getByLabelText(/format/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'series' } })
+    expect(onChange).toHaveBeenCalledWith({ format: 'series' })
+  })
+})
+
+describe('SynopsisHeaderEditor — series rows', () => {
+  it('does NOT render seriesType and episodeLength rows when format is feature', () => {
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'feature' }}
+        onChange={vi.fn()}
+        seriesType="ongoing"
+        episodeLength="hour"
+        onSeriesTypeChange={vi.fn()}
+        onEpisodeLengthChange={vi.fn()}
+      />,
+    )
+    expect(screen.queryByLabelText(/series type/i)).toBeNull()
+    expect(screen.queryByLabelText(/episode length/i)).toBeNull()
+  })
+
+  it('does NOT render seriesType row when format=series but onSeriesTypeChange is missing', () => {
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.queryByLabelText(/series type/i)).toBeNull()
+  })
+
+  it('renders seriesType and episodeLength rows when format=series and both callbacks provided', () => {
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+        seriesType="ongoing"
+        episodeLength="hour"
+        onSeriesTypeChange={vi.fn()}
+        onEpisodeLengthChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByLabelText(/series type/i)).toBeTruthy()
+    expect(screen.getByLabelText(/episode length/i)).toBeTruthy()
+  })
+
+  it('seriesType dropdown defaults to Ongoing when prop is undefined', () => {
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+        onSeriesTypeChange={vi.fn()}
+        onEpisodeLengthChange={vi.fn()}
+      />,
+    )
+    const select = screen.getByLabelText(/series type/i) as HTMLSelectElement
+    expect(select.value).toBe('ongoing')
+  })
+
+  it('episodeLength dropdown defaults to Hour when prop is undefined', () => {
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+        onSeriesTypeChange={vi.fn()}
+        onEpisodeLengthChange={vi.fn()}
+      />,
+    )
+    const select = screen.getByLabelText(/episode length/i) as HTMLSelectElement
+    expect(select.value).toBe('hour')
+  })
+
+  it('changing seriesType fires onSeriesTypeChange with new value', () => {
+    const onSeriesTypeChange = vi.fn()
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+        seriesType="ongoing"
+        episodeLength="hour"
+        onSeriesTypeChange={onSeriesTypeChange}
+        onEpisodeLengthChange={vi.fn()}
+      />,
+    )
+    const select = screen.getByLabelText(/series type/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'limited' } })
+    expect(onSeriesTypeChange).toHaveBeenCalledWith('limited')
+  })
+
+  it('changing episodeLength fires onEpisodeLengthChange with new value', () => {
+    const onEpisodeLengthChange = vi.fn()
+    render(
+      <SynopsisHeaderEditor
+        value={{ ...emptyHeader, format: 'series' }}
+        onChange={vi.fn()}
+        seriesType="ongoing"
+        episodeLength="hour"
+        onSeriesTypeChange={vi.fn()}
+        onEpisodeLengthChange={onEpisodeLengthChange}
+      />,
+    )
+    const select = screen.getByLabelText(/episode length/i) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'half_hour' } })
+    expect(onEpisodeLengthChange).toHaveBeenCalledWith('half_hour')
   })
 })

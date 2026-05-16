@@ -1,11 +1,16 @@
 import React, { useState } from 'react'
 import type { SynopsisDocumentContent } from '@shared/documents'
+import type { SynopsisSeriesType, SynopsisEpisodeLength } from '@shared/documents'
 
 type Header = SynopsisDocumentContent['header']
 
 interface SynopsisHeaderEditorProps {
   value: Header
   onChange: (patch: Partial<Header>) => void
+  seriesType?: SynopsisSeriesType
+  episodeLength?: SynopsisEpisodeLength
+  onSeriesTypeChange?: (next: SynopsisSeriesType) => void
+  onEpisodeLengthChange?: (next: SynopsisEpisodeLength) => void
 }
 
 const labelStyle: React.CSSProperties = {
@@ -35,6 +40,26 @@ const inputStyle: React.CSSProperties = {
 
 const inputFocusStyle: React.CSSProperties = {
   ...inputStyle,
+  borderBottomColor: 'var(--border)',
+}
+
+const selectStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-body)',
+  color: 'var(--fg)',
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '1px solid transparent',
+  outline: 'none',
+  fontSize: '0.9rem',
+  padding: '4px 0',
+  cursor: 'pointer',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  transition: 'border-color 0.15s',
+}
+
+const selectFocusStyle: React.CSSProperties = {
+  ...selectStyle,
   borderBottomColor: 'var(--border)',
 }
 
@@ -77,7 +102,40 @@ function InlineInput({
   )
 }
 
-export function SynopsisHeaderEditor({ value, onChange }: SynopsisHeaderEditorProps) {
+function InlineSelect({
+  value,
+  onChange,
+  'aria-label': ariaLabel,
+  children,
+}: {
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void
+  'aria-label': string
+  children: React.ReactNode
+}) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      aria-label={ariaLabel}
+      style={focused ? selectFocusStyle : selectStyle}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {children}
+    </select>
+  )
+}
+
+export function SynopsisHeaderEditor({
+  value,
+  onChange,
+  seriesType,
+  episodeLength,
+  onSeriesTypeChange,
+  onEpisodeLengthChange,
+}: SynopsisHeaderEditorProps) {
   const [compsInput, setCompsInput] = useState<string | null>(null)
   const [compsFocused, setCompsFocused] = useState(false)
 
@@ -101,6 +159,12 @@ export function SynopsisHeaderEditor({ value, onChange }: SynopsisHeaderEditorPr
     setCompsInput(null)
   }
 
+  const formatValue = value.format === 'series' ? 'series' : 'feature'
+  const showSeriesRows =
+    value.format === 'series' &&
+    onSeriesTypeChange !== undefined &&
+    onEpisodeLengthChange !== undefined
+
   return (
     <div>
       <div style={rowStyle}>
@@ -121,11 +185,14 @@ export function SynopsisHeaderEditor({ value, onChange }: SynopsisHeaderEditorPr
       </div>
       <div style={rowStyle}>
         <span style={labelStyle}>Format</span>
-        <InlineInput
-          aria-label="format"
-          value={value.format}
+        <InlineSelect
+          aria-label="Format"
+          value={formatValue}
           onChange={e => onChange({ format: e.target.value })}
-        />
+        >
+          <option value="feature">Feature</option>
+          <option value="series">Series</option>
+        </InlineSelect>
       </div>
       <div style={rowStyle}>
         <span style={labelStyle}>Genre</span>
@@ -155,6 +222,33 @@ export function SynopsisHeaderEditor({ value, onChange }: SynopsisHeaderEditorPr
           onChange={e => setCompsInput(e.target.value)}
         />
       </div>
+      {showSeriesRows && (
+        <>
+          <div style={rowStyle}>
+            <span style={labelStyle}>Series type</span>
+            <InlineSelect
+              aria-label="Series type"
+              value={seriesType ?? 'ongoing'}
+              onChange={e => onSeriesTypeChange!(e.target.value as SynopsisSeriesType)}
+            >
+              <option value="limited">Limited</option>
+              <option value="ongoing">Ongoing</option>
+            </InlineSelect>
+          </div>
+          <div style={rowStyle}>
+            <span style={labelStyle}>Episode length</span>
+            <InlineSelect
+              aria-label="Episode length"
+              value={episodeLength ?? 'hour'}
+              onChange={e => onEpisodeLengthChange!(e.target.value as SynopsisEpisodeLength)}
+            >
+              <option value="half_hour">Half-hour</option>
+              <option value="hour">Hour</option>
+              <option value="other">Other</option>
+            </InlineSelect>
+          </div>
+        </>
+      )}
     </div>
   )
 }
