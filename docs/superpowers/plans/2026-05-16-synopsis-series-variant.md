@@ -16,7 +16,7 @@
 | 6 | `SynopsisDocumentView` series branch | ✅ DONE | `7f75474` |
 | 7 | `SynopsisTab` routing + lazy-init `content.series` | ✅ DONE | `cdaf53d` |
 | 8 | `wpRouting` + `server/routes` Sam context upgrade | ✅ DONE | `59ae8bf` |
-| 9 | PRD update + full verify (`npm run test:run`, `check`, `build`) | ✅ DONE | see below |
+| 9 | PRD update + full verify (`npm run test:run`, `check`, `build`) | ✅ DONE | `d689e6a` |
 
 ## Files touched per task
 
