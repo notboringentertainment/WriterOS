@@ -790,20 +790,30 @@ Success criteria — evidence:
 
 Goal: replace the simplistic synopsis worksheet with a real synopsis document.
 
+Status: **Implemented** in `2026-05-16-synopsis-surface-redesign` plan, branch `feature/screenplay-editor-core` (commits between `b97518e` and the final cleanup commit of this phase).
+
 Tasks:
 
-- Add synopsis document model.
-- Add Edit View / Document View toggle.
-- Add prose-first synopsis body.
-- Keep or migrate existing fields into paragraph builder/source notes.
-- Add synopsis QA checklist.
-- Update Sam context pack.
+- Add synopsis document model — done in `shared/documents.ts` (Phase 1).
+- Add Edit View / Document View toggle — `SynopsisViewToggle` + `SynopsisDocumentView` + `SynopsisEditView` + thin `SynopsisTab` shell.
+- Add prose-first synopsis body — `SynopsisProseEditor` with prose ↔ paragraphs mode switch.
+- Keep or migrate existing fields into paragraph builder/source notes — legacy `state.synopsis` mirrored from `documents.synopsis` on every write; default-mode heuristic prevents content from being hidden in prose mode.
+- Add synopsis QA checklist — `SynopsisQaChecklist` inline 8-checkbox grid.
+- Update Sam context pack — **deferred** to a later phase per plan §8 Q7. Sam still receives `state.synopsis` legacy shape via the mirror; no `wpRouting.ts` changes this phase.
 
-Success criteria:
+Decisions locked in:
 
-- Writer can create a one-page synopsis artifact.
-- Existing logline and section text survive migration.
-- Sam can evaluate the synopsis as a synopsis, not a beat sheet.
+- `state.documents.synopsis` is the canonical source for the Synopsis surface; `state.synopsis` remains a live mirror for `wpRouting`.
+- `saveProjectState` now preserves document-only Synopsis fields (header, QA, aiProductionImplications, viewPreferences). The destructive `legacyToDocuments(state)` call on save was replaced by `mirrorSynopsisFromLegacy` plus pass-through for other document surfaces. Outline / Treatment / Story Bible documents are untouched in this phase.
+- `DocumentViewPreferencesSchema` gained an optional `synopsisComposeMode: 'prose' | 'paragraphs'`. Backward-compatible.
+- Two-click clear matches the Voice Profile Drawer pattern; resets both `state.synopsis` and `state.documents.synopsis`.
+- Markdown export, logline sub-fields, AI Production Implications surface, and Sam context upgrade are deferred to later phases per plan §8.
+
+Success criteria — evidence:
+
+- Writer can create a one-page synopsis artifact — header + logline + prose body + QA + Document View rendering all available in the new Synopsis surface.
+- Existing logline and section text survive migration — `mirrorSynopsisFromLegacy` preservation tests in `tests/lib/projectState.test.ts`; default-mode heuristic and regression-guard tests in `tests/components/SynopsisProseEditor.test.tsx` (resolution-only and middle-only legacy data renders correctly in both modes).
+- Sam can evaluate the synopsis as a synopsis — Sam's context pack continues to read `state.synopsis` legacy shape via mirror; mirror invariant verified by `tests/lib/useProjectState.test.ts` tests on `setSynopsisDocument`.
 
 ### Phase 3: Outline Surface Redesign
 
