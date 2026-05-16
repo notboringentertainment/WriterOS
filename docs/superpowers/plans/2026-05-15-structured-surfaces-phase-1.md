@@ -633,7 +633,7 @@ git commit -m "feat(documents): add Treatment document content type and Zod sche
 
 PRD calls for cover/identity, one-page pitch, tone & style, premise & world, characters with detailed sheets, story engine, episode/sequence/chapter map. Legacy fields cover only a thin slice.
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 ```ts
 import {
@@ -690,12 +690,12 @@ describe('StoryBibleDocumentContent', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: FAIL — `StoryBibleDocumentContentSchema` not exported.
 
-- [ ] **Step 3: Append implementation**
+- [x] **Step 3: Append implementation**
 
 ```ts
 export const StoryBibleStatusSchema = z.enum(['pitch', 'development', 'production', 'living_canon'])
@@ -802,12 +802,12 @@ export function createEmptyStoryBibleContent(): StoryBibleDocumentContent {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `npm run test:run -- tests/shared/documents.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/documents.ts tests/shared/documents.test.ts
