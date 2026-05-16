@@ -16,6 +16,7 @@ import {
   ProjectDocumentsSchema,
   createEmptyDocuments,
   type ProjectDocuments,
+  DocumentViewPreferencesSchema,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -276,5 +277,32 @@ describe('AuthoredDocumentState wrapper', () => {
     const empty = createEmptyDocuments()
     const bad = { ...empty.synopsis, version: -1 }
     expect(AuthoredDocumentStateSchema(SynopsisDocumentContentSchema).safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('DocumentViewPreferencesSchema — synopsisComposeMode', () => {
+  it('accepts prose mode', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({ synopsisComposeMode: 'prose' })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts paragraphs mode', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({ synopsisComposeMode: 'paragraphs' })
+    expect(result.success).toBe(true)
+  })
+
+  it('still accepts an object with no synopsisComposeMode (backward compatible)', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it('still accepts an object with only activeView set (backward compatible)', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({ activeView: 'edit' })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an unknown synopsisComposeMode value', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({ synopsisComposeMode: 'outline' })
+    expect(result.success).toBe(false)
   })
 })

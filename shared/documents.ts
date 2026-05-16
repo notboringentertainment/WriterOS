@@ -397,6 +397,7 @@ export const DocumentViewPreferencesSchema = z.object({
   activeView: z.enum(['edit', 'document']).optional(),
   collapsedSections: z.array(z.string()).optional(),
   visibleDepth: z.enum(['core', 'advanced', 'continuity', 'ai_production']).optional(),
+  synopsisComposeMode: z.enum(['prose', 'paragraphs']).optional(),
 })
 export type DocumentViewPreferences = z.infer<typeof DocumentViewPreferencesSchema>
 
