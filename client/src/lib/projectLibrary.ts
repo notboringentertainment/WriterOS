@@ -148,3 +148,42 @@ export function createBlankProject(projects: StoredProject[]) {
 export function getStoredProject(projectId: string, projects: StoredProject[]) {
   return projects.find(project => project.id === projectId)
 }
+
+export function deleteProjectFromLibrary(
+  projectId: string,
+  projects: StoredProject[],
+): ActiveProjectLibrary {
+  const target = projects.find(project => project.id === projectId)
+  if (!target) {
+    const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? projects[0]?.id ?? ''
+    const active = projects.find(project => project.id === activeProjectId) ?? projects[0]
+    return {
+      activeProjectId: active?.id ?? '',
+      state: active?.state ?? defaultProjectState(),
+      projects,
+    }
+  }
+
+  const remaining = projects.filter(project => project.id !== projectId)
+
+  if (remaining.length === 0) {
+    writeProjectLibrary([])
+    return createBlankProject([])
+  }
+
+  const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
+  const nextActive =
+    previousActiveId && previousActiveId !== projectId
+      ? remaining.find(project => project.id === previousActiveId) ?? remaining[0]
+      : remaining[0]
+
+  writeProjectLibrary(remaining)
+  writeActiveProjectId(nextActive.id)
+  saveProjectState(nextActive.state)
+
+  return {
+    activeProjectId: nextActive.id,
+    state: nextActive.state,
+    projects: remaining,
+  }
+}
