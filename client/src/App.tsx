@@ -285,6 +285,8 @@ export default function App() {
       onProjectTitleChange={title => project.setMeta({ title })}
       onProjectChange={project.switchProject}
       onNewProject={project.createProject}
+      onSaveProject={project.saveNow}
+      onDeleteProject={project.deleteProject}
       railProps={railProps}
     >
       {renderCenter()}

@@ -39,6 +39,8 @@ interface ShellProps {
   onProjectTitleChange?: (title: string) => void
   onProjectChange?: (projectId: string) => void
   onNewProject?: () => void
+  onSaveProject?: () => void
+  onDeleteProject?: () => void
   railProps: RailProps
   children: React.ReactNode
 }
@@ -51,6 +53,8 @@ export function Shell({
   onProjectTitleChange,
   onProjectChange,
   onNewProject,
+  onSaveProject,
+  onDeleteProject,
   railProps,
   children,
 }: ShellProps) {
@@ -105,6 +109,8 @@ export function Shell({
           onProjectTitleChange={onProjectTitleChange}
           onProjectChange={onProjectChange}
           onNewProject={onNewProject}
+          onSaveProject={onSaveProject}
+          onDeleteProject={onDeleteProject}
           onTabChange={setActiveTab}
           onWritersRoom={handleWritersRoom}
           onVoiceProfile={toggleVoiceProfile}

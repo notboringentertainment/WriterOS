@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react'
 import { getDisplayProjectTitle, normalizeProjectTitle } from '../../lib/projectIdentity'
 import type { ProjectSummary } from '../../lib/projectLibrary'
+import { ProjectMenu } from './ProjectMenu'
+import { SavedToast } from './SavedToast'
 
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
 
@@ -20,6 +22,8 @@ interface TopBarProps {
   onProjectTitleChange?: (title: string) => void
   onProjectChange?: (projectId: string) => void
   onNewProject?: () => void
+  onSaveProject?: () => void
+  onDeleteProject?: () => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
   onVoiceProfile: () => void
@@ -35,6 +39,8 @@ export function TopBar({
   onProjectTitleChange,
   onProjectChange,
   onNewProject,
+  onSaveProject,
+  onDeleteProject,
   onTabChange,
   onWritersRoom,
   onVoiceProfile,
@@ -42,9 +48,23 @@ export function TopBar({
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
+  const [savedToastNonce, setSavedToastNonce] = useState(0)
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
+  const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange)
+
+  function handleSaveProject() {
+    onSaveProject?.()
+    setSavedToastNonce(n => n + 1)
+  }
+
+  function handleDeleteProject() {
+    if (!onDeleteProject) return
+    const confirmed = window.confirm(`Delete "${displayTitle}"? This cannot be undone.`)
+    if (!confirmed) return
+    onDeleteProject()
+  }
 
   function startTitleEdit() {
     if (!onProjectTitleChange) return
@@ -154,6 +174,16 @@ export function TopBar({
             New script
           </button>
         )}
+
+        {showProjectMenu && (
+          <ProjectMenu
+            onSave={handleSaveProject}
+            onRename={startTitleEdit}
+            onDelete={handleDeleteProject}
+          />
+        )}
+
+        <SavedToast key={savedToastNonce} visible={savedToastNonce > 0} />
       </div>
 
       <div style={styles.rightZone}>
