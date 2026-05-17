@@ -242,6 +242,16 @@ Success criteria:
 - Safe migration path from current local state.
 - No accidental reintroduction of stale prototype scaffolds.
 
+### In-branch UX: Save / Rename / Delete
+
+Within the localStorage boundary above, the TopBar exposes a project-actions menu next to the project switcher and "New script" button. The menu binds to the active project.
+
+- **Save** — force-flushes pending writes and shows a transient "Saved ✓" pill. Auto-save still runs on every change; Save provides explicit reassurance, not a different persistence path.
+- **Rename** — opens the existing inline title editor in the TopBar. The click-title-to-edit fast path is preserved; the menu item adds discoverability.
+- **Delete** — `window.confirm` against the active project title, then removes it from the library. If other projects remain, switches to the most-recent. If it was the only project, auto-seeds a blank (matches `loadActiveProjectLibrary` fallback). To delete a different project, the user switches to it first.
+
+Explicitly deferred to the long-term storage PRD: export/import to file, named snapshots/version history, undo for delete, custom in-app confirm modal, and cloud sync.
+
 ## Workstream 5: Measured Pagination And Export
 
 Goal: replace estimated retrieval pages with measured document pages when the product needs export-quality page references.
