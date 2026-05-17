@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { defaultProjectState } from './projectState'
 import {
   createBlankProject,
+  deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
   saveProjectToLibrary,
@@ -275,6 +276,18 @@ export function useProjectState() {
     setProjects(nextProjects)
   }, [activeProjectId, projects, state])
 
+  const saveNow = useCallback(() => {
+    const nextProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    setProjects(nextProjects)
+  }, [activeProjectId, projects, state])
+
+  const deleteProject = useCallback(() => {
+    const next = deleteProjectFromLibrary(activeProjectId, projects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [activeProjectId, projects])
+
   return {
     state,
     activeProjectId,
@@ -298,5 +311,7 @@ export function useProjectState() {
     updateScript,
     createProject,
     switchProject,
+    saveNow,
+    deleteProject,
   }
 }
