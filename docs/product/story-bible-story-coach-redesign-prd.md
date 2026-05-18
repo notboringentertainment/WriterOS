@@ -339,7 +339,7 @@ V1 must not expand `StoryBibleDocumentContentSchema`. The existing schema covers
 
 Allowed schema additions for V1:
 
-- Optional `storyBibleViewPreferences` only if needed to preserve UX state (e.g., which character card is expanded).
+- Optional, backward-compatible fields on `documents.storyBible.viewPreferences` via `DocumentViewPreferencesSchema` only if needed to preserve Story Bible UX or migration state (e.g., `migratedFromLegacyStoryBible`, expanded character IDs).
 
 Disallowed schema changes for V1:
 
@@ -356,7 +356,7 @@ The legacy `state.storyBible` mirror is derived from `documents.storyBible.conte
 - `state.storyBible.world.setting` ← `documents.storyBible.content.premiseAndWorld.premise`.
 - `state.storyBible.world.toneAnchors` ← `documents.storyBible.content.toneAndStyle.comps.join(', ')`.
 - `state.storyBible.world.voiceNotes` ← `documents.storyBible.content.toneAndStyle.dialogueStyle`.
-- `state.storyBible.themes` ← `documents.storyBible.content.onePagePitch.centralQuestion`.
+- `state.storyBible.themes` ← `documents.storyBible.content.onePagePitch.whyThisMatters`.
 - `state.storyBible.rules` ← `documents.storyBible.content.premiseAndWorld.worldRules`.
 
 This mirror is one-way for V1: writes from the story-coach Edit View land in `documents.storyBible.content` and refresh `state.storyBible` in the same transaction. Direct writes to `state.storyBible` are blocked once the story-coach Edit View is the default surface.
@@ -422,9 +422,10 @@ Files to retire after the story-coach Edit View is the default:
 - `state.storyBible.world.setting` lands on `premiseAndWorld.premise`.
 - `state.storyBible.world.toneAnchors` tokenizes into `toneAndStyle.comps`.
 - `state.storyBible.world.voiceNotes` lands on `toneAndStyle.dialogueStyle`.
-- `state.storyBible.themes` lands on `onePagePitch.centralQuestion`.
+- `state.storyBible.themes` lands on `onePagePitch.whyThisMatters`.
 - `state.storyBible.rules` lands on `premiseAndWorld.worldRules`.
 - Migration runs once. A `migratedFromLegacyStoryBible` flag on `documents.storyBible.viewPreferences` prevents re-migration. The flag must be added to `DocumentViewPreferencesSchema` in the same slice.
+- This migration flag is a view-preference guard, not an expansion of `StoryBibleDocumentContentSchema`.
 - No content is deleted during migration. Empty legacy fields produce empty document fields, not undefined.
 - Feature/Series flips preserve all authored content. Format flips never delete characters, story-engine answers, world content, or cover identity.
 - Save/load must continue preserving document-only fields, especially `characters[]` substructure and `cover.status`.
@@ -440,7 +441,7 @@ Casey context (after migration):
 - One-page pitch: logline, in a nutshell, core promise, central question.
 - Tone and style: tone words, comps, anti-comps, dialogue style, must never feel like.
 - Characters: full story-coach character fields (want, need, flaw, secret, contradiction, arc, relationship pressure, behavioral anchors, speech patterns, never write them as).
-- Themes: derived from `onePagePitch.centralQuestion`, supplemented by tone signals.
+- Themes: derived from `onePagePitch.centralQuestion` and `onePagePitch.whyThisMatters`, supplemented by tone signals.
 
 Zoe context (after migration):
 
@@ -545,7 +546,7 @@ Update `tests/lib/wpRouting.test.ts` and server route tests in Sub-phase 4:
 - Refactor `StoryBibleTab` to render the story-coach Edit View for both Feature and Series.
 - Preserve current Document View (still legacy or absent in V1 - Document View comes in Sub-phase 3).
 - Implement schema migration: legacy `state.storyBible` → `documents.storyBible.content` once on first mount.
-- Add `migratedFromLegacyStoryBible` to `OutlineViewPreferencesSchema`-equivalent extension on `DocumentViewPreferencesSchema`.
+- Add optional `migratedFromLegacyStoryBible` to `DocumentViewPreferencesSchema` and store it on `documents.storyBible.viewPreferences`.
 
 ### Sub-phase 3 - Document View
 

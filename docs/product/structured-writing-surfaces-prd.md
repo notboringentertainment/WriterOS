@@ -451,11 +451,16 @@ May 18 direction:
 
 - Story Bible must follow the same plain-language story-assessment standard as Outline and Synopsis.
 - Do not expose the full professional bible template as a giant form in V1.
-- Edit View should ask practical questions that help the writer define premise, tone, character engines, world rules, canon, open questions, and series durability without requiring bible jargon.
+- Edit View should ask practical questions that help the writer define premise, tone, character engines, world rules, canon, and series durability without requiring bible jargon.
 - Professional labels such as Pitch Bible, Living Bible, canon log, story engine, and continuity architecture may appear in hidden mappings, Document View, and advanced controls only where they help rather than intimidate.
 - The dedicated PRD now exists at `docs/product/story-bible-story-coach-redesign-prd.md`. Treat it as canonical for the Story Bible surface, including its V1 scope and deferred sections (locations, continuity log, open questions, AI production annex).
 
-Recommended V1 sections:
+V1 implementation subset:
+
+- Build only the subset named by `docs/product/story-bible-story-coach-redesign-prd.md`: cover, one-page pitch, tone/style, world, characters, story engine, derived readiness, and a read-only professional Document View.
+- Defer locations, continuity log, open questions, AI production annex, and pitch-vs-living density controls to later PRDs.
+
+Long-term Story Bible model:
 
 - Cover and identity:
   - title
@@ -548,27 +553,24 @@ Recommended V1 sections:
 
 Edit View behavior:
 
-- Use sections and sub-sections, not one long flat form.
-- Provide two bible modes:
-  - **Pitch Bible:** curated, readable, persuasive.
-  - **Living Bible:** complete, searchable, operational.
-- Allow advanced sections to be hidden by default.
+- Use grouped story-assessment cards, not one long flat form.
+- V1 does not expose a Pitch Bible / Living Bible mode toggle. Future pitch-vs-living density controls need a separate PRD.
+- Allow advanced character detail to stay hidden by default.
 - Character sheets should support both compact cards and expanded detail.
-- Continuity log should feel like a table, not a paragraph field.
+- A future continuity log should feel like a table, not a paragraph field.
 
 Document View behavior:
 
-- Render as either:
-  - Pitch Bible view
-  - Living Bible view
-- Keep AI production annex visually separate.
+- V1 renders one professional bible artifact from authored fields.
+- Future PRDs may add Pitch Bible and Living Bible document-density modes.
+- Keep any future AI production annex visually separate.
 
 Agent behavior:
 
 - Casey owns character psychology, theme-through-character, emotional truth, relationships, and voice.
 - Zoe owns world rules, continuity, setting logic, mythology, and production consistency.
 - Writing Partner can use the bible as global project grounding.
-- Agents should distinguish locked canon from open questions.
+- Agents should distinguish locked canon from open questions when those fields exist.
 
 ## UX Model
 
