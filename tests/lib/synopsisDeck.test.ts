@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   FEATURE_SYNOPSIS_DECK,
   SERIES_SYNOPSIS_DECK,
+  buildSynopsisPatch,
   getDeckForFormat,
   getMappingPaths,
   isComposite,
@@ -71,6 +72,46 @@ describe('SERIES_SYNOPSIS_DECK', () => {
   it('marks every prompt as deck "series"', () => {
     for (const p of SERIES_SYNOPSIS_DECK) {
       expect(p.deck).toBe('series')
+    }
+  })
+})
+
+describe('prompt input structure', () => {
+  const ALL_PROMPTS: readonly SynopsisPromptDef[] = [
+    ...FEATURE_SYNOPSIS_DECK,
+    ...SERIES_SYNOPSIS_DECK,
+  ]
+
+  it('every prompt has at least one input', () => {
+    for (const p of ALL_PROMPTS) {
+      expect(p.inputs.length, `prompt ${p.id} must have at least one input`).toBeGreaterThan(0)
+    }
+  })
+
+  it('every input has a valid kind', () => {
+    const validKinds = new Set([
+      'text',
+      'textarea',
+      'comps',
+      'series-type',
+      'episode-length',
+      'future-seasons',
+      'characters',
+    ])
+    for (const p of ALL_PROMPTS) {
+      for (const i of p.inputs) {
+        expect(validKinds.has(i.kind), `prompt ${p.id} kind "${i.kind}" must be valid`).toBe(true)
+      }
+    }
+  })
+
+  it('composite prompts (multiple inputs) carry a per-input label', () => {
+    for (const p of ALL_PROMPTS) {
+      if (p.inputs.length > 1) {
+        for (const i of p.inputs) {
+          expect(i.label, `composite prompt ${p.id} input ${i.path} must have a label`).toBeDefined()
+        }
+      }
     }
   })
 })
@@ -165,6 +206,53 @@ describe('resolveSynopsisPath', () => {
   it('returns not-defined for series paths when series block is absent', () => {
     const noSeries = createEmptySynopsisContent()
     expect(resolveSynopsisPath(noSeries, 'series.showOverview').defined).toBe(false)
+  })
+})
+
+describe('buildSynopsisPatch', () => {
+  it('builds a top-level patch for a single-segment path', () => {
+    const content = synopsisProbeContent()
+    const patch = buildSynopsisPatch(content, 'header.title', 'Untitled')
+    expect(patch).toEqual({
+      header: { ...content.header, title: 'Untitled' },
+    })
+  })
+
+  it('preserves untouched sibling fields when patching nested paths', () => {
+    const content = synopsisProbeContent()
+    content.logline.protagonist = 'A reluctant pilot'
+    const patch = buildSynopsisPatch(content, 'logline.text', 'A reluctant pilot saves a city.')
+    expect(patch.logline?.protagonist).toBe('A reluctant pilot')
+    expect(patch.logline?.text).toBe('A reluctant pilot saves a city.')
+  })
+
+  it('patches a 3-level nested series path', () => {
+    const content = synopsisProbeContent()
+    const patch = buildSynopsisPatch(content, 'series.pilot.logline', 'A small thing breaks.')
+    expect(patch.series?.pilot.logline).toBe('A small thing breaks.')
+    expect(patch.series?.showOverview).toBe(content.series!.showOverview)
+  })
+
+  it('auto-inits content.series from createEmptySeriesContent when absent', () => {
+    const content = { ...synopsisProbeContent(), series: undefined }
+    const patch = buildSynopsisPatch(content, 'series.showOverview', 'A renewable engine.')
+    expect(patch.series?.showOverview).toBe('A renewable engine.')
+    expect(patch.series?.pilot).toEqual({ logline: '', prose: '' })
+  })
+
+  it('does not mutate the input content', () => {
+    const content = synopsisProbeContent()
+    const before = JSON.stringify(content)
+    buildSynopsisPatch(content, 'header.title', 'X')
+    buildSynopsisPatch(content, 'series.pilot.prose', 'Y')
+    expect(JSON.stringify(content)).toBe(before)
+  })
+
+  it('is deterministic for identical input', () => {
+    const content = synopsisProbeContent()
+    const a = buildSynopsisPatch(content, 'series.pilot.logline', 'X')
+    const b = buildSynopsisPatch(content, 'series.pilot.logline', 'X')
+    expect(a).toEqual(b)
   })
 })
 

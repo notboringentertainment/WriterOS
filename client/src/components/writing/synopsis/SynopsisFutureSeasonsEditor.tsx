@@ -4,9 +4,14 @@ import type { SynopsisFutureSeason } from '@shared/documents'
 interface SynopsisFutureSeasonsEditorProps {
   value: SynopsisFutureSeason[]
   onChange: (next: SynopsisFutureSeason[]) => void
+  hideHeading?: boolean
 }
 
-export function SynopsisFutureSeasonsEditor({ value, onChange }: SynopsisFutureSeasonsEditorProps) {
+export function SynopsisFutureSeasonsEditor({
+  value,
+  onChange,
+  hideHeading = false,
+}: SynopsisFutureSeasonsEditorProps) {
   function handleAdd() {
     onChange([...value, { id: crypto.randomUUID(), label: '', summary: '' }])
   }
@@ -25,7 +30,7 @@ export function SynopsisFutureSeasonsEditor({ value, onChange }: SynopsisFutureS
 
   return (
     <div style={styles.wrapper}>
-      <h3 style={styles.sectionHeader}>Where It Goes</h3>
+      {!hideHeading && <h3 style={styles.sectionHeader}>Where It Goes</h3>}
       <div style={styles.list}>
         {value.map(season => (
           <div key={season.id} style={styles.row}>

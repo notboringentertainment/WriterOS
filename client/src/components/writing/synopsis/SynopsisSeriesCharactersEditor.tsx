@@ -4,9 +4,14 @@ import type { SynopsisSeriesCharacter } from '@shared/documents'
 interface SynopsisSeriesCharactersEditorProps {
   value: SynopsisSeriesCharacter[]
   onChange: (next: SynopsisSeriesCharacter[]) => void
+  hideHeading?: boolean
 }
 
-export function SynopsisSeriesCharactersEditor({ value, onChange }: SynopsisSeriesCharactersEditorProps) {
+export function SynopsisSeriesCharactersEditor({
+  value,
+  onChange,
+  hideHeading = false,
+}: SynopsisSeriesCharactersEditorProps) {
   function handleAdd() {
     onChange([...value, { id: crypto.randomUUID(), name: '', role: '', bio: '', arcPerSeason: [] }])
   }
@@ -44,7 +49,7 @@ export function SynopsisSeriesCharactersEditor({ value, onChange }: SynopsisSeri
 
   return (
     <div style={styles.wrapper}>
-      <h3 style={styles.sectionHeader}>Characters</h3>
+      {!hideHeading && <h3 style={styles.sectionHeader}>Characters</h3>}
       <div style={styles.list}>
         {value.map(char => (
           <div key={char.id} style={styles.row}>

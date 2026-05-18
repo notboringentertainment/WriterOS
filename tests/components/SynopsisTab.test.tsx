@@ -5,8 +5,8 @@ import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/doc
 import { createEmptySeriesContent } from '@shared/documents'
 
 function makeDocument(
-  proseOverrides: Partial<SynopsisDocumentContent['prose']> = {},
-  viewPreferences?: { activeView?: 'edit' | 'document'; synopsisComposeMode?: 'prose' | 'paragraphs' },
+  override: Partial<SynopsisDocumentContent> = {},
+  viewPreferences?: { activeView?: 'edit' | 'document' },
 ): AuthoredDocumentState<SynopsisDocumentContent> {
   return {
     version: 1,
@@ -15,14 +15,7 @@ function makeDocument(
     content: {
       header: { title: '', writer: '', format: '', genre: '', targetRuntime: '', comps: [] },
       logline: { text: '', protagonist: '', goal: '', obstacle: '', stakes: '', hook: '' },
-      prose: {
-        opening: '',
-        escalation: '',
-        middle: '',
-        climax: '',
-        resolution: '',
-        ...proseOverrides,
-      },
+      prose: { opening: '', escalation: '', middle: '', climax: '', resolution: '' },
       qa: {
         protagonistNamedEarly: false,
         goalClear: false,
@@ -33,6 +26,7 @@ function makeDocument(
         toneMatchesProject: false,
         noUnnecessarySubplot: false,
       },
+      ...override,
     },
     viewPreferences,
   }
@@ -40,8 +34,8 @@ function makeDocument(
 
 const defaultDocument = makeDocument()
 
-describe('SynopsisTab', () => {
-  it('renders the title "Synopsis" and subtitle', () => {
+describe('SynopsisTab — page chrome', () => {
+  it('renders the "Synopsis" title and the reader-facing subtitle', () => {
     render(
       <SynopsisTab
         document={defaultDocument}
@@ -51,10 +45,10 @@ describe('SynopsisTab', () => {
       />,
     )
     expect(screen.getByText('Synopsis')).toBeInTheDocument()
-    expect(screen.getByText('Reader-facing story spine.')).toBeInTheDocument()
+    expect(screen.getByText('Help an outside reader understand your story.')).toBeInTheDocument()
   })
 
-  it('renders the view toggle pill with Edit and Document segments', () => {
+  it('renders the Edit/Document view toggle', () => {
     render(
       <SynopsisTab
         document={defaultDocument}
@@ -67,7 +61,7 @@ describe('SynopsisTab', () => {
     expect(screen.getByRole('button', { name: 'Document' })).toBeInTheDocument()
   })
 
-  it('defaults to edit view when viewPreferences.activeView is not set', () => {
+  it('renders the project format selector in the page chrome', () => {
     render(
       <SynopsisTab
         document={defaultDocument}
@@ -76,8 +70,19 @@ describe('SynopsisTab', () => {
         onClear={vi.fn()}
       />,
     )
-    // EditView includes the QA checklist with heading "Review"
-    expect(screen.getByText('Review')).toBeInTheDocument()
+    expect(screen.getByLabelText('Format')).toBeInTheDocument()
+  })
+
+  it('defaults to Edit view (story-coach Edit View visible)', () => {
+    render(
+      <SynopsisTab
+        document={defaultDocument}
+        onContentPatch={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('synopsis-story-coach-edit-view')).toBeInTheDocument()
   })
 
   it('renders DocumentView when viewPreferences.activeView is "document"', () => {
@@ -90,24 +95,11 @@ describe('SynopsisTab', () => {
         onClear={vi.fn()}
       />,
     )
-    // DocumentView always renders a "Last edited" footer
     expect(screen.getByText(/Last edited/)).toBeInTheDocument()
+    expect(screen.queryByTestId('synopsis-story-coach-edit-view')).not.toBeInTheDocument()
   })
 
-  it('renders EditView when viewPreferences.activeView is "edit"', () => {
-    const doc = makeDocument({}, { activeView: 'edit' })
-    render(
-      <SynopsisTab
-        document={doc}
-        onContentPatch={vi.fn()}
-        onViewPreferencesPatch={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    )
-    expect(screen.getByText('Review')).toBeInTheDocument()
-  })
-
-  it('clicking the Document toggle fires onViewPreferencesPatch({ activeView: "document" })', () => {
+  it('clicking Document fires onViewPreferencesPatch({ activeView: "document" })', () => {
     const onViewPreferencesPatch = vi.fn()
     render(
       <SynopsisTab
@@ -121,7 +113,7 @@ describe('SynopsisTab', () => {
     expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'document' })
   })
 
-  it('clicking the Edit toggle fires onViewPreferencesPatch({ activeView: "edit" })', () => {
+  it('clicking Edit fires onViewPreferencesPatch({ activeView: "edit" })', () => {
     const onViewPreferencesPatch = vi.fn()
     const doc = makeDocument({}, { activeView: 'document' })
     render(
@@ -135,69 +127,82 @@ describe('SynopsisTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'edit' })
   })
+})
 
-  it('opening-only → prose: heuristic picks prose mode (single prose editor textarea)', () => {
-    // prose.opening is non-empty; escalation/middle/climax/resolution all empty → 'prose'
-    const doc = makeDocument({ opening: 'A woman walks into a bar.' })
+describe('SynopsisTab — story-coach Edit View', () => {
+  it('feature mode renders plain-language Feature questions', () => {
     render(
       <SynopsisTab
-        document={doc}
+        document={defaultDocument}
+        projectFormat="feature"
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
       />,
     )
-    // prose mode renders a single unified textarea with aria-label="prose editor"
-    expect(screen.getByRole('textbox', { name: 'prose editor' })).toBeInTheDocument()
+    expect(screen.getByText('Say the movie in one clean sentence.')).toBeInTheDocument()
+    expect(screen.getByText('How does it end?')).toBeInTheDocument()
   })
 
-  it('any non-opening field → paragraphs: heuristic picks paragraphs mode (Middle label visible)', () => {
-    // prose.middle is non-empty → heuristic picks 'paragraphs'
-    const doc = makeDocument({ middle: 'Things escalate badly.' })
+  it('feature mode does NOT render professional doc labels as visible Edit View text', () => {
     render(
       <SynopsisTab
-        document={doc}
+        document={defaultDocument}
+        projectFormat="feature"
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
       />,
     )
-    // paragraphs mode renders individual labeled fields; "Middle" is one of them
-    expect(screen.getByText('Middle')).toBeInTheDocument()
+    // documentLabels like "Logline" / "Climax" / "Resolution" must never appear as visible text.
+    // (Question text, helper text, and group labels never include these strings.)
+    expect(screen.queryByText('Logline')).not.toBeInTheDocument()
+    expect(screen.queryByText('Climax')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resolution')).not.toBeInTheDocument()
   })
 
-  it('resolution-only → paragraphs: regression guard for resolution-only legacy data', () => {
-    const doc = makeDocument({ resolution: 'She wins in the end.' })
+  it('series mode renders plain-language Series questions', () => {
     render(
       <SynopsisTab
-        document={doc}
+        document={defaultDocument}
+        projectFormat="series"
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
       />,
     )
-    // paragraphs mode shows all field labels including "Opening" and "Resolution"
-    expect(screen.getByText('Opening')).toBeInTheDocument()
-    expect(screen.getByText('Resolution')).toBeInTheDocument()
+    expect(
+      screen.getByText('What world, tone, and repeatable pressure should a buyer understand first?'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('What is the pilot in one sentence?')).toBeInTheDocument()
   })
 
-  it('stored preference wins: synopsisComposeMode="prose" overrides heuristic', () => {
-    // middle is set → heuristic would pick 'paragraphs', but stored pref says 'prose'
-    const doc = makeDocument({ middle: 'Things escalate badly.' }, { synopsisComposeMode: 'prose' })
-    render(
+  it('feature mode shows feature readiness checks; series mode does not', () => {
+    const { rerender } = render(
       <SynopsisTab
-        document={doc}
+        document={defaultDocument}
+        projectFormat="feature"
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
       />,
     )
-    // prose mode: single unified textarea; no "Middle" label visible
-    expect(screen.getByRole('textbox', { name: 'prose editor' })).toBeInTheDocument()
-    expect(screen.queryByText('Middle')).not.toBeInTheDocument()
+    expect(screen.getByText('Can a reader name the lead early?')).toBeInTheDocument()
+
+    rerender(
+      <SynopsisTab
+        document={defaultDocument}
+        projectFormat="series"
+        onContentPatch={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText('Can a reader name the lead early?')).not.toBeInTheDocument()
+    expect(screen.getByText('Is the repeatable engine clear?')).toBeInTheDocument()
   })
 
-  it('clearing fires onClear after two-step confirmation', () => {
+  it('clear button confirms after two clicks', () => {
     const onClear = vi.fn()
     render(
       <SynopsisTab
@@ -207,57 +212,19 @@ describe('SynopsisTab', () => {
         onClear={onClear}
       />,
     )
-    // First click arms the confirm state
     fireEvent.click(screen.getByRole('button', { name: /clear synopsis/i }))
-    // Second click confirms and fires onClear
     fireEvent.click(screen.getByRole('button', { name: /click again to confirm/i }))
     expect(onClear).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('SynopsisTab — format routing', () => {
-  it('legacy format = "" renders feature edit view + QA checklist', () => {
-    const doc = makeDocument()
-    doc.content.header.format = ''
-    render(
-      <SynopsisTab
-        document={doc}
-        onContentPatch={vi.fn()}
-        onViewPreferencesPatch={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    )
-    // Feature: QA "Protagonist named early" item is present
-    expect(screen.getByText(/protagonist named early/i)).toBeTruthy()
-    // No Show Overview in feature mode
-    expect(screen.queryByText(/show overview/i)).toBeNull()
-  })
-
-  it('project format = "series" routes to series edit view and hides QA', () => {
-    const doc = makeDocument()
-    doc.content.header.format = 'feature'
-    render(
-      <SynopsisTab
-        document={doc}
-        projectFormat="series"
-        onContentPatch={vi.fn()}
-        onViewPreferencesPatch={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    )
-    expect(screen.getByText(/show overview/i)).toBeTruthy()
-    expect(screen.queryByText(/protagonist named early/i)).toBeNull()
-  })
-
-  it('format dropdown delegates project format changes without a second content patch', () => {
+describe('SynopsisTab — format authority', () => {
+  it('format dropdown delegates to onProjectFormatChange without firing onContentPatch', () => {
     const onContentPatch = vi.fn()
     const onProjectFormatChange = vi.fn()
-    const doc = makeDocument()
-    expect(doc.content.series).toBeUndefined()
-    doc.content.header.format = 'feature'
     render(
       <SynopsisTab
-        document={doc}
+        document={defaultDocument}
         projectFormat="feature"
         onProjectFormatChange={onProjectFormatChange}
         onContentPatch={onContentPatch}
@@ -265,19 +232,33 @@ describe('SynopsisTab — format routing', () => {
         onClear={vi.fn()}
       />,
     )
-    // Simulate the format dropdown in the feature header firing: header.format = 'series'
-    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'series' } })
-
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'series' } })
     expect(onProjectFormatChange).toHaveBeenCalledWith('series')
     expect(onContentPatch).not.toHaveBeenCalled()
   })
 
-  it('fallback lazy-init: flipping format to "series" initializes content.series when no project callback is supplied', () => {
+  it('selecting the same format does not fire any callback', () => {
+    const onContentPatch = vi.fn()
+    const onProjectFormatChange = vi.fn()
+    render(
+      <SynopsisTab
+        document={defaultDocument}
+        projectFormat="feature"
+        onProjectFormatChange={onProjectFormatChange}
+        onContentPatch={onContentPatch}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'feature' } })
+    expect(onProjectFormatChange).not.toHaveBeenCalled()
+    expect(onContentPatch).not.toHaveBeenCalled()
+  })
+
+  it('fallback lazy-init: flipping format to "series" with no project callback writes header + series', () => {
     const onContentPatch = vi.fn()
     const doc = makeDocument()
     expect(doc.content.series).toBeUndefined()
-    doc.content.header.format = 'feature'
     render(
       <SynopsisTab
         document={doc}
@@ -287,10 +268,7 @@ describe('SynopsisTab — format routing', () => {
         onClear={vi.fn()}
       />,
     )
-
-    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'series' } })
-
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'series' } })
     expect(onContentPatch).toHaveBeenCalledWith(
       expect.objectContaining({
         header: expect.objectContaining({ format: 'series' }),
@@ -303,37 +281,32 @@ describe('SynopsisTab — format routing', () => {
     )
   })
 
-  it('lazy-init is idempotent: when content.series already exists, format=series patches do NOT re-init', () => {
+  it('fallback lazy-init is idempotent when content.series already exists', () => {
     const onContentPatch = vi.fn()
-    const doc = makeDocument()
-    doc.content.header.format = 'series'
-    doc.content.series = { ...createEmptySeriesContent(), showOverview: 'pre-existing overview' }
+    const doc = makeDocument({
+      series: { ...createEmptySeriesContent(), showOverview: 'pre-existing overview' },
+    })
     render(
       <SynopsisTab
         document={doc}
-        projectFormat="series"
+        projectFormat="feature"
         onContentPatch={onContentPatch}
         onViewPreferencesPatch={vi.fn()}
         onClear={vi.fn()}
       />,
     )
-    // Simulate user re-selecting series in the dropdown
-    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'series' } })
-    const lastCall = onContentPatch.mock.calls.find(call => call[0].header?.format === 'series')
-    expect(lastCall).toBeDefined()
-    // If series is in the patch, it must NOT equal a fresh empty series (pre-existing data preserved)
-    if (lastCall && 'series' in lastCall[0]) {
-      expect(lastCall[0].series).not.toEqual(createEmptySeriesContent())
-    }
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'series' } })
+    const call = onContentPatch.mock.calls[0]?.[0]
+    expect(call.header.format).toBe('series')
+    expect('series' in call).toBe(false) // series content not re-seeded
   })
 
-  it('flipping series → feature does NOT delete content.series', () => {
+  it('flipping series → feature with onProjectFormatChange does NOT touch content', () => {
     const onContentPatch = vi.fn()
     const onProjectFormatChange = vi.fn()
-    const doc = makeDocument()
-    doc.content.header.format = 'series'
-    doc.content.series = { ...createEmptySeriesContent(), showOverview: 'pre-existing' }
+    const doc = makeDocument({
+      series: { ...createEmptySeriesContent(), showOverview: 'pre-existing' },
+    })
     render(
       <SynopsisTab
         document={doc}
@@ -344,8 +317,7 @@ describe('SynopsisTab — format routing', () => {
         onClear={vi.fn()}
       />,
     )
-    const select = screen.getByLabelText(/^format$/i) as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'feature' } })
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'feature' } })
     expect(onProjectFormatChange).toHaveBeenCalledWith('feature')
     expect(onContentPatch).not.toHaveBeenCalled()
   })

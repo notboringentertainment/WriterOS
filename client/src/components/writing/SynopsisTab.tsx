@@ -2,8 +2,8 @@ import React from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
-import { SynopsisEditView } from './synopsis/SynopsisEditView'
-import { SynopsisSeriesEditView } from './synopsis/SynopsisSeriesEditView'
+import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
+import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
 import { SynopsisViewToggle } from './synopsis/SynopsisViewToggle'
 
@@ -14,32 +14,8 @@ export interface SynopsisTabProps {
   onContentPatch: (patch: Partial<SynopsisDocumentContent>) => void
   onViewPreferencesPatch: (patch: {
     activeView?: 'edit' | 'document'
-    synopsisComposeMode?: 'prose' | 'paragraphs'
   }) => void
   onClear: () => void
-}
-
-function deriveComposeMode(
-  document: AuthoredDocumentState<SynopsisDocumentContent>,
-): 'prose' | 'paragraphs' {
-  // Stored preference always wins
-  const stored = document.viewPreferences?.synopsisComposeMode
-  if (stored != null) return stored
-
-  // Default-mode heuristic per plan §2:
-  // If prose.opening is non-empty AND escalation/middle/climax/resolution are ALL empty → 'prose'
-  // Otherwise → 'paragraphs'
-  const { opening, escalation, middle, climax, resolution } = document.content.prose
-  if (
-    opening.trim() !== '' &&
-    escalation.trim() === '' &&
-    middle.trim() === '' &&
-    climax.trim() === '' &&
-    resolution.trim() === ''
-  ) {
-    return 'prose'
-  }
-  return 'paragraphs'
 }
 
 export function SynopsisTab({
@@ -51,45 +27,32 @@ export function SynopsisTab({
   onClear,
 }: SynopsisTabProps) {
   const activeView = document.viewPreferences?.activeView ?? 'edit'
-  const composeMode = deriveComposeMode(document)
-
   const activeFormat = normalizeProjectFormat(projectFormat)
 
-  function handleContentPatch(patch: Partial<SynopsisDocumentContent>) {
-    const nextFormat = patch.header?.format !== undefined
-      ? normalizeProjectFormat(patch.header.format)
-      : undefined
-
-    if (nextFormat !== undefined && nextFormat !== activeFormat && onProjectFormatChange) {
-      onProjectFormatChange(nextFormat)
+  function handleFormatChange(next: ProjectFormat) {
+    if (next === activeFormat) return
+    if (onProjectFormatChange) {
+      onProjectFormatChange(next)
       return
     }
-
-    const normalizedPatch = nextFormat === undefined
-      ? patch
-      : { ...patch, header: { ...patch.header!, format: nextFormat } }
-
-    if (nextFormat === 'series' && document.content.series === undefined) {
-      onContentPatch({ ...normalizedPatch, series: createEmptySeriesContent() })
-    } else {
-      onContentPatch(normalizedPatch)
+    // Fallback when no project-format callback is supplied: mirror to header
+    // and lazy-init series content if the writer switched into series mode.
+    const headerPatch: Partial<SynopsisDocumentContent> = {
+      header: { ...document.content.header, format: next },
     }
+    if (next === 'series' && document.content.series === undefined) {
+      headerPatch.series = createEmptySeriesContent()
+    }
+    onContentPatch(headerPatch)
   }
 
   return (
-    <div
-      style={{
-        maxWidth: 760,
-        margin: '0 auto',
-        padding: '32px 24px 64px',
-      }}
-    >
-      {/* Header row */}
+    <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 24px 64px' }}>
       <div style={{ marginBottom: 28 }}>
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'space-between',
             gap: 16,
             marginBottom: 6,
@@ -116,36 +79,32 @@ export function SynopsisTab({
                 margin: '4px 0 0',
               }}
             >
-              Reader-facing story spine.
+              Help an outside reader understand your story.
             </p>
           </div>
-          <SynopsisViewToggle
-            value={activeView}
-            onChange={(next) => onViewPreferencesPatch({ activeView: next })}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <ProjectFormatSelector
+              value={activeFormat}
+              onChange={handleFormatChange}
+              variant="standalone"
+            />
+            <SynopsisViewToggle
+              value={activeView}
+              onChange={(next) => onViewPreferencesPatch({ activeView: next })}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      {activeView === 'edit' && activeFormat === 'feature' ? (
-        <SynopsisEditView
+      {activeView === 'edit' ? (
+        <SynopsisStoryCoachEditView
+          format={activeFormat}
           content={document.content}
-          composeMode={composeMode}
-          onContentPatch={handleContentPatch}
-          onComposeModeChange={(next) => onViewPreferencesPatch({ synopsisComposeMode: next })}
-          onClear={onClear}
-        />
-      ) : activeView === 'edit' && activeFormat === 'series' ? (
-        <SynopsisSeriesEditView
-          content={document.content}
-          onContentPatch={handleContentPatch}
+          onContentPatch={onContentPatch}
           onClear={onClear}
         />
       ) : (
-        <SynopsisDocumentView
-          content={document.content}
-          updatedAt={document.updatedAt}
-        />
+        <SynopsisDocumentView content={document.content} updatedAt={document.updatedAt} />
       )}
     </div>
   )
