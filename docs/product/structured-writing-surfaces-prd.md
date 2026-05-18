@@ -1,10 +1,10 @@
 # WriterOS Structured Writing Surfaces PRD
 
 **Date:** 2026-05-10
-**Status:** Draft for product discussion
+**Status:** Living surface-roadmap PRD; May 18 product alignment applied
 **Branch context:** `feature/screenplay-editor-core`
 **Current baseline:** `b74c711 docs: add writer voice profile PRD`
-**Related docs:** `docs/product/writeros-future-work-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
+**Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, `docs/product/writeros-future-work-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
 **Reference input:** `/Users/ben/Downloads/ai-film-writing-templates 2`
 
 ## Summary
@@ -19,6 +19,23 @@ This PRD redefines the non-script writing surfaces as four distinct professional
 - **Story Bible:** source-of-truth system for premise, tone, world, characters, rules, continuity, and future potential.
 
 The goal is not to add more empty boxes. The goal is to make each surface feel like a real writing tool: mode-aware, editable, readable, exportable, and useful to both human writers and WriterOS agents.
+
+## May 18 Product Alignment
+
+This PRD now sits under the current product standard defined in `docs/product/README.md` and `docs/product/outline-story-coach-redesign-prd.md`:
+
+> WriterOS writing surfaces ask plain-language story questions, translate the answers into professional structure behind the scenes, and render studio-presentable documents the writer can confidently share.
+
+The earlier wording in this PRD sometimes describes professional "templates," "modes," "fields," and "sections" as if they should be visible directly to the writer in Edit View. That is no longer the desired user experience.
+
+Canonical interpretation:
+
+- **Edit View:** a story-assessment/interview surface. Prompts should be plain-language questions that pull story material out of the writer.
+- **Hidden structure:** WriterOS maps answers into stable professional schema fields, structural labels, QA checks, and agent context.
+- **Document View:** WriterOS renders the hidden structure and authored prose as a polished professional artifact.
+- **Agent context:** specialists may receive professional labels and derived context, but those labels should not dominate the writer-facing Edit View.
+
+This alignment applies explicitly to Synopsis and Story Bible as well as Outline. Treatment should be designed from this standard from day one.
 
 ## Research Basis
 
@@ -44,7 +61,7 @@ WriterOS should treat these as separate document types with separate purposes, n
 
 ## Current State
 
-Current implementation:
+Original baseline implementation when this PRD was first drafted:
 
 - `SynopsisTab` has logline, setup, act one break, midpoint, act two break, and resolution.
 - `OutlineTab` has a fixed Save the Cat beat list with one notes field per beat.
@@ -79,6 +96,14 @@ What does not work:
 - Treatment, which should be a major bridge between idea/outline and script, does not exist yet.
 - There is no Document View, so structured surfaces do not read like authored artifacts.
 - There is no template-mode system for feature, short, pilot, episodic series, limited series, or AI film.
+
+Current branch deltas since the original baseline:
+
+- `ProjectState.documents` exists for Synopsis, Outline, Treatment, and Story Bible.
+- Synopsis has been redesigned around `documents.synopsis`, Edit View / Document View, and feature/series content preservation.
+- Project format authority has moved to `ProjectState.meta.format`.
+- Outline is now governed by `docs/product/outline-story-coach-redesign-prd.md`.
+- Story Bible still needs its own redesign PRD before implementation continues.
 
 ## Problem
 
@@ -207,7 +232,7 @@ Recommended V1 sections:
 
 #### Series mode
 
-Enabled by the format selector in the Synopsis header (`header.format === 'series'`).
+Enabled by the shared project-format selector (`ProjectState.meta.format === 'series'`). `documents.synopsis.content.header.format` may mirror the project format for display/export compatibility, but it is not the behavioral authority.
 
 Eight sections in stable composition order:
 
@@ -241,7 +266,8 @@ Clear button:
 
 Sam context in this slice:
 
-- Sam receives `format` and `showOverview` only. Pilot synopsis, season arc, future seasons, characters, and comps are not exposed to AI in this slice.
+- Sam receives project format from top-level project context. During transition, compatibility fields such as `synopsis.format` and `synopsis.showOverview` may remain, but they should be treated as derived/mirrored context rather than a separate Synopsis-owned format authority.
+- Pilot synopsis, season arc, future seasons, characters, and comps are not exposed to AI until a later context-pack upgrade explicitly includes them.
 
 Edit View behavior:
 
@@ -279,76 +305,39 @@ Current issue:
 - The current fixed Save the Cat beat list is one useful mode, but it is not the outline model.
 - Each beat has only `notes`, so the app cannot reason deeply about conflict, turn, outcome, or why the next beat follows.
 
-Recommended V1 modes:
+May 18 supersession:
 
-- Beat sheet
-- Feature sequence outline
-- Scene-by-scene outline
-- Episode outline
-- Season/serialized outline
-- Custom
+The older mode-selector/reorderable-index-card direction below has been superseded by `docs/product/outline-story-coach-redesign-prd.md`. Do not implement a V1 Outline mode selector, drag/reorder workflow, or visible Save-the-Cat beat-name surface from this PRD.
 
-Recommended shared fields:
+Canonical V1 Outline direction:
 
-- Story spine:
-  - protagonist
-  - external goal
-  - internal need
-  - central opposition
-  - core stakes
-  - theme
-  - ending
-- Structure model:
-  - three-act
-  - five-act
-  - eight-sequence
-  - Save the Cat
-  - episode acts
-  - custom
-- Outline units:
-  - number
-  - act/sequence/episode
-  - title or slug
-  - location/setting
-  - characters
-  - what happens
-  - conflict
-  - turn/change
-  - consequence
-  - why next
-  - linked script scenes
-  - draft notes
-- Optional AI production columns:
-  - production difficulty
-  - required references
-  - continuity risks
-  - prompt notes
-  - asset status
+- Feature and Series decks are selected by the shared project format at `ProjectState.meta.format`.
+- Edit View asks fixed plain-language story questions.
+- Structural labels such as "Inciting incident," "Midpoint," or "All Is Lost" do not appear as card headlines in Edit View.
+- The fixed deck order is part of the teaching/coaching model.
+- Writer answers persist in `documents.outline.content`.
+- Legacy `outline.beats` remains a derived mirror only while Oliver/server context still needs it.
+- Feature projects use the 19-card feature deck from the Outline Story-Coach PRD.
+- Series projects use the 15-base-card series deck plus episode map repeater from the Outline Story-Coach PRD.
+- V1 must not ship a user-visible state where Feature has the new deck and Series still shows the legacy Save-the-Cat beat-title UI.
+
+> **SUPERSEDED.** The earlier "Recommended hidden/shared fields" schema in this PRD — including a user-visible Structure-model dropdown (three-act / five-act / eight-sequence / Save the Cat / episode acts / custom), an Outline-units table with `number / act / title / location / characters / what happens / conflict / turn / consequence / why next / linked script scenes / draft notes`, and an "Optional AI production columns" block — has been removed. The canonical hidden mapping for V1 is specified in `docs/product/outline-story-coach-redesign-prd.md` (Feature 19-card deck, Series 15-card deck + episode map, story-spine fields, schema migration contract). Do not reintroduce a user-visible mode selector, drag/reorder unit table, or visible Save-the-Cat beat names from this PRD. Git history preserves the previous text if needed for archaeology.
 
 Edit View behavior:
 
-- Start with a mode selector.
-- Existing projects can default to `beat_sheet_save_the_cat`.
-- Allow writers to add, reorder, collapse, and retitle units.
-- A unit should feel closer to a smart index card than a generic text area.
-- Show lightweight diagnostics:
-  - missing conflict
-  - no turn/change
-  - unclear why next
-  - repeated beat function
+- Ask plain-language story questions as the primary card headlines.
+- Hide professional structural labels except in developer mappings, tests, agent context, and Document View.
+- Preserve existing beat notes through migration into the new card answers.
+- Keep diagnostics derived and supportive; do not turn the edit surface into a craft exam.
 
 Document View behavior:
 
-- Render a structured outline:
-  - story spine
-  - acts/sequences/episodes
-  - outline units
-  - optional scene table
+- Render a studio-presentable outline from the hidden professional mapping: story spine, format-appropriate act/sequence/episode structure, plain-language card answers grouped under their professional headings, and optional scene table. Specific section composition and labels are owned by `docs/product/outline-story-coach-redesign-prd.md`.
 
 Agent behavior:
 
 - Oliver should evaluate structure through change, pressure, causality, pacing, and escalation.
-- Oliver should know the selected outline mode.
+- Oliver should know the project format and the hidden professional mapping behind the writer's plain-language answers.
 - Oliver should not assume every project uses Save the Cat.
 
 ### Treatment
@@ -364,6 +353,13 @@ Current issue:
 
 - Treatment is referenced as future work but does not exist.
 - Without it, WriterOS forces full-story prose planning into Synopsis or Outline, which weakens both.
+
+May 18 direction:
+
+- Treatment is a good candidate to design cleanly from the current standard because it is not replacing a heavily-used existing surface.
+- Its Edit View should still be plain-language and story-assessment driven, not a visible treatment-template checklist.
+- Its hidden mapping should produce cinematic present-tense prose that feels appropriate to share with a producer, collaborator, or studio reader.
+- Add Treatment only through a dedicated PRD or implementation slice; do not opportunistically add it while fixing Synopsis, Outline, or Story Bible.
 
 Recommended V1 sections:
 
@@ -446,6 +442,14 @@ Current issue:
 
 - The current Story Bible is closer to a starter note page.
 - It lacks the source-of-truth and continuity architecture that makes a bible valuable.
+
+May 18 direction:
+
+- Story Bible must follow the same plain-language story-assessment standard as Outline.
+- Do not expose the full professional bible template as a giant form in V1.
+- Edit View should ask practical questions that help the writer define premise, tone, character engines, world rules, canon, open questions, and series durability without requiring bible jargon.
+- Professional labels such as Pitch Bible, Living Bible, canon log, story engine, and continuity architecture may appear in hidden mappings, Document View, and advanced controls only where they help rather than intimidate.
+- A dedicated Story Bible redesign PRD is required before implementation continues on this surface.
 
 Recommended V1 sections:
 
@@ -568,7 +572,7 @@ Agent behavior:
 
 Every non-script writing surface should support:
 
-- **Edit View:** structured controls, fields, tables, guidance, diagnostics.
+- **Edit View:** plain-language story-assessment prompts, with controls appropriate to the content. The writer should answer human questions, not decode a professional template.
 - **Document View:** a readable artifact assembled from the same authored source.
 
 Script remains its own formatted document surface and does not need the same toggle in V1.
@@ -586,15 +590,14 @@ Default UI should open on Core. Empty advanced sections should not make the app 
 
 ### Mode Awareness
 
-Project format should influence templates:
+Project format should influence the hidden professional mapping and the visible deck/surface shape.
+
+V1 project formats:
 
 - Feature
-- Short
-- Pilot
-- Limited series
-- Episodic series
-- AI film
-- Custom
+- Series
+
+Future values such as Short, Pilot, Limited Series, AI Film, and Custom are out of V1 scope unless a later PRD explicitly adds them.
 
 Examples:
 
@@ -717,15 +720,16 @@ Behavior:
 
 Receives:
 
-- outline mode
-- story spine
-- outline units
+- `ProjectState.meta.format` (Feature or Series)
+- plain-language Outline answers from `documents.outline.content`
+- hidden professional mapping: story spine, feature deck units, series engine, season arc, episode map, and derived structural labels
+- legacy `outline.beats` mirror only while Oliver/server context still depends on it
 - treatment/script scene references when available
 
 Behavior:
 
 - Diagnoses structure through conflict, change, consequence, and "why next."
-- Can recommend switching outline mode when the current mode does not fit the project.
+- Reasons about the project's professional structure via the hidden mapping; does not surface a user-visible "outline mode" selector or propose switching outline modes. Project format changes go through `ProjectState.meta.format`, not Oliver.
 
 ### Casey
 
@@ -847,7 +851,7 @@ Decisions locked in:
 - Two-click clear matches the Voice Profile Drawer pattern; resets both `state.synopsis` and `state.documents.synopsis`.
 - Markdown export, logline sub-fields, AI Production Implications surface, and Sam context upgrade are deferred to later phases per plan §8.
 
-**Series variant added in `2026-05-16-synopsis-series-variant` slice.** Format dropdown drives `header.format`; series block stored under `content.series` (optional). Sam context now receives `format` + `showOverview`. See `docs/superpowers/plans/2026-05-16-synopsis-series-variant.md` for implementation status.
+**Series variant added in `2026-05-16-synopsis-series-variant` slice.** That slice originally used `header.format` locally; current authority is project-wide `ProjectState.meta.format`, with header format as a compatibility mirror only. Series block is stored under `content.series` (optional). Sam context now receives project format plus transitional `synopsis.format` / `synopsis.showOverview` compatibility fields. See `docs/product/project-wide-format-agent-context-prd.md` for current authority and `docs/superpowers/plans/2026-05-16-synopsis-series-variant.md` for implementation history.
 
 Success criteria — evidence:
 
@@ -855,24 +859,28 @@ Success criteria — evidence:
 - Existing logline and section text survive migration — `mirrorSynopsisFromLegacy` preservation tests in `tests/lib/projectState.test.ts`; default-mode heuristic and regression-guard tests in `tests/components/SynopsisProseEditor.test.tsx` (resolution-only and middle-only legacy data renders correctly in both modes).
 - Sam can evaluate the synopsis as a synopsis — Sam's context pack continues to read `state.synopsis` legacy shape via mirror; mirror invariant verified by `tests/lib/useProjectState.test.ts` tests on `setSynopsisDocument`.
 
-### Phase 3: Outline Surface Redesign
+### Phase 3: Outline Story-Coach Redesign
 
-Goal: make Outline mode-aware and structurally useful.
+Goal: replace the legacy Save-the-Cat beat-title surface with a format-aware story-coach deck that asks plain-language questions and maps answers into professional outline structure.
+
+Status: Superseded and specified by `docs/product/outline-story-coach-redesign-prd.md`.
 
 Tasks:
 
-- Add structure mode selector.
-- Upgrade beats into outline units.
-- Add story spine fields.
-- Add conflict, turn/change, consequence, and why-next fields.
-- Preserve Save the Cat as one mode, not the only model.
-- Update Oliver context pack.
+- Add Feature and Series decks selected by `ProjectState.meta.format`.
+- Make `documents.outline` the source of truth in the same shipped release.
+- Mirror outline data back to legacy `outline.beats` only for compatibility while Oliver still reads the legacy shape.
+- Preserve existing beat notes through migration.
+- Remove legacy beat titles from the Edit View DOM for both Feature and Series projects.
+- Defer Document View/QA checklist to the V2 slice described in the Outline Story-Coach PRD.
+- Update Oliver context once the document-state source of truth is stable.
 
 Success criteria:
 
-- Writer can outline by beats, sequences, scenes, episodes, or season map.
-- Oliver can diagnose causality and pacing from structured units.
+- Writer answers plain-language structure questions rather than filling visible craft-jargon beat labels.
+- Feature and Series projects both get the new deck before the redesign ships.
 - Existing beat notes survive migration.
+- Oliver can diagnose causality and pacing from the hidden professional structure and/or fresh legacy mirror.
 
 ### Phase 4: Treatment Surface
 
@@ -943,7 +951,7 @@ Success criteria:
 ### Unit Tests
 
 - Legacy synopsis migrates into new synopsis document.
-- Legacy outline beats migrate into outline units.
+- Legacy outline beats migrate into the canonical `documents.outline` shape defined in `docs/product/outline-story-coach-redesign-prd.md`.
 - Legacy story bible fields migrate into new bible sections.
 - Document View assembly preserves authored content.
 - Markdown export emits stable sections.
@@ -953,8 +961,8 @@ Success criteria:
 
 - Edit View / Document View toggles persist view preference.
 - Synopsis prose body updates state.
-- Outline mode selector changes visible fields safely.
-- Outline units can be added, reordered, and updated.
+- Outline Feature/Series project format changes the visible story-coach deck safely without deleting hidden answers.
+- Outline plain-language story-coach cards accept writer answers, persist them via `documents.outline`, and survive deck swaps without data loss. (No user-visible add/reorder/delete of cards in V1 — the deck order is fixed.)
 - Treatment tab renders and saves prose sections.
 - Story Bible advanced sections can expand/collapse.
 - Continuity log rows can be added and edited.
@@ -962,7 +970,7 @@ Success criteria:
 ### Agent/Context Tests
 
 - Sam receives synopsis-specific context.
-- Oliver receives outline mode and outline units.
+- Oliver receives `ProjectState.meta.format` plus plain-language Outline answers from `documents.outline.content`, with hidden professional mapping (story spine, deck units, series engine/season arc) per `docs/product/outline-story-coach-redesign-prd.md`.
 - Alex receives Treatment context when active.
 - Casey receives character/theme context.
 - Zoe receives world/rule/continuity context.
@@ -973,7 +981,7 @@ Success criteria:
 
 - Start with a blank project and create a synopsis.
 - Import or paste an existing rough project and classify material into surfaces.
-- Convert existing Save the Cat beat notes into new Outline mode.
+- Confirm migration: legacy outline beat notes from a pre-redesign project land in the corresponding plain-language story-coach card answers, with no visible Save-the-Cat beat labels in Edit View.
 - Build a story bible for a feature and a series project.
 - Add a treatment and ask Alex for draft-readiness advice.
 - Verify AI production annexes do not dominate the writing documents.
@@ -1006,24 +1014,39 @@ Document View may make export tempting. Mitigation: Markdown export first; PDF/D
 
 ## Open Questions
 
-1. Should the first implementation start with Synopsis because it is the most visibly wrong, or with schema work because all surfaces need migration?
-2. Should `Treatment` be added before or after the full Outline redesign?
-3. Should Story Bible launch with both Pitch Bible and Living Bible modes, or should Living Bible be V1 and Pitch Bible be Document View/export?
-4. Should AI production annexes be enabled by project format only, or manually toggled per surface?
-5. Should WriterOS support "Transform source into proper document type" as a first-class workflow inside the app?
-6. Should Document View be editable directly, or read-only in V1?
-7. Should Markdown export be part of each surface redesign slice or a separate export phase?
-8. How much of the user's template package should become in-app language versus behind-the-scenes structure?
+Answered by May 18 alignment:
+
+1. Synopsis and Story Bible should be revised to the same plain-language story-assessment standard as Outline.
+2. The user's template package should mostly become behind-the-scenes structure, Document View rendering, tests, QA checks, and agent context. It should not become intimidating Edit View copy.
+3. Document View is read-only in V1 unless a later PRD explicitly changes it.
+4. The first schema slice already happened; `ProjectState.documents` exists.
+5. Feature/Series format authority belongs at `ProjectState.meta.format`.
+
+Still open:
+
+1. What is the exact Synopsis story-assessment prompt set for a studio-ready feature synopsis and series synopsis?
+2. What is the exact Story Bible story-assessment prompt set for Feature and Series?
+3. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
+4. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
+5. Should "Transform source into proper document type" become a first-class workflow inside the app?
+6. Should Markdown export ship with each surface redesign or remain a separate export phase?
+
+Open work ownership:
+
+| Follow-up | Owner document | Required before |
+| --- | --- | --- |
+| Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | More Synopsis implementation beyond compatibility fixes |
+| Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | Story Bible implementation |
+| Treatment surface design | `docs/product/treatment-surface-prd.md` | Adding Treatment navigation/state/UI |
+| Agent context migration | `docs/product/agent-workflow-prd.md` plus each surface PRD | Switching a surface from legacy mirrors to `documents.*` source of truth |
 
 ## Recommended Next Step
 
-Do not begin with visual polish. Begin with a **schema and surface model slice**:
+Do not begin with visual polish or more code. Complete product alignment first:
 
-1. Define the new document state interfaces.
-2. Map existing `synopsis`, `outline`, and `storyBible` state into those interfaces.
-3. Decide whether `ProjectState.documents` is introduced now or staged.
-4. Implement the first redesigned surface after migration risk is understood.
-
-Recommended first surface after schema:
-
-- **Synopsis**, because the current UI visibly misrepresents the document type and the redesign is narrower than Outline or Story Bible.
+1. Keep `docs/product/README.md` as the current doc-precedence map.
+2. Treat `docs/product/project-wide-format-agent-context-prd.md` as the source of truth for format authority.
+3. Treat `docs/product/outline-story-coach-redesign-prd.md` as the source of truth for the story-coach surface standard.
+4. Draft a Synopsis story-assessment revision note or PRD addendum before further Synopsis implementation.
+5. Draft a Story Bible redesign PRD before any Story Bible implementation.
+6. Draft Treatment from the new standard when the team is ready to add the fifth surface.

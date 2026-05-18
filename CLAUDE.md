@@ -31,6 +31,12 @@ WriterOS is a writing-first studio for screenplay drafting, story structure, and
 4. Keep `/api/wp-chat` a thin adapter over `OpenAIService.generatePersonaResponse`.
 5. Do not use stale scaffold-era files, including `CLAUDE 2.md` or old Replit/prototype handoff files, as product or architecture guidance.
 
+## Product Direction Source Of Truth
+
+Before product or surface implementation work, read `docs/product/README.md`.
+
+That doc defines the current product north star, canonical PRD order, project-format authority, and the plain-language story-assessment standard for Synopsis, Outline, Story Bible, and future Treatment.
+
 ## Verification
 
 Run these after meaningful changes:

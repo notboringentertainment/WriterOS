@@ -1,5 +1,7 @@
 # WriterOS Shell + Structured Tabs — Implementation Plan (Part 1 of 3)
 
+> **Historical note (2026-05-18):** This plan records the initial shell and structured-tab implementation. Do not use its Synopsis, Outline, or Story Bible form-field instructions as current product requirements. Current non-script surface intent is plain-language story assessment with hidden professional structure; see `docs/product/README.md` and `docs/product/outline-story-coach-redesign-prd.md`.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Night Desk shell (top nav, collapsible left rail, focus mode), ProjectState with schema versioning, and the three structured document tabs (Synopsis, Outline, Story Bible).

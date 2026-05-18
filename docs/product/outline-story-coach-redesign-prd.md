@@ -1,5 +1,12 @@
 # OutlineTab Story-Coach Redesign — PRD
 
+**Date:** 2026-05-18
+**Status:** Canonical for Outline redesign and the shared non-script surface standard
+**Branch context:** `feature/screenplay-editor-core`
+**Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/structured-writing-surfaces-prd.md`
+
+> Product alignment note: this PRD defines the current WriterOS surface pattern. Synopsis, Story Bible, and future Treatment should follow the same principle: plain-language Edit View, professional structure hidden behind the scenes, and studio-presentable Document View.
+
 ## Context
 
 The OutlineTab currently shows 15 Save-the-Cat beats by their craft names ("Theme Stated", "Catalyst", "Debate", "All Is Lost", "Midpoint", "Break Into Three"). A novice writer using WriterOS for the first time has no idea what those mean. The tab feels like a craft exam, not a writing tool.

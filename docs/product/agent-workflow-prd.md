@@ -1,9 +1,11 @@
 # WriterOS Agent Workflow PRD
 
 **Date:** 2026-05-07  
-**Status:** Draft for review  
+**Status:** Living agent-role PRD; May 18 context alignment applied
 **Branch context:** `feature/screenplay-editor-core`  
-**Related docs:** `docs/superpowers/specs/2026-05-04-writing-partner-design.md`, `docs/superpowers/plans/2026-05-04-writing-partner-ai.md`
+**Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/superpowers/specs/2026-05-04-writing-partner-design.md`, `docs/superpowers/plans/2026-05-04-writing-partner-ai.md`
+
+> May 18 alignment note: persona roles and transcript boundaries in this PRD remain current. Older examples that describe Outline as beat names/notes or Synopsis as legacy sections are compatibility-era examples. Current agent context should treat project format as top-level project identity and should prefer `documents.*` authored surfaces as each surface migrates.
 
 ## Summary
 
@@ -119,8 +121,10 @@ Relevant agent support:
 
 Required context pack:
 
-- Beat names and notes.
-- Filled vs empty beat status.
+- Top-level project format from `ProjectState.meta.format`.
+- Plain-language Outline answers from `documents.outline.content`.
+- Hidden professional mapping: story spine, feature deck units, series engine, season arc, episode map, and derived structural labels where available.
+- Legacy `outline.beats` mirror only while Oliver/server context still depends on it.
 - Linked script scenes when available.
 - Logline and core premise.
 
@@ -135,8 +139,10 @@ Relevant agent support:
 
 Required context pack:
 
+- Top-level project format from `ProjectState.meta.format`.
 - Logline.
-- Synopsis sections.
+- Feature synopsis prose and QA signals when in Feature mode.
+- Series show overview, pilot synopsis, season arc, future-season promise, characters, comps, and positioning when intentionally included by the context pack.
 - Project title/genre.
 - Outline summary when available.
 - Missing-pitch-field awareness.
@@ -153,8 +159,10 @@ Relevant agent support:
 
 Required context pack:
 
+- Top-level project format from `ProjectState.meta.format`.
 - Characters with wound/want/need/arc.
 - World setting, tone anchors, rules, voice notes.
+- Canon facts, open questions, continuity-sensitive decisions, and series engine/recurring-pressure context when available.
 - Themes.
 - Script/outline references when relevant.
 
@@ -179,9 +187,10 @@ A compact, broad project digest available to all agents.
 Should include:
 
 - Title and genre if set.
+- Project format from `ProjectState.meta.format`.
 - Logline or best available premise.
 - Primary characters.
-- Current stage indicators: pages present, outline beats filled, synopsis sections filled, Story Bible fields filled.
+- Current stage indicators derived from authored surfaces: pages present, Synopsis document completeness, Outline story-coach answers, Story Bible document completeness, Treatment presence when available.
 - Short project memory summary.
 
 Purpose:
@@ -196,9 +205,9 @@ Context based on where the writer is working or what surface the specialist belo
 Examples:
 
 - Script pack: excerpt, dialogue snippets, scene headings.
-- Outline pack: beat notes and empty-beat map.
-- Synopsis pack: logline and synopsis sections.
-- Story Bible pack: character/world/theme/rule fields.
+- Outline pack: `ProjectState.meta.format`, `documents.outline.content`, hidden professional mapping, and legacy beat mirror only while compatibility requires it.
+- Synopsis pack: `ProjectState.meta.format`, `documents.synopsis.content`, feature/series-specific authored content, and transitional compatibility fields only while needed.
+- Story Bible pack: `ProjectState.meta.format`, `documents.storyBible.content` when available, plus legacy character/world/theme/rule mirrors only while compatibility requires them.
 
 Purpose:
 
@@ -212,11 +221,11 @@ Persona-specific emphasis and pruning.
 Examples:
 
 - Maya gets script excerpt first, then character/voice context.
-- Oliver gets outline first, then script scenes and synopsis.
-- Sam gets logline/synopsis first, then outline/project brief.
-- Casey gets character fields first, then themes and relevant script behavior.
-- Zoe gets world/rules first, then script/outline facts that affect continuity.
-- Alex gets project progress and writer process context first.
+- Oliver gets project format plus Outline story-coach/document content first, then script scenes and Synopsis as supporting context.
+- Sam gets project format plus Synopsis document content first, then Outline/project brief.
+- Casey gets project format plus Story Bible character/theme material from `documents.*` first, then relevant Script/Outline behavior.
+- Zoe gets project format plus Story Bible world/rules/canon/continuity material from `documents.*` first, then Script/Outline facts that affect continuity.
+- Alex gets project format plus derived project progress across `documents.*`, Script, Treatment, and writer-process context first.
 
 Purpose:
 
@@ -250,7 +259,7 @@ Keep current agents, but clarify entry points.
 Potential UI language:
 
 - Script help: "Pages, dialogue, scene work"
-- Outline help: "Structure and beats"
+- Outline help: "Structure and story logic"
 - Synopsis help: "Pitch and reader-facing summary"
 - Story Bible help: "Characters, world, continuity"
 - Writer's Room: "Ask a specialist"

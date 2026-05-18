@@ -1,10 +1,10 @@
 # WriterOS Future Work PRD
 
 **Date:** 2026-05-08
-**Status:** Draft for post-Phase-4 planning
+**Status:** Living future-work roadmap; May 18 surface-alignment note applied
 **Branch context:** `feature/screenplay-editor-core`
 **Current baseline:** `fd3ab45 feat: add script overview retrieval`
-**Related surface redesign:** `docs/product/structured-writing-surfaces-prd.md`
+**Related surface redesign:** `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`
 
 ## Summary
 
@@ -127,6 +127,13 @@ Success criteria:
 
 Goal: replace the simplistic Synopsis, Outline, and Story Bible field model with professional document surfaces, then let those surfaces be read as shareable writing documents.
 
+May 18 alignment:
+
+- Edit View should be a plain-language story-assessment surface, not a visible professional template.
+- WriterOS should infer and store professional structure behind the scenes.
+- Document View should render the authored source into a studio-presentable artifact.
+- This applies to Synopsis, Outline, Story Bible, and future Treatment.
+
 Recommended behavior:
 
 - Follow `docs/product/structured-writing-surfaces-prd.md`.
@@ -136,7 +143,7 @@ Recommended behavior:
   - Outline
   - Story Bible
   - future Treatment
-- `Edit View` keeps fields, controls, and agent-friendly structure.
+- `Edit View` keeps plain-language prompts and ergonomic controls; agent-friendly/professional structure lives behind the scenes.
 - `Document View` renders the same authored source as a clean read-through document.
 - Script does not need the same toggle because it is already document/page-oriented.
 

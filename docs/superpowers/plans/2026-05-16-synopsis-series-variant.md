@@ -3,6 +3,8 @@
 > Source: refined Ultraplan output committed at `~/.claude/plans/synopsis-page-needs-revised-giggly-star.md`.
 > Companion to: `docs/superpowers/plans/2026-05-16-synopsis-surface-redesign.md` (Phase 2).
 > Branch: `feature/screenplay-editor-core`. Baseline before this slice: `96db8cd`.
+>
+> **Historical note (2026-05-18):** The status table below is authoritative for this implementation slice. The local Synopsis `header.format` authority documented here was a stepping stone and is superseded by project-wide `ProjectState.meta.format` authority in `docs/product/project-wide-format-agent-context-prd.md`.
 
 ## Status snapshot
 
@@ -54,7 +56,7 @@
 - Empty/legacy `format` strings render as `Feature` selected.
 - Header editor cannot reach `content.series` — series sub-props plumbed from the orchestrator only.
 
-### Task 4 — Six isolated series editor components (IN PROGRESS)
+### Task 4 — Six isolated series editor components (DONE)
 
 **Create:**
 - `client/src/components/writing/synopsis/SynopsisShowOverviewEditor.tsx` — single tall textarea via `GuidedSection`. Props: `{ value, onChange }`. Guidance: "What's the renewable conflict? What world? What tone?"
@@ -73,7 +75,7 @@
 - CSS variables only. No new deps.
 - One commit per component (6 commits in this task).
 
-### Task 5 — SynopsisSeriesEditView orchestrator (OPEN)
+### Task 5 — SynopsisSeriesEditView orchestrator (DONE)
 
 **Create:**
 - `client/src/components/writing/synopsis/SynopsisSeriesEditView.tsx` — composes header + logline + six new series editors. Two-click clear at bottom-right (inline copy of the pattern from `SynopsisEditView.tsx` lines 16–51).
@@ -86,7 +88,7 @@
 - `content.series` defensively read with `?? createEmptySeriesContent()` for single-tick safety, even though Task 7's lazy-init guarantees non-null.
 - Clear semantics: calls the same `onClear` prop that `clearSynopsis` already wipes — including `content.series` via factory reset.
 
-### Task 6 — DocumentView series branch (OPEN)
+### Task 6 — DocumentView series branch (DONE)
 
 **Modify:**
 - `client/src/components/writing/synopsis/SynopsisDocumentView.tsx` — branch on `content.header.format === 'series'`. Series path renders metadata (title, writer, format, genre + series type + episode length; runtime hidden), then sections in stable order with `font-display` caps headers: Show Overview, Pilot Synopsis (logline italic lead + prose body), Season One Arc, Where It Goes (future seasons list), Characters (name + role italic + bio + arc-per-season bulleted), Comps & Why This Show Now. Empty sections omitted (same rule as feature path). Falls back to feature rendering when `header.format === 'series'` but `content.series` undefined.
@@ -94,7 +96,7 @@
 **Tests:**
 - Update existing `tests/components/SynopsisDocumentView.test.tsx`. New tests: series mode renders metadata with seriesType + episodeLength + hides runtime; empty sections omitted; section order stable; fall-through to feature when series block missing.
 
-### Task 7 — SynopsisTab routing + lazy-init (OPEN)
+### Task 7 — SynopsisTab routing + lazy-init (DONE)
 
 **Modify:**
 - `client/src/components/writing/SynopsisTab.tsx` — derive `activeFormat = content.header.format === 'series' ? 'series' : 'feature'`. Route Edit View by format. Wrap `onContentPatch` locally to lazy-init `content.series = createEmptySeriesContent()` when format flips to `'series'` and `content.series` is currently undefined.
@@ -105,7 +107,7 @@
 **Locked:**
 - QA hidden in series mode. Feature QA data preserved untouched in storage.
 
-### Task 8 — Sam context upgrade (OPEN)
+### Task 8 — Sam context upgrade (DONE)
 
 **Modify:**
 - `client/src/lib/wpRouting.ts` — extend `ProjectContext.synopsis` shape and the literal in `buildProjectContext` with `format: text(state.documents.synopsis.content.header.format)` and `showOverview: text(state.documents.synopsis.content.series?.showOverview ?? '')`.
@@ -118,7 +120,7 @@
 **Locked:**
 - No other persona prompts changed (Zoe `synopsis.logline` reference at `openaiService.ts:608` untouched).
 
-### Task 9 — PRD + full verify (OPEN)
+### Task 9 — PRD + full verify (DONE)
 
 **Modify:**
 - `docs/product/structured-writing-surfaces-prd.md` — append "Series mode" subsection under `### Surface Requirements → Synopsis` enumerating the eight series sections, the format-switch behavior, and the QA-hidden rule. Append a follow-on note under Phase 2 status: "Series variant added in `2026-05-16-synopsis-series-variant` slice."

@@ -1,10 +1,10 @@
 # Synopsis Surface Redesign — Phase 2 Design Plan
 
-> **Status:** Design plan only. No implementation yet. Awaiting sign-off on UX model and §8 open questions.
+> **Status:** Historical implementation plan. The Phase 2 Synopsis redesign was implemented on `feature/screenplay-editor-core`; later product direction now requires Synopsis to align more explicitly with the plain-language story-assessment standard in `docs/product/README.md` and `docs/product/outline-story-coach-redesign-prd.md`.
 >
 > **Branch:** `feature/screenplay-editor-core` — HEAD `b97518e` (Phase 1 complete + pushed)
 >
-> **Source of truth PRD:** `docs/product/structured-writing-surfaces-prd.md` §Migration Strategy → Phase 2: Synopsis Surface Redesign + §Surface Requirements → Synopsis.
+> **Source of truth PRD:** `docs/product/structured-writing-surfaces-prd.md` §Migration Strategy → Phase 2: Synopsis Surface Redesign + §Surface Requirements → Synopsis. Current product precedence is documented in `docs/product/README.md`.
 
 ---
 

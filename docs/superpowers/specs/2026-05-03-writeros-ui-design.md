@@ -1,7 +1,9 @@
 # WriterOS UI Design Spec
 **Date:** 2026-05-03  
-**Status:** Approved for implementation  
+**Status:** Historical implementation spec; superseded for non-script surface product intent
 **Repo:** https://github.com/notboringentertainment/WriterOS
+
+> May 18 product alignment note: this spec is useful for shell, visual-system, Script, and early architecture context. Its Structured Document Tabs section reflects the original guided-form implementation and is no longer current product intent. For Synopsis, Outline, Story Bible, and Treatment, follow `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, and `docs/product/structured-writing-surfaces-prd.md`.
 
 ---
 

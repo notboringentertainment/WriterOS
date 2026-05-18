@@ -1,5 +1,7 @@
 # Writing Partner AI — Implementation Plan (Plan 3 of 3)
 
+> **Historical note (2026-05-18):** This plan records the original Writing Partner / Writer's Room implementation. It is useful for transcript boundaries, early routing, and `/api/wp-chat` history, but it should not override current product direction in `docs/product/README.md`, `docs/product/agent-workflow-prd.md`, or `docs/product/project-wide-format-agent-context-prd.md`.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire the Writing Partner rail into live AI chat, add tab-aware and @mention routing, persist transcripts in `ProjectState`, and replace the Writer's Room placeholder with a three-panel specialist chat view.

@@ -2,7 +2,7 @@
 
 - **Date:** 2026-05-08
 - **Branch context:** `feature/screenplay-editor-core`
-- **Related docs:** `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
+- **Related docs:** `docs/product/README.md`, `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
 
 WriterOS is a writing-first studio for screenplay development. It should work for novices and professionals alike: powerful enough for serious drafting, but legible enough that a new writer understands what each surface is for without reading documentation.
 
@@ -16,7 +16,7 @@ WriterOS is not a required pipeline. It is a flexible suite of writing surfaces:
 - **Story Bible:** character, world, rules, tone, and themes.
 - **Treatment:** planned fifth surface for full-story cinematic prose before script drafting.
 
-Each surface should feel like a real writing workspace, not just form fields around a chatbot.
+Each surface should feel like a real writing workspace, not just form fields around a chatbot. Current non-script surface direction: ask plain-language story questions in Edit View, map answers to professional structure behind the scenes, and render polished Document View artifacts suitable for serious development conversations.
 
 ## Agent Model
 

@@ -1,5 +1,7 @@
 # Structured Writing Surfaces — Phase 1 Schema/Tech Spec Implementation Plan
 
+> **Historical note (2026-05-18):** This plan records the schema/migration slice that introduced `ProjectState.documents`. Its implementation details remain useful for storage archaeology, but current surface product intent and doc precedence now live in `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, and `docs/product/outline-story-coach-redesign-prd.md`.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Introduce a forward-looking `ProjectState.documents` shape (Synopsis, Outline, Treatment, Story Bible) backed by deterministic adapters and Markdown emitters, while keeping legacy `synopsis`/`outline`/`storyBible` fields as the live source of truth so existing UI keeps rendering current user data with zero loss.

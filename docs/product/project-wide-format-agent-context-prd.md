@@ -1,9 +1,9 @@
 # WriterOS Project-Wide Format + Agent Context Protocol PRD
 
 **Date:** 2026-05-16
-**Status:** Draft for implementation planning
+**Status:** Canonical project-format protocol; foundation implemented on `feature/screenplay-editor-core`, ongoing reference for surface redesigns
 **Branch context:** `feature/screenplay-editor-core`
-**Related docs:** `docs/product/structured-writing-surfaces-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/persona-capability-layer-prd.md`, `docs/superpowers/plans/2026-05-16-synopsis-series-variant.md`
+**Related docs:** `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/persona-capability-layer-prd.md`, `docs/superpowers/plans/2026-05-16-synopsis-series-variant.md`
 
 ## Summary
 
