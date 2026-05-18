@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   loadActiveProjectLibrary,
   createBlankProject,
@@ -21,6 +21,10 @@ function seedLibrary() {
 describe('deleteProjectFromLibrary', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('removes a non-active project and keeps the active project unchanged', () => {
@@ -52,6 +56,8 @@ describe('deleteProjectFromLibrary', () => {
   })
 
   it('seeds a blank project when the deleted project is the only one', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-18T12:00:00.000Z'))
     localStorage.clear()
     const onlyLibrary = loadActiveProjectLibrary()
     expect(onlyLibrary.projects).toHaveLength(1)
