@@ -30,6 +30,7 @@ This standard applies to Synopsis, Outline, Story Bible, and future Treatment. S
 ## Canonical Docs
 
 - `docs/product/project-wide-format-agent-context-prd.md` is canonical for project format authority, shared Feature/Series selector behavior, Script no-toggle scope, and agent context format rules.
+- `docs/product/synopsis-story-coach-redesign-prd.md` is canonical for the next Synopsis revision: plain-language story-assessment Edit View, hidden professional mapping, and studio-presentable Feature/Series Synopsis documents.
 - `docs/product/outline-story-coach-redesign-prd.md` is canonical for the Outline redesign and the broader surface standard: plain-language assessment in Edit View, professional structure underneath, polished document rendering.
 - `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with the two docs above, the newer format/story-coach decisions win.
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
@@ -62,7 +63,7 @@ Before more code, keep the product docs aligned in this order:
 
 | Follow-up | Owner document | Status |
 | --- | --- | --- |
-| Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | To be written before further Synopsis implementation |
+| Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | Canonical PRD written; use before further Synopsis implementation |
 | Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | To be written before Story Bible implementation |
 | Treatment surface design | `docs/product/treatment-surface-prd.md` | To be written before adding Treatment as a fifth surface |
 | Agent context migration from legacy mirrors to `documents.*` | `docs/product/agent-workflow-prd.md` plus surface-specific PRDs | Update whenever a surface changes source of truth |

@@ -183,6 +183,8 @@ The product needs a document architecture upgrade before more durable memory, ex
 
 ### Synopsis
 
+Detailed current authority: `docs/product/synopsis-story-coach-redesign-prd.md`.
+
 Purpose:
 
 - A compact, complete overview of the story.
@@ -1021,15 +1023,15 @@ Answered by May 18 alignment:
 3. Document View is read-only in V1 unless a later PRD explicitly changes it.
 4. The first schema slice already happened; `ProjectState.documents` exists.
 5. Feature/Series format authority belongs at `ProjectState.meta.format`.
+6. The exact Synopsis story-assessment prompt set is defined in `docs/product/synopsis-story-coach-redesign-prd.md`.
 
 Still open:
 
-1. What is the exact Synopsis story-assessment prompt set for a studio-ready feature synopsis and series synopsis?
-2. What is the exact Story Bible story-assessment prompt set for Feature and Series?
-3. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
-4. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
-5. Should "Transform source into proper document type" become a first-class workflow inside the app?
-6. Should Markdown export ship with each surface redesign or remain a separate export phase?
+1. What is the exact Story Bible story-assessment prompt set for Feature and Series?
+2. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
+3. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
+4. Should "Transform source into proper document type" become a first-class workflow inside the app?
+5. Should Markdown export ship with each surface redesign or remain a separate export phase?
 
 Open work ownership:
 
@@ -1047,6 +1049,6 @@ Do not begin with visual polish or more code. Complete product alignment first:
 1. Keep `docs/product/README.md` as the current doc-precedence map.
 2. Treat `docs/product/project-wide-format-agent-context-prd.md` as the source of truth for format authority.
 3. Treat `docs/product/outline-story-coach-redesign-prd.md` as the source of truth for the story-coach surface standard.
-4. Draft a Synopsis story-assessment revision note or PRD addendum before further Synopsis implementation.
+4. Use `docs/product/synopsis-story-coach-redesign-prd.md` before further Synopsis implementation.
 5. Draft a Story Bible redesign PRD before any Story Bible implementation.
 6. Draft Treatment from the new standard when the team is ready to add the fifth surface.
