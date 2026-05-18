@@ -103,4 +103,11 @@ describe('WritersRoom', () => {
     fireEvent.click(screen.getAllByText('Alex')[0])
     expect(screen.getByTestId('specialist-workspace')).toHaveTextContent('Untitled Project · genre TBD')
   })
+
+  it('dock mode keeps specialist navigation and chat without the profile workspace', () => {
+    render(<WritersRoom {...defaultProps} mode="dock" />)
+    expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
+    expect(screen.getByText('Oliver Chat')).toBeInTheDocument()
+    expect(screen.queryByTestId('specialist-workspace')).not.toBeInTheDocument()
+  })
 })

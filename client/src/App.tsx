@@ -85,12 +85,12 @@ export default function App() {
     (message: string) => buildProjectContext(project.state, message, {
       script: {
         ...latestScriptSnapshotRef.current,
-        focus: shellState.activeTab === 'script' && !shellState.writersRoomActive
+        focus: shellState.activeTab === 'script'
           ? latestScriptSnapshotRef.current.focus
           : undefined,
       },
     }),
-    [project.state, shellState.activeTab, shellState.writersRoomActive]
+    [project.state, shellState.activeTab]
   )
 
   const handleScriptSnapshotChange = useCallback((snapshot: ScriptSnapshot) => {
@@ -203,16 +203,7 @@ export default function App() {
     }
   }, [buildFreshProjectContext, project])
 
-  const renderCenter = () => {
-    if (shellState.writersRoomActive) {
-      return (
-        <WritersRoom
-          projectState={project.state}
-          onSendToSpecialist={handleSpecialistSend}
-          onClearTranscript={project.clearTranscript}
-        />
-      )
-    }
+  const renderActiveSurface = () => {
     switch (shellState.activeTab) {
       case 'script':
         return (
@@ -269,6 +260,28 @@ export default function App() {
     }
   }
 
+  const renderCenter = () => {
+    const activeSurface = renderActiveSurface()
+
+    if (shellState.writersRoomActive) {
+      return (
+        <div style={styles.surfaceWithWritersRoom}>
+          <div style={styles.activeSurfacePane}>
+            {activeSurface}
+          </div>
+          <WritersRoom
+            mode="dock"
+            projectState={project.state}
+            onSendToSpecialist={handleSpecialistSend}
+            onClearTranscript={project.clearTranscript}
+          />
+        </div>
+      )
+    }
+
+    return activeSurface
+  }
+
   const railProps = {
     transcript: project.state.agents.writingPartner.transcript,
     loading: wpLoading,
@@ -292,4 +305,18 @@ export default function App() {
       {renderCenter()}
     </Shell>
   )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  surfaceWithWritersRoom: {
+    height: '100%',
+    minHeight: 0,
+    display: 'flex',
+    overflow: 'hidden',
+  },
+  activeSurfacePane: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'auto',
+  },
 }

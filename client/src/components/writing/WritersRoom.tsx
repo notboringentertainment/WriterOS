@@ -11,6 +11,7 @@ interface WritersRoomProps {
   projectState: ProjectState
   onSendToSpecialist: (specialistId: SpecialistId, text: string) => void
   onClearTranscript?: (specialistId: AgentId) => void
+  mode?: 'full' | 'dock'
 }
 
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
@@ -35,13 +36,19 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
   }
 }
 
-export function WritersRoom({ projectState, onSendToSpecialist, onClearTranscript }: WritersRoomProps) {
+export function WritersRoom({
+  projectState,
+  onSendToSpecialist,
+  onClearTranscript,
+  mode = 'full',
+}: WritersRoomProps) {
   const [selectedId, setSelectedId] = useState<SpecialistId>('oliver')
   const [inputText, setInputText] = useState('')
 
   const persona = PERSONAS[selectedId]
   const transcript = projectState.agents[selectedId].transcript
   const contextSummary = getContextSummary(selectedId, projectState)
+  const docked = mode === 'dock'
 
   function handleSend() {
     const text = inputText.trim()
@@ -51,9 +58,9 @@ export function WritersRoom({ projectState, onSendToSpecialist, onClearTranscrip
   }
 
   return (
-    <div style={styles.root}>
+    <div style={docked ? styles.dockRoot : styles.root}>
       {/* Left nav */}
-      <nav style={styles.nav} data-testid="specialist-nav">
+      <nav style={docked ? styles.dockNav : styles.nav} data-testid="specialist-nav">
         {SPECIALISTS.map(id => {
           const p = PERSONAS[id]
           return (
@@ -73,27 +80,32 @@ export function WritersRoom({ projectState, onSendToSpecialist, onClearTranscrip
       </nav>
 
       {/* Center workspace */}
-      <div style={styles.center} data-testid="specialist-workspace">
-        <div style={styles.personaHeader}>
-          <span style={styles.personaName}>{persona.name}</span>
-          <span style={styles.personaRole}>{persona.role}</span>
+      {!docked && (
+        <div style={styles.center} data-testid="specialist-workspace">
+          <div style={styles.personaHeader}>
+            <span style={styles.personaName}>{persona.name}</span>
+            <span style={styles.personaRole}>{persona.role}</span>
+          </div>
+          <p style={styles.personaPersonality}>{persona.personality}</p>
+          <div style={styles.expertiseChips}>
+            {persona.expertise.map(e => (
+              <span key={e} style={styles.chip}>{e}</span>
+            ))}
+          </div>
+          <div style={styles.contextSummary}>
+            <span style={styles.contextLabel}>Context</span>
+            <span style={styles.contextText}>{contextSummary}</span>
+          </div>
         </div>
-        <p style={styles.personaPersonality}>{persona.personality}</p>
-        <div style={styles.expertiseChips}>
-          {persona.expertise.map(e => (
-            <span key={e} style={styles.chip}>{e}</span>
-          ))}
-        </div>
-        <div style={styles.contextSummary}>
-          <span style={styles.contextLabel}>Context</span>
-          <span style={styles.contextText}>{contextSummary}</span>
-        </div>
-      </div>
+      )}
 
       {/* Right chat */}
-      <div style={styles.chat}>
+      <div style={docked ? styles.dockChat : styles.chat}>
         <div style={styles.chatHeader}>
-          <span style={styles.chatTitle}>{persona.name} Chat</span>
+          <span style={styles.chatTitle}>
+            {persona.name} Chat
+            {docked && <span style={styles.chatSubtitle}> · {persona.role}</span>}
+          </span>
           {transcript.length > 0 && onClearTranscript && (
             <button
               type="button"
@@ -146,6 +158,17 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     overflow: 'hidden',
   },
+  dockRoot: {
+    display: 'flex',
+    height: '100%',
+    width: 560,
+    maxWidth: '48vw',
+    minWidth: 440,
+    flexShrink: 0,
+    overflow: 'hidden',
+    borderLeft: '1px solid var(--border)',
+    background: 'var(--bg)',
+  },
   nav: {
     width: 180,
     flexShrink: 0,
@@ -153,6 +176,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     padding: '16px 0',
+    gap: 2,
+    overflowY: 'auto',
+  },
+  dockNav: {
+    width: 156,
+    flexShrink: 0,
+    borderRight: '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '12px 0',
     gap: 2,
     overflowY: 'auto',
   },
@@ -255,6 +288,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
   },
+  dockChat: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+  },
   chatHeader: {
     borderBottom: '1px solid var(--border)',
     display: 'flex',
@@ -268,6 +307,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     color: 'var(--fg-muted)',
+  },
+  chatSubtitle: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    fontWeight: 400,
+    color: 'var(--fg-subtle)',
   },
   clearButton: {
     background: 'none',
