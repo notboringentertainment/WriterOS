@@ -508,6 +508,11 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   ].filter(Boolean);
 
   const synopsisLines = sectionLines(storyMemory.project.synopsisSections);
+  const synopsisBlock = synopsisLines.length
+    ? `SYNOPSIS SECTIONS:\n${synopsisLines.join('\n')}`
+    : filled(storyMemory.project.synopsis)
+      ? `SYNOPSIS:\n${truncate(storyMemory.project.synopsis, 1400)}`
+      : '';
   const worldLines = [
     filled(storyMemory.worldRules.setting) && `- Setting: ${truncate(storyMemory.worldRules.setting)}`,
     filled(storyMemory.worldRules.toneAnchors) && `- Tone anchors: ${truncate(storyMemory.worldRules.toneAnchors)}`,
@@ -518,7 +523,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
 
   const sectionBlocks: Record<ContextSection, string> = {
     brief: writingPartnerBrief,
-    synopsis: synopsisLines.length ? `SYNOPSIS SECTIONS:\n${synopsisLines.join('\n')}` : '',
+    synopsis: synopsisBlock,
     characters: characterLines.length ? `CHARACTERS:\n${characterLines.join('\n')}` : '',
     outline: beatLines.length ? `OUTLINE BEATS:\n${beatLines.join('\n')}` : '',
     scenes: scriptBlocks.join('\n\n'),

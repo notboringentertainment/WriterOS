@@ -96,6 +96,86 @@ const scriptContextSchema = z.object({
   selectedText: z.string().optional(),
 }).optional();
 
+const synopsisLoglinePartsDefault = {
+  text: '',
+  protagonist: '',
+  goal: '',
+  obstacle: '',
+  stakes: '',
+  hook: '',
+};
+
+const synopsisProseDefault = {
+  opening: '',
+  escalation: '',
+  middle: '',
+  climax: '',
+  resolution: '',
+};
+
+const synopsisQaDefault = {
+  protagonistNamedEarly: false,
+  goalClear: false,
+  obstacleClear: false,
+  stakesClear: false,
+  endingRevealed: false,
+  paragraphsConnectCausally: false,
+  toneMatchesProject: false,
+  noUnnecessarySubplot: false,
+};
+
+const synopsisLoglinePartsSchema = z.object({
+  text: z.string().default(''),
+  protagonist: z.string().default(''),
+  goal: z.string().default(''),
+  obstacle: z.string().default(''),
+  stakes: z.string().default(''),
+  hook: z.string().default(''),
+}).default(synopsisLoglinePartsDefault);
+
+const synopsisProseSchema = z.object({
+  opening: z.string().default(''),
+  escalation: z.string().default(''),
+  middle: z.string().default(''),
+  climax: z.string().default(''),
+  resolution: z.string().default(''),
+}).default(synopsisProseDefault);
+
+const synopsisQaSchema = z.object({
+  protagonistNamedEarly: z.boolean().default(false),
+  goalClear: z.boolean().default(false),
+  obstacleClear: z.boolean().default(false),
+  stakesClear: z.boolean().default(false),
+  endingRevealed: z.boolean().default(false),
+  paragraphsConnectCausally: z.boolean().default(false),
+  toneMatchesProject: z.boolean().default(false),
+  noUnnecessarySubplot: z.boolean().default(false),
+}).default(synopsisQaDefault);
+
+const synopsisSeriesSchema = z.object({
+  seriesType: z.enum(['limited', 'ongoing']).default('ongoing'),
+  episodeLength: z.enum(['half_hour', 'hour', 'other']).default('hour'),
+  showOverview: z.string().default(''),
+  pilot: z.object({
+    logline: z.string().default(''),
+    prose: z.string().default(''),
+  }).default({ logline: '', prose: '' }),
+  seasonOneArc: z.string().default(''),
+  futureSeasons: z.array(z.object({
+    id: z.string().default(''),
+    label: z.string().default(''),
+    summary: z.string().default(''),
+  })).default([]),
+  characters: z.array(z.object({
+    id: z.string().default(''),
+    name: z.string().default(''),
+    role: z.string().default(''),
+    bio: z.string().default(''),
+    arcPerSeason: z.array(z.string()).default([]),
+  })).default([]),
+  compsAndWhyThisShowNow: z.string().default(''),
+}).optional();
+
 const projectContextSchema = z.object({
   title: z.string().optional(),
   genre: z.string().optional(),
@@ -104,6 +184,10 @@ const projectContextSchema = z.object({
   script: scriptContextSchema,
   synopsis: z.object({
     logline: z.string(),
+    loglineParts: synopsisLoglinePartsSchema,
+    prose: synopsisProseSchema,
+    qa: synopsisQaSchema,
+    series: synopsisSeriesSchema,
     sections: z.object({
       setup: z.string(),
       act1Break: z.string(),
@@ -261,6 +345,79 @@ function countFilled(values: string[]): number {
   return values.filter(filled).length;
 }
 
+function projectContextLogline(projectContext: ProjectContextForOpenSwarm): string {
+  return projectContext.synopsis.loglineParts.text || projectContext.logline || projectContext.synopsis.logline || '';
+}
+
+function activeShowOverview(projectContext: ProjectContextForOpenSwarm): string {
+  return projectContext.format === 'series'
+    ? projectContext.synopsis.series?.showOverview || projectContext.synopsis.showOverview || ''
+    : '';
+}
+
+function seriesHasCharacter(character: NonNullable<ProjectContextForOpenSwarm['synopsis']['series']>['characters'][number]): boolean {
+  return filled(character.name) ||
+    filled(character.role) ||
+    filled(character.bio) ||
+    character.arcPerSeason.some(filled);
+}
+
+function buildSynopsisContextLines(projectContext: ProjectContextForOpenSwarm): string[] {
+  const logline = projectContextLogline(projectContext);
+  const legacySectionLines = Object.entries(projectContext.synopsis.sections)
+    .filter(([, value]) => filled(value))
+    .map(([key, value]) => `${key}: ${truncate(value, 500)}`);
+
+  if (projectContext.format === 'series' && projectContext.synopsis.series) {
+    const series = projectContext.synopsis.series;
+    const futureSeasons = series.futureSeasons
+      .filter(season => filled(season.label) || filled(season.summary))
+      .map((season, index) => {
+        const label = filled(season.label) ? season.label : `Season ${index + 2}`;
+        return `${label}: ${truncate(season.summary, 400)}`;
+      });
+    const characters = series.characters
+      .filter(seriesHasCharacter)
+      .map(character => {
+        const details = [
+          filled(character.role) && `role: ${character.role}`,
+          filled(character.bio) && `bio: ${character.bio}`,
+          character.arcPerSeason.some(filled) && `arcs: ${character.arcPerSeason.filter(filled).join('; ')}`,
+        ].filter(Boolean).join('; ');
+        return `${character.name || 'Unnamed character'}${details ? ` (${truncate(details, 400)})` : ''}`;
+      });
+
+    return [
+      filled(logline) ? `Series logline: ${truncate(logline, 500)}` : '',
+      filled(series.showOverview) ? `Show Overview: ${truncate(series.showOverview, 500)}` : '',
+      filled(series.pilot.logline) ? `Pilot logline: ${truncate(series.pilot.logline, 500)}` : '',
+      filled(series.pilot.prose) ? `Pilot synopsis: ${truncate(series.pilot.prose, 900)}` : '',
+      filled(series.seasonOneArc) ? `Season One Arc: ${truncate(series.seasonOneArc, 700)}` : '',
+      futureSeasons.length ? `Where It Goes: ${futureSeasons.join(' | ')}` : '',
+      characters.length ? `Characters: ${characters.join(' | ')}` : '',
+      filled(series.compsAndWhyThisShowNow) ? `Comps & Why This Show Now: ${truncate(series.compsAndWhyThisShowNow, 700)}` : '',
+    ].filter(filled);
+  }
+
+  const proseLines = [
+    filled(logline) ? `Feature logline: ${truncate(logline, 500)}` : '',
+    filled(projectContext.synopsis.prose.opening) ? `Opening: ${truncate(projectContext.synopsis.prose.opening, 500)}` : '',
+    filled(projectContext.synopsis.prose.escalation) ? `Escalation: ${truncate(projectContext.synopsis.prose.escalation, 500)}` : '',
+    filled(projectContext.synopsis.prose.middle) ? `Middle: ${truncate(projectContext.synopsis.prose.middle, 500)}` : '',
+    filled(projectContext.synopsis.prose.climax) ? `Climax: ${truncate(projectContext.synopsis.prose.climax, 500)}` : '',
+    filled(projectContext.synopsis.prose.resolution) ? `Resolution: ${truncate(projectContext.synopsis.prose.resolution, 500)}` : '',
+  ].filter(filled);
+
+  if (proseLines.length) return proseLines;
+  return legacySectionLines;
+}
+
+function buildStoryMemorySynopsis(projectContext: ProjectContextForOpenSwarm): string {
+  return buildSynopsisContextLines(projectContext)
+    .map(line => line.replace(/\s+\|\s+/g, '\n'))
+    .join('\n\n');
+}
+
 function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
   if (!voiceProfile) return [];
 
@@ -300,9 +457,8 @@ export function buildOpenSwarmWritingPartnerPrompt(
   projectContext: ProjectContextForOpenSwarm,
   voiceProfile?: VoiceProfileDocument
 ): string {
-  const synopsisSections = Object.entries(projectContext.synopsis.sections)
-    .filter(([, value]) => filled(value))
-    .map(([key, value]) => `- ${key}: ${truncate(value, 500)}`);
+  const synopsisContextLines = buildSynopsisContextLines(projectContext)
+    .map(line => `- ${line}`);
 
   const characterLines = projectContext.characters
     .filter(character => filled(character.name))
@@ -340,8 +496,23 @@ export function buildOpenSwarmWritingPartnerPrompt(
   ].filter(filled).map(line => truncate(line, 500));
   const voiceProfileLines = buildVoiceProfileLines(voiceProfile);
   const synopsisFilledCount = countFilled([
-    projectContext.synopsis.logline,
+    projectContextLogline(projectContext),
+    ...Object.values(projectContext.synopsis.prose),
     ...Object.values(projectContext.synopsis.sections),
+    ...(projectContext.format === 'series' && projectContext.synopsis.series ? [
+      projectContext.synopsis.series.showOverview,
+      projectContext.synopsis.series.pilot.logline,
+      projectContext.synopsis.series.pilot.prose,
+      projectContext.synopsis.series.seasonOneArc,
+      ...projectContext.synopsis.series.futureSeasons.flatMap(season => [season.label, season.summary]),
+      ...projectContext.synopsis.series.characters.flatMap(character => [
+        character.name,
+        character.role,
+        character.bio,
+        ...character.arcPerSeason,
+      ]),
+      projectContext.synopsis.series.compsAndWhyThisShowNow,
+    ] : []),
   ]);
   const storyBibleFilledCount = countFilled([
     projectContext.storyBible.themes,
@@ -403,15 +574,15 @@ ${bulletLines(contextInventory)}
 Project context supplied by WriterOS:
 - Title: ${projectContext.title || 'Untitled'}
 - Genre: ${projectContext.genre || 'Not supplied'}
-- Logline: ${projectContext.logline || projectContext.synopsis.logline || 'Not supplied'}
+- Logline: ${projectContextLogline(projectContext) || 'Not supplied'}
 - Format: ${projectContext.format}
-- Show Overview: ${projectContext.synopsis.showOverview || 'Not supplied'}
+- Show Overview: ${activeShowOverview(projectContext) || 'Not supplied'}
 
 Writer Voice Profile supplied by WriterOS:
 ${voiceProfileLines.length ? bulletLines(voiceProfileLines) : '- None supplied by WriterOS for this request.'}
 
-Synopsis sections:
-${synopsisSections.length ? synopsisSections.join('\n') : '- None supplied'}
+Synopsis material:
+${synopsisContextLines.length ? synopsisContextLines.join('\n') : '- None supplied'}
 
 Characters:
 ${bulletLines(characterLines)}
@@ -502,8 +673,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           title: data.projectContext.title,
           genre: data.projectContext.genre,
           format: data.projectContext.format,
-          logline: data.projectContext.logline,
-          synopsis: Object.values(data.projectContext.synopsis.sections).filter(Boolean).join('\n\n'),
+          logline: projectContextLogline(data.projectContext),
+          synopsis: buildStoryMemorySynopsis(data.projectContext),
           synopsisSections: data.projectContext.synopsis.sections,
           themes: data.projectContext.storyBible.themes,
         },

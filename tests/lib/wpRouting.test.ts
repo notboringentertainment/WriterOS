@@ -849,4 +849,88 @@ describe('buildProjectContext — project format and showOverview', () => {
     expect(ctx.synopsis.logline).toBe('Legacy logline.')
     expect(ctx.synopsis.sections.setup).toBe('Setup text.')
   })
+
+  it('exposes Feature synopsis document content for Sam without relying on header.format', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    state.documents.synopsis.content.header.format = 'series'
+    state.documents.synopsis.content.logline = {
+      text: 'A medic exposes a rescue conspiracy before her brother vanishes.',
+      protagonist: 'A medic',
+      goal: 'exposes a rescue conspiracy',
+      obstacle: 'a corrupt emergency network',
+      stakes: 'her brother vanishes',
+      hook: 'the calls are coming from missing patients',
+    }
+    state.documents.synopsis.content.prose.opening = 'A medic hears a missing patient on the emergency line.'
+    state.documents.synopsis.content.prose.resolution = 'She exposes the network and saves her brother.'
+    state.documents.synopsis.content.qa.endingRevealed = true
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.format).toBe('feature')
+    expect(ctx.logline).toBe('A medic exposes a rescue conspiracy before her brother vanishes.')
+    expect(ctx.synopsis.loglineParts.goal).toBe('exposes a rescue conspiracy')
+    expect(ctx.synopsis.prose.opening).toBe('A medic hears a missing patient on the emergency line.')
+    expect(ctx.synopsis.prose.resolution).toBe('She exposes the network and saves her brother.')
+    expect(ctx.synopsis.qa.endingRevealed).toBe(true)
+    expect(ctx.synopsis.series).toBeUndefined()
+  })
+
+  it('exposes active Series synopsis document content and ignores inactive feature mode', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    state.documents.synopsis.content.header.format = 'feature'
+    state.documents.synopsis.content.prose.opening = 'Inactive feature-only prose.'
+    state.documents.synopsis.content.series = {
+      seriesType: 'limited',
+      episodeLength: 'hour',
+      showOverview: 'A renewable conflict in a sealed city.',
+      pilot: {
+        logline: 'A runner takes the wrong rescue call.',
+        prose: 'The pilot traps the team inside the system they serve.',
+      },
+      seasonOneArc: 'The team learns the rescue network is choosing who lives.',
+      futureSeasons: [{ id: 's2', label: 'Season 2', summary: 'The conspiracy moves outside the city.' }],
+      characters: [{
+        id: 'c1',
+        name: 'Mara',
+        role: 'Lead medic',
+        bio: 'A disciplined medic with a personal stake.',
+        arcPerSeason: ['Trusts no one', 'Builds a real team'],
+      }],
+      compsAndWhyThisShowNow: 'Emergency procedural pressure with serialized civic paranoia.',
+    }
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.format).toBe('series')
+    expect(ctx.synopsis.format).toBe('series')
+    expect(ctx.synopsis.showOverview).toBe('A renewable conflict in a sealed city.')
+    expect(ctx.synopsis.series?.seriesType).toBe('limited')
+    expect(ctx.synopsis.series?.pilot.logline).toBe('A runner takes the wrong rescue call.')
+    expect(ctx.synopsis.series?.futureSeasons[0].summary).toBe('The conspiracy moves outside the city.')
+    expect(ctx.synopsis.series?.characters[0].arcPerSeason).toEqual(['Trusts no one', 'Builds a real team'])
+  })
+
+  it('does not expose inactive series synopsis content while project format is Feature', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    state.documents.synopsis.content.series = {
+      seriesType: 'ongoing',
+      episodeLength: 'hour',
+      showOverview: 'Inactive show overview.',
+      pilot: { logline: '', prose: '' },
+      seasonOneArc: '',
+      futureSeasons: [],
+      characters: [],
+      compsAndWhyThisShowNow: '',
+    }
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.format).toBe('feature')
+    expect(ctx.synopsis.showOverview).toBe('')
+    expect(ctx.synopsis.series).toBeUndefined()
+  })
 })

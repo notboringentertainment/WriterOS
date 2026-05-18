@@ -168,15 +168,51 @@ describe('SynopsisDocumentView', () => {
     expect(screen.queryByText(/copy as markdown/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/export/i)).not.toBeInTheDocument()
   })
+
+  it('branches from projectFormat instead of a stale header format mirror', () => {
+    const content = createEmptySynopsisContent()
+    content.header.title = 'Feature Project'
+    content.header.format = 'series'
+    content.prose.opening = 'Feature synopsis body.'
+    content.series = seriesContent({ showOverview: 'Inactive series overview.' })
+
+    render(
+      <SynopsisDocumentView
+        content={content}
+        projectFormat="feature"
+        updatedAt={updatedAt}
+      />
+    )
+
+    expect(screen.getByText('Feature synopsis body.')).toBeInTheDocument()
+    expect(screen.getByText('feature')).toBeInTheDocument()
+    expect(screen.queryByText(/show overview/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Inactive series overview.')).not.toBeInTheDocument()
+  })
 })
 
 describe('SynopsisDocumentView — series mode', () => {
+  it('uses projectFormat as the series authority even when header.format is stale', () => {
+    const content = createEmptySynopsisContent()
+    content.header.title = 'My Show'
+    content.header.format = 'feature'
+    content.header.targetRuntime = '100m'
+    content.series = seriesContent({ showOverview: 'The active show overview.' })
+
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
+
+    expect(screen.getByText(/^show overview$/i)).toBeTruthy()
+    expect(screen.getByText('The active show overview.')).toBeTruthy()
+    expect(screen.getByText('series')).toBeInTheDocument()
+    expect(screen.queryByText(/100m/)).toBeNull()
+  })
+
   it('renders the series metadata block with seriesType and episodeLength when format=series', () => {
     const content = createEmptySynopsisContent()
     content.header.title = 'My Show'
     content.header.format = 'series'
     content.series = seriesContent({ seriesType: 'limited', episodeLength: 'half_hour' })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/limited/i)).toBeTruthy()
     expect(screen.getByText(/half-hour/i)).toBeTruthy()
   })
@@ -187,7 +223,7 @@ describe('SynopsisDocumentView — series mode', () => {
     content.header.format = 'series'
     content.header.targetRuntime = '100m'   // populated but should not show
     content.series = seriesContent()
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.queryByText(/100m/)).toBeNull()
   })
 
@@ -195,7 +231,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ showOverview: 'A renewable conflict in a sealed city.' })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/show overview/i)).toBeTruthy()
     expect(screen.getByText(/renewable conflict in a sealed city/i)).toBeTruthy()
   })
@@ -204,7 +240,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ showOverview: '' })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.queryByText(/show overview/i)).toBeNull()
   })
 
@@ -212,7 +248,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ pilot: { logline: 'P', prose: 'PARA1\n\nPARA2' } })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/pilot synopsis/i)).toBeTruthy()
     expect(screen.getByText('P')).toBeTruthy()
     expect(screen.getByText('PARA1')).toBeTruthy()
@@ -223,7 +259,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ pilot: { logline: '', prose: '' } })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.queryByText(/pilot synopsis/i)).toBeNull()
   })
 
@@ -231,7 +267,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ seasonOneArc: 'Arc text.' })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/season one arc/i)).toBeTruthy()
     expect(screen.getByText(/arc text/i)).toBeTruthy()
   })
@@ -246,7 +282,7 @@ describe('SynopsisDocumentView — series mode', () => {
         { id: 's3', label: 'Season 3', summary: 'B.' },
       ],
     })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/where it goes/i)).toBeTruthy()
     expect(screen.getByText('Season 2')).toBeTruthy()
     expect(screen.getByText('Season 3')).toBeTruthy()
@@ -258,7 +294,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ futureSeasons: [{ id: 's1', label: '', summary: '' }] })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.queryByText(/where it goes/i)).toBeNull()
   })
 
@@ -270,7 +306,7 @@ describe('SynopsisDocumentView — series mode', () => {
         { id: 'c1', name: 'Sara', role: 'Protagonist', bio: 'Bio text.', arcPerSeason: ['S1 arc', 'S2 arc'] },
       ],
     })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/characters/i)).toBeTruthy()
     expect(screen.getByText('Sara')).toBeTruthy()
     expect(screen.getByText('Protagonist')).toBeTruthy()
@@ -285,7 +321,7 @@ describe('SynopsisDocumentView — series mode', () => {
     content.series = seriesContent({
       characters: [{ id: 'c1', name: '', role: '', bio: '', arcPerSeason: [] }],
     })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.queryByText(/^characters$/i)).toBeNull()
   })
 
@@ -293,7 +329,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent({ compsAndWhyThisShowNow: 'Like X meets Y.' })
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/comps & why this show now/i)).toBeTruthy()
     expect(screen.getByText(/like x meets y/i)).toBeTruthy()
   })
@@ -305,7 +341,7 @@ describe('SynopsisDocumentView — series mode', () => {
     content.logline.text = 'A logline.'
     content.prose.opening = 'Opening prose.'
     // intentionally no content.series
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     // Should render the feature view: title, logline, prose
     // Title appears in both h1 and metadata span, so use getAllByText
     expect(screen.getAllByText(/my show/i).length).toBeGreaterThan(0)
@@ -320,7 +356,7 @@ describe('SynopsisDocumentView — series mode', () => {
     const content = createEmptySynopsisContent()
     content.header.format = 'series'
     content.series = seriesContent()
-    render(<SynopsisDocumentView content={content} updatedAt="2026-05-16T12:00:00.000Z" />)
+    render(<SynopsisDocumentView content={content} projectFormat="series" updatedAt="2026-05-16T12:00:00.000Z" />)
     expect(screen.getByText(/last edited/i)).toBeTruthy()
   })
 })

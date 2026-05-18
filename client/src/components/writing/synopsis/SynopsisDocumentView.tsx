@@ -1,8 +1,10 @@
 import React from 'react'
 import type { SynopsisDocumentContent, SynopsisSeriesContent } from '@shared/documents'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 
 export interface SynopsisDocumentViewProps {
   content: SynopsisDocumentContent
+  projectFormat?: ProjectFormat
   updatedAt: string
 }
 
@@ -76,13 +78,15 @@ function Section({ heading, children }: { heading: string; children: React.React
 }
 
 function seriesHasCharacter(c: SynopsisSeriesContent['characters'][number]): boolean {
-  return Boolean(c.name || c.role || c.bio || c.arcPerSeason.some(Boolean))
+  return Boolean(c.name.trim() || c.role.trim() || c.bio.trim() || c.arcPerSeason.some(value => value.trim()))
 }
 
-export function SynopsisDocumentView({ content, updatedAt }: SynopsisDocumentViewProps) {
+export function SynopsisDocumentView({ content, projectFormat, updatedAt }: SynopsisDocumentViewProps) {
   const { header, logline, prose } = content
 
-  const isSeriesMode = header.format === 'series' && content.series !== undefined
+  const activeFormat = normalizeProjectFormat(projectFormat)
+  const isSeriesFormat = activeFormat === 'series'
+  const isSeriesMode = isSeriesFormat && content.series !== undefined
   const series = content.series
 
   const showMetadata = Boolean(header.title || header.writer)
@@ -150,8 +154,8 @@ export function SynopsisDocumentView({ content, updatedAt }: SynopsisDocumentVie
         >
           {METADATA_LABELS.map(({ key, label }) => {
             // Hide RUNTIME row in series mode
-            if (isSeriesMode && key === 'targetRuntime') return null
-            const val = header[key as keyof typeof header]
+            if (isSeriesFormat && key === 'targetRuntime') return null
+            const val = key === 'format' ? activeFormat : header[key as keyof typeof header]
             if (!val || (Array.isArray(val) && val.length === 0)) return null
             const display = Array.isArray(val) ? (val as string[]).join(', ') : String(val)
             return (

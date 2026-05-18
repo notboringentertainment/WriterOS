@@ -1,6 +1,7 @@
 import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import type { SynopsisDocumentContent, SynopsisSeriesContent } from '@shared/documents'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
@@ -23,9 +24,14 @@ export interface ProjectContext {
   script: ScriptContext
   synopsis: {
     logline: string
+    loglineParts: SynopsisDocumentContent['logline']
+    prose: SynopsisDocumentContent['prose']
+    qa: SynopsisDocumentContent['qa']
+    series?: SynopsisSeriesContent
     sections: ProjectState['synopsis']['sections']
     /** @deprecated Use top-level ProjectContext.format. TODO: remove after Outline/Story Bible format selectors land. */
     format: ProjectFormat
+    /** @deprecated Use synopsis.series.showOverview when ProjectContext.format is series. */
     showOverview: string
   }
   characters: Array<Pick<ProjectState['storyBible']['characters'][number], 'id' | 'name' | 'role' | 'wound' | 'want' | 'need' | 'arc'>>
@@ -138,6 +144,10 @@ export function getActiveHelperText(
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
+}
+
+function textArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(text) : []
 }
 
 function capWords(value: string, maxWords: number): { text: string; wordCount: number; truncated: boolean } {
@@ -278,20 +288,73 @@ export function getDefaultPersona(
 
 export function buildProjectContext(state: ProjectState, userMessage = '', options: ProjectContextOptions = {}): ProjectContext {
   const synopsisSections = state.synopsis.sections
+  const synopsisContent = state.documents.synopsis.content
   const storyBible = state.storyBible
   const world = storyBible.world
   const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
   const scriptScenes = options.script?.scenes ?? state.script.scenes
   const projectFormat = normalizeProjectFormat(state.meta.format)
+  const activeSeries = projectFormat === 'series' && synopsisContent.series
+    ? {
+      seriesType: synopsisContent.series.seriesType,
+      episodeLength: synopsisContent.series.episodeLength,
+      showOverview: text(synopsisContent.series.showOverview),
+      pilot: {
+        logline: text(synopsisContent.series.pilot.logline),
+        prose: text(synopsisContent.series.pilot.prose),
+      },
+      seasonOneArc: text(synopsisContent.series.seasonOneArc),
+      futureSeasons: synopsisContent.series.futureSeasons.map(season => ({
+        id: text(season.id),
+        label: text(season.label),
+        summary: text(season.summary),
+      })),
+      characters: synopsisContent.series.characters.map(character => ({
+        id: text(character.id),
+        name: text(character.name),
+        role: text(character.role),
+        bio: text(character.bio),
+        arcPerSeason: textArray(character.arcPerSeason),
+      })),
+      compsAndWhyThisShowNow: text(synopsisContent.series.compsAndWhyThisShowNow),
+    }
+    : undefined
+  const synopsisLogline = text(synopsisContent.logline.text) || text(state.synopsis.logline)
 
   return {
     title: getProjectContextTitle(state.meta.title),
     genre: text(state.meta.genre),
     format: projectFormat,
-    logline: text(state.synopsis.logline),
+    logline: synopsisLogline,
     script: extractScriptContext(text(scriptRawHtml), userMessage, options.script?.focus),
     synopsis: {
-      logline: text(state.synopsis.logline),
+      logline: synopsisLogline,
+      loglineParts: {
+        text: text(synopsisContent.logline.text),
+        protagonist: text(synopsisContent.logline.protagonist),
+        goal: text(synopsisContent.logline.goal),
+        obstacle: text(synopsisContent.logline.obstacle),
+        stakes: text(synopsisContent.logline.stakes),
+        hook: text(synopsisContent.logline.hook),
+      },
+      prose: {
+        opening: text(synopsisContent.prose.opening),
+        escalation: text(synopsisContent.prose.escalation),
+        middle: text(synopsisContent.prose.middle),
+        climax: text(synopsisContent.prose.climax),
+        resolution: text(synopsisContent.prose.resolution),
+      },
+      qa: {
+        protagonistNamedEarly: Boolean(synopsisContent.qa.protagonistNamedEarly),
+        goalClear: Boolean(synopsisContent.qa.goalClear),
+        obstacleClear: Boolean(synopsisContent.qa.obstacleClear),
+        stakesClear: Boolean(synopsisContent.qa.stakesClear),
+        endingRevealed: Boolean(synopsisContent.qa.endingRevealed),
+        paragraphsConnectCausally: Boolean(synopsisContent.qa.paragraphsConnectCausally),
+        toneMatchesProject: Boolean(synopsisContent.qa.toneMatchesProject),
+        noUnnecessarySubplot: Boolean(synopsisContent.qa.noUnnecessarySubplot),
+      },
+      series: activeSeries,
       sections: {
         setup: text(synopsisSections.setup),
         act1Break: text(synopsisSections.act1Break),
@@ -300,7 +363,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
         resolution: text(synopsisSections.resolution),
       },
       format: projectFormat,
-      showOverview: text(state.documents.synopsis.content.series?.showOverview ?? ''),
+      showOverview: activeSeries ? text(activeSeries.showOverview) : '',
     },
     characters: state.storyBible.characters.map(c => ({
       id: text(c.id),

@@ -104,6 +104,33 @@ describe('createContextSummary', () => {
     expect(summary.indexOf('SYNOPSIS SECTIONS:')).toBeLessThan(summary.indexOf('OUTLINE BEATS:'))
   })
 
+  it('uses rich Synopsis document text for Sam when legacy sections are empty', () => {
+    const summary = createContextSummary(storyMemory({
+      project: {
+        format: 'feature',
+        logline: 'A medic exposes a rescue conspiracy before her brother vanishes.',
+        synopsis: [
+          'Feature logline: A medic exposes a rescue conspiracy before her brother vanishes.',
+          'Opening: A medic hears a missing patient on the emergency line.',
+          'Resolution: She exposes the network and saves her brother.',
+        ].join('\n\n'),
+        synopsisSections: {
+          setup: '',
+          act1Break: '',
+          midpoint: '',
+          act2Break: '',
+          resolution: '',
+        },
+      },
+    }), 'sam')
+
+    expect(summary).toContain('WRITING PARTNER BRIEF:')
+    expect(summary).toContain('SYNOPSIS:')
+    expect(summary).toContain('Feature logline: A medic exposes')
+    expect(summary).toContain('Opening: A medic hears')
+    expect(summary).not.toContain('SYNOPSIS SECTIONS:')
+  })
+
   it('emphasizes world context for Zoe without including synopsis sections', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'zoe')
 

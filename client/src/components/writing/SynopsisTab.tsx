@@ -104,7 +104,11 @@ export function SynopsisTab({
           onClear={onClear}
         />
       ) : (
-        <SynopsisDocumentView content={document.content} updatedAt={document.updatedAt} />
+        <SynopsisDocumentView
+          content={document.content}
+          projectFormat={activeFormat}
+          updatedAt={document.updatedAt}
+        />
       )}
     </div>
   )
