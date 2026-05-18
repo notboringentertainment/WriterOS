@@ -252,14 +252,14 @@ export default function App() {
       case 'story-bible':
         return (
           <StoryBibleTab
-            storyBible={project.state.storyBible}
+            document={project.state.documents.storyBible}
             projectFormat={project.state.meta.format}
             onProjectFormatChange={project.setProjectFormat}
-            onAddCharacter={project.addCharacter}
-            onUpdateCharacter={project.updateCharacter}
-            onSetWorld={project.setWorld}
-            onSetThemes={project.setThemes}
-            onSetRules={project.setRules}
+            onContentPatch={(patch) =>
+              project.setStoryBibleDocument((content) => ({ ...content, ...patch }))
+            }
+            onViewPreferencesPatch={(patch) => project.setStoryBibleViewPreferences(patch)}
+            onMigrateLegacyStoryBible={project.migrateStoryBibleLegacyToDocument}
             onSectionChange={shellState.setStoryBibleSection}
             onClear={project.clearStoryBible}
           />

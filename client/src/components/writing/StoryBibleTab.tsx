@@ -1,278 +1,108 @@
-import React from 'react'
-import { CharacterCard } from '../shared/CharacterCard'
-import { GuidedSection } from '../shared/GuidedSection'
+import React, { useEffect } from 'react'
+import type {
+  AuthoredDocumentState,
+  DocumentViewPreferences,
+  StoryBibleDocumentContent,
+} from '@shared/documents'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
+import { StoryBibleStoryCoachEditView } from './storyBible/StoryBibleStoryCoachEditView'
 import type { StoryBibleSection } from '../../lib/shellState'
-import type { ProjectFormat } from '@shared/projectFormat'
 
-interface Character {
-  id: string
-  name: string
-  role: string
-  wound: string
-  want: string
-  need: string
-  arc: string
-}
-
-interface WorldData {
-  setting: string
-  toneAnchors: string
-  voiceNotes: string
-}
-
-interface StoryBibleData {
-  characters: Character[]
-  world: WorldData
-  themes: string
-  rules: string
-}
-
-interface StoryBibleTabProps {
-  storyBible: StoryBibleData
+export interface StoryBibleTabProps {
+  document: AuthoredDocumentState<StoryBibleDocumentContent>
   projectFormat?: ProjectFormat
   onProjectFormatChange?: (next: ProjectFormat) => void
-  onAddCharacter: (character: Omit<Character, 'id'>) => void
-  onUpdateCharacter: (id: string, patch: Partial<Character>) => void
-  onSetWorld: (patch: Partial<WorldData>) => void
-  onSetThemes: (value: string) => void
-  onSetRules: (value: string) => void
+  onContentPatch: (patch: Partial<StoryBibleDocumentContent>) => void
+  onViewPreferencesPatch?: (patch: Partial<DocumentViewPreferences>) => void
+  onMigrateLegacyStoryBible?: () => void
   onSectionChange?: (section: StoryBibleSection) => void
-  onClear?: () => void
+  onClear: () => void
 }
 
 export function StoryBibleTab({
-  storyBible,
-  projectFormat,
+  document,
+  projectFormat = 'feature',
   onProjectFormatChange,
-  onAddCharacter,
-  onUpdateCharacter,
-  onSetWorld,
-  onSetThemes,
-  onSetRules,
+  onContentPatch,
+  onMigrateLegacyStoryBible,
   onSectionChange,
   onClear,
 }: StoryBibleTabProps) {
-  const hasContent = Boolean(
-    storyBible.characters.length > 0 ||
-    storyBible.world.setting.trim() ||
-    storyBible.world.toneAnchors.trim() ||
-    storyBible.world.voiceNotes.trim() ||
-    storyBible.themes.trim() ||
-    storyBible.rules.trim()
-  )
+  const activeFormat = normalizeProjectFormat(projectFormat)
+  const migratedFromLegacy = document.viewPreferences?.migratedFromLegacyStoryBible === true
+
+  useEffect(() => {
+    if (!migratedFromLegacy) {
+      onMigrateLegacyStoryBible?.()
+    }
+  }, [migratedFromLegacy, onMigrateLegacyStoryBible])
+
+  function handleFormatChange(next: ProjectFormat) {
+    if (next === activeFormat) return
+    if (onProjectFormatChange) {
+      onProjectFormatChange(next)
+      return
+    }
+    onContentPatch({
+      cover: {
+        ...document.content.cover,
+        format: next,
+      },
+    })
+  }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={styles.titleRow}>
-          <h2 style={styles.title}>Story Bible</h2>
-          {(projectFormat !== undefined || onClear) && (
-            <div style={styles.titleControls}>
-              {projectFormat !== undefined && onProjectFormatChange && (
-                <ProjectFormatSelector
-                  value={projectFormat}
-                  onChange={onProjectFormatChange}
-                />
-              )}
-              {onClear && (
-                <button
-                  type="button"
-                  style={{
-                    ...styles.clearButton,
-                    ...(!hasContent ? styles.clearButtonDisabled : {}),
-                  }}
-                  onClick={onClear}
-                  disabled={!hasContent}
-                  title="Clear every story bible field"
-                >
-                  Clear story bible
-                </button>
-              )}
-            </div>
-          )}
+    <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 24px 64px' }}>
+      <div style={{ marginBottom: 28 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+            marginBottom: 6,
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: 24,
+                color: 'var(--fg)',
+                margin: 0,
+              }}
+            >
+              Story Bible
+            </h2>
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 13,
+                color: 'var(--fg-muted)',
+                fontStyle: 'italic',
+                margin: '4px 0 0',
+              }}
+            >
+              Identity, continuity, and the rules the world cannot break.
+            </p>
+          </div>
+          <ProjectFormatSelector
+            value={activeFormat}
+            onChange={handleFormatChange}
+            variant="standalone"
+          />
         </div>
-        <p style={styles.subtitle}>
-          A reference home for identity, continuity, tone, and rules. @Casey helps with characters, theme, and voice; @Zoe helps with world logic and constraints.
-        </p>
       </div>
 
-      {/* Characters */}
-      <section style={styles.section} onFocusCapture={() => onSectionChange?.('characters')}>
-        <div style={styles.sectionHeader} onClick={() => onSectionChange?.('characters')}>
-          <h3 style={styles.sectionTitle}>Characters</h3>
-          <p style={styles.sectionHint}>Wound, Want, Need, Arc</p>
-          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
-          <button
-            style={styles.addBtn}
-            onClick={() => onAddCharacter({ name: 'New Character', role: '', wound: '', want: '', need: '', arc: '' })}
-          >
-            + Add Character
-          </button>
-        </div>
-        <div style={styles.cards}>
-          {storyBible.characters.map(char => (
-            <CharacterCard key={char.id} character={char} onUpdate={onUpdateCharacter} />
-          ))}
-        </div>
-      </section>
-
-      {/* World */}
-      <section style={styles.section} onFocusCapture={() => onSectionChange?.('world')}>
-        <div style={styles.sectionHeader} onClick={() => onSectionChange?.('world')}>
-          <h3 style={styles.sectionTitle}>World</h3>
-          <p style={styles.sectionHint}>Setting and tone anchors</p>
-          <span style={styles.routeChip} title="Default specialist: Zoe">Zoe</span>
-        </div>
-        <GuidedSection
-          label="Setting"
-          guidance="Where and when does this story take place? What makes this world distinct?"
-          value={storyBible.world.setting}
-          onChange={v => onSetWorld({ setting: v })}
-        />
-        <GuidedSection
-          label="Tone Anchors"
-          guidance="2–4 comparable works that capture the tone. e.g. 'Chinatown meets No Country for Old Men.'"
-          value={storyBible.world.toneAnchors}
-          onChange={v => onSetWorld({ toneAnchors: v })}
-        />
-      </section>
-
-      {/* Themes */}
-      <section style={styles.section} onFocusCapture={() => onSectionChange?.('themes')}>
-        <div style={styles.sectionHeader} onClick={() => onSectionChange?.('themes')}>
-          <h3 style={styles.sectionTitle}>Themes</h3>
-          <p style={styles.sectionHint}>What is this story really about?</p>
-          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
-        </div>
-        <GuidedSection
-          label="Central Theme"
-          guidance="One sentence. What truth does this story argue? What does the protagonist learn?"
-          value={storyBible.themes}
-          onChange={onSetThemes}
-        />
-      </section>
-
-      {/* Tone & Voice */}
-      <section style={styles.section} onFocusCapture={() => onSectionChange?.('tone')}>
-        <div style={styles.sectionHeader} onClick={() => onSectionChange?.('tone')}>
-          <h3 style={styles.sectionTitle}>Tone & Voice</h3>
-          <p style={styles.sectionHint}>How does this story feel to read?</p>
-          <span style={styles.routeChip} title="Default specialist: Casey">Casey</span>
-        </div>
-        <GuidedSection
-          label="Voice Notes"
-          guidance="Describe the narrative voice. Fast or slow? Spare or lush? Cold or warm?"
-          value={storyBible.world.voiceNotes}
-          onChange={v => onSetWorld({ voiceNotes: v })}
-        />
-      </section>
-
-      {/* Rules of the World */}
-      <section style={styles.section} onFocusCapture={() => onSectionChange?.('rules')}>
-        <div style={styles.sectionHeader} onClick={() => onSectionChange?.('rules')}>
-          <h3 style={styles.sectionTitle}>Rules of the World</h3>
-          <p style={styles.sectionHint}>Internal logic and constraints</p>
-          <span style={styles.routeChip} title="Default specialist: Zoe">Zoe</span>
-        </div>
-        <GuidedSection
-          label="World Rules"
-          guidance="List the rules that govern this world. Violations break reader trust."
-          value={storyBible.rules}
-          onChange={onSetRules}
-        />
-      </section>
+      <StoryBibleStoryCoachEditView
+        format={activeFormat}
+        content={document.content}
+        onContentPatch={onContentPatch}
+        onSectionChange={onSectionChange}
+        onClear={onClear}
+      />
     </div>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: 760,
-    margin: '0 auto',
-    padding: '32px 24px 64px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 40,
-  },
-  header: { marginBottom: 0 },
-  titleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 6,
-  },
-  title: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: 24,
-    color: 'var(--fg)',
-    margin: 0,
-  },
-  titleControls: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-  },
-  clearButton: {
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    background: 'var(--surface-2)',
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-body)',
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '7px 10px',
-    cursor: 'pointer',
-  },
-  clearButtonDisabled: {
-    opacity: 0.45,
-    cursor: 'not-allowed',
-  },
-  subtitle: {
-    fontFamily: 'var(--font-body)',
-    fontSize: 13,
-    color: 'var(--fg-muted)',
-    lineHeight: 1.5,
-    maxWidth: 680,
-  },
-  section: { display: 'flex', flexDirection: 'column', gap: 16 },
-  sectionHeader: { display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' },
-  sectionTitle: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    fontSize: 17,
-    color: 'var(--fg)',
-  },
-  sectionHint: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: 11,
-    color: 'var(--fg-muted)',
-    flex: 1,
-    minWidth: 180,
-  },
-  routeChip: {
-    border: '1px solid var(--border)',
-    borderRadius: 999,
-    color: 'var(--fg-subtle)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 10,
-    padding: '2px 8px',
-    flexShrink: 0,
-  },
-  addBtn: {
-    background: 'none',
-    border: '1px solid var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 11,
-    padding: '4px 10px',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  cards: { display: 'flex', flexDirection: 'column', gap: 12 },
 }

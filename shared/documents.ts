@@ -451,6 +451,8 @@ export const DocumentViewPreferencesSchema = z.object({
   collapsedSections: z.array(z.string()).optional(),
   visibleDepth: z.enum(['core', 'advanced', 'continuity', 'ai_production']).optional(),
   synopsisComposeMode: z.enum(['prose', 'paragraphs']).optional(),
+  migratedFromLegacyStoryBible: z.boolean().optional(),
+  expandedStoryBibleCharacterIds: z.array(z.string()).optional(),
 })
 export type DocumentViewPreferences = z.infer<typeof DocumentViewPreferencesSchema>
 

@@ -50,11 +50,22 @@ function outlineLegacyToContent(legacy: ProjectState['outline']): OutlineDocumen
   return content
 }
 
-function storyBibleLegacyToContent(legacy: ProjectState['storyBible']): StoryBibleDocumentContent {
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map(item => item.trim())
+    .filter(item => item.length > 0)
+}
+
+function preferLegacy(legacyValue: string, existingValue: string): string {
+  return legacyValue.trim() ? legacyValue : existingValue
+}
+
+export function storyBibleLegacyToContent(legacy: ProjectState['storyBible']): StoryBibleDocumentContent {
   const content = createEmptyStoryBibleContent()
   content.premiseAndWorld.premise = legacy.world.setting
   content.premiseAndWorld.worldRules = legacy.rules
-  content.toneAndStyle.comps = legacy.world.toneAnchors ? [legacy.world.toneAnchors] : []
+  content.toneAndStyle.comps = splitList(legacy.world.toneAnchors)
   content.toneAndStyle.dialogueStyle = legacy.world.voiceNotes
   content.onePagePitch.whyThisMatters = legacy.themes
   content.characters = legacy.characters.map(char => ({
@@ -74,6 +85,63 @@ function storyBibleLegacyToContent(legacy: ProjectState['storyBible']): StoryBib
     continuityFacts: '',
   }))
   return content
+}
+
+export function mergeStoryBibleLegacyIntoContent(
+  existing: StoryBibleDocumentContent,
+  legacy: ProjectState['storyBible'],
+): StoryBibleDocumentContent {
+  const legacyContent = storyBibleLegacyToContent(legacy)
+  const existingCharactersById = new Map(existing.characters.map(character => [character.id, character]))
+  const migratedCharacters = legacyContent.characters.map(character => {
+    const existingCharacter = existingCharactersById.get(character.id)
+    if (!existingCharacter) return character
+
+    return {
+      ...existingCharacter,
+      name: preferLegacy(character.name, existingCharacter.name),
+      role: preferLegacy(character.role, existingCharacter.role),
+      want: preferLegacy(character.want, existingCharacter.want),
+      need: preferLegacy(character.need, existingCharacter.need),
+      flaw: preferLegacy(character.flaw, existingCharacter.flaw),
+      arc: preferLegacy(character.arc, existingCharacter.arc),
+    }
+  })
+  const migratedIds = new Set(migratedCharacters.map(character => character.id))
+  const preservedDocumentOnlyCharacters = existing.characters.filter(character => !migratedIds.has(character.id))
+
+  return {
+    ...existing,
+    onePagePitch: {
+      ...existing.onePagePitch,
+      whyThisMatters: preferLegacy(
+        legacyContent.onePagePitch.whyThisMatters,
+        existing.onePagePitch.whyThisMatters,
+      ),
+    },
+    toneAndStyle: {
+      ...existing.toneAndStyle,
+      comps: legacyContent.toneAndStyle.comps.length > 0
+        ? legacyContent.toneAndStyle.comps
+        : existing.toneAndStyle.comps,
+      dialogueStyle: preferLegacy(
+        legacyContent.toneAndStyle.dialogueStyle,
+        existing.toneAndStyle.dialogueStyle,
+      ),
+    },
+    premiseAndWorld: {
+      ...existing.premiseAndWorld,
+      premise: preferLegacy(
+        legacyContent.premiseAndWorld.premise,
+        existing.premiseAndWorld.premise,
+      ),
+      worldRules: preferLegacy(
+        legacyContent.premiseAndWorld.worldRules,
+        existing.premiseAndWorld.worldRules,
+      ),
+    },
+    characters: [...migratedCharacters, ...preservedDocumentOnlyCharacters],
+  }
 }
 
 function treatmentLegacyToContent(): TreatmentDocumentContent {
@@ -183,7 +251,7 @@ export function documentsToLegacy(docs: ProjectDocuments): LegacyProjectSlice {
     characters,
     world: {
       setting: docs.storyBible.content.premiseAndWorld.premise,
-      toneAnchors: docs.storyBible.content.toneAndStyle.comps[0] ?? '',
+      toneAnchors: docs.storyBible.content.toneAndStyle.comps.join(', '),
       voiceNotes: docs.storyBible.content.toneAndStyle.dialogueStyle,
     },
     themes: docs.storyBible.content.onePagePitch.whyThisMatters,

@@ -4,7 +4,12 @@ import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
-import { createEmptySeriesContent, createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '../../shared/documents'
+import {
+  createEmptySeriesContent,
+  createEmptyStoryBibleContent,
+  createEmptySynopsisContent,
+  DOCUMENT_SCHEMA_VERSION,
+} from '../../shared/documents'
 
 beforeEach(() => localStorage.clear())
 
@@ -25,10 +30,12 @@ describe('useProjectState', () => {
     act(() => result.current.setProjectFormat('series'))
     expect(result.current.state.meta.format).toBe('series')
     expect(result.current.state.documents.synopsis.content.header.format).toBe('series')
+    expect(result.current.state.documents.storyBible.content.cover.format).toBe('series')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.meta.format).toBe('series')
     expect(stored.documents.synopsis.content.header.format).toBe('series')
+    expect(stored.documents.storyBible.content.cover.format).toBe('series')
   })
 
   it('setProjectFormat lazily initializes series content when entering series', () => {
@@ -66,7 +73,7 @@ describe('useProjectState', () => {
     expect(result.current.state.documents.synopsis.content.series).toEqual(existingSeries)
   })
 
-  it('setProjectFormat does not mutate outline or story bible content', () => {
+  it('setProjectFormat does not mutate outline or authored story bible content', () => {
     const { result } = renderHook(() => useProjectState())
 
     act(() => result.current.setBeat('midpoint', { notes: 'The bargain collapses.' }))
@@ -96,13 +103,29 @@ describe('useProjectState', () => {
     expect(result.current.state.outline).toEqual(outlineBefore)
     expect(result.current.state.storyBible).toEqual(storyBibleBefore)
     expect(result.current.state.documents.outline).toEqual(outlineDocumentBefore)
-    expect(result.current.state.documents.storyBible).toEqual(storyBibleDocumentBefore)
+    expect({
+      ...result.current.state.documents.storyBible,
+      updatedAt: storyBibleDocumentBefore.updatedAt,
+      content: {
+        ...result.current.state.documents.storyBible.content,
+        cover: storyBibleDocumentBefore.content.cover,
+      },
+    }).toEqual(storyBibleDocumentBefore)
+    expect(result.current.state.documents.storyBible.content.cover.format).toBe('series')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.outline).toEqual(outlineBefore)
     expect(stored.storyBible).toEqual(storyBibleBefore)
     expect(stored.documents.outline).toEqual(outlineDocumentBefore)
-    expect(stored.documents.storyBible).toEqual(storyBibleDocumentBefore)
+    expect({
+      ...stored.documents.storyBible,
+      updatedAt: storyBibleDocumentBefore.updatedAt,
+      content: {
+        ...stored.documents.storyBible.content,
+        cover: storyBibleDocumentBefore.content.cover,
+      },
+    }).toEqual(storyBibleDocumentBefore)
+    expect(stored.documents.storyBible.content.cover.format).toBe('series')
   })
 
   it('setMeta normalizes default display title to unset stored title', () => {
@@ -189,9 +212,13 @@ describe('useProjectState', () => {
     act(() => result.current.clearStoryBible())
 
     expect(result.current.state.storyBible).toEqual(defaultProjectState().storyBible)
+    const expectedContent = createEmptyStoryBibleContent()
+    expectedContent.cover.format = 'feature'
+    expect(result.current.state.documents.storyBible.content).toEqual(expectedContent)
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.storyBible).toEqual(result.current.state.storyBible)
+    expect(stored.documents.storyBible.content).toEqual(expectedContent)
   })
 
   it('persists state to localStorage on update', () => {
@@ -352,6 +379,113 @@ describe('useProjectState — setSynopsisDocument', () => {
     expect(result.current.state.synopsis).toEqual(
       documentsToLegacy(result.current.state.documents).synopsis,
     )
+  })
+})
+
+describe('useProjectState — setStoryBibleDocument', () => {
+  it('applies the updater to documents.storyBible.content', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      cover: { ...content.cover, title: 'Bible Title' },
+    })))
+    expect(result.current.state.documents.storyBible.content.cover.title).toBe('Bible Title')
+  })
+
+  it('mirrors the legacy story bible slice after every mutation', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      premiseAndWorld: {
+        ...content.premiseAndWorld,
+        premise: 'A sealed city',
+        worldRules: 'No one leaves after dusk.',
+      },
+      onePagePitch: { ...content.onePagePitch, whyThisMatters: 'Mercy under pressure' },
+      toneAndStyle: {
+        ...content.toneAndStyle,
+        comps: ['Chinatown', 'Nope'],
+        dialogueStyle: 'Spare and cold',
+      },
+    })))
+
+    expect(result.current.state.storyBible).toEqual(
+      documentsToLegacy(result.current.state.documents).storyBible,
+    )
+    expect(result.current.state.storyBible.world.setting).toBe('A sealed city')
+    expect(result.current.state.storyBible.world.toneAnchors).toBe('Chinatown, Nope')
+    expect(result.current.state.storyBible.themes).toBe('Mercy under pressure')
+  })
+
+  it('persists documents.storyBible content to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      onePagePitch: { ...content.onePagePitch, logline: 'A city eats its saints.' },
+    })))
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.storyBible.content.onePagePitch.logline).toBe('A city eats its saints.')
+  })
+
+  it('keeps cover.format mirrored from ProjectState.meta.format', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      cover: { ...content.cover, format: 'feature', title: 'Wrong mirror' },
+    })))
+
+    expect(result.current.state.documents.storyBible.content.cover.format).toBe('series')
+  })
+
+  it('does not mutate other documents', () => {
+    const { result } = renderHook(() => useProjectState())
+    const synopsisBefore = JSON.parse(JSON.stringify(result.current.state.documents.synopsis))
+    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
+    const treatmentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
+
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      cover: { ...content.cover, title: 'X' },
+    })))
+
+    expect(result.current.state.documents.synopsis).toEqual(synopsisBefore)
+    expect(result.current.state.documents.outline).toEqual(outlineBefore)
+    expect(result.current.state.documents.treatment).toEqual(treatmentBefore)
+  })
+})
+
+describe('useProjectState — Story Bible legacy migration guard', () => {
+  it('migrates legacy fields into documents.storyBible once and sets the guard', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setWorld({
+      setting: 'A sealed city',
+      toneAnchors: 'Chinatown, Nope',
+      voiceNotes: 'Spare and cold',
+    }))
+    act(() => result.current.setThemes('Mercy under pressure'))
+    act(() => result.current.setRules('No one leaves after dusk.'))
+
+    act(() => result.current.migrateStoryBibleLegacyToDocument())
+
+    expect(result.current.state.documents.storyBible.viewPreferences?.migratedFromLegacyStoryBible).toBe(true)
+    expect(result.current.state.documents.storyBible.content.premiseAndWorld.premise).toBe('A sealed city')
+    expect(result.current.state.documents.storyBible.content.toneAndStyle.comps).toEqual(['Chinatown', 'Nope'])
+    expect(result.current.state.documents.storyBible.content.onePagePitch.whyThisMatters).toBe('Mercy under pressure')
+  })
+
+  it('does not re-migrate when the guard is already set', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.migrateStoryBibleLegacyToDocument())
+    act(() => result.current.setStoryBibleDocument(content => ({
+      ...content,
+      onePagePitch: { ...content.onePagePitch, whyThisMatters: 'Document-owned theme' },
+    })))
+
+    act(() => result.current.migrateStoryBibleLegacyToDocument())
+
+    expect(result.current.state.documents.storyBible.content.onePagePitch.whyThisMatters).toBe('Document-owned theme')
   })
 })
 

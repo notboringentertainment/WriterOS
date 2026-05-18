@@ -151,6 +151,22 @@ function syncSynopsisFormatMirror(
   }
 }
 
+function syncStoryBibleFormatMirror(
+  storyBible: ProjectDocuments['storyBible'],
+  format: ProjectFormat,
+): ProjectDocuments['storyBible'] {
+  return {
+    ...storyBible,
+    content: {
+      ...storyBible.content,
+      cover: {
+        ...storyBible.content.cover,
+        format,
+      },
+    },
+  }
+}
+
 export function migrateState(raw: unknown): ProjectState {
   if (!raw || typeof raw !== 'object') return defaultProjectState()
   const obj = raw as Record<string, unknown>
@@ -220,6 +236,7 @@ export function migrateState(raw: unknown): ProjectState {
   ;(state as Record<string, unknown>).documents = {
     ...migratedDocuments,
     synopsis: syncSynopsisFormatMirror(migratedDocuments.synopsis, promotedFormat),
+    storyBible: syncStoryBibleFormatMirror(migratedDocuments.storyBible, promotedFormat),
   }
 
   return state as unknown as ProjectState
@@ -239,7 +256,7 @@ export function saveProjectState(state: ProjectState): void {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),
       outline: state.documents.outline,
       treatment: state.documents.treatment,
-      storyBible: state.documents.storyBible,
+      storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
     },
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))

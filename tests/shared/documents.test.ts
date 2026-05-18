@@ -308,6 +308,14 @@ describe('DocumentViewPreferencesSchema — synopsisComposeMode', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts Story Bible migration and expansion preferences', () => {
+    const result = DocumentViewPreferencesSchema.safeParse({
+      migratedFromLegacyStoryBible: true,
+      expandedStoryBibleCharacterIds: ['c1'],
+    })
+    expect(result.success).toBe(true)
+  })
+
   it('rejects an unknown synopsisComposeMode value', () => {
     const result = DocumentViewPreferencesSchema.safeParse({ synopsisComposeMode: 'outline' })
     expect(result.success).toBe(false)

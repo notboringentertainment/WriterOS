@@ -10,14 +10,22 @@ import {
 } from './projectLibrary'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
-import type { SynopsisDocumentContent, DocumentViewPreferences } from '@shared/documents'
-import { createEmptySeriesContent, createEmptySynopsisContent, DOCUMENT_SCHEMA_VERSION } from '@shared/documents'
-import { documentsToLegacy } from './documentMigration'
+import type { SynopsisDocumentContent, StoryBibleDocumentContent, DocumentViewPreferences } from '@shared/documents'
+import {
+  createEmptySeriesContent,
+  createEmptyStoryBibleContent,
+  createEmptySynopsisContent,
+  DOCUMENT_SCHEMA_VERSION,
+} from '@shared/documents'
+import { documentsToLegacy, mergeStoryBibleLegacyIntoContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+
+function nextTimestampAfter(value: string): string {
+  return new Date(Math.max(Date.now(), new Date(value).getTime() + 1)).toISOString()
+}
 
 function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
   const format = normalizeProjectFormat(value)
-  const prevUpdatedAt = new Date(state.documents.synopsis.updatedAt).getTime()
   const seriesPatch =
     format === 'series' && state.documents.synopsis.content.series === undefined
       ? { series: createEmptySeriesContent() }
@@ -33,12 +41,23 @@ function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
       ...state.documents,
       synopsis: {
         ...state.documents.synopsis,
-        updatedAt: new Date(Math.max(Date.now(), prevUpdatedAt + 1)).toISOString(),
+        updatedAt: nextTimestampAfter(state.documents.synopsis.updatedAt),
         content: {
           ...state.documents.synopsis.content,
           ...seriesPatch,
           header: {
             ...state.documents.synopsis.content.header,
+            format,
+          },
+        },
+      },
+      storyBible: {
+        ...state.documents.storyBible,
+        updatedAt: nextTimestampAfter(state.documents.storyBible.updatedAt),
+        content: {
+          ...state.documents.storyBible.content,
+          cover: {
+            ...state.documents.storyBible.content.cover,
             format,
           },
         },
@@ -132,6 +151,87 @@ export function useProjectState() {
     [update],
   )
 
+  const setStoryBibleDocument = useCallback(
+    (updater: (content: StoryBibleDocumentContent) => StoryBibleDocumentContent) => {
+      update(s => {
+        const format = normalizeProjectFormat(s.meta.format)
+        const nextContent = updater(s.documents.storyBible.content)
+        const nextStoryBibleDoc = {
+          ...s.documents.storyBible,
+          updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
+          content: {
+            ...nextContent,
+            cover: {
+              ...nextContent.cover,
+              format,
+            },
+          },
+        }
+        const nextDocuments = { ...s.documents, storyBible: nextStoryBibleDoc }
+        const nextLegacySlice = documentsToLegacy(nextDocuments).storyBible
+        return {
+          ...s,
+          documents: nextDocuments,
+          storyBible: nextLegacySlice,
+        }
+      })
+    },
+    [update],
+  )
+
+  const setStoryBibleViewPreferences = useCallback(
+    (patch: Partial<DocumentViewPreferences>) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          storyBible: {
+            ...s.documents.storyBible,
+            viewPreferences: {
+              ...(s.documents.storyBible.viewPreferences ?? {}),
+              ...patch,
+            },
+          },
+        },
+      }))
+    },
+    [update],
+  )
+
+  const migrateStoryBibleLegacyToDocument = useCallback(() => {
+    update(s => {
+      if (s.documents.storyBible.viewPreferences?.migratedFromLegacyStoryBible) return s
+
+      const format = normalizeProjectFormat(s.meta.format)
+      const mergedContent = mergeStoryBibleLegacyIntoContent(
+        s.documents.storyBible.content,
+        s.storyBible,
+      )
+      const nextStoryBibleDoc = {
+        ...s.documents.storyBible,
+        updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
+        content: {
+          ...mergedContent,
+          cover: {
+            ...mergedContent.cover,
+            format,
+          },
+        },
+        viewPreferences: {
+          ...(s.documents.storyBible.viewPreferences ?? {}),
+          migratedFromLegacyStoryBible: true,
+        },
+      }
+      const nextDocuments = { ...s.documents, storyBible: nextStoryBibleDoc }
+
+      return {
+        ...s,
+        documents: nextDocuments,
+        storyBible: documentsToLegacy(nextDocuments).storyBible,
+      }
+    })
+  }, [update])
+
   const setSynopsisViewPreferences = useCallback(
     (patch: Partial<DocumentViewPreferences>) => {
       update(s => ({
@@ -187,42 +287,102 @@ export function useProjectState() {
   }, [update])
 
   const addCharacter = useCallback((character: Omit<Character, 'id'>) => {
-    update(s => ({
-      ...s,
-      storyBible: {
-        ...s.storyBible,
-        characters: [...s.storyBible.characters, { id: crypto.randomUUID(), ...character }],
-      },
+    setStoryBibleDocument(content => ({
+      ...content,
+      characters: [
+        ...content.characters,
+        {
+          id: crypto.randomUUID(),
+          name: character.name,
+          role: character.role,
+          want: character.want,
+          need: character.need,
+          flaw: character.wound,
+          secret: '',
+          contradiction: '',
+          arc: character.arc,
+          relationshipPressure: '',
+          behavioralAnchors: '',
+          speechPatterns: '',
+          neverWriteThemAs: '',
+          continuityFacts: '',
+        },
+      ],
     }))
-  }, [update])
+  }, [setStoryBibleDocument])
 
   const updateCharacter = useCallback((id: string, patch: Partial<Character>) => {
-    update(s => ({
-      ...s,
-      storyBible: {
-        ...s.storyBible,
-        characters: s.storyBible.characters.map(c => c.id === id ? { ...c, ...patch } : c),
-      },
+    setStoryBibleDocument(content => ({
+      ...content,
+      characters: content.characters.map(c => c.id === id
+        ? {
+            ...c,
+            ...(patch.name !== undefined ? { name: patch.name } : {}),
+            ...(patch.role !== undefined ? { role: patch.role } : {}),
+            ...(patch.want !== undefined ? { want: patch.want } : {}),
+            ...(patch.need !== undefined ? { need: patch.need } : {}),
+            ...(patch.wound !== undefined ? { flaw: patch.wound } : {}),
+            ...(patch.arc !== undefined ? { arc: patch.arc } : {}),
+          }
+        : c),
     }))
-  }, [update])
+  }, [setStoryBibleDocument])
 
   const setWorld = useCallback((patch: Partial<ProjectState['storyBible']['world']>) => {
-    update(s => ({
-      ...s,
-      storyBible: { ...s.storyBible, world: { ...s.storyBible.world, ...patch } },
+    setStoryBibleDocument(content => ({
+      ...content,
+      premiseAndWorld: {
+        ...content.premiseAndWorld,
+        ...(patch.setting !== undefined ? { premise: patch.setting } : {}),
+      },
+      toneAndStyle: {
+        ...content.toneAndStyle,
+        ...(patch.toneAnchors !== undefined
+          ? {
+              comps: patch.toneAnchors
+                .split(',')
+                .map(value => value.trim())
+                .filter(value => value.length > 0),
+            }
+          : {}),
+        ...(patch.voiceNotes !== undefined ? { dialogueStyle: patch.voiceNotes } : {}),
+      },
     }))
-  }, [update])
+  }, [setStoryBibleDocument])
 
   const setThemes = useCallback((value: string) => {
-    update(s => ({ ...s, storyBible: { ...s.storyBible, themes: value } }))
-  }, [update])
+    setStoryBibleDocument(content => ({
+      ...content,
+      onePagePitch: { ...content.onePagePitch, whyThisMatters: value },
+    }))
+  }, [setStoryBibleDocument])
 
   const setRules = useCallback((value: string) => {
-    update(s => ({ ...s, storyBible: { ...s.storyBible, rules: value } }))
-  }, [update])
+    setStoryBibleDocument(content => ({
+      ...content,
+      premiseAndWorld: { ...content.premiseAndWorld, worldRules: value },
+    }))
+  }, [setStoryBibleDocument])
 
   const clearStoryBible = useCallback(() => {
-    update(s => ({ ...s, storyBible: defaultProjectState().storyBible }))
+    update(s => {
+      const format = normalizeProjectFormat(s.meta.format)
+      const content = createEmptyStoryBibleContent()
+      content.cover.format = format
+      const nextStoryBibleDoc = {
+        version: DOCUMENT_SCHEMA_VERSION,
+        mode: 'development' as const,
+        updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
+        content,
+        // viewPreferences intentionally omitted on clear
+      }
+      const nextDocuments = { ...s.documents, storyBible: nextStoryBibleDoc }
+      return {
+        ...s,
+        storyBible: defaultProjectState().storyBible,
+        documents: nextDocuments,
+      }
+    })
   }, [update])
 
   const addMessage = useCallback((agentId: AgentId, msg: TranscriptMessage) => {
@@ -297,6 +457,9 @@ export function useProjectState() {
     clearSynopsis,
     setSynopsisDocument,
     setSynopsisViewPreferences,
+    setStoryBibleDocument,
+    setStoryBibleViewPreferences,
+    migrateStoryBibleLegacyToDocument,
     setBeat,
     clearOutline,
     reorderBeats,
