@@ -64,7 +64,11 @@ export function deriveSeriesReadiness(
     {
       id: 'series-characters-sustain',
       question: 'Can the characters sustain recurring pressure?',
-      satisfied: (series?.characters?.length ?? 0) > 0,
+      satisfied: (series?.characters ?? []).some(
+        (c) =>
+          isFilled(c.name) &&
+          (isFilled(c.role) || isFilled(c.bio) || c.arcPerSeason.some(isFilled)),
+      ),
     },
     {
       id: 'series-why-this-why-now',

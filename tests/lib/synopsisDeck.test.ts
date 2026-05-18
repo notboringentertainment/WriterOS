@@ -215,18 +215,40 @@ describe('deriveSeriesReadiness', () => {
     expect(both.satisfied).toBe(true)
   })
 
-  it('marks characters-sustain satisfied when at least one character exists', () => {
+  it('marks characters-sustain satisfied only when at least one character has real substance', () => {
     const content = synopsisProbeContent()
+    // Empty stub row must NOT count.
+    content.series!.characters.push({
+      id: 'c0',
+      name: '',
+      role: '',
+      bio: '',
+      arcPerSeason: [],
+    })
+    const stubChecks = deriveSeriesReadiness(content)
+    expect(stubChecks.find((c) => c.id === 'series-characters-sustain')!.satisfied).toBe(false)
+
+    // Named row with no role/bio/arc still must NOT count — name alone is not substance.
     content.series!.characters.push({
       id: 'c1',
+      name: 'Lead',
+      role: '',
+      bio: '',
+      arcPerSeason: [],
+    })
+    const nameOnlyChecks = deriveSeriesReadiness(content)
+    expect(nameOnlyChecks.find((c) => c.id === 'series-characters-sustain')!.satisfied).toBe(false)
+
+    // Named row WITH role (or bio or any arc) counts.
+    content.series!.characters.push({
+      id: 'c2',
       name: 'Lead',
       role: 'protagonist',
       bio: '',
       arcPerSeason: [],
     })
-    const checks = deriveSeriesReadiness(content)
-    const sustain = checks.find((c) => c.id === 'series-characters-sustain')!
-    expect(sustain.satisfied).toBe(true)
+    const realChecks = deriveSeriesReadiness(content)
+    expect(realChecks.find((c) => c.id === 'series-characters-sustain')!.satisfied).toBe(true)
   })
 
   it('treats whitespace-only text as not filled', () => {
