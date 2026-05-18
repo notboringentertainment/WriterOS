@@ -4,7 +4,7 @@
 **Status:** Living surface-roadmap PRD; May 18 product alignment applied
 **Branch context:** `feature/screenplay-editor-core`
 **Current baseline:** `b74c711 docs: add writer voice profile PRD`
-**Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, `docs/product/writeros-future-work-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
+**Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, `docs/product/synopsis-story-coach-redesign-prd.md`, `docs/product/story-bible-story-coach-redesign-prd.md`, `docs/product/writeros-future-work-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/project-identity-script-context-prd.md`
 **Reference input:** `/Users/ben/Downloads/ai-film-writing-templates 2`
 
 ## Summary
@@ -434,6 +434,8 @@ Agent behavior:
 
 ### Story Bible
 
+Detailed current authority: `docs/product/story-bible-story-coach-redesign-prd.md`.
+
 Purpose:
 
 - The project source of truth.
@@ -447,11 +449,11 @@ Current issue:
 
 May 18 direction:
 
-- Story Bible must follow the same plain-language story-assessment standard as Outline.
+- Story Bible must follow the same plain-language story-assessment standard as Outline and Synopsis.
 - Do not expose the full professional bible template as a giant form in V1.
 - Edit View should ask practical questions that help the writer define premise, tone, character engines, world rules, canon, open questions, and series durability without requiring bible jargon.
 - Professional labels such as Pitch Bible, Living Bible, canon log, story engine, and continuity architecture may appear in hidden mappings, Document View, and advanced controls only where they help rather than intimidate.
-- A dedicated Story Bible redesign PRD is required before implementation continues on this surface.
+- The dedicated PRD now exists at `docs/product/story-bible-story-coach-redesign-prd.md`. Treat it as canonical for the Story Bible surface, including its V1 scope and deferred sections (locations, continuity log, open questions, AI production annex).
 
 Recommended V1 sections:
 
@@ -1024,14 +1026,14 @@ Answered by May 18 alignment:
 4. The first schema slice already happened; `ProjectState.documents` exists.
 5. Feature/Series format authority belongs at `ProjectState.meta.format`.
 6. The exact Synopsis story-assessment prompt set is defined in `docs/product/synopsis-story-coach-redesign-prd.md`.
+7. The exact Story Bible story-assessment prompt set for Feature and Series is defined in `docs/product/story-bible-story-coach-redesign-prd.md`.
 
 Still open:
 
-1. What is the exact Story Bible story-assessment prompt set for Feature and Series?
-2. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
-3. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
-4. Should "Transform source into proper document type" become a first-class workflow inside the app?
-5. Should Markdown export ship with each surface redesign or remain a separate export phase?
+1. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
+2. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
+3. Should "Transform source into proper document type" become a first-class workflow inside the app?
+4. Should Markdown export ship with each surface redesign or remain a separate export phase?
 
 Open work ownership:
 
