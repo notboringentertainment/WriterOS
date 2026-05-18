@@ -576,15 +576,15 @@ Required before final commit:
   - Document View renders a professional bible in both modes.
   - Casey and Zoe context packs surface the right format-appropriate fields.
 
-## Open Questions
+## V1 Decisions
 
-These should be answered during implementation, not deferred into product drift:
+These decisions close the remaining implementation ambiguities for the V1 Story Bible story-coach redesign:
 
-1. Should `cover.status` (Pitch / Development / Production / Living canon) influence Document View density in V1, or stay purely metadata until a later PRD?
-2. Should the migration default `cover.status` to `pitch` for projects with no story-engine content yet, and `development` otherwise, or always default to `development`?
-3. Should the character card expose `behavioralAnchors`, `speechPatterns`, and `neverWriteThemAs` in V1, or hide them behind an optional "more about this character" expansion to keep the initial card scannable?
-4. Should derived readiness checks render their satisfied count anywhere (e.g., "3 of 6 reader checks pass"), or stay purely qualitative until manual checklists exist?
-5. Should the Story Bible page ever offer a one-page pitch export shortcut in V1, or wait until Markdown export ships across surfaces?
+1. `cover.status` is metadata only in V1. It must not change Document View density, section visibility, or prompt behavior. Pitch-vs-living density is deferred to a later PRD.
+2. Legacy migration always defaults `cover.status` to `development`. Do not infer `pitch` from sparse story-engine content.
+3. Character cards expose `behavioralAnchors`, `speechPatterns`, and `neverWriteThemAs` behind an optional "more about this character" expansion so the default card remains scannable.
+4. Derived readiness stays qualitative in V1. Do not render a numeric satisfied count such as "3 of 6 reader checks pass."
+5. Story Bible does not get a one-page pitch export shortcut in V1. Export waits for the cross-surface Markdown / PDF / DOCX export phase.
 
 ## Acceptance Criteria
 
