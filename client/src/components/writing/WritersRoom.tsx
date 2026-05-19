@@ -49,6 +49,7 @@ export function WritersRoom({
   const transcript = projectState.agents[selectedId].transcript
   const contextSummary = getContextSummary(selectedId, projectState)
   const docked = mode === 'dock'
+  const canSend = inputText.trim().length > 0
 
   function handleSend() {
     const text = inputText.trim()
@@ -146,6 +147,18 @@ export function WritersRoom({
               }
             }}
           />
+          <button
+            type="button"
+            aria-label={`Send message to ${persona.name}`}
+            disabled={!canSend}
+            onClick={handleSend}
+            style={{
+              ...styles.sendButton,
+              ...(!canSend ? styles.sendButtonDisabled : {}),
+            }}
+          >
+            Send
+          </button>
         </div>
       </div>
     </div>
@@ -373,9 +386,13 @@ const styles: Record<string, React.CSSProperties> = {
   inputRow: {
     padding: '8px 12px 12px',
     borderTop: '1px solid var(--border)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 8,
   },
   input: {
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     background: 'var(--surface-2)',
     border: '1px solid var(--border)',
     borderRadius: 8,
@@ -386,5 +403,23 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
     lineHeight: 1.5,
     boxSizing: 'border-box',
+  },
+  sendButton: {
+    height: 38,
+    minWidth: 58,
+    padding: '0 12px',
+    borderRadius: 8,
+    border: '1px solid var(--wp-amber)',
+    background: 'var(--wp-amber)',
+    color: '#1a1200',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  sendButtonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
 }

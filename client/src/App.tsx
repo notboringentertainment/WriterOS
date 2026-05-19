@@ -198,7 +198,8 @@ export default function App() {
       const response = await postWPChat({ personaId: specialistId, message: text, projectContext, conversationHistory })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
-    } catch {
+    } catch (error) {
+      if (isAbortError(error)) return
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
     }
   }, [buildFreshProjectContext, project])
@@ -249,7 +250,6 @@ export default function App() {
             onContentPatch={(patch) =>
               project.setStoryBibleDocument((content) => ({ ...content, ...patch }))
             }
-            onViewPreferencesPatch={(patch) => project.setStoryBibleViewPreferences(patch)}
             onMigrateLegacyStoryBible={project.migrateStoryBibleLegacyToDocument}
             onSectionChange={shellState.setStoryBibleSection}
             onClear={project.clearStoryBible}

@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react'
 import type {
   AuthoredDocumentState,
-  DocumentViewPreferences,
   StoryBibleDocumentContent,
 } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
@@ -14,7 +13,6 @@ export interface StoryBibleTabProps {
   projectFormat?: ProjectFormat
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentPatch: (patch: Partial<StoryBibleDocumentContent>) => void
-  onViewPreferencesPatch?: (patch: Partial<DocumentViewPreferences>) => void
   onMigrateLegacyStoryBible?: () => void
   onSectionChange?: (section: StoryBibleSection) => void
   onClear: () => void

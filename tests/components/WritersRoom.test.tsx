@@ -49,6 +49,18 @@ describe('WritersRoom', () => {
     expect(onSendToSpecialist).toHaveBeenCalledWith('oliver', 'Help me outline')
   })
 
+  it('calls onSendToSpecialist from the visible send button', () => {
+    const onSendToSpecialist = vi.fn()
+    render(<WritersRoom {...defaultProps} onSendToSpecialist={onSendToSpecialist} />)
+    const textarea = screen.getByPlaceholderText(/message/i)
+
+    fireEvent.change(textarea, { target: { value: 'Can this midpoint turn harder?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message to Oliver' }))
+
+    expect(onSendToSpecialist).toHaveBeenCalledWith('oliver', 'Can this midpoint turn harder?')
+    expect(textarea).toHaveValue('')
+  })
+
   it('does not call onSendToSpecialist for empty input', () => {
     const onSendToSpecialist = vi.fn()
     render(<WritersRoom {...defaultProps} onSendToSpecialist={onSendToSpecialist} />)
