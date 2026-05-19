@@ -43,3 +43,14 @@ UI reads state via `useStore(selector)`, writes via `window.WOS.store.actions.*`
 - Ambiguous scope? Ask before implementing. Cheaper than rebuilding.
 - Phase roadmap and known debts live in `docs/HANDOFF.md` — load when starting a phase, not every session.
 - No tests yet. Add Vitest once there is a backend worth testing (post-Phase 1).
+
+## Coding discipline (Karpathy guidelines)
+
+Always apply these four principles. Full text lives in `.claude/skills/karpathy-guidelines/SKILL.md` — invoke that skill when you want the long form.
+
+1. **Think before coding.** State assumptions. Present alternatives instead of silently picking. If something is unclear, stop and ask.
+2. **Simplicity first.** Minimum code that solves the stated problem. No speculative features, abstractions, or error handling for impossible cases.
+3. **Surgical changes.** Touch only what the request requires. Don't refactor adjacent code, don't delete pre-existing dead code, match existing style.
+4. **Goal-driven execution.** Convert tasks into verifiable success criteria before starting. For multi-step work, write a brief numbered plan with a verify step on each line.
+
+Source: <https://github.com/multica-ai/andrej-karpathy-skills>
