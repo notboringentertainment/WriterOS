@@ -1,0 +1,37 @@
+---
+description: WriterOS architecture and agent boundaries
+alwaysApply: true
+---
+
+# WriterOS
+
+Multi-agent writing studio. React + Vite in `src/`. Prototype in `project/` is visual reference only.
+
+## State and I/O
+
+- Read: `useStore(selector)` from `src/lib/store.js`.
+- Write: `window.WOS.store.actions.*` only.
+- Network: `src/lib/bridge.js` only. **Never import `bridge.js` from UI components.**
+
+## Agents
+
+- Triage is the only router. Specialists file handoffs; they do not invoke each other.
+- Respect `agent.writes` scope as a permission boundary.
+- Shared truth lives in `ProjectState` — no side channels.
+
+## Memory
+
+- `canon`: immutable except Zoe.
+- `pinned`: requires user approval to delete.
+- Do not conflate memory classes.
+
+## Implementation style
+
+- Match prototype visuals, not prototype file structure.
+- Ambiguous scope: ask before large changes.
+- Prefer small, reviewable diffs. Reuse existing functions before adding parallel copies.
+- For third-party APIs: use `opensrc` / `repos/` source — do not guess.
+
+## Phase work
+
+Load `docs/HANDOFF.md` when starting a new roadmap phase, not every session.
