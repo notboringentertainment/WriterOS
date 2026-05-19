@@ -34,4 +34,18 @@ describe("App Writer's Room layout", () => {
     expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
     expect(screen.getByText('Sam Chat')).toBeInTheDocument()
   })
+
+  it('does not remount the active script surface when toggling Writer Room', () => {
+    render(<App />)
+
+    const scriptSurface = screen.getByTestId('script-tab-surface')
+
+    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+
+    expect(screen.getByTestId('script-tab-surface')).toBe(scriptSurface)
+
+    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+
+    expect(screen.getByTestId('script-tab-surface')).toBe(scriptSurface)
+  })
 })

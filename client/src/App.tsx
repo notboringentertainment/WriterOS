@@ -263,23 +263,21 @@ export default function App() {
   const renderCenter = () => {
     const activeSurface = renderActiveSurface()
 
-    if (shellState.writersRoomActive) {
-      return (
-        <div style={styles.surfaceWithWritersRoom}>
-          <div style={styles.activeSurfacePane}>
-            {activeSurface}
-          </div>
+    return (
+      <div style={styles.surfaceWithWritersRoom}>
+        <div style={styles.activeSurfacePane}>
+          {activeSurface}
+        </div>
+        {shellState.writersRoomActive && (
           <WritersRoom
             mode="dock"
             projectState={project.state}
             onSendToSpecialist={handleSpecialistSend}
             onClearTranscript={project.clearTranscript}
           />
-        </div>
-      )
-    }
-
-    return activeSurface
+        )}
+      </div>
+    )
   }
 
   const railProps = {
