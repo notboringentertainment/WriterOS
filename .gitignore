@@ -2,3 +2,9 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# opensrc vendored source (local agent context only)
+repos/
+
+# Local MCP secrets — copy from .cursor/mcp.json.example
+.cursor/mcp.json
