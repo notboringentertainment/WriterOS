@@ -298,9 +298,11 @@ Specialist Lens should decide how the pack is presented:
 - Sam: synopsis/logline plus overview, not raw page text unless requested.
 - Alex: progress/focus, blockers, and revision scope.
 
-### Planned Treatment Surface
+### Treatment Surface
 
-WriterOS should add a Treatment surface in a later phase. A treatment is a prose document that tells the full story of a film, pilot, or screenplay before or alongside script drafting. It is longer and more vivid than a synopsis, but less mechanically structured than an outline.
+Current authority: `docs/product/treatment-surface-prd.md`.
+
+WriterOS includes a Treatment surface for prose story development. A treatment is a prose document that tells the full story of a film, pilot, or screenplay before or alongside script drafting. It is longer and more vivid than a synopsis, but less mechanically structured than an outline.
 
 Treatment should have a distinct product role:
 
@@ -319,7 +321,7 @@ Treatment context should influence retrieval strategy:
 - Script craft questions should still prioritize Script context.
 - Pitch questions should prioritize Synopsis, then Treatment as supporting story detail.
 
-Recommended future treatment structure:
+Recommended treatment structure:
 
 - Header: title, writer, format, genre, version/date.
 - Logline.
@@ -365,7 +367,7 @@ Recommended MVP:
 
 Planned idea for non-script surfaces:
 
-- Synopsis, Outline, Story Bible, and future Treatment can offer `Edit View` / `Document View`.
+- Synopsis, Outline, Treatment, and Story Bible can offer `Edit View` / `Document View`.
 - Edit View keeps fielded guidance and structured controls visible.
 - Document View renders the same authored source as a clean read-through document so writers can judge flow without form chrome.
 - Script already has formatted page presentation, so it does not need this toggle in the same way.
@@ -595,17 +597,19 @@ Success criteria:
 - Agents can answer first-act / whole-script / continuity questions with meaningful context.
 - Summary staleness is visible or safely handled.
 
-### Later Phase: Treatment Surface
+### Treatment Follow-Up Surface
 
-Goal: add a full-story prose surface that helps writers move from outline to pages and gives agents a stronger whole-story document.
+Current authority: `docs/product/treatment-surface-prd.md`.
+
+Goal: continue the full-story prose surface that helps writers move from outline to pages and gives agents a stronger whole-story document.
 
 Tasks:
 
-- Add Treatment as a fifth writing surface.
+- Preserve Treatment as a fifth writing surface.
 - Persist treatment prose as authored source text, not derived retrieval data.
-- Provide a treatment template based on title, format, genre, logline, concept, characters, story prose, visual/tonal language, and open questions.
-- Make Alex the primary helper for treatment development, draft readiness, gap diagnosis, and page-generation planning.
-- Update context routing so broad story/process questions can use Treatment before raw Script excerpts when appropriate.
+- Keep the treatment template based on title, format, genre, logline, concept, characters, story prose, visual/tonal language, and open questions.
+- Keep Alex as the primary helper for treatment development, draft readiness, gap diagnosis, and page-generation planning.
+- Keep context routing able to use Treatment before raw Script excerpts for broad story/process questions.
 - Keep AI production notes separate from treatment prose.
 
 Success criteria:

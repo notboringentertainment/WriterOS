@@ -344,6 +344,8 @@ Agent behavior:
 
 ### Treatment
 
+Detailed current authority: `docs/product/treatment-surface-prd.md`.
+
 Purpose:
 
 - A prose document that tells the full story before or alongside the script.
@@ -351,17 +353,13 @@ Purpose:
 - Less mechanically structured than an outline.
 - Useful for developing, pitching, diagnosing readiness, and giving agents the full dramatic flow.
 
-Current issue:
+Current direction:
 
-- Treatment is referenced as future work but does not exist.
-- Without it, WriterOS forces full-story prose planning into Synopsis or Outline, which weakens both.
-
-May 18 direction:
-
-- Treatment is a good candidate to design cleanly from the current standard because it is not replacing a heavily-used existing surface.
-- Its Edit View should still be plain-language and story-assessment driven, not a visible treatment-template checklist.
+- Treatment is now a first-class surface in the current branch.
+- It remains distinct from Outline: Treatment is readable story prose; Outline is the structural blueprint.
+- Its Edit View is plain-language and story-assessment driven, not a visible treatment-template checklist.
 - Its hidden mapping should produce cinematic present-tense prose that feels appropriate to share with a producer, collaborator, or studio reader.
-- Add Treatment only through a dedicated PRD or implementation slice; do not opportunistically add it while fixing Synopsis, Outline, or Story Bible.
+- Further Treatment work must follow `docs/product/treatment-surface-prd.md`.
 
 Recommended V1 sections:
 
@@ -1032,7 +1030,7 @@ Answered by May 18 alignment:
 
 Still open:
 
-1. Should Treatment be designed immediately after the active surfaces are clarified, or held until Outline/Story Bible implementation is complete?
+1. Should Treatment Document View ship before or after Outline Document View V2?
 2. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
 3. Should "Transform source into proper document type" become a first-class workflow inside the app?
 4. Should Markdown export ship with each surface redesign or remain a separate export phase?
@@ -1043,7 +1041,7 @@ Open work ownership:
 | --- | --- | --- |
 | Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | More Synopsis implementation beyond compatibility fixes |
 | Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | Story Bible implementation |
-| Treatment surface design | `docs/product/treatment-surface-prd.md` | Adding Treatment navigation/state/UI |
+| Treatment surface design | `docs/product/treatment-surface-prd.md` | Further Treatment implementation |
 | Agent context migration | `docs/product/agent-workflow-prd.md` plus each surface PRD | Switching a surface from legacy mirrors to `documents.*` source of truth |
 
 ## Recommended Next Step
@@ -1054,5 +1052,5 @@ Do not begin with visual polish or more code. Complete product alignment first:
 2. Treat `docs/product/project-wide-format-agent-context-prd.md` as the source of truth for format authority.
 3. Treat `docs/product/outline-story-coach-redesign-prd.md` as the source of truth for the story-coach surface standard.
 4. Use `docs/product/synopsis-story-coach-redesign-prd.md` before further Synopsis implementation.
-5. Draft a Story Bible redesign PRD before any Story Bible implementation.
-6. Draft Treatment from the new standard when the team is ready to add the fifth surface.
+5. Use `docs/product/story-bible-story-coach-redesign-prd.md` before further Story Bible implementation.
+6. Use `docs/product/treatment-surface-prd.md` before further Treatment implementation.

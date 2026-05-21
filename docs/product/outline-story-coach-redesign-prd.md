@@ -5,7 +5,7 @@
 **Branch context:** `feature/screenplay-editor-core`
 **Related docs:** `docs/product/README.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/synopsis-story-coach-redesign-prd.md`, `docs/product/story-bible-story-coach-redesign-prd.md`
 
-> Product alignment note: this PRD defines the current WriterOS surface pattern. Synopsis, Story Bible, and future Treatment follow the same principle: plain-language Edit View, professional structure hidden behind the scenes, and studio-presentable Document View. "Story-coach" is the internal interaction pattern, not a renamed surface — the surface stays **Outline**.
+> Product alignment note: this PRD defines the current WriterOS surface pattern. Synopsis, Treatment, and Story Bible follow the same principle: plain-language Edit View, professional structure hidden behind the scenes, and studio-presentable Document View. "Story-coach" is the internal interaction pattern, not a renamed surface — the surface stays **Outline**.
 
 ## Context
 

@@ -12,7 +12,7 @@ The current surface standard:
 
 > WriterOS writing surfaces ask plain-language story questions, translate the answers into professional structure behind the scenes, and render studio-presentable documents the writer can confidently share.
 
-This standard applies to Synopsis, Outline, Story Bible, and future Treatment. Script remains the formatted screenplay page surface.
+This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script remains the formatted screenplay page surface.
 
 ## Current Canonical Rules
 
@@ -33,7 +33,8 @@ This standard applies to Synopsis, Outline, Story Bible, and future Treatment. S
 - `docs/product/synopsis-story-coach-redesign-prd.md` is canonical for the next Synopsis revision: plain-language story-assessment Edit View, hidden professional mapping, and studio-presentable Feature/Series Synopsis documents.
 - `docs/product/story-bible-story-coach-redesign-prd.md` is canonical for the next Story Bible revision: plain-language Edit View on top of `documents.storyBible.content`, character story-coach interview cards, format-aware Feature/Series story-engine prompts, and a professional bible Document View. Casey and Zoe context migration is scoped inside the PRD.
 - `docs/product/outline-story-coach-redesign-prd.md` is canonical for the Outline redesign and the broader surface standard: plain-language assessment in Edit View, professional structure underneath, polished document rendering.
-- `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with the two docs above, the newer format/story-coach decisions win.
+- `docs/product/treatment-surface-prd.md` is canonical for Treatment: a first-class prose surface stored in `documents.treatment.content`, guided by plain-language questions, supported by Alex, and available to agents as authored full-story flow.
+- `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with newer surface-specific PRDs, the newer format/story-coach decisions win.
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
 - `docs/product/writer-voice-profile-prd.md` remains current for writer-scoped profile work. Voice Profile is not project format, Story Bible canon, or project memory.
 - `docs/product/persona-capability-layer-prd.md` and `docs/product/persona-capability-phase2-plan.md` remain current for persona capability routing and bounded OpenSwarm use.
@@ -57,7 +58,7 @@ Before more code, keep the product docs aligned in this order:
 1. Preserve the product north star and project-format authority.
 2. Rewrite active surface PRDs around the shared surface standard.
 3. Keep stale implementation plans clearly marked as historical.
-4. Create specific redesign PRDs before implementing Story Bible or Treatment.
+4. Create or update specific redesign PRDs before implementing major surface changes.
 5. Update agent context docs whenever a surface changes source of truth.
 
 ## Follow-Up Ownership
@@ -66,5 +67,5 @@ Before more code, keep the product docs aligned in this order:
 | --- | --- | --- |
 | Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | Canonical PRD written; use before further Synopsis implementation |
 | Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | Canonical PRD written; use before further Story Bible implementation |
-| Treatment surface design | `docs/product/treatment-surface-prd.md` | To be written before adding Treatment as a fifth surface |
+| Treatment surface design | `docs/product/treatment-surface-prd.md` | Canonical PRD written; use before further Treatment implementation |
 | Agent context migration from legacy mirrors to `documents.*` | `docs/product/agent-workflow-prd.md` plus surface-specific PRDs | Update whenever a surface changes source of truth |

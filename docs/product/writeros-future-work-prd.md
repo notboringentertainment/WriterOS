@@ -1,10 +1,10 @@
 # WriterOS Future Work PRD
 
 **Date:** 2026-05-08
-**Status:** Living future-work roadmap; May 18 surface-alignment note applied
+**Status:** Living future-work roadmap; May 18 surface-alignment note applied; May 21 Treatment PRD note applied
 **Branch context:** `feature/screenplay-editor-core`
 **Current baseline:** `fd3ab45 feat: add script overview retrieval`
-**Related surface redesign:** `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`
+**Related surface redesign:** `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, `docs/product/treatment-surface-prd.md`
 
 ## Summary
 
@@ -28,7 +28,7 @@ The app is becoming technically capable, but the next risks are product clarity,
 - New writers need to understand what each surface is for without reading docs.
 - Professional writers need shareable/readable document views, not only structured edit forms.
 - Full projects need a storage plan before generated summaries, durable memory, or multi-project libraries.
-- Treatment belongs as a real writing surface, but should not be jammed into script retrieval work.
+- Treatment now belongs to its own surface PRD and should not be expanded opportunistically inside unrelated script retrieval work.
 - Current pagination is useful but estimated; export-quality pagination needs a separate plan.
 - Agents can retrieve targeted raw context, but long-range answers will eventually need summaries and visible context boundaries.
 
@@ -36,7 +36,7 @@ The app is becoming technically capable, but the next risks are product clarity,
 
 - Make WriterOS easier to understand for both novices and professionals.
 - Redesign non-script writing surfaces as professional document types before generic preview/export work.
-- Define Treatment as a future fifth surface.
+- Keep Treatment aligned with its canonical surface PRD.
 - Decide storage architecture before durable summaries or project libraries.
 - Plan measured pagination and export separately from estimated retrieval pages.
 - Add context visibility so users can tell what the agent reviewed.
@@ -46,7 +46,7 @@ The app is becoming technically capable, but the next risks are product clarity,
 
 - No immediate backend storage implementation in this PRD.
 - No generated summary persistence until storage and staleness rules are decided.
-- No Treatment implementation inside the current screenplay retrieval branch unless explicitly scoped later.
+- No additional Treatment expansion inside unrelated screenplay retrieval work unless explicitly scoped by `docs/product/treatment-surface-prd.md`.
 - No PDF/export engine as a side effect of document preview.
 - No autonomous multi-agent orchestration.
 - No changes to `/api/wp-chat` beyond thin context plumbing if a later slice requires it.
@@ -132,7 +132,7 @@ May 18 alignment:
 - Edit View should be a plain-language story-assessment surface, not a visible professional template.
 - WriterOS should infer and store professional structure behind the scenes.
 - Document View should render the authored source into a studio-presentable artifact.
-- This applies to Synopsis, Outline, Story Bible, and future Treatment.
+- This applies to Synopsis, Outline, Treatment, and Story Bible.
 
 Recommended behavior:
 
@@ -142,7 +142,7 @@ Recommended behavior:
   - Synopsis
   - Outline
   - Story Bible
-  - future Treatment
+  - Treatment
 - `Edit View` keeps plain-language prompts and ergonomic controls; agent-friendly/professional structure lives behind the scenes.
 - `Document View` renders the same authored source as a clean read-through document.
 - Script does not need the same toggle because it is already document/page-oriented.
@@ -169,7 +169,9 @@ Success criteria:
 
 ## Workstream 3: Treatment Surface
 
-Goal: add a fifth writing surface for full-story cinematic prose.
+Goal: continue the fifth writing surface for full-story cinematic prose.
+
+Detailed current authority: `docs/product/treatment-surface-prd.md`.
 
 Treatment is distinct from:
 
@@ -348,8 +350,8 @@ Success criteria:
 5. **Storage PRD.**
    Decide durable writer/project storage before generated summaries, project libraries, or assuming profile memory can survive beyond local browser state.
 
-6. **Treatment PRD / implementation slice.**
-   Build the fifth surface after storage implications are clear enough.
+6. **Treatment follow-up slice.**
+   Continue Treatment work through `docs/product/treatment-surface-prd.md`, especially Document View, passage reorder, and agent-context refinements.
 
 7. **Measured pagination / export plan.**
    Treat page fidelity and export as their own product/technical effort.
@@ -372,7 +374,7 @@ Use these while gauging usability:
 
 1. Should surface orientation copy be always visible, collapsible, or shown only for empty/new surfaces?
 2. Should Document View be a toggle in the surface header or a preview button?
-3. Should Treatment be implemented before or after storage architecture?
+3. Should Treatment Document View ship before or after Outline Document View V2?
 4. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
 5. What is the minimum storage plan needed before generated summaries?
 6. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?
