@@ -604,9 +604,16 @@ function buildTreatmentContextLines(projectContext: ProjectContextForOpenSwarm):
     labeledLine('Overall tone', treatment.visualAndTonal.overallTone),
     labeledLine('Visual world', treatment.visualAndTonal.visualWorld),
     labeledLine('Recurring images or motifs', treatment.visualAndTonal.recurringImagesOrMotifs),
+    labeledLine('Music or sound feeling', treatment.visualAndTonal.musicOrSoundFeeling),
     labeledLine('Pacing', treatment.visualAndTonal.pacing),
     labeledLine('Genre rules', treatment.visualAndTonal.genreRules),
     labeledLine('Comps or references', treatment.visualAndTonal.compsAndReferences),
+  ].filter(filled);
+  const openQuestionLines = [
+    listLine('Open story questions', treatment.openQuestions.story),
+    listLine('Open character questions', treatment.openQuestions.character),
+    listLine('Open world or mythology questions', treatment.openQuestions.worldOrMythology),
+    listLine('Open production questions', treatment.openQuestions.production),
   ].filter(filled);
 
   return [
@@ -614,6 +621,7 @@ function buildTreatmentContextLines(projectContext: ProjectContextForOpenSwarm):
     ...characterLines.map(line => `Character: ${line}`),
     ...proseLines,
     ...visualLines,
+    ...openQuestionLines,
   ].map(line => truncate(line, 900));
 }
 

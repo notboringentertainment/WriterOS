@@ -125,6 +125,8 @@ describe('OpenSwarm Writing Partner prompt', () => {
   it('includes Treatment context when authored treatment prose exists', () => {
     const state = defaultProjectState()
     state.documents.treatment.content.prose.opening = 'Sara ends a night shift as the silent emergency line rings.'
+    state.documents.treatment.content.visualAndTonal.musicOrSoundFeeling = 'A low analog pulse under emergency-line static.'
+    state.documents.treatment.content.openQuestions.story = ['Should the rescue network feel benevolent or predatory?']
 
     const prompt = buildOpenSwarmWritingPartnerPrompt(
       'Review the story flow.',
@@ -132,8 +134,10 @@ describe('OpenSwarm Writing Partner prompt', () => {
       makeVoiceProfile()
     )
 
-    expect(prompt).toContain('Treatment: 1 filled field')
+    expect(prompt).toContain('Treatment: 3 filled fields')
     expect(prompt).toContain('Treatment:\n- Opening: Sara ends a night shift as the silent emergency line rings.')
+    expect(prompt).toContain('- Music or sound feeling: A low analog pulse under emergency-line static.')
+    expect(prompt).toContain('- Open story questions: Should the rescue network feel benevolent or predatory?')
   })
 
   it('emits format and showOverview in the project context block', () => {

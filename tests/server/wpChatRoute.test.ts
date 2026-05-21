@@ -161,6 +161,8 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     state.documents.treatment.content.logline = 'A medic hears impossible rescue calls.'
     state.documents.treatment.content.concept.premise = 'A city chooses who gets saved.'
     state.documents.treatment.content.prose.opening = 'Sara ends a night shift as the silent emergency line rings.'
+    state.documents.treatment.content.visualAndTonal.musicOrSoundFeeling = 'Emergency line static over a warm synth pulse.'
+    state.documents.treatment.content.openQuestions.production = ['Can the impossible calls be represented without expensive VFX?']
 
     const { server, port } = await startApp()
     try {
@@ -176,6 +178,8 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       expect(storyMemory.project.treatment).toContain('Treatment logline: A medic hears impossible rescue calls.')
       expect(storyMemory.project.treatment).toContain('Premise: A city chooses who gets saved.')
       expect(storyMemory.project.treatment).toContain('Opening: Sara ends a night shift')
+      expect(storyMemory.project.treatment).toContain('Music or sound feeling: Emergency line static')
+      expect(storyMemory.project.treatment).toContain('Open production questions: Can the impossible calls')
     } finally {
       server.close()
     }

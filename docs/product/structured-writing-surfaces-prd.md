@@ -361,7 +361,7 @@ Current direction:
 - Its hidden mapping should produce cinematic present-tense prose that feels appropriate to share with a producer, collaborator, or studio reader.
 - Further Treatment work must follow `docs/product/treatment-surface-prd.md`.
 
-Recommended V1 sections:
+Implemented V1 sections:
 
 - Header metadata:
   - title
@@ -380,10 +380,7 @@ Recommended V1 sections:
   - role
   - external want
   - internal need
-  - flaw/wound
-  - secret/contradiction
   - arc
-  - relationship pressure
 - Treatment prose:
   - opening
   - act one
@@ -403,6 +400,13 @@ Recommended V1 sections:
   - character decisions
   - world/mythology decisions
   - production decisions
+
+Known follow-up sections:
+
+- Deeper character fields:
+  - flaw/wound
+  - secret/contradiction
+  - relationship pressure
 - Optional AI production implications:
   - visual sequence risks
   - character continuity risks
@@ -413,7 +417,7 @@ Recommended V1 sections:
 Edit View behavior:
 
 - Treatment should support prose-first writing.
-- Sections should be collapsible and reorderable.
+- Sections should be collapsible. Passage reorder is out of scope for V1.
 - The writer should be able to write long-form text comfortably.
 - AI production notes should be separated from prose.
 
