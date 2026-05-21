@@ -17,9 +17,17 @@ interface WritersRoomProps {
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
   switch (id) {
     case 'oliver': {
-      const beats = state.outline.beats
-      const filled = beats.filter(b => b.notes).length
-      return `${beats.length} beats · ${filled} with notes`
+      const content = state.documents.outline.content
+      const spineFilled = Object.values(content.spine).filter(value => value.trim()).length
+      const unitFilled = content.units.filter(unit => (
+        unit.whatHappens.trim() ||
+        unit.conflict.trim() ||
+        unit.turn.trim() ||
+        unit.consequence.trim() ||
+        unit.whyNext.trim() ||
+        unit.draftNotes.trim()
+      )).length
+      return `${spineFilled} spine fields · ${unitFilled} outline beats`
     }
     case 'sam':
       return state.synopsis.logline || 'No logline yet'
@@ -32,7 +40,9 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
     case 'maya':
       return state.storyBible.world.voiceNotes || 'No voice notes yet'
     case 'alex':
-      return `${getDisplayProjectTitle(state.meta.title)} · ${state.meta.genre || 'genre TBD'}`
+      return state.documents.treatment.content.prose.opening ||
+        state.documents.treatment.content.concept.premise ||
+        `${getDisplayProjectTitle(state.meta.title)} · ${state.meta.genre || 'genre TBD'}`
   }
 }
 

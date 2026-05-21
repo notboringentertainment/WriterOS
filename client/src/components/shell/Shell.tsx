@@ -72,9 +72,9 @@ export function Shell({
         e.preventDefault()
         togglePanel()
       }
-      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
+      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
         e.preventDefault()
-        const tabs: ActiveTab[] = ['script', 'story-bible', 'outline', 'synopsis']
+        const tabs: ActiveTab[] = ['script', 'story-bible', 'outline', 'treatment', 'synopsis']
         const tab = tabs[Number(e.key) - 1]
         if (tab) setActiveTab(tab)
         else enterWritersRoom()

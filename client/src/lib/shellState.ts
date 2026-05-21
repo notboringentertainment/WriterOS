@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
+type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
 type PanelByTab = Record<WritingTab, boolean>
 export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'rules'
 
@@ -11,6 +11,7 @@ export function useShellState() {
     script: false,
     'story-bible': false,
     outline: false,
+    treatment: false,
     synopsis: false,
   })
   const [focusMode, setFocusMode] = useState(false)

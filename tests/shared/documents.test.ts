@@ -99,6 +99,7 @@ describe('OutlineDocumentContent', () => {
 
   it('accepts a populated outline with units', () => {
     const populated: OutlineDocumentContent = {
+      ...createEmptyOutlineContent(),
       mode: 'scene_by_scene',
       structureModel: 'three_act',
       spine: {

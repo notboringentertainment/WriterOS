@@ -50,6 +50,7 @@ export interface StoryMemory {
     logline?: string
     synopsis?: string
     synopsisSections?: Record<string, string>
+    treatment?: string
     themes?: string
   }
   script?: {

@@ -4,12 +4,13 @@ import type { ProjectSummary } from '../../lib/projectLibrary'
 import { ProjectMenu } from './ProjectMenu'
 import { SavedToast } from './SavedToast'
 
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'synopsis'
+type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
 
 const WRITING_TABS: { id: WritingTab; label: string }[] = [
   { id: 'script',      label: 'Script' },
   { id: 'story-bible', label: 'Story Bible' },
   { id: 'outline',     label: 'Outline' },
+  { id: 'treatment',   label: 'Treatment' },
   { id: 'synopsis',    label: 'Synopsis' },
 ]
 

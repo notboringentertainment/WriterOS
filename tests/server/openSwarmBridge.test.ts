@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildOpenSwarmWritingPartnerPrompt, openSwarmWritingPartnerSchema } from '../../server/routes'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 
 function makeVoiceProfile(): VoiceProfileDocument {
@@ -67,11 +68,9 @@ describe('OpenSwarm Writing Partner prompt', () => {
     const state = defaultProjectState()
     state.storyBible.world.voiceNotes = 'Project-specific: spare, procedural, intimate.'
     state.synopsis.logline = 'A medic must expose a corrupt rescue network before her brother disappears.'
-    state.outline.beats = state.outline.beats.map(beat =>
-      beat.id === 'midpoint'
-        ? { ...beat, notes: 'The rescue turns personal when the missing patient is family.' }
-        : beat
-    )
+    const midpoint = createOutlineUnit('feature.midpoint')
+    midpoint.whatHappens = 'The rescue turns personal when the missing patient is family.'
+    state.documents.outline.content.units = [midpoint]
 
     const prompt = buildOpenSwarmWritingPartnerPrompt(
       'Review this against my voice.',
@@ -88,7 +87,7 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('Voice Profile: supplied')
     expect(prompt).toContain('Synopsis: 1 filled field')
     expect(prompt).toContain('Outline: 1 beat note supplied')
-    expect(prompt).toContain('Midpoint: The rescue turns personal when the missing patient is family.')
+    expect(prompt).toContain('Midpoint: What happens: The rescue turns personal when the missing patient is family.')
     expect(prompt).toContain('Task response contract:')
     expect(prompt).toContain('Treat the user question as a task request')
     expect(prompt).toContain('Respond like a concise review memo or task report')
@@ -121,6 +120,20 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('name the WriterOS surface to fill')
     expect(prompt).not.toContain('Theme Stated: Someone')
     expect(prompt).not.toContain('Opening Image: A single scene')
+  })
+
+  it('includes Treatment context when authored treatment prose exists', () => {
+    const state = defaultProjectState()
+    state.documents.treatment.content.prose.opening = 'Sara ends a night shift as the silent emergency line rings.'
+
+    const prompt = buildOpenSwarmWritingPartnerPrompt(
+      'Review the story flow.',
+      buildProjectContext(state),
+      makeVoiceProfile()
+    )
+
+    expect(prompt).toContain('Treatment: 1 filled field')
+    expect(prompt).toContain('Treatment:\n- Opening: Sara ends a night shift as the silent emergency line rings.')
   })
 
   it('emits format and showOverview in the project context block', () => {

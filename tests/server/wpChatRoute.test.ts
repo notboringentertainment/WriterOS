@@ -150,4 +150,33 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       server.close()
     }
   })
+
+  it('sends Alex authored Treatment document content', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Alex response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.documents.treatment.content.logline = 'A medic hears impossible rescue calls.'
+    state.documents.treatment.content.concept.premise = 'A city chooses who gets saved.'
+    state.documents.treatment.content.prose.opening = 'Sara ends a night shift as the silent emergency line rings.'
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'alex',
+        message: 'Am I ready to draft?',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.project.treatment).toContain('Treatment logline: A medic hears impossible rescue calls.')
+      expect(storyMemory.project.treatment).toContain('Premise: A city chooses who gets saved.')
+      expect(storyMemory.project.treatment).toContain('Opening: Sara ends a night shift')
+    } finally {
+      server.close()
+    }
+  })
 })

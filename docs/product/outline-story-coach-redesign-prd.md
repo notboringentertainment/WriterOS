@@ -118,7 +118,8 @@ The keys above (`showPitch`, `repeatableConflict`, `premiseLongevity`, `serialQu
 **Defaulting responsibilities:**
 
 - `createEmptyOutlineContent()` returns a fully-formed `OutlineDocumentContent` with `seriesEngine` and `seasonArc` populated with empty strings on every key, and `episodes: []`. New projects start at schemaVersion 4 and never see the legacy shape.
-- The schemaVersion 3 → 4 migration runner is the single normalization point for existing projects. Before the new schema is parsed, it: (a) reads the legacy `documents.outline.content` (which may lack `seriesEngine`, `seasonArc`, `episodes`), (b) shallow-merges in the defaults from `createEmptyOutlineContent()`, (c) writes the normalized content back into `documents.outline.content` and sets `viewPreferences.migratedFromLegacyBeats = true`. The result is always a schema-valid `OutlineDocumentContent`.
+- The schemaVersion 3 → 4 migration runner is the single normalization point for existing projects. Before the new schema is parsed, it: (a) reads the legacy `documents.outline.content` (which may lack `seriesEngine`, `seasonArc`, `episodes`), (b) normalizes it with defaults from `createEmptyOutlineContent()`, (c) writes the normalized content back into `documents.outline.content` and sets `viewPreferences.migratedFromLegacyBeats = true`. The result is always a schema-valid `OutlineDocumentContent`.
+- **Merge direction is required:** defaults are spread first, existing writer content is spread on top. At minimum: `{ ...createEmptyOutlineContent(), ...existingContent }`. For nested objects, preserve writer data the same way: `spine: { ...defaults.spine, ...existingContent.spine }`, `seriesEngine: { ...defaults.seriesEngine, ...existingContent.seriesEngine }`, `seasonArc: { ...defaults.seasonArc, ...existingContent.seasonArc }`, and `aiProductionColumns: { ...defaults.aiProductionColumns, ...existingContent.aiProductionColumns }`. Arrays use existing values when present (`episodes: existingContent.episodes ?? defaults.episodes`, `units: existingContent.units ?? defaults.units`). Never spread defaults over existing content; that would silently erase already-entered spine answers with empty strings.
 - The Series deck seeds Episode 101 / 102 / 103 lazily on first Series Edit View mount when `episodes.length === 0`, via an explicit mutator (no implicit writes from render). Seeding is a UX behavior on the empty array, not a schema default.
 
 ### Card type
@@ -141,13 +142,18 @@ interface OutlineCardDef {
   question: string;            // PRIMARY headline, plain-language
   helper: string;              // one-line coaching
   placeholder?: string;
-  mappingPath: string;         // dot-path into OutlineDocumentContent
+  mappingPath: string | OutlineCardBinding[];  // single textarea or composite labeled fields
+}
+
+interface OutlineCardBinding {
+  label: string;
+  path: string;                // dot-path into OutlineDocumentContent
 }
 ```
 
 `OutlineCard` renders `sectionLabel` (as a group header), `question`, `helper`, and the answer textarea. It does **not** render `structuralLabel`.
 
-Path resolver utilities (`resolveCardValue`, `setCardValue`) handle dot paths like `spine.protagonist`, `seriesEngine.repeatableConflict`, `seasonArc.seasonClimax`, and array paths like `episodes.0.aStory`. Episodes are addressed by index in the resolver; the Edit View renders the `episodes[]` array directly, not via card defs (one EpisodeCard per row, see below).
+Path resolver utilities (`resolveCardValue`, `setCardValue`) handle dot paths like `spine.protagonist`, `seriesEngine.repeatableConflict`, `seasonArc.seasonClimax`, stable unit paths like `units[id=feature.midpoint].whatHappens`, and array paths like `episodes.0.aStory`. Episodes are addressed by index in the resolver; the Edit View renders the `episodes[]` array directly, not via card defs (one EpisodeCard per row, see below). Composite cards render one labeled textarea per `OutlineCardBinding`.
 
 ### Feature deck — 15 cards
 
@@ -167,28 +173,28 @@ Answers "what is the script?". Plain-language phrasing, professional completenes
 
 **Beginning (3)** — Act One units in `documents.outline.content.units`:
 
-| # | Question | Helper | Internal label |
-|---|---|---|---|
-| 8 | "Show me the world they live in before everything changes." | "Opening image plus the daily life. What's quietly broken." | Opening / Normal world |
-| 9 | "What event arrives that they can't ignore?" | "The thing that kicks the story into motion." | Inciting incident |
-| 10 | "What finally forces them to commit — and what were they afraid of?" | "Why they resisted plus the choice or event that locks them in." | Debate / Act One break |
+| # | Question | Helper | Internal label | Maps to |
+|---|---|---|---|---|
+| 8 | "Show me the world they live in before everything changes." | "Opening image plus the daily life. What's quietly broken." | Opening / Normal world | `units[id=feature.openingNormalWorld].whatHappens` |
+| 9 | "What event arrives that they can't ignore?" | "The thing that kicks the story into motion." | Inciting incident | `units[id=feature.incitingIncident].whatHappens` |
+| 10 | "What finally forces them to commit — and what were they afraid of?" | "Why they resisted plus the choice or event that locks them in." | Debate / Act One break | `units[id=feature.actOneBreak].whatHappens` |
 
 **Middle (3)** — Act Two A / Midpoint / Act Two B:
 
-| # | Question | Helper | Internal label |
-|---|---|---|---|
-| 11 | "Once they're in, what's their first move and what does it cost them?" | "New world, initial strategy, partial wins, costs accumulating." | Act Two A |
-| 12 | "Halfway through, something flips. What is it?" | "False win, false defeat, big reveal, or point of no return." | Midpoint |
-| 13 | "What's the worst moment — and who or what made it possible?" | "Lowest point, including the subplot/relationship that carried them here." | All-is-lost (with subplot) |
+| # | Question | Helper | Internal label | Maps to |
+|---|---|---|---|---|
+| 11 | "Once they're in, what's their first move and what does it cost them?" | "New world, initial strategy, partial wins, costs accumulating." | Act Two A | `units[id=feature.actTwoA].whatHappens` |
+| 12 | "Halfway through, something flips. What is it?" | "False win, false defeat, big reveal, or point of no return." | Midpoint | `units[id=feature.midpoint].whatHappens` |
+| 13 | "What's the worst moment — and who or what made it possible?" | "Lowest point, including the subplot/relationship that carried them here." | All-is-lost (with subplot) | `units[id=feature.allIsLostWithSubplot].whatHappens` |
 
 **End (2)** — Act Three:
 
-| # | Question | Helper | Internal label |
-|---|---|---|---|
-| 14 | "What do they finally understand, and what do they do about it?" | "The realization, the decisive choice, and the final confrontation." | New insight + Climax |
-| 15 | "Last image. What's the last thing we see?" | "Mirror the opening if you can. Prove the world has changed." | Final image |
+| # | Question | Helper | Internal label | Maps to |
+|---|---|---|---|---|
+| 14 | "What do they finally understand, and what do they do about it?" | "The realization, the decisive choice, and the final confrontation." | New insight + Climax | `units[id=feature.climax].whatHappens` |
+| 15 | "Last image. What's the last thing we see?" | "Mirror the opening if you can. Prove the world has changed." | Final image | `units[id=feature.finalImage].whatHappens` |
 
-**Total: 15 cards.** Subplot folds into the all-is-lost card; opening image folds into normal-world; debate folds into act-one break; new insight folds into climax. Professional completeness is preserved by Document View, which expands answers into the full template structure from `outline-best-practices-template.md`.
+**Total: 15 cards.** Subplot folds into the all-is-lost card; opening image folds into normal-world; debate folds into act-one break; new insight folds into climax. Feature act-card mappings use stable `OutlineUnit.id` values; if a mapped unit does not exist, the path utility creates it with the matching title, act/sequence, and display order. Professional completeness is preserved by the V2 Document View, which expands answers into the full template structure from `outline-best-practices-template.md`.
 
 ### Series deck — 18 base cards + structured episode map
 
@@ -230,7 +236,7 @@ Answers "what is the show, what is the pilot, and what is the season?". Meaningf
 
 | # | Question | Helper | Internal label | Maps to |
 |---|---|---|---|---|
-| 18 | "What does a typical episode look like mechanically, and what's the long question viewers are tracking?" | "Episode shape plus the serial question that holds the season together." | Episode engine + serial question | composite: `seriesEngine.episodeEngine` + `seriesEngine.serialQuestion` |
+| 18 | "What does a typical episode look like mechanically, and what's the long question viewers are tracking?" | "Episode shape plus the serial question that holds the season together." | Episode engine + serial question | `[{ label: "Typical episode shape", path: "seriesEngine.episodeEngine" }, { label: "Long question", path: "seriesEngine.serialQuestion" }]` |
 
 Card 18 is the one composite in the deck (two textareas inside one card, each labeled, each mapping to a stable key).
 
@@ -252,7 +258,9 @@ Each `EpisodeCard` renders:
 
 `[+ Add episode]` button at the end of the section appends a new `OutlineEpisode` with `number = max(existing.number) + 1` and `label = 'Episode {number}'`. No reorder, no delete in V1.
 
-### Formatted-outline view (inline toggle, mirrors SynopsisTab)
+### Formatted-outline view (V2; inline toggle, mirrors SynopsisTab)
+
+Deferred to V2. Do not implement this section in V1.
 
 OutlineTab gets a view toggle component (`OutlineViewToggle`) modeled on `SynopsisViewToggle`. State lives at `documents.outline.viewPreferences.activeView: 'edit' | 'document'`.
 
@@ -262,18 +270,20 @@ OutlineTab gets a view toggle component (`OutlineViewToggle`) modeled on `Synops
 
 ### Component plan
 
-**New files:**
+**V1 new files:**
 - `client/src/lib/outlineDeck.ts` — `FEATURE_DECK` (15 cards), `SERIES_DECK` (18 base cards), `OutlineCardDef`, path utilities, `seedEpisodes101To103`, `migrateLegacyBeats` helper.
-- `client/src/lib/outlineQa.ts` — QA-checklist heuristics returning `DocumentWarning[]`.
 - `client/src/components/writing/outline/OutlineCard.tsx` — new card. Renders question, helper, answer. **Does not render `structuralLabel`.** No drag handle.
 - `client/src/components/writing/outline/EpisodeCard.tsx` — typed episode row. One per `OutlineEpisode`. Renders label, title, hookLogline, aStory, bcStory, changeByEnd, endingHook.
 - `client/src/components/writing/outline/OutlineEditView.tsx` — deck render, grouped by `sectionLabel`. Episode-map section renders an `EpisodeCard` per row plus the `[+ Add episode]` control.
-- `client/src/components/writing/outline/OutlineDocumentView.tsx` — formatted-template render (the only surface where structural labels appear). Renders Feature outline template or Series outline template based on `ProjectState.meta.format`.
-- `client/src/components/writing/outline/OutlineViewToggle.tsx` — copy of SynopsisViewToggle pattern.
 - `client/src/components/writing/outline/ClearOutlineDialog.tsx` — confirm dialog with two destructive buttons. Copy adapts to format.
 
+**V2 new files (do not build in V1):**
+- `client/src/lib/outlineQa.ts` — QA-checklist heuristics returning `DocumentWarning[]`.
+- `client/src/components/writing/outline/OutlineDocumentView.tsx` — formatted-template render (the only surface where structural labels appear). Renders Feature outline template or Series outline template based on `ProjectState.meta.format`.
+- `client/src/components/writing/outline/OutlineViewToggle.tsx` — copy of SynopsisViewToggle pattern.
+
 **Edited files:**
-- `client/src/components/writing/OutlineTab.tsx` — rewrite as shell: ProjectFormatSelector, OutlineViewToggle, dispatch to edit/document view.
+- `client/src/components/writing/OutlineTab.tsx` — V1 rewrite as shell: ProjectFormatSelector, format-aware deck selection, and dispatch to Edit View. V2 adds OutlineViewToggle and Document View dispatch.
 - `client/src/lib/useProjectState.ts` — add `setOutlineDocument(patch)`, `setOutlineViewPreferences(patch)`, `addEpisode()`, `renameEpisode(episodeId, label)`, `setEpisodeField(episodeId, field, value)`. Update `clearOutline` to accept `{ keep: 'all' | 'foundations' }`. **Every mutator that touches outline content also writes the legacy mirror in the same call.**
 - `client/src/lib/documentMigration.ts` — add `mirrorOutlineToLegacy(content, legacyBeats)`. Extend `outlineLegacyToContent` to populate spine fields where reasonable matches exist.
 - `client/src/lib/projectState.ts` — bump `CURRENT_SCHEMA_VERSION` to 4. Add migration 3 → 4 that runs `migrateLegacyBeats` once and sets `documents.outline.viewPreferences.migratedFromLegacyBeats`.
@@ -324,7 +334,7 @@ When the writer switches `ProjectState.meta.format` mid-project, all answers per
 
 **Changes to `tests/components/OutlineTab.test.tsx`:**
 - Replace `renders all 15 Save the Cat beat names` with `renders feature deck cards by section`. Assert plain-language questions are visible as the card's heading. Assert structural labels ("Inciting incident", "Midpoint", "All Is Lost", etc.) **do not appear anywhere in the edit-view DOM**.
-- Replace `calls onUpdateBeat when notes textarea changes` with `calls setOutlineDocument with the card's mappingPath when card answer changes`.
+- Replace `calls onUpdateBeat when notes textarea changes` with `calls setOutlineDocument with the resolved single mapping path, or the specific composite binding path, when a card answer changes`.
 - Replace `shows existing beat notes` with `renders existing answer from documents.outline.content.spine.protagonist`.
 - Update `clears the whole outline in one click` to drive the new confirm dialog; cover both clear paths (feature and series variants).
 - Update `disables clear outline when the outline is empty` to use the new emptiness check on `documents.outline.content`.
@@ -332,15 +342,17 @@ When the writer switches `ProjectState.meta.format` mid-project, all answers per
 - Remove drag/reorder tests.
 
 **New test files:**
-- `tests/lib/outlineDeck.test.ts` — feature deck has 15 cards covering all spine + act fields; series deck has 18 base cards covering spine + show DNA + world + pilot + season spine + episode engine; no card has its structural name as `question`; deck data is internally consistent (every `mappingPath` resolves into the `OutlineDocumentContent` schema).
+- `tests/lib/outlineDeck.test.ts` — feature deck has 15 cards covering all spine + act fields; series deck has 18 base cards covering spine + show DNA + world + pilot + season spine + episode engine; no card has its structural name as `question`; deck data is internally consistent (every single mapping path and every composite binding path resolves into the `OutlineDocumentContent` schema).
 - `tests/lib/outlineMigration.test.ts` — legacy 15 beats with notes migrate to the right card answers; empty beats produce no spurious answers; multi-beat-to-one-card concatenation works; migration is idempotent; `migratedFromLegacyBeats` flag set correctly.
 - `tests/lib/outlineMirror.test.ts` — `mirrorOutlineToLegacy` produces legacy beat notes consistent with the reverse migration; round-trip stable for all 15 legacy beat IDs Oliver reads.
 - `tests/lib/outlineEpisodes.test.ts` — `seedEpisodes101To103` produces three typed `OutlineEpisode` rows with correct numbers and labels; `addEpisode` appends with `number = max + 1`; episode field mutators are immutable; episodes persist when format toggles to Feature and back to Series.
+- `tests/components/OutlineTab.formatSwitch.test.tsx` — feature answers persist after switching to series and back; confirmation appears when non-spine answers exist; series episodes survive a feature round-trip.
+- `tests/components/OutlineTab.episodeRepeater.test.tsx` — default seed shows 3 episode cards; add button appends new card with next default label; rename label persists; each typed field (hookLogline, aStory, bcStory, changeByEnd, endingHook) round-trips through state.
+
+**V2 test files (do not build in V1):**
 - `tests/components/OutlineDocumentView.test.tsx` — filled `OutlineDocumentContent` renders all template headings; empty sections render placeholder copy; QA checklist renders with correct heuristic outputs. Structural labels are present here (verifies they only surface in document view). Series document view renders `seasonClimax` and `seasonEndingHook` as separate sections.
 - `tests/lib/outlineQa.test.ts` — heuristics flip correctly when relevant fields populate; v1-hidden items stay hidden.
 - `tests/components/OutlineTab.viewToggle.test.tsx` — toggling to "document" renders OutlineDocumentView; toggling back returns to deck.
-- `tests/components/OutlineTab.formatSwitch.test.tsx` — feature answers persist after switching to series and back; confirmation appears when non-spine answers exist; series episodes survive a feature round-trip.
-- `tests/components/OutlineTab.episodeRepeater.test.tsx` — default seed shows 3 episode cards; add button appends new card with next default label; rename label persists; each typed field (hookLogline, aStory, bcStory, changeByEnd, endingHook) round-trips through state.
 
 ### Phased rollout
 

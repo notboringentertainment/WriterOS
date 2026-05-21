@@ -13,11 +13,12 @@ const defaultProps = {
 }
 
 describe('TopBar', () => {
-  it('renders all four writing tabs', () => {
+  it('renders all five writing tabs', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('Script')).toBeInTheDocument()
     expect(screen.getByText('Story Bible')).toBeInTheDocument()
     expect(screen.getByText('Outline')).toBeInTheDocument()
+    expect(screen.getByText('Treatment')).toBeInTheDocument()
     expect(screen.getByText('Synopsis')).toBeInTheDocument()
   })
 

@@ -52,18 +52,16 @@ describe('legacyToDocuments — outline', () => {
     expect(docs.outline.content.mode).toBe('beat_sheet_save_the_cat')
   })
 
-  it('maps every legacy beat into an outline unit by id', () => {
+  it('maps legacy beat notes into feature outline units', () => {
     const legacy = defaultProjectState()
     legacy.outline.beats[0].notes = 'Hook in the cold open.'
     legacy.outline.beats[0].linkedSceneIds = ['scene-1']
     const docs = legacyToDocuments(legacy, now)
-    const first = docs.outline.content.units[0]
-    expect(first.id).toBe(legacy.outline.beats[0].id)
-    expect(first.title).toBe(legacy.outline.beats[0].name)
-    expect(first.whatHappens).toBe(legacy.outline.beats[0].description)
-    expect(first.draftNotes).toBe('Hook in the cold open.')
-    expect(first.linkedSceneIds).toEqual(['scene-1'])
-    expect(first.number).toBe(1)
+    const opening = docs.outline.content.units.find(unit => unit.id === 'feature.openingNormalWorld')
+    expect(opening?.title).toBe('Opening / Normal world')
+    expect(opening?.whatHappens).toBe('Hook in the cold open.')
+    expect(opening?.linkedSceneIds).toEqual(['scene-1'])
+    expect(opening?.number).toBe(1)
   })
 })
 
@@ -141,6 +139,32 @@ describe('documentsToLegacy round-trip', () => {
     expect(reverted.outline.beats.map(b => b.id)).toEqual(original.outline.beats.map(b => b.id))
     expect(reverted.outline.beats[0].notes).toBe('Hook the audience.')
     expect(reverted.outline.beats[0].linkedSceneIds).toEqual(['scene-1'])
+  })
+
+  it('outline: series document content mirrors useful context into legacy beats for Oliver', () => {
+    const state = defaultProjectState()
+    state.documents.outline.content.seriesEngine.showPitch = 'A sealed-city thriller about bargaining with truth.'
+    state.documents.outline.content.seriesEngine.repeatableConflict = 'Each week, a new lie keeps the city alive.'
+    state.documents.outline.content.seasonArc.seasonMidpoint = 'The mayor is protecting the wrong person.'
+    state.documents.outline.content.episodes = [
+      {
+        id: 'episode-101',
+        number: 101,
+        label: 'Episode 101',
+        title: '',
+        hookLogline: 'A body appears where no one can enter.',
+        aStory: '',
+        bcStory: '',
+        changeByEnd: '',
+        endingHook: '',
+      },
+    ]
+
+    const reverted = documentsToLegacy(state.documents, { outlineFormat: 'series' })
+
+    expect(reverted.outline.beats.find(beat => beat.id === 'opening-image')?.notes).toContain('Show pitch')
+    expect(reverted.outline.beats.find(beat => beat.id === 'fun-and-games')?.notes).toContain('Episode 101')
+    expect(reverted.outline.beats.find(beat => beat.id === 'midpoint')?.notes).toContain('The mayor is protecting the wrong person.')
   })
 
   it('storyBible: legacy -> documents -> legacy preserves characters, world, themes, rules', () => {

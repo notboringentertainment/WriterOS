@@ -1,7 +1,8 @@
 import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
-import type { SynopsisDocumentContent, SynopsisSeriesContent } from '@shared/documents'
+import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
+import { normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
@@ -36,6 +37,14 @@ export interface ProjectContext {
   }
   characters: Array<Pick<ProjectState['storyBible']['characters'][number], 'id' | 'name' | 'role' | 'wound' | 'want' | 'need' | 'arc'>>
   beats: Array<Pick<ProjectState['outline']['beats'][number], 'id' | 'name' | 'description' | 'notes' | 'linkedSceneIds'>>
+  treatment: {
+    logline: string
+    concept: TreatmentDocumentContent['concept']
+    mainCharacters: TreatmentDocumentContent['mainCharacters']
+    prose: TreatmentDocumentContent['prose']
+    visualAndTonal: TreatmentDocumentContent['visualAndTonal']
+    openQuestions: TreatmentDocumentContent['openQuestions']
+  }
   scenes: ProjectState['script']['scenes']
   storyBible: {
     themes: string
@@ -105,7 +114,7 @@ export function parseOpenSwarmCommand(text: string): string | null {
   return strippedText || null
 }
 
-export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'story-bible'
+export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'treatment' | 'story-bible'
 
 const ZOE_SECTIONS = new Set(['world', 'rules'])
 const STORY_BIBLE_CASEY_INTENT_RE = /\b(character|protagonist|antagonist|hero|villain|state of mind|psychology|psychological|psyche|mental|emotion|emotional|motivation|motivated|motivate|motivates|motive|want|need|wound|flaw|arc|backstory|trauma|fear|desire|guilt|grief|relationship|theme|thematic|tone|voice)\b/i
@@ -148,6 +157,118 @@ function text(value: unknown): string {
 
 function textArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(text) : []
+}
+
+function labeled(entries: Array<[string, string | undefined]>): string {
+  return entries
+    .map(([label, value]) => {
+      const clean = value?.trim()
+      return clean ? `${label}: ${clean}` : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+function documentOutlineBeats(state: ProjectState, format: ProjectFormat): ProjectContext['beats'] {
+  const content = normalizeOutlineContent(state.documents.outline.content)
+  const beats: ProjectContext['beats'] = []
+  const spineNotes = labeled([
+    ['Who we follow', content.spine.protagonist],
+    ['What they want', content.spine.externalGoal],
+    ['What they need', content.spine.internalNeed],
+    ['What pushes back', content.spine.centralOpposition],
+    ['What failure costs', content.spine.coreStakes],
+    ['Theme / question', content.spine.theme],
+    ['Ending', content.spine.ending],
+  ])
+
+  if (spineNotes) {
+    beats.push({
+      id: 'outline-spine',
+      name: 'Story spine',
+      description: 'Core story pressure and destination',
+      notes: spineNotes,
+      linkedSceneIds: [],
+    })
+  }
+
+  for (const unit of [...content.units].sort((a, b) => a.number - b.number)) {
+    const notes = labeled([
+      ['What happens', unit.whatHappens],
+      ['Conflict', unit.conflict],
+      ['Turn / change', unit.turn],
+      ['Consequence', unit.consequence],
+      ['Why next', unit.whyNext],
+      ['Notes', unit.draftNotes],
+    ])
+    if (!notes) continue
+    beats.push({
+      id: text(unit.id),
+      name: text(unit.title) || `Outline beat ${unit.number}`,
+      description: text(unit.actOrSequence),
+      notes,
+      linkedSceneIds: Array.isArray(unit.linkedSceneIds) ? unit.linkedSceneIds : [],
+    })
+  }
+
+  if (format === 'series') {
+    const seriesNotes = labeled([
+      ['Show pitch', content.seriesEngine.showPitch],
+      ['Repeatable conflict', content.seriesEngine.repeatableConflict],
+      ['Why it lasts', content.seriesEngine.premiseLongevity],
+      ['Long question', content.seriesEngine.serialQuestion],
+      ['Typical episode shape', content.seriesEngine.episodeEngine],
+      ['World pressure', content.seriesEngine.worldPressure],
+      ['Pilot promise', content.seriesEngine.pilotPromise],
+    ])
+    if (seriesNotes) {
+      beats.push({
+        id: 'series-engine',
+        name: 'Series engine',
+        description: 'Repeatable story pressure',
+        notes: seriesNotes,
+        linkedSceneIds: [],
+      })
+    }
+
+    const seasonNotes = labeled([
+      ['Season question', content.seasonArc.seasonQuestion],
+      ['Season pressure system', content.seasonArc.seasonAntagonist],
+      ['Season midpoint', content.seasonArc.seasonMidpoint],
+      ['Season climax', content.seasonArc.seasonClimax],
+      ['Season ending / hook', content.seasonArc.seasonEndingHook],
+    ])
+    if (seasonNotes) {
+      beats.push({
+        id: 'season-arc',
+        name: 'Season arc',
+        description: 'Season-level story movement',
+        notes: seasonNotes,
+        linkedSceneIds: [],
+      })
+    }
+
+    for (const episode of content.episodes) {
+      const episodeNotes = labeled([
+        ['Title', episode.title],
+        ['Hook', episode.hookLogline],
+        ['A story', episode.aStory],
+        ['B/C story', episode.bcStory],
+        ['What changes', episode.changeByEnd],
+        ['Ending hook', episode.endingHook],
+      ])
+      if (!episodeNotes) continue
+      beats.push({
+        id: text(episode.id),
+        name: text(episode.label) || `Episode ${episode.number}`,
+        description: 'Episode map',
+        notes: episodeNotes,
+        linkedSceneIds: [],
+      })
+    }
+  }
+
+  return beats
 }
 
 function capWords(value: string, maxWords: number): { text: string; wordCount: number; truncated: boolean } {
@@ -281,6 +402,7 @@ export function getDefaultPersona(
     case 'script':   return 'writingPartner'
     case 'synopsis': return 'sam'
     case 'outline':  return 'oliver'
+    case 'treatment': return 'alex'
     case 'story-bible':
       return getStoryBiblePersona(storyBibleSection, userMessage)
   }
@@ -291,6 +413,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
   const synopsisContent = state.documents.synopsis.content
   const storyBible = state.storyBible
   const world = storyBible.world
+  const treatmentContent = state.documents.treatment.content
   const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
   const scriptScenes = options.script?.scenes ?? state.script.scenes
   const projectFormat = normalizeProjectFormat(state.meta.format)
@@ -374,13 +497,53 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       need: text(c.need),
       arc: text(c.arc),
     })),
-    beats: state.outline.beats.map(b => ({
-      id: text(b.id),
-      name: text(b.name),
-      description: text(b.description),
-      notes: text(b.notes),
-      linkedSceneIds: Array.isArray(b.linkedSceneIds) ? b.linkedSceneIds : [],
-    })),
+    beats: documentOutlineBeats(state, projectFormat),
+    treatment: {
+      logline: text(treatmentContent.logline),
+      concept: {
+        premise: text(treatmentContent.concept.premise),
+        tone: text(treatmentContent.concept.tone),
+        theme: text(treatmentContent.concept.theme),
+        emotionalPromise: text(treatmentContent.concept.emotionalPromise),
+      },
+      mainCharacters: treatmentContent.mainCharacters.map(character => ({
+        id: text(character.id),
+        name: text(character.name),
+        role: text(character.role),
+        externalWant: text(character.externalWant),
+        internalNeed: text(character.internalNeed),
+        flawOrWound: text(character.flawOrWound),
+        secretOrContradiction: text(character.secretOrContradiction),
+        arc: text(character.arc),
+        relationshipPressure: text(character.relationshipPressure),
+      })),
+      prose: {
+        opening: text(treatmentContent.prose.opening),
+        actOne: text(treatmentContent.prose.actOne),
+        actTwo: text(treatmentContent.prose.actTwo),
+        actThree: text(treatmentContent.prose.actThree),
+        customSections: treatmentContent.prose.customSections.map(section => ({
+          id: text(section.id),
+          heading: text(section.heading),
+          body: text(section.body),
+        })),
+      },
+      visualAndTonal: {
+        overallTone: text(treatmentContent.visualAndTonal.overallTone),
+        visualWorld: text(treatmentContent.visualAndTonal.visualWorld),
+        recurringImagesOrMotifs: text(treatmentContent.visualAndTonal.recurringImagesOrMotifs),
+        musicOrSoundFeeling: text(treatmentContent.visualAndTonal.musicOrSoundFeeling),
+        pacing: text(treatmentContent.visualAndTonal.pacing),
+        genreRules: text(treatmentContent.visualAndTonal.genreRules),
+        compsAndReferences: text(treatmentContent.visualAndTonal.compsAndReferences),
+      },
+      openQuestions: {
+        story: textArray(treatmentContent.openQuestions.story),
+        character: textArray(treatmentContent.openQuestions.character),
+        worldOrMythology: textArray(treatmentContent.openQuestions.worldOrMythology),
+        production: textArray(treatmentContent.openQuestions.production),
+      },
+    },
     scenes: scriptScenes,
     storyBible: {
       themes: text(storyBible.themes),

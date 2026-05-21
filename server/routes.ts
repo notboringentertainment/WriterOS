@@ -176,6 +176,63 @@ const synopsisSeriesSchema = z.object({
   compsAndWhyThisShowNow: z.string().default(''),
 }).optional();
 
+const treatmentConceptSchema = z.object({
+  premise: z.string().default(''),
+  tone: z.string().default(''),
+  theme: z.string().default(''),
+  emotionalPromise: z.string().default(''),
+});
+
+const treatmentCharacterSchema = z.object({
+  id: z.string().default(''),
+  name: z.string().default(''),
+  role: z.string().default(''),
+  externalWant: z.string().default(''),
+  internalNeed: z.string().default(''),
+  flawOrWound: z.string().default(''),
+  secretOrContradiction: z.string().default(''),
+  arc: z.string().default(''),
+  relationshipPressure: z.string().default(''),
+});
+
+const treatmentProseSchema = z.object({
+  opening: z.string().default(''),
+  actOne: z.string().default(''),
+  actTwo: z.string().default(''),
+  actThree: z.string().default(''),
+  customSections: z.array(z.object({
+    id: z.string().default(''),
+    heading: z.string().default(''),
+    body: z.string().default(''),
+  })).default([]),
+});
+
+const treatmentVisualAndTonalSchema = z.object({
+  overallTone: z.string().default(''),
+  visualWorld: z.string().default(''),
+  recurringImagesOrMotifs: z.string().default(''),
+  musicOrSoundFeeling: z.string().default(''),
+  pacing: z.string().default(''),
+  genreRules: z.string().default(''),
+  compsAndReferences: z.string().default(''),
+});
+
+const treatmentOpenQuestionsSchema = z.object({
+  story: z.array(z.string()).default([]),
+  character: z.array(z.string()).default([]),
+  worldOrMythology: z.array(z.string()).default([]),
+  production: z.array(z.string()).default([]),
+});
+
+const treatmentContextSchema = z.object({
+  logline: z.string().default(''),
+  concept: treatmentConceptSchema.default({}),
+  mainCharacters: z.array(treatmentCharacterSchema).default([]),
+  prose: treatmentProseSchema.default({}),
+  visualAndTonal: treatmentVisualAndTonalSchema.default({}),
+  openQuestions: treatmentOpenQuestionsSchema.default({}),
+}).default({});
+
 const projectContextSchema = z.object({
   title: z.string().optional(),
   genre: z.string().optional(),
@@ -214,6 +271,7 @@ const projectContextSchema = z.object({
     notes: z.string(),
     linkedSceneIds: z.array(z.string()).default([]),
   })),
+  treatment: treatmentContextSchema,
   scenes: z.array(z.object({
     id: z.string(),
     heading: z.string(),
@@ -418,6 +476,57 @@ function buildStoryMemorySynopsis(projectContext: ProjectContextForOpenSwarm): s
     .join('\n\n');
 }
 
+function buildTreatmentContextLines(projectContext: ProjectContextForOpenSwarm): string[] {
+  const treatment = projectContext.treatment;
+  const conceptLines = [
+    labeledLine('Treatment logline', treatment.logline),
+    labeledLine('Premise', treatment.concept.premise),
+    labeledLine('Tone', treatment.concept.tone),
+    labeledLine('Theme', treatment.concept.theme),
+    labeledLine('Emotional promise', treatment.concept.emotionalPromise),
+  ].filter(filled);
+  const proseLines = [
+    labeledLine('Opening', treatment.prose.opening),
+    labeledLine('Act One', treatment.prose.actOne),
+    labeledLine('Act Two', treatment.prose.actTwo),
+    labeledLine('Act Three', treatment.prose.actThree),
+    ...treatment.prose.customSections
+      .filter(section => filled(section.heading) || filled(section.body))
+      .map(section => `${section.heading || 'Additional movement'}: ${truncate(section.body, 700)}`),
+  ].filter(filled);
+  const characterLines = treatment.mainCharacters
+    .filter(character => filled(character.name))
+    .slice(0, 8)
+    .map(character => {
+      const details = [
+        filled(character.role) && `role: ${character.role}`,
+        filled(character.externalWant) && `want: ${character.externalWant}`,
+        filled(character.internalNeed) && `need: ${character.internalNeed}`,
+        filled(character.arc) && `arc: ${character.arc}`,
+      ].filter(Boolean).join('; ');
+      return `${character.name}${details ? ` (${truncate(details, 240)})` : ''}`;
+    });
+  const visualLines = [
+    labeledLine('Overall tone', treatment.visualAndTonal.overallTone),
+    labeledLine('Visual world', treatment.visualAndTonal.visualWorld),
+    labeledLine('Recurring images or motifs', treatment.visualAndTonal.recurringImagesOrMotifs),
+    labeledLine('Pacing', treatment.visualAndTonal.pacing),
+    labeledLine('Genre rules', treatment.visualAndTonal.genreRules),
+    labeledLine('Comps or references', treatment.visualAndTonal.compsAndReferences),
+  ].filter(filled);
+
+  return [
+    ...conceptLines,
+    ...characterLines.map(line => `Character: ${line}`),
+    ...proseLines,
+    ...visualLines,
+  ].map(line => truncate(line, 900));
+}
+
+function buildStoryMemoryTreatment(projectContext: ProjectContextForOpenSwarm): string {
+  return buildTreatmentContextLines(projectContext).join('\n');
+}
+
 function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
   if (!voiceProfile) return [];
 
@@ -458,6 +567,8 @@ export function buildOpenSwarmWritingPartnerPrompt(
   voiceProfile?: VoiceProfileDocument
 ): string {
   const synopsisContextLines = buildSynopsisContextLines(projectContext)
+    .map(line => `- ${line}`);
+  const treatmentContextLines = buildTreatmentContextLines(projectContext)
     .map(line => `- ${line}`);
 
   const characterLines = projectContext.characters
@@ -527,6 +638,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     `Synopsis: ${synopsisFilledCount} filled field${synopsisFilledCount === 1 ? '' : 's'}`,
     `Characters: ${characterLines.length} named character${characterLines.length === 1 ? '' : 's'}`,
     `Outline: ${beatLines.length} beat note${beatLines.length === 1 ? '' : 's'} supplied`,
+    `Treatment: ${treatmentContextLines.length} filled field${treatmentContextLines.length === 1 ? '' : 's'}`,
     `Story Bible: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
     `Script: ${script?.excerptWordCount || 0} excerpt word${script?.excerptWordCount === 1 ? '' : 's'}, ${script?.sceneCount || 0} scene${script?.sceneCount === 1 ? '' : 's'}${script?.contextLabel ? ` (${script.contextLabel})` : ''}`,
   ];
@@ -554,7 +666,7 @@ Task response contract:
 - Use compact section labels that end with a colon, such as "Verdict:", "Evidence:", "Missing Context:", and "Next Actions:".
 - Simple hyphen bullets are allowed. Avoid conversational throat-clearing.
 - Include a "Missing Context" section only when the context inventory shows material is absent.
-- When context is missing, name the WriterOS surface to fill (Synopsis, Characters, Outline beat notes, Story Bible, or Script context). Do not ask the user to paste material into chat unless they explicitly ask for a paste-based workflow.
+- When context is missing, name the WriterOS surface to fill (Synopsis, Characters, Outline, Treatment, Story Bible, or Script context). Do not ask the user to paste material into chat unless they explicitly ask for a paste-based workflow.
 - Keep specialist recommendations brief and only include them when they directly advance the task.
 
 Creative partner lanes:
@@ -589,6 +701,9 @@ ${bulletLines(characterLines)}
 
 Outline beats:
 ${bulletLines(beatLines)}
+
+Treatment:
+${treatmentContextLines.length ? treatmentContextLines.join('\n') : '- None supplied'}
 
 Story Bible:
 ${bulletLines(storyBibleLines)}
@@ -676,6 +791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           logline: projectContextLogline(data.projectContext),
           synopsis: buildStoryMemorySynopsis(data.projectContext),
           synopsisSections: data.projectContext.synopsis.sections,
+          treatment: buildStoryMemoryTreatment(data.projectContext),
           themes: data.projectContext.storyBible.themes,
         },
         script: scriptContext ? {

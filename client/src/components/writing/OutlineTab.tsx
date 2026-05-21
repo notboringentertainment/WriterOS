@@ -1,109 +1,136 @@
-import React from 'react'
-import { BeatCard } from '../shared/BeatCard'
+import React, { useEffect, useState } from 'react'
+import type { AuthoredDocumentState, OutlineDocumentContent, OutlineEpisode } from '@shared/documents'
+import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
-import { defaultProjectState } from '../../lib/projectState'
-import type { ProjectFormat } from '@shared/projectFormat'
+import {
+  hasFeatureOutlineAnswers,
+  hasOutlineAnswers,
+  hasSeriesOutlineAnswers,
+  seedEpisodes101To103,
+} from '../../lib/outlineDeck'
+import { OutlineEditView } from './outline/OutlineEditView'
+import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 
-interface Beat {
-  id: string
-  name: string
-  description: string
-  notes: string
-  linkedSceneIds: string[]
-}
-
-interface OutlineData {
-  beatType: string
-  beats: Beat[]
-}
+type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
 interface OutlineTabProps {
-  outline: OutlineData
+  document: AuthoredDocumentState<OutlineDocumentContent>
   projectFormat?: ProjectFormat
   onProjectFormatChange?: (next: ProjectFormat) => void
-  onUpdateBeat: (beatId: string, patch: { notes: string }) => void
-  onReorderBeats: (fromIndex: number, toIndex: number) => void
-  onClear?: () => void
+  onContentChange: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
+  onAddEpisode: () => void
+  onEpisodeFieldChange: (episodeId: string, field: EpisodeTextField, value: string) => void
+  onClear?: (options?: { keep?: 'all' | 'foundations' }) => void
 }
 
-const DEFAULT_BEAT_IDS = defaultProjectState().outline.beats.map(beat => beat.id)
-
 export function OutlineTab({
-  outline,
-  projectFormat,
+  document,
+  projectFormat = 'feature',
   onProjectFormatChange,
-  onUpdateBeat,
-  onReorderBeats,
+  onContentChange,
+  onAddEpisode,
+  onEpisodeFieldChange,
   onClear,
 }: OutlineTabProps) {
-  const hasContent = Boolean(
-    outline.beatType !== 'save-the-cat' ||
-    outline.beats.some((beat, index) =>
-      beat.notes.trim() ||
-      beat.linkedSceneIds.length > 0 ||
-      beat.id !== DEFAULT_BEAT_IDS[index]
-    )
-  )
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const activeFormat = normalizeProjectFormat(projectFormat)
+  const hasContent = hasOutlineAnswers(document.content)
+
+  useEffect(() => {
+    if (activeFormat === 'series' && document.content.episodes.length === 0) {
+      onContentChange(seedEpisodes101To103)
+    }
+  }, [activeFormat, document.content.episodes.length, onContentChange])
+
+  function handleFormatChange(next: ProjectFormat) {
+    if (next === activeFormat) return
+
+    const currentHasFormatAnswers = activeFormat === 'series'
+      ? hasSeriesOutlineAnswers(document.content)
+      : hasFeatureOutlineAnswers(document.content)
+
+    if (currentHasFormatAnswers) {
+      const confirmed = window.confirm(
+        `Switching to ${next} will hide your ${activeFormat} outline answers. They'll be kept and restored if you switch back.`,
+      )
+      if (!confirmed) return
+    }
+
+    onProjectFormatChange?.(next)
+  }
+
+  function handleClearAll() {
+    setClearDialogOpen(false)
+    onClear?.({ keep: 'all' })
+  }
+
+  function handleKeepFoundations() {
+    setClearDialogOpen(false)
+    onClear?.({ keep: 'foundations' })
+  }
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.titleRow}>
-          <h2 style={styles.title}>Outline</h2>
-          {(projectFormat !== undefined || onClear) && (
-            <div style={styles.titleControls}>
-              {projectFormat !== undefined && onProjectFormatChange && (
-                <ProjectFormatSelector
-                  value={projectFormat}
-                  onChange={onProjectFormatChange}
-                />
-              )}
-              {onClear && (
-                <button
-                  type="button"
-                  style={{
-                    ...styles.clearButton,
-                    ...(!hasContent ? styles.clearButtonDisabled : {}),
-                  }}
-                  onClick={onClear}
-                  disabled={!hasContent}
-                  title="Clear every outline field"
-                >
-                  Clear outline
-                </button>
-              )}
-            </div>
-          )}
+          <div>
+            <h2 style={styles.title}>Outline</h2>
+            <p style={styles.subtitle}>
+              Shape the story before pages lock it in.
+            </p>
+          </div>
+          <div style={styles.titleControls}>
+            <ProjectFormatSelector
+              value={activeFormat}
+              onChange={handleFormatChange}
+              variant="standalone"
+            />
+            {onClear && (
+              <button
+                type="button"
+                style={{
+                  ...styles.clearButton,
+                  ...(!hasContent ? styles.clearButtonDisabled : {}),
+                }}
+                onClick={() => setClearDialogOpen(true)}
+                disabled={!hasContent}
+                title="Clear outline"
+              >
+                Clear outline
+              </button>
+            )}
+          </div>
         </div>
-        <p style={styles.subtitle}>
-          A writer-facing structural map for beats, reversals, and missing turns. Writing Partner naturally asks @Oliver here.
-        </p>
       </div>
-      <div style={styles.beats}>
-        {outline.beats.map((beat, index) => (
-          <BeatCard
-            key={beat.id}
-            beat={beat}
-            index={index}
-            onUpdate={onUpdateBeat}
-            onMove={onReorderBeats}
-          />
-        ))}
-      </div>
+
+      <OutlineEditView
+        format={activeFormat}
+        content={document.content}
+        onContentChange={onContentChange}
+        onAddEpisode={onAddEpisode}
+        onEpisodeFieldChange={onEpisodeFieldChange}
+      />
+
+      <ClearOutlineDialog
+        open={clearDialogOpen}
+        onClose={() => setClearDialogOpen(false)}
+        onClearAll={handleClearAll}
+        onKeepFoundations={handleKeepFoundations}
+      />
     </div>
   )
 }
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    maxWidth: 760,
+    maxWidth: 820,
     margin: '0 auto',
     padding: '32px 24px 64px',
   },
   header: { marginBottom: 28 },
   titleRow: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 16,
     marginBottom: 6,
@@ -138,9 +165,10 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'not-allowed',
   },
   subtitle: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: 12,
+    fontFamily: 'var(--font-body)',
+    fontSize: 13,
     color: 'var(--fg-muted)',
+    fontStyle: 'italic',
+    margin: '4px 0 0',
   },
-  beats: { display: 'flex', flexDirection: 'column', gap: 12 },
 }

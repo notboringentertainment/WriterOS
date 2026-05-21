@@ -8,6 +8,7 @@ import {
 } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { legacyToDocuments } from '../../client/src/lib/documentMigration'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { createEmptySeriesContent } from '../../shared/documents'
 
 describe('defaultProjectState', () => {
@@ -196,7 +197,7 @@ describe('saveProjectState / loadProjectState', () => {
   })
 })
 
-describe('migrateState — v2 to v3 hydrates documents', () => {
+describe('migrateState — legacy states hydrate documents', () => {
   beforeEach(() => {
     localStorage.clear()
   })
@@ -211,7 +212,6 @@ describe('migrateState — v2 to v3 hydrates documents', () => {
     const migrated = migrateState(v2)
 
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(migrated.schemaVersion).toBe(3)
     expect(migrated.documents.synopsis.content.logline.text).toBe('A widow returns home.')
     expect(migrated.documents.synopsis.content.prose.opening).toBe('OPENING')
     expect(migrated.synopsis.logline).toBe('A widow returns home.')
@@ -227,6 +227,42 @@ describe('migrateState — v2 to v3 hydrates documents', () => {
 
     expect(migrated.documents.synopsis.content.logline.text).toBe('EXISTING')
     expect(migrated.synopsis.logline).toBe('LEGACY')
+  })
+
+  it('adds a treatment document when loading pre-treatment document bundles', () => {
+    const v4 = defaultProjectState() as any
+    v4.schemaVersion = 4
+    delete v4.documents.treatment
+
+    const migrated = migrateState(v4)
+
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.documents.treatment.content.logline).toBe('')
+    expect(migrated.documents.treatment.content.header.format).toBe('feature')
+  })
+
+  it('copies rich pre-v5 outline material into empty treatment without removing outline content', () => {
+    const v4 = defaultProjectState() as any
+    v4.schemaVersion = 4
+    v4.documents.outline.content.spine.protagonist = 'Sara'
+    v4.documents.outline.content.spine.externalGoal = 'save her brother'
+    v4.documents.outline.content.spine.centralOpposition = 'a rescue network that hides failed calls'
+    v4.documents.outline.content.spine.theme = 'Mercy under pressure'
+    const opening = createOutlineUnit('feature.openingNormalWorld')
+    opening.whatHappens = 'Sara ends a night shift in a city that treats emergency calls like confessions.'
+    const inciting = createOutlineUnit('feature.incitingIncident')
+    inciting.whatHappens = 'A call arrives from her brother three days after he vanished.'
+    v4.documents.outline.content.units = [opening, inciting]
+
+    const migrated = migrateState(v4)
+
+    expect(migrated.documents.outline.content.spine.protagonist).toBe('Sara')
+    expect(migrated.documents.outline.content.units).toHaveLength(2)
+    expect(migrated.documents.treatment.content.concept.premise).toContain('Who we follow: Sara')
+    expect(migrated.documents.treatment.content.concept.premise).toContain('save her brother')
+    expect(migrated.documents.treatment.content.concept.theme).toBe('Mercy under pressure')
+    expect(migrated.documents.treatment.content.prose.opening).toContain('Sara ends a night shift')
+    expect(migrated.documents.treatment.content.prose.opening).toContain('A call arrives')
   })
 
   it('round-trips v3 state through localStorage', () => {

@@ -10,6 +10,7 @@ import {
   extractScriptContext,
 } from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 
 describe('parseMention', () => {
   it('returns null when no mention', () => {
@@ -132,6 +133,10 @@ describe('getDefaultPersona', () => {
     expect(getDefaultPersona('outline', null)).toBe('oliver')
   })
 
+  it('treatment tab -> alex', () => {
+    expect(getDefaultPersona('treatment', null)).toBe('alex')
+  })
+
   it('story-bible + world section -> zoe', () => {
     expect(getDefaultPersona('story-bible', 'world')).toBe('zoe')
   })
@@ -178,9 +183,10 @@ describe('getActiveHelperText', () => {
     expect(getActiveHelperText('', 'script', null)).toBe('Writing Partner')
   })
 
-  it('shows the default specialist for synopsis and outline', () => {
+  it('shows the default specialist for synopsis, outline, and treatment', () => {
     expect(getActiveHelperText('', 'synopsis', null)).toBe('Writing Partner will ask @Sam')
     expect(getActiveHelperText('', 'outline', null)).toBe('Writing Partner will ask @Oliver')
+    expect(getActiveHelperText('', 'treatment', null)).toBe('Writing Partner will ask @Alex')
   })
 
   it('separates Story Bible defaults by section', () => {
@@ -214,8 +220,9 @@ describe('buildProjectContext', () => {
     expect(ctx.logline).toBe('')
     expect(ctx.characters).toEqual([])
     expect(ctx.synopsis.sections.setup).toBe('')
-    expect(ctx.beats.length).toBeGreaterThan(0)
-    expect(ctx.beats[0]).toMatchObject({ id: 'opening-image', name: 'Opening Image', notes: '' })
+    expect(ctx.beats).toEqual([])
+    expect(ctx.treatment.logline).toBe('')
+    expect(ctx.treatment.concept.premise).toBe('')
     expect(ctx.scenes).toEqual([])
     expect(ctx.script.excerpt).toBe('')
     expect(ctx.script.sceneHeadings).toEqual([])
@@ -241,15 +248,44 @@ describe('buildProjectContext', () => {
     ])
   })
 
-  it('maps beat details and notes', () => {
+  it('maps outline document answers instead of stale legacy beats', () => {
     const state = defaultProjectState()
-    state.outline.beats[0].notes = 'Open on the hero alone in rain.'
+    state.outline.beats[0].notes = 'Stale legacy note agents should not see.'
+    const unit = createOutlineUnit('feature.incitingIncident')
+    unit.whatHappens = 'Sara hears a rescue call from a missing patient.'
+    unit.consequence = 'She has to answer even though the system warns her off.'
+    state.documents.outline.content.spine.protagonist = 'Sara'
+    state.documents.outline.content.units = [unit]
+
     const ctx = buildProjectContext(state)
+
     expect(ctx.beats[0]).toMatchObject({
-      id: 'opening-image',
-      name: 'Opening Image',
-      notes: 'Open on the hero alone in rain.',
+      id: 'outline-spine',
+      name: 'Story spine',
+      notes: expect.stringContaining('Sara'),
     })
+    expect(ctx.beats[1]).toMatchObject({
+      id: 'feature.incitingIncident',
+      name: 'Inciting incident',
+    })
+    expect(ctx.beats[1].notes).toContain('Sara hears a rescue call')
+    expect(ctx.beats[1].notes).toContain('She has to answer')
+    expect(JSON.stringify(ctx.beats)).not.toContain('Stale legacy note')
+  })
+
+  it('maps treatment document prose for Alex and broad story-flow context', () => {
+    const state = defaultProjectState()
+    state.documents.treatment.content.logline = 'A medic hears impossible calls from missing patients.'
+    state.documents.treatment.content.concept.premise = 'A rescue network is choosing who gets saved.'
+    state.documents.treatment.content.prose.opening = 'Sara ends a night shift as the silent emergency line rings.'
+    state.documents.treatment.content.visualAndTonal.pacing = 'Procedural pressure with slow dread.'
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.treatment.logline).toBe('A medic hears impossible calls from missing patients.')
+    expect(ctx.treatment.concept.premise).toBe('A rescue network is choosing who gets saved.')
+    expect(ctx.treatment.prose.opening).toBe('Sara ends a night shift as the silent emergency line rings.')
+    expect(ctx.treatment.visualAndTonal.pacing).toBe('Procedural pressure with slow dread.')
   })
 
   it('maps world and story bible fields', () => {

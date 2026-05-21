@@ -118,6 +118,22 @@ export interface PersonaCapabilityProjectContext {
     notes: string
     linkedSceneIds: string[]
   }>
+  treatment: {
+    logline: string
+    concept: {
+      premise: string
+      tone: string
+      theme: string
+      emotionalPromise: string
+    }
+    prose: {
+      opening: string
+      actOne: string
+      actTwo: string
+      actThree: string
+      customSections: Array<{ id: string; heading: string; body: string }>
+    }
+  }
   scenes: Array<{
     id: string
     heading: string
@@ -166,6 +182,27 @@ export const PERSONA_CAPABILITY_ALLOWLIST: readonly PersonaCapabilityAllowlistEn
 ] as const
 
 const stringArraySchema = z.array(z.string()).default([])
+
+const capabilityTreatmentContextSchema = z.object({
+  logline: z.string().default(''),
+  concept: z.object({
+    premise: z.string().default(''),
+    tone: z.string().default(''),
+    theme: z.string().default(''),
+    emotionalPromise: z.string().default(''),
+  }).default({}),
+  prose: z.object({
+    opening: z.string().default(''),
+    actOne: z.string().default(''),
+    actTwo: z.string().default(''),
+    actThree: z.string().default(''),
+    customSections: z.array(z.object({
+      id: z.string().default(''),
+      heading: z.string().default(''),
+      body: z.string().default(''),
+    })).default([]),
+  }).default({}),
+}).default({})
 
 export const worldContextVoiceProfileSliceSchema = z.object({
   slice: z.literal('world_context'),
@@ -237,6 +274,7 @@ export const personaCapabilityProjectContextSchema = z.object({
     notes: z.string(),
     linkedSceneIds: stringArraySchema,
   })),
+  treatment: capabilityTreatmentContextSchema,
   scenes: z.array(z.object({
     id: z.string(),
     heading: z.string(),

@@ -408,6 +408,10 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
     lines.push(`- Outline: ${storyMemory.outline.beats.length} beat${storyMemory.outline.beats.length === 1 ? '' : 's'} available.`);
   }
 
+  if (filled(storyMemory.project.treatment)) {
+    lines.push('- Treatment: story prose available.');
+  }
+
   const synopsisSectionCount = filledCount(Object.values(storyMemory.project.synopsisSections ?? {}));
   if (synopsisSectionCount) {
     lines.push(`- Synopsis: ${synopsisSectionCount} section${synopsisSectionCount === 1 ? '' : 's'} filled.`);
@@ -433,18 +437,18 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
   return lines.length ? `WRITING PARTNER BRIEF:\n${lines.join('\n')}` : '';
 }
 
-type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'scenes' | 'storyBible';
+type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'treatment' | 'scenes' | 'storyBible';
 
-const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'scenes', 'storyBible'];
+const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'treatment', 'scenes', 'storyBible'];
 
 const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   writingPartner: DEFAULT_CONTEXT_ORDER,
-  sam: ['brief', 'synopsis', 'outline', 'characters'],
+  sam: ['brief', 'synopsis', 'treatment', 'outline', 'characters'],
   casey: ['brief', 'characters', 'storyBible', 'scenes', 'synopsis'],
   oliver: ['brief', 'outline', 'scenes', 'synopsis'],
   maya: ['brief', 'scenes', 'characters', 'storyBible'],
   zoe: ['brief', 'storyBible', 'scenes', 'characters'],
-  alex: ['brief', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
+  alex: ['brief', 'treatment', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
 };
 
 export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
@@ -513,6 +517,9 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     : filled(storyMemory.project.synopsis)
       ? `SYNOPSIS:\n${truncate(storyMemory.project.synopsis, 1400)}`
       : '';
+  const treatmentBlock = filled(storyMemory.project.treatment)
+    ? `TREATMENT:\n${truncate(storyMemory.project.treatment, 1800)}`
+    : '';
   const worldLines = [
     filled(storyMemory.worldRules.setting) && `- Setting: ${truncate(storyMemory.worldRules.setting)}`,
     filled(storyMemory.worldRules.toneAnchors) && `- Tone anchors: ${truncate(storyMemory.worldRules.toneAnchors)}`,
@@ -526,6 +533,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     synopsis: synopsisBlock,
     characters: characterLines.length ? `CHARACTERS:\n${characterLines.join('\n')}` : '',
     outline: beatLines.length ? `OUTLINE BEATS:\n${beatLines.join('\n')}` : '',
+    treatment: treatmentBlock,
     scenes: scriptBlocks.join('\n\n'),
     storyBible: worldLines.length ? `STORY BIBLE:\n${worldLines.join('\n')}` : '',
   };

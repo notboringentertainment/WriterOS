@@ -190,6 +190,23 @@ describe('createContextSummary', () => {
     expect(summary.indexOf('SCRIPT SCENES:')).toBeLessThan(summary.indexOf('SYNOPSIS SECTIONS:'))
   })
 
+  it('prioritizes authored treatment prose for Alex when available', () => {
+    const summary = createContextSummary(storyMemory({
+      project: {
+        treatment: 'Opening: Sara ends a night shift as the silent emergency line rings.',
+      },
+      outline: {
+        acts: 3,
+        beats: [{ id: 'midpoint', act: 2, description: 'Midpoint: the caller is family.' }],
+      },
+    }), 'alex')
+
+    expect(summary).toContain('TREATMENT:')
+    expect(summary).toContain('Opening: Sara ends a night shift')
+    expect(summary).toContain('OUTLINE BEATS:')
+    expect(summary.indexOf('TREATMENT:')).toBeLessThan(summary.indexOf('OUTLINE BEATS:'))
+  })
+
   it('uses the balanced context order for unknown personas', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'unknown')
 

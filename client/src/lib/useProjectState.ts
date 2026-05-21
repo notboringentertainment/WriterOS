@@ -10,15 +10,25 @@ import {
 } from './projectLibrary'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
-import type { SynopsisDocumentContent, StoryBibleDocumentContent, DocumentViewPreferences } from '@shared/documents'
+import type {
+  SynopsisDocumentContent,
+  StoryBibleDocumentContent,
+  OutlineDocumentContent,
+  OutlineEpisode,
+  TreatmentDocumentContent,
+  DocumentViewPreferences,
+} from '@shared/documents'
 import {
+  createEmptyOutlineContent,
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
   createEmptySynopsisContent,
+  createEmptyTreatmentContent,
   DOCUMENT_SCHEMA_VERSION,
 } from '@shared/documents'
-import { documentsToLegacy, mergeStoryBibleLegacyIntoContent } from './documentMigration'
+import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { createOutlineEpisode } from './outlineDeck'
 
 function nextTimestampAfter(value: string): string {
   return new Date(Math.max(Date.now(), new Date(value).getTime() + 1)).toISOString()
@@ -47,6 +57,17 @@ function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
           ...seriesPatch,
           header: {
             ...state.documents.synopsis.content.header,
+            format,
+          },
+        },
+      },
+      treatment: {
+        ...state.documents.treatment,
+        updatedAt: nextTimestampAfter(state.documents.treatment.updatedAt),
+        content: {
+          ...state.documents.treatment.content,
+          header: {
+            ...state.documents.treatment.content.header,
             format,
           },
         },
@@ -252,17 +273,181 @@ export function useProjectState() {
   )
 
   const setBeat = useCallback((beatId: string, patch: Partial<Beat>) => {
-    update(s => ({
-      ...s,
-      outline: {
+    update(s => {
+      const outline = {
         ...s.outline,
         beats: s.outline.beats.map(b => b.id === beatId ? { ...b, ...patch } : b),
-      },
-    }))
+      }
+      const nextOutlineDoc = {
+        ...s.documents.outline,
+        updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
+        content: mergeOutlineLegacyIntoContent(s.documents.outline.content, outline),
+      }
+      return {
+        ...s,
+        outline,
+        documents: {
+          ...s.documents,
+          outline: nextOutlineDoc,
+        },
+      }
+    })
   }, [update])
 
-  const clearOutline = useCallback(() => {
-    update(s => ({ ...s, outline: defaultProjectState().outline }))
+  const setOutlineDocument = useCallback(
+    (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => {
+      update(s => {
+        const outlineFormat = normalizeProjectFormat(s.meta.format)
+        const nextContent = updater(normalizeOutlineContent(s.documents.outline.content))
+        const nextOutlineDoc = {
+          ...s.documents.outline,
+          updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
+          content: nextContent,
+        }
+        const nextDocuments = { ...s.documents, outline: nextOutlineDoc }
+        return {
+          ...s,
+          documents: nextDocuments,
+          outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
+        }
+      })
+    },
+    [update],
+  )
+
+  const setOutlineViewPreferences = useCallback(
+    (patch: Partial<DocumentViewPreferences>) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          outline: {
+            ...s.documents.outline,
+            viewPreferences: {
+              ...(s.documents.outline.viewPreferences ?? {}),
+              ...patch,
+            },
+          },
+        },
+      }))
+    },
+    [update],
+  )
+
+  const setTreatmentDocument = useCallback(
+    (updater: (content: TreatmentDocumentContent) => TreatmentDocumentContent) => {
+      update(s => {
+        const format = normalizeProjectFormat(s.meta.format)
+        const nextContent = updater(s.documents.treatment.content)
+        const nextTreatmentDoc = {
+          ...s.documents.treatment,
+          updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
+          content: {
+            ...nextContent,
+            header: {
+              ...nextContent.header,
+              format,
+            },
+          },
+        }
+        return {
+          ...s,
+          documents: {
+            ...s.documents,
+            treatment: nextTreatmentDoc,
+          },
+        }
+      })
+    },
+    [update],
+  )
+
+  const clearTreatment = useCallback(() => {
+    update(s => {
+      const format = normalizeProjectFormat(s.meta.format)
+      const content = createEmptyTreatmentContent()
+      content.header.format = format
+      const nextTreatmentDoc = {
+        version: DOCUMENT_SCHEMA_VERSION,
+        mode: 'three_act_prose' as const,
+        updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
+        content,
+      }
+      return {
+        ...s,
+        documents: {
+          ...s.documents,
+          treatment: nextTreatmentDoc,
+        },
+      }
+    })
+  }, [update])
+
+  const addEpisode = useCallback(() => {
+    setOutlineDocument(content => {
+      const nextNumber = content.episodes.length > 0
+        ? Math.max(...content.episodes.map(episode => episode.number)) + 1
+        : 101
+      return {
+        ...content,
+        episodes: [...content.episodes, createOutlineEpisode(nextNumber)],
+      }
+    })
+  }, [setOutlineDocument])
+
+  const renameEpisode = useCallback((episodeId: string, label: string) => {
+    setOutlineDocument(content => ({
+      ...content,
+      episodes: content.episodes.map(episode =>
+        episode.id === episodeId ? { ...episode, label } : episode,
+      ),
+    }))
+  }, [setOutlineDocument])
+
+  const setEpisodeField = useCallback(<K extends keyof OutlineEpisode>(
+    episodeId: string,
+    field: K,
+    value: OutlineEpisode[K],
+  ) => {
+    setOutlineDocument(content => ({
+      ...content,
+      episodes: content.episodes.map(episode =>
+        episode.id === episodeId ? { ...episode, [field]: value } : episode,
+      ),
+    }))
+  }, [setOutlineDocument])
+
+  const clearOutline = useCallback((options: { keep?: 'all' | 'foundations' } = {}) => {
+    update(s => {
+      const empty = createEmptyOutlineContent()
+      const outlineFormat = normalizeProjectFormat(s.meta.format)
+      const currentContent = normalizeOutlineContent(s.documents.outline.content)
+      const content =
+        options.keep === 'foundations'
+          ? {
+              ...empty,
+              spine: { ...currentContent.spine },
+              ...(outlineFormat === 'series'
+                ? {
+                    seriesEngine: { ...currentContent.seriesEngine },
+                    seasonArc: { ...currentContent.seasonArc },
+                  }
+                : {}),
+            }
+          : empty
+      const nextOutlineDoc = {
+        version: DOCUMENT_SCHEMA_VERSION,
+        mode: 'beat_sheet_save_the_cat' as const,
+        updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
+        content,
+      }
+      const nextDocuments = { ...s.documents, outline: nextOutlineDoc }
+      return {
+        ...s,
+        outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
+        documents: nextDocuments,
+      }
+    })
   }, [update])
 
   const reorderBeats = useCallback((fromIndex: number, toIndex: number) => {
@@ -461,6 +646,13 @@ export function useProjectState() {
     setStoryBibleViewPreferences,
     migrateStoryBibleLegacyToDocument,
     setBeat,
+    setOutlineDocument,
+    setOutlineViewPreferences,
+    setTreatmentDocument,
+    clearTreatment,
+    addEpisode,
+    renameEpisode,
+    setEpisodeField,
     clearOutline,
     reorderBeats,
     addCharacter,

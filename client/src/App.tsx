@@ -9,6 +9,7 @@ import { Shell } from './components/shell/Shell'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
 import { OutlineTab } from './components/writing/OutlineTab'
+import { TreatmentTab } from './components/writing/TreatmentTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WritersRoom } from './components/writing/WritersRoom'
 import { PERSONAS } from '@shared/personas'
@@ -233,12 +234,23 @@ export default function App() {
       case 'outline':
         return (
           <OutlineTab
-            outline={project.state.outline}
+            document={project.state.documents.outline}
             projectFormat={project.state.meta.format}
             onProjectFormatChange={project.setProjectFormat}
-            onUpdateBeat={project.setBeat}
-            onReorderBeats={project.reorderBeats}
+            onContentChange={project.setOutlineDocument}
+            onAddEpisode={project.addEpisode}
+            onEpisodeFieldChange={project.setEpisodeField}
             onClear={project.clearOutline}
+          />
+        )
+      case 'treatment':
+        return (
+          <TreatmentTab
+            document={project.state.documents.treatment}
+            projectFormat={project.state.meta.format}
+            onProjectFormatChange={project.setProjectFormat}
+            onContentChange={project.setTreatmentDocument}
+            onClear={project.clearTreatment}
           />
         )
       case 'story-bible':

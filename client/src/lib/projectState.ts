@@ -1,10 +1,18 @@
 import { normalizeProjectTitle } from './projectIdentity'
-import { legacyToDocuments, mirrorSynopsisFromLegacy } from './documentMigration'
+import {
+  isTreatmentContentEmpty,
+  legacyToDocuments,
+  mergeOutlineLegacyIntoContent,
+  mirrorSynopsisFromLegacy,
+  normalizeOutlineContent,
+  normalizeTreatmentContent,
+  outlineContentToTreatmentContent,
+} from './documentMigration'
 import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'writeros_project_state'
 
 export type AgentId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
@@ -167,6 +175,22 @@ function syncStoryBibleFormatMirror(
   }
 }
 
+function syncTreatmentFormatMirror(
+  treatment: ProjectDocuments['treatment'],
+  format: ProjectFormat,
+): ProjectDocuments['treatment'] {
+  return {
+    ...treatment,
+    content: {
+      ...treatment.content,
+      header: {
+        ...treatment.content.header,
+        format,
+      },
+    },
+  }
+}
+
 export function migrateState(raw: unknown): ProjectState {
   if (!raw || typeof raw !== 'object') return defaultProjectState()
   const obj = raw as Record<string, unknown>
@@ -232,10 +256,45 @@ export function migrateState(raw: unknown): ProjectState {
   } else {
     ;(state as Record<string, unknown>).documents = rawDocuments
   }
-  const migratedDocuments = (state as Record<string, unknown>).documents as ProjectDocuments
+  const rawMigratedDocuments = (state as Record<string, unknown>).documents as Partial<ProjectDocuments>
+  const migratedDocuments: ProjectDocuments = {
+    synopsis: rawMigratedDocuments.synopsis ?? defaults.documents.synopsis,
+    outline: rawMigratedDocuments.outline ?? defaults.documents.outline,
+    treatment: rawMigratedDocuments.treatment ?? defaults.documents.treatment,
+    storyBible: rawMigratedDocuments.storyBible ?? defaults.documents.storyBible,
+  }
+  const normalizedOutlineContent = normalizeOutlineContent(
+    migratedDocuments.outline.content as Partial<ProjectDocuments['outline']['content']>,
+  )
+  const outlineContent =
+    version < 4
+      ? mergeOutlineLegacyIntoContent(normalizedOutlineContent, (state as unknown as ProjectState).outline)
+      : normalizedOutlineContent
+  const normalizedTreatmentContent = normalizeTreatmentContent(
+    migratedDocuments.treatment.content as Partial<ProjectDocuments['treatment']['content']>,
+  )
+  const seededTreatmentContent =
+    version < 5 && isTreatmentContentEmpty(normalizedTreatmentContent)
+      ? outlineContentToTreatmentContent(outlineContent, promotedFormat)
+      : normalizedTreatmentContent
+  const treatmentContent = isTreatmentContentEmpty(seededTreatmentContent)
+    ? normalizedTreatmentContent
+    : seededTreatmentContent
   ;(state as Record<string, unknown>).documents = {
     ...migratedDocuments,
     synopsis: syncSynopsisFormatMirror(migratedDocuments.synopsis, promotedFormat),
+    outline: {
+      ...migratedDocuments.outline,
+      content: outlineContent,
+      viewPreferences: {
+        ...(migratedDocuments.outline.viewPreferences ?? {}),
+        ...(version < 4 ? { migratedFromLegacyBeats: true } : {}),
+      },
+    },
+    treatment: syncTreatmentFormatMirror({
+      ...migratedDocuments.treatment,
+      content: treatmentContent,
+    }, promotedFormat),
     storyBible: syncStoryBibleFormatMirror(migratedDocuments.storyBible, promotedFormat),
   }
 
@@ -255,7 +314,7 @@ export function saveProjectState(state: ProjectState): void {
     documents: {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),
       outline: state.documents.outline,
-      treatment: state.documents.treatment,
+      treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
     },
   }

@@ -8,6 +8,7 @@ import {
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
   createEmptySynopsisContent,
+  createEmptyTreatmentContent,
   DOCUMENT_SCHEMA_VERSION,
 } from '../../shared/documents'
 
@@ -30,11 +31,13 @@ describe('useProjectState', () => {
     act(() => result.current.setProjectFormat('series'))
     expect(result.current.state.meta.format).toBe('series')
     expect(result.current.state.documents.synopsis.content.header.format).toBe('series')
+    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
     expect(result.current.state.documents.storyBible.content.cover.format).toBe('series')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.meta.format).toBe('series')
     expect(stored.documents.synopsis.content.header.format).toBe('series')
+    expect(stored.documents.treatment.content.header.format).toBe('series')
     expect(stored.documents.storyBible.content.cover.format).toBe('series')
   })
 
@@ -73,7 +76,7 @@ describe('useProjectState', () => {
     expect(result.current.state.documents.synopsis.content.series).toEqual(existingSeries)
   })
 
-  it('setProjectFormat does not mutate outline or authored story bible content', () => {
+  it('setProjectFormat does not mutate outline, treatment, or authored story bible content', () => {
     const { result } = renderHook(() => useProjectState())
 
     act(() => result.current.setBeat('midpoint', { notes: 'The bargain collapses.' }))
@@ -97,12 +100,22 @@ describe('useProjectState', () => {
     const storyBibleBefore = JSON.parse(JSON.stringify(result.current.state.storyBible))
     const outlineDocumentBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
     const storyBibleDocumentBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
+    const treatmentDocumentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
 
     act(() => result.current.setProjectFormat('series'))
 
     expect(result.current.state.outline).toEqual(outlineBefore)
     expect(result.current.state.storyBible).toEqual(storyBibleBefore)
     expect(result.current.state.documents.outline).toEqual(outlineDocumentBefore)
+    expect({
+      ...result.current.state.documents.treatment,
+      updatedAt: treatmentDocumentBefore.updatedAt,
+      content: {
+        ...result.current.state.documents.treatment.content,
+        header: treatmentDocumentBefore.content.header,
+      },
+    }).toEqual(treatmentDocumentBefore)
+    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
     expect({
       ...result.current.state.documents.storyBible,
       updatedAt: storyBibleDocumentBefore.updatedAt,
@@ -117,6 +130,15 @@ describe('useProjectState', () => {
     expect(stored.outline).toEqual(outlineBefore)
     expect(stored.storyBible).toEqual(storyBibleBefore)
     expect(stored.documents.outline).toEqual(outlineDocumentBefore)
+    expect({
+      ...stored.documents.treatment,
+      updatedAt: treatmentDocumentBefore.updatedAt,
+      content: {
+        ...stored.documents.treatment.content,
+        header: treatmentDocumentBefore.content.header,
+      },
+    }).toEqual(treatmentDocumentBefore)
+    expect(stored.documents.treatment.content.header.format).toBe('series')
     expect({
       ...stored.documents.storyBible,
       updatedAt: storyBibleDocumentBefore.updatedAt,
@@ -168,6 +190,68 @@ describe('useProjectState', () => {
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.outline).toEqual(result.current.state.outline)
+  })
+
+  it('setOutlineDocument mirrors series outline context into legacy beats for Oliver', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setOutlineDocument(content => ({
+      ...content,
+      seriesEngine: {
+        ...content.seriesEngine,
+        showPitch: 'A sealed-city thriller about bargaining with truth.',
+        repeatableConflict: 'Each week, a new lie keeps the city alive.',
+      },
+      seasonArc: {
+        ...content.seasonArc,
+        seasonMidpoint: 'The mayor is protecting the wrong person.',
+      },
+    })))
+
+    expect(result.current.state.outline.beats.find(beat => beat.id === 'opening-image')?.notes).toContain('Show pitch')
+    expect(result.current.state.outline.beats.find(beat => beat.id === 'fun-and-games')?.notes).toContain('Each week')
+    expect(result.current.state.outline.beats.find(beat => beat.id === 'midpoint')?.notes).toContain('The mayor is protecting the wrong person.')
+  })
+
+  it('clearOutline keep foundations preserves series engine and season spine for series projects', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setOutlineDocument(content => ({
+      ...content,
+      spine: {
+        ...content.spine,
+        protagonist: 'Sara',
+      },
+      seriesEngine: {
+        ...content.seriesEngine,
+        showPitch: 'A sealed-city thriller about bargaining with truth.',
+      },
+      seasonArc: {
+        ...content.seasonArc,
+        seasonQuestion: 'Who gets to leave?',
+      },
+      episodes: [
+        {
+          id: 'episode-101',
+          number: 101,
+          label: 'Episode 101',
+          title: '',
+          hookLogline: 'A body appears where no one can enter.',
+          aStory: '',
+          bcStory: '',
+          changeByEnd: '',
+          endingHook: '',
+        },
+      ],
+    })))
+    act(() => result.current.clearOutline({ keep: 'foundations' }))
+
+    expect(result.current.state.documents.outline.content.spine.protagonist).toBe('Sara')
+    expect(result.current.state.documents.outline.content.seriesEngine.showPitch).toBe('A sealed-city thriller about bargaining with truth.')
+    expect(result.current.state.documents.outline.content.seasonArc.seasonQuestion).toBe('Who gets to leave?')
+    expect(result.current.state.documents.outline.content.episodes).toEqual([])
   })
 
   it('reorderBeats moves one beat to another valid position', () => {
@@ -379,6 +463,64 @@ describe('useProjectState — setSynopsisDocument', () => {
     expect(result.current.state.synopsis).toEqual(
       documentsToLegacy(result.current.state.documents).synopsis,
     )
+  })
+})
+
+describe('useProjectState — setTreatmentDocument', () => {
+  it('applies the updater to documents.treatment.content', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentDocument(content => ({
+      ...content,
+      logline: 'A medic hears impossible calls.',
+      prose: { ...content.prose, opening: 'The line rings after midnight.' },
+    })))
+
+    expect(result.current.state.documents.treatment.content.logline).toBe('A medic hears impossible calls.')
+    expect(result.current.state.documents.treatment.content.prose.opening).toBe('The line rings after midnight.')
+  })
+
+  it('keeps header.format mirrored from ProjectState.meta.format', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setTreatmentDocument(content => ({
+      ...content,
+      header: { ...content.header, format: 'feature' },
+      concept: { ...content.concept, premise: 'A renewable rescue story.' },
+    })))
+
+    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
+  })
+
+  it('persists treatment content to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentDocument(content => ({
+      ...content,
+      concept: { ...content.concept, premise: 'A city chooses who gets saved.' },
+    })))
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.treatment.content.concept.premise).toBe('A city chooses who gets saved.')
+  })
+
+  it('clearTreatment resets only the treatment document and preserves the format mirror', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    const synopsisBefore = JSON.parse(JSON.stringify(result.current.state.documents.synopsis))
+    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
+    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
+
+    act(() => result.current.setTreatmentDocument(content => ({
+      ...content,
+      logline: 'A medic hears impossible calls.',
+    })))
+    act(() => result.current.clearTreatment())
+
+    const expected = createEmptyTreatmentContent()
+    expected.header.format = 'series'
+    expect(result.current.state.documents.treatment.content).toEqual(expected)
+    expect(result.current.state.documents.synopsis).toEqual(synopsisBefore)
+    expect(result.current.state.documents.outline).toEqual(outlineBefore)
+    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
   })
 })
 

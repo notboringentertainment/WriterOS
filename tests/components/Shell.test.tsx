@@ -34,7 +34,7 @@ describe('Shell', () => {
     expect(screen.queryByTitle('Writing Partner')).not.toBeInTheDocument()
   })
 
-  it('routes Cmd+1 through Cmd+4 to writing tabs', () => {
+  it('routes Cmd+1 through Cmd+5 to writing tabs', () => {
     const setActiveTab = vi.fn()
     const shellState = makeShellState({ setActiveTab })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
@@ -43,19 +43,21 @@ describe('Shell', () => {
     fireEvent.keyDown(window, { key: '2', metaKey: true })
     fireEvent.keyDown(window, { key: '3', metaKey: true })
     fireEvent.keyDown(window, { key: '4', metaKey: true })
+    fireEvent.keyDown(window, { key: '5', metaKey: true })
 
     expect(setActiveTab).toHaveBeenNthCalledWith(1, 'script')
     expect(setActiveTab).toHaveBeenNthCalledWith(2, 'story-bible')
     expect(setActiveTab).toHaveBeenNthCalledWith(3, 'outline')
-    expect(setActiveTab).toHaveBeenNthCalledWith(4, 'synopsis')
+    expect(setActiveTab).toHaveBeenNthCalledWith(4, 'treatment')
+    expect(setActiveTab).toHaveBeenNthCalledWith(5, 'synopsis')
   })
 
-  it("routes Cmd+5 to Writer's Room", () => {
+  it("routes Cmd+6 to Writer's Room", () => {
     const enterWritersRoom = vi.fn()
     const shellState = makeShellState({ enterWritersRoom })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
 
-    fireEvent.keyDown(window, { key: '5', metaKey: true })
+    fireEvent.keyDown(window, { key: '6', metaKey: true })
 
     expect(enterWritersRoom).toHaveBeenCalled()
   })

@@ -180,11 +180,47 @@ export const OutlineUnitSchema = z.object({
 })
 export type OutlineUnit = z.infer<typeof OutlineUnitSchema>
 
+export const OutlineSeriesEngineSchema = z.object({
+  showPitch: z.string(),
+  repeatableConflict: z.string(),
+  premiseLongevity: z.string(),
+  serialQuestion: z.string(),
+  episodeEngine: z.string(),
+  worldPressure: z.string(),
+  pilotPromise: z.string(),
+})
+export type OutlineSeriesEngine = z.infer<typeof OutlineSeriesEngineSchema>
+
+export const OutlineSeasonArcSchema = z.object({
+  seasonQuestion: z.string(),
+  seasonAntagonist: z.string(),
+  seasonMidpoint: z.string(),
+  seasonClimax: z.string(),
+  seasonEndingHook: z.string(),
+})
+export type OutlineSeasonArc = z.infer<typeof OutlineSeasonArcSchema>
+
+export const OutlineEpisodeSchema = z.object({
+  id: z.string(),
+  number: z.number(),
+  label: z.string(),
+  title: z.string(),
+  hookLogline: z.string(),
+  aStory: z.string(),
+  bcStory: z.string(),
+  changeByEnd: z.string(),
+  endingHook: z.string(),
+})
+export type OutlineEpisode = z.infer<typeof OutlineEpisodeSchema>
+
 export const OutlineDocumentContentSchema = z.object({
   mode: OutlineModeSchema,
   structureModel: OutlineStructureModelSchema,
   spine: OutlineSpineSchema,
   units: z.array(OutlineUnitSchema),
+  seriesEngine: OutlineSeriesEngineSchema,
+  seasonArc: OutlineSeasonArcSchema,
+  episodes: z.array(OutlineEpisodeSchema),
   aiProductionColumns: z.object({ enabled: z.boolean() }),
 })
 export type OutlineDocumentContent = z.infer<typeof OutlineDocumentContentSchema>
@@ -203,6 +239,23 @@ export function createEmptyOutlineContent(): OutlineDocumentContent {
       ending: '',
     },
     units: [],
+    seriesEngine: {
+      showPitch: '',
+      repeatableConflict: '',
+      premiseLongevity: '',
+      serialQuestion: '',
+      episodeEngine: '',
+      worldPressure: '',
+      pilotPromise: '',
+    },
+    seasonArc: {
+      seasonQuestion: '',
+      seasonAntagonist: '',
+      seasonMidpoint: '',
+      seasonClimax: '',
+      seasonEndingHook: '',
+    },
+    episodes: [],
     aiProductionColumns: { enabled: false },
   }
 }
@@ -234,6 +287,7 @@ export const TreatmentMainCharacterSchema = z.object({
   arc: z.string(),
   relationshipPressure: z.string(),
 })
+export type TreatmentMainCharacter = z.infer<typeof TreatmentMainCharacterSchema>
 
 export const TreatmentProseSchema = z.object({
   opening: z.string(),
@@ -452,6 +506,7 @@ export const DocumentViewPreferencesSchema = z.object({
   visibleDepth: z.enum(['core', 'advanced', 'continuity', 'ai_production']).optional(),
   synopsisComposeMode: z.enum(['prose', 'paragraphs']).optional(),
   migratedFromLegacyStoryBible: z.boolean().optional(),
+  migratedFromLegacyBeats: z.boolean().optional(),
   expandedStoryBibleCharacterIds: z.array(z.string()).optional(),
 })
 export type DocumentViewPreferences = z.infer<typeof DocumentViewPreferencesSchema>
