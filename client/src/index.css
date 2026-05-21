@@ -1,0 +1,79 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Night Desk color tokens */
+  --bg:           hsl(220 13% 9%);
+  --surface:      hsl(220 13% 12%);
+  --surface-2:    hsl(220 13% 15%);
+  --border:       hsl(220 13% 20%);
+  --fg:           hsl(220 10% 88%);
+  --fg-muted:     hsl(220 10% 50%);
+  --fg-subtle:    hsl(220 10% 35%);
+
+  /* Script page */
+  --script-page:  #F5F2EC;
+  --script-text:  #1a1814;
+
+  /* Writing Partner */
+  --wp-amber:     hsl(38 90% 68%);
+  --wp-amber-dim: hsl(38 60% 45%);
+
+  /* App primary */
+  --primary:      hsl(260 100% 80%);
+  --primary-dim:  hsl(260 60% 50%);
+
+  /* Persona accents */
+  --sam:    hsl(45 100% 75%);
+  --casey:  hsl(200 100% 75%);
+  --oliver: hsl(120 60% 70%);
+  --maya:   hsl(330 80% 75%);
+  --zoe:    hsl(270 70% 75%);
+  --marcus: hsl(15 80% 70%);
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body:    'Lora', Georgia, serif;
+  --font-mono:    'DM Mono', 'Courier New', monospace;
+  --font-script:  'Courier Prime', 'Courier New', monospace;
+
+  /* Layout */
+  --topbar-height:   48px;
+  --rail-collapsed:  48px;
+  --rail-expanded:   300px;
+  --rail-transition: 180ms ease-out;
+  --tab-transition:  200ms ease-out;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grain texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+button { cursor: pointer; }
+textarea, input { resize: vertical; }
+
+/* Animations used by components */
+@keyframes wp-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%       { opacity: 1;   transform: scale(1.1);  }
+}
+
+@keyframes script-appear {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
