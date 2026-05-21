@@ -142,15 +142,53 @@ describe('createContextSummary', () => {
     expect(summary.indexOf('STORY BIBLE:')).toBeLessThan(summary.indexOf('SCRIPT SCENES:'))
   })
 
-  it('emphasizes character context for Casey without including outline beats', () => {
+  it('emphasizes character context for Casey with treatment and outline details', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'casey')
 
     expect(summary).toContain('WRITING PARTNER BRIEF:')
     expect(summary).toContain('CHARACTERS:')
     expect(summary).toContain('STORY BIBLE:')
     expect(summary).toContain('SYNOPSIS SECTIONS:')
-    expect(summary).not.toContain('OUTLINE BEATS:')
+    expect(summary).toContain('OUTLINE BEATS:')
     expect(summary.indexOf('CHARACTERS:')).toBeLessThan(summary.indexOf('STORY BIBLE:'))
+    expect(summary.indexOf('CHARACTERS:')).toBeLessThan(summary.indexOf('OUTLINE BEATS:'))
+  })
+
+  it('shows Casey actual treatment and outline content when a character question needs it', () => {
+    const summary = createContextSummary(storyMemory({
+      project: {
+        treatment: [
+          'Character: Isaiah (role: emergency dispatcher; want: keep control of every rescue; need: admit he cannot save everyone)',
+          'Opening: Isaiah keeps answering calls after his shift because silence feels like betrayal.',
+        ].join('\n'),
+      },
+      characters: {
+        isaiah: {
+          id: 'isaiah',
+          name: 'Isaiah',
+          role: 'Emergency dispatcher',
+          motivation: 'want: keep control of every rescue; need: admit he cannot save everyone',
+          arc: 'Moves from control to trust.',
+        },
+      },
+      outline: {
+        acts: 3,
+        beats: [
+          {
+            id: 'spine',
+            act: 1,
+            description: 'Story spine: What they need: Isaiah must admit he cannot save everyone.',
+          },
+        ],
+      },
+    }), 'casey', 'What does Isaiah need?')
+
+    expect(summary).toContain('CHARACTERS:')
+    expect(summary).toContain('need: admit he cannot save everyone')
+    expect(summary).toContain('TREATMENT:')
+    expect(summary).toContain('Opening: Isaiah keeps answering calls')
+    expect(summary).toContain('OUTLINE BEATS:')
+    expect(summary).toContain('Story spine: What they need: Isaiah must admit')
   })
 
   it('emphasizes structure context for Oliver without including story bible details', () => {

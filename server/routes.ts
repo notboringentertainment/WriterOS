@@ -399,6 +399,100 @@ function listLine(label: string, values: string[]): string | null {
   return compacted ? `${label}: ${compacted}` : null;
 }
 
+function characterKey(name: string, fallback: string): string {
+  const key = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return key || fallback;
+}
+
+function joinedDetails(values: Array<string | false | null | undefined>): string {
+  return values.filter(filled).join('; ');
+}
+
+function mergeDetail(existing?: string, next?: string): string | undefined {
+  if (!filled(next)) return existing;
+  if (!filled(existing)) return next;
+  return existing.includes(next) ? existing : `${existing}; ${next}`;
+}
+
+function buildStoryMemoryCharacters(projectContext: ProjectContextForOpenSwarm): StoryMemory['characters'] {
+  const characters: StoryMemory['characters'] = {};
+
+  function addCharacter(input: {
+    id?: string
+    name?: string
+    role?: string
+    backstory?: string
+    motivation?: string
+    arc?: string
+  }) {
+    const name = input.name || '';
+    const id = input.id || characterKey(name, `character-${Object.keys(characters).length + 1}`);
+    const key = characterKey(name, id);
+    const existing = characters[key];
+
+    characters[key] = {
+      id: existing?.id || id,
+      name: existing?.name || name,
+      role: mergeDetail(existing?.role, input.role) || '',
+      backstory: mergeDetail(existing?.backstory, input.backstory),
+      motivation: mergeDetail(existing?.motivation, input.motivation),
+      arc: mergeDetail(existing?.arc, input.arc),
+    };
+  }
+
+  for (const character of projectContext.characters) {
+    addCharacter({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      backstory: character.wound,
+      motivation: joinedDetails([
+        filled(character.want) && `want: ${character.want}`,
+        filled(character.need) && `need: ${character.need}`,
+      ]),
+      arc: character.arc,
+    });
+  }
+
+  for (const character of projectContext.treatment.mainCharacters) {
+    addCharacter({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      backstory: joinedDetails([
+        filled(character.flawOrWound) && `flaw/wound: ${character.flawOrWound}`,
+        filled(character.secretOrContradiction) && `secret/contradiction: ${character.secretOrContradiction}`,
+        filled(character.relationshipPressure) && `relationship pressure: ${character.relationshipPressure}`,
+      ]),
+      motivation: joinedDetails([
+        filled(character.externalWant) && `want: ${character.externalWant}`,
+        filled(character.internalNeed) && `need: ${character.internalNeed}`,
+      ]),
+      arc: character.arc,
+    });
+  }
+
+  for (const character of projectContext.synopsis.series?.characters ?? []) {
+    addCharacter({
+      id: character.id,
+      name: character.name,
+      role: character.role,
+      backstory: character.bio,
+      arc: character.arcPerSeason.filter(filled).join('; '),
+    });
+  }
+
+  return Object.fromEntries(
+    Object.entries(characters).filter(([, character]) =>
+      filled(character.name) ||
+      filled(character.role) ||
+      filled(character.backstory) ||
+      filled(character.motivation) ||
+      filled(character.arc)
+    )
+  );
+}
+
 function countFilled(values: string[]): number {
   return values.filter(filled).length;
 }
@@ -811,19 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pageRange: scriptContext.pageRange,
           selectedText: scriptContext.selectedText,
         } : undefined,
-        characters: Object.fromEntries(
-          data.projectContext.characters.map(character => [
-            character.id,
-            {
-              id: character.id,
-              name: character.name,
-              role: character.role,
-              backstory: character.wound,
-              motivation: character.want || character.need,
-              arc: character.arc,
-            },
-          ])
-        ),
+        characters: buildStoryMemoryCharacters(data.projectContext),
         outline: {
           acts: 3,
           beats: data.projectContext.beats.map((beat, i) => ({

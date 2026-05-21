@@ -6,6 +6,7 @@ import { registerRoutes } from '../../server/routes'
 import { OpenAIService } from '../../server/ai/openaiService'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import type { StoryMemory } from '../../shared/schema'
 
 afterEach(() => {
@@ -175,6 +176,58 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       expect(storyMemory.project.treatment).toContain('Treatment logline: A medic hears impossible rescue calls.')
       expect(storyMemory.project.treatment).toContain('Premise: A city chooses who gets saved.')
       expect(storyMemory.project.treatment).toContain('Opening: Sara ends a night shift')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('sends Casey character details from Treatment plus actual Outline content', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Casey response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.meta.title = 'Lifeline'
+    state.meta.format = 'series'
+    state.documents.treatment.content.mainCharacters = [{
+      id: 'isaiah',
+      name: 'Isaiah',
+      role: 'Emergency dispatcher',
+      externalWant: 'Keep control of every rescue call.',
+      internalNeed: 'Admit he cannot save everyone.',
+      flawOrWound: 'He treats every missed call as a personal failure.',
+      secretOrContradiction: '',
+      arc: 'Learns to trust the team before the line consumes him.',
+      relationshipPressure: 'Dante pushes him to stop playing martyr.',
+    }]
+    state.documents.treatment.content.prose.opening =
+      'Isaiah stays after his shift because silence feels like betrayal.'
+    const unit = createOutlineUnit('feature.openingNormalWorld')
+    unit.whatHappens = 'Isaiah answers a rescue call that should not be possible.'
+    unit.turn = 'The voice knows his private grief.'
+    unit.characters = ['Isaiah']
+    state.documents.outline.content.units = [unit]
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'casey',
+        message: 'What does Isaiah need?',
+        projectContext: buildProjectContext(state, 'What does Isaiah need?'),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      const isaiah = storyMemory.characters.isaiah
+      expect(isaiah.name).toBe('Isaiah')
+      expect(isaiah.motivation).toContain('need: Admit he cannot save everyone.')
+      expect(isaiah.backstory).toContain('flaw/wound: He treats every missed call')
+      expect(isaiah.backstory).toContain('relationship pressure: Dante pushes him')
+      expect(storyMemory.project.treatment).toContain('Character: Isaiah')
+      expect(storyMemory.project.treatment).toContain('Opening: Isaiah stays after his shift')
+      expect(storyMemory.outline.beats[0].description).toContain('Isaiah answers a rescue call')
+      expect(storyMemory.outline.beats[0].description).toContain('The voice knows his private grief')
     } finally {
       server.close()
     }
