@@ -1,8 +1,8 @@
 # WriterOS Product Doc Map
 
-**Date:** 2026-05-18
-**Status:** Canonical product-orientation map for the current branch
-**Branch context:** `feature/screenplay-editor-core`
+**Date:** 2026-05-22
+**Status:** Canonical product-orientation map for current `main`
+**Branch context:** `main` after PR #4 (`Add Treatment Document View`)
 
 ## Product North Star
 
@@ -33,7 +33,7 @@ This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script r
 - `docs/product/synopsis-story-coach-redesign-prd.md` is canonical for the next Synopsis revision: plain-language story-assessment Edit View, hidden professional mapping, and studio-presentable Feature/Series Synopsis documents.
 - `docs/product/story-bible-story-coach-redesign-prd.md` is canonical for the next Story Bible revision: plain-language Edit View on top of `documents.storyBible.content`, character story-coach interview cards, format-aware Feature/Series story-engine prompts, and a professional bible Document View. Casey and Zoe context migration is scoped inside the PRD.
 - `docs/product/outline-story-coach-redesign-prd.md` is canonical for the Outline redesign and the broader surface standard: plain-language assessment in Edit View, professional structure underneath, polished document rendering.
-- `docs/product/treatment-surface-prd.md` is canonical for Treatment: a first-class prose surface stored in `documents.treatment.content`, guided by plain-language questions, supported by Alex, and available to agents as authored full-story flow.
+- `docs/product/treatment-surface-prd.md` is canonical for Treatment: a first-class prose surface stored in `documents.treatment.content`, guided by plain-language questions, rendered through a read-only Document View, supported by Alex, and available to agents as authored full-story flow.
 - `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with newer surface-specific PRDs, the newer format/story-coach decisions win.
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
 - `docs/product/writer-voice-profile-prd.md` remains current for writer-scoped profile work. Voice Profile is not project format, Story Bible canon, or project memory.
@@ -67,5 +67,5 @@ Before more code, keep the product docs aligned in this order:
 | --- | --- | --- |
 | Synopsis story-assessment revision | `docs/product/synopsis-story-coach-redesign-prd.md` | Canonical PRD written; use before further Synopsis implementation |
 | Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | Canonical PRD written; use before further Story Bible implementation |
-| Treatment surface design | `docs/product/treatment-surface-prd.md` | Canonical PRD written; use before further Treatment implementation |
+| Treatment surface design | `docs/product/treatment-surface-prd.md` | Implemented through read-only Document View; use Clear Path Ahead before further Treatment implementation |
 | Agent context migration from legacy mirrors to `documents.*` | `docs/product/agent-workflow-prd.md` plus surface-specific PRDs | Update whenever a surface changes source of truth |
