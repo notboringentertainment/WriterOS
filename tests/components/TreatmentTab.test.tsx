@@ -10,6 +10,7 @@ import {
 
 function makeDocument(
   override: Partial<TreatmentDocumentContent> = {},
+  viewPreferences?: AuthoredDocumentState<TreatmentDocumentContent>['viewPreferences'],
 ): AuthoredDocumentState<TreatmentDocumentContent> {
   return {
     version: DOCUMENT_SCHEMA_VERSION,
@@ -19,6 +20,7 @@ function makeDocument(
       ...createEmptyTreatmentContent(),
       ...override,
     },
+    viewPreferences,
   }
 }
 
@@ -61,6 +63,56 @@ describe('TreatmentTab', () => {
     expect(screen.getByText('What is the story in one sentence?')).toBeInTheDocument()
     expect(screen.getByText('How does the story open on screen?')).toBeInTheDocument()
     expect(screen.getByText('How does it resolve?')).toBeInTheDocument()
+  })
+
+  it('renders Document View when viewPreferences.activeView is document', () => {
+    const content = createEmptyTreatmentContent()
+    content.logline = 'A medic hears impossible rescue calls.'
+    content.prose.opening = 'Mara ends a night shift as the silent line rings.'
+
+    render(
+      <TreatmentTab
+        document={makeDocument(content, { activeView: 'document' })}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('A medic hears impossible rescue calls.')).toBeInTheDocument()
+    expect(screen.getByText('Mara ends a night shift as the silent line rings.')).toBeInTheDocument()
+    expect(screen.queryByLabelText('What is the story in one sentence?')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear treatment' })).not.toBeInTheDocument()
+  })
+
+  it('clicking Document fires a view preference patch', () => {
+    const onViewPreferencesPatch = vi.fn()
+    render(
+      <TreatmentTab
+        document={makeDocument()}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={onViewPreferencesPatch}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Document' }))
+
+    expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'document' })
+  })
+
+  it('clicking Edit fires a view preference patch', () => {
+    const onViewPreferencesPatch = vi.fn()
+    render(
+      <TreatmentTab
+        document={makeDocument({}, { activeView: 'document' })}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={onViewPreferencesPatch}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+
+    expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'edit' })
   })
 
   it('writes logline edits through the provided content updater', () => {
