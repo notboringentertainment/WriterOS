@@ -661,6 +661,30 @@ describe('useProjectState — setSynopsisViewPreferences', () => {
   })
 })
 
+describe('useProjectState — setTreatmentViewPreferences', () => {
+  it('merges activeView into viewPreferences', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    expect(result.current.state.documents.treatment.viewPreferences?.activeView).toBe('document')
+  })
+
+  it('preserves other view preferences when patching one key', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    act(() => result.current.setTreatmentViewPreferences({ collapsedSections: ['story'] }))
+    const prefs = result.current.state.documents.treatment.viewPreferences
+    expect(prefs?.activeView).toBe('document')
+    expect(prefs?.collapsedSections).toEqual(['story'])
+  })
+
+  it('persists viewPreferences to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.treatment.viewPreferences?.activeView).toBe('document')
+  })
+})
+
 describe('useProjectState — clearSynopsis dual reset', () => {
   it('resets state.synopsis to defaultProjectState().synopsis', () => {
     const { result } = renderHook(() => useProjectState())

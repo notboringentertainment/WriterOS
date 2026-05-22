@@ -362,6 +362,25 @@ export function useProjectState() {
     [update],
   )
 
+  const setTreatmentViewPreferences = useCallback(
+    (patch: Partial<DocumentViewPreferences>) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          treatment: {
+            ...s.documents.treatment,
+            viewPreferences: {
+              ...(s.documents.treatment.viewPreferences ?? {}),
+              ...patch,
+            },
+          },
+        },
+      }))
+    },
+    [update],
+  )
+
   const clearTreatment = useCallback(() => {
     update(s => {
       const format = normalizeProjectFormat(s.meta.format)
@@ -649,6 +668,7 @@ export function useProjectState() {
     setOutlineDocument,
     setOutlineViewPreferences,
     setTreatmentDocument,
+    setTreatmentViewPreferences,
     clearTreatment,
     addEpisode,
     renameEpisode,

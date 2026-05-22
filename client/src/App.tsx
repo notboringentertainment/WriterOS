@@ -250,6 +250,7 @@ export default function App() {
             projectFormat={project.state.meta.format}
             onProjectFormatChange={project.setProjectFormat}
             onContentChange={project.setTreatmentDocument}
+            onViewPreferencesPatch={(patch) => project.setTreatmentViewPreferences(patch)}
             onClear={project.clearTreatment}
           />
         )
