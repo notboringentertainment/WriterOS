@@ -210,46 +210,15 @@ Success criteria:
 
 ## Workstream 4: Storage And Project Library
 
-Goal: decide durable project storage before summaries, memory, export/import, or multi-project workflows grow.
+**Status:** Superseded for planning by `docs/product/app-home-import-storage-prd.md`.
 
-Current boundary:
+Do not use this workstream to decide Home, project folder viewer, `.fdx` import, screenplay import priority, external storage path, or localStorage migration. Those decisions now live in the dedicated App Home, Screenplay Import, And Storage PRD.
 
-- `localStorage` is acceptable for this branch.
-- It is not the long-term answer for full scripts, transcripts, summaries, documents, and project libraries.
+Historical context:
 
-Persist authored/user-visible state:
-
-- project title and metadata
-- script raw HTML / scenes
-- synopsis
-- outline
-- story bible
-- treatment prose
-- transcripts
-- user-visible decisions or project notes
-
-Keep derived/rebuildable unless performance requires otherwise:
-
-- script indexes
-- retrieval packs
-- estimated page spans
-- speaker windows
-- context summaries
-
-Questions to answer in a storage PRD:
-
-- Local files, browser storage, SQLite, cloud database, or hybrid?
-- How are projects imported/exported?
-- How are transcripts stored and pruned?
-- How are large scripts versioned?
-- What is the backup/recovery story?
-- What data can be safely regenerated?
-
-Success criteria:
-
-- Clear source-of-truth model.
-- Safe migration path from current local state.
-- No accidental reintroduction of stale prototype scaffolds.
+- The current implementation still uses `localStorage`.
+- Save/Rename/Delete were added inside that localStorage boundary.
+- The shipped-app path is no longer open-ended: it is local-first `.writeros` project packages under a user-selected WriterOS Projects folder, with explicit localStorage migration.
 
 ### In-branch UX: Save / Rename / Delete
 
@@ -259,7 +228,7 @@ Within the localStorage boundary above, the TopBar exposes a project-actions men
 - **Rename** — opens the existing inline title editor in the TopBar. The click-title-to-edit fast path is preserved; the menu item adds discoverability.
 - **Delete** — `window.confirm` against the active project title, then removes it from the library. If other projects remain, switches to the most-recent. If it was the only project, auto-seeds a blank (matches `loadActiveProjectLibrary` fallback). To delete a different project, the user switches to it first.
 
-Explicitly deferred to the long-term storage PRD: export/import to file, named snapshots/version history, undo for delete, custom in-app confirm modal, and cloud sync.
+Explicitly deferred to `docs/product/app-home-import-storage-prd.md`: Home, project folder viewer, file-backed project storage, `.fdx` import, screenplay import priority, and migration from localStorage.
 
 ## Workstream 5: Measured Pagination And Export
 
