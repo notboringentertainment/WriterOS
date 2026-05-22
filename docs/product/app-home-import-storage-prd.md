@@ -211,15 +211,34 @@ Out of scope for first `.fdx` import:
 
 Those may become later import/export slices, but the first requirement is that normal screenplay pages open in the editor with correct block structure and readable formatting.
 
-## Other Import Formats
+## Other Screenplay Import Formats
 
-After `.fdx`, likely import candidates are:
+`.fdx` remains the first required screenplay import format. Other formats should not be implemented ahead of `.fdx` unless this PRD is explicitly revised.
 
-1. Fountain (`.fountain`).
-2. Plain text with screenplay heuristics.
-3. PDF only if a reliable parser is chosen and the UX clearly warns about fidelity limits.
+After `.fdx`, import priority is:
 
-No other screenplay import format should jump ahead of `.fdx` unless a product decision explicitly changes this priority.
+1. Fountain (`.fountain`)
+   - Open, plain-text screenplay markup.
+   - Best next import candidate because scene headings, action, character cues, dialogue, parentheticals, transitions, and notes can be parsed with relatively low ambiguity.
+2. Plain text (`.txt`)
+   - Useful for rough screenplay import when no structured source exists.
+   - Must be clearly presented as heuristic/best-effort because block detection can be wrong.
+3. Rich Text (`.rtf`)
+   - Common screenwriting-app export format.
+   - Better than PDF for text extraction, but style runs and screenplay block identity may still be inconsistent.
+4. Word documents (`.docx`)
+   - Useful because scripts are often exchanged as Word files.
+   - Must be treated as best-effort unless the document contains recognizable screenplay styling.
+5. PDF (`.pdf`)
+   - Common delivery format, but poor editable-source format.
+   - Should come later and include strong UX warnings about fidelity limits, especially around pagination, line breaks, dialogue blocks, headers, and OCR/scanned pages.
+6. Final Draft templates (`.fdxt`)
+   - Related to Final Draft, but should wait until WriterOS has a template workflow.
+7. Native proprietary app formats
+   - Fade In, Celtx, Movie Magic Screenwriter, WriterDuet/WriterSolo, and similar native project files should not be first-class import targets unless their format is stable, documented, and demanded by real usage.
+   - Prefer importing those apps through their `.fdx`, `.fountain`, `.rtf`, `.txt`, or `.pdf` exports.
+
+The first non-`.fdx` implementation slice should be `.fountain`, not PDF. PDF import is valuable for recovery and reference, but it should not define WriterOS screenplay import architecture.
 
 ## Storage And Import Migration
 
