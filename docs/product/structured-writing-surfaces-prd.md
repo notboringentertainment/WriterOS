@@ -1034,10 +1034,9 @@ Answered by May 18 alignment:
 
 Still open:
 
-1. Should Treatment Document View ship before or after Outline Document View V2?
-2. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
-3. Should "Transform source into proper document type" become a first-class workflow inside the app?
-4. Should Markdown export ship with each surface redesign or remain a separate export phase?
+1. Should AI production annexes be enabled manually, by project type, or only in later export/asset workflows?
+2. Should "Transform source into proper document type" become a first-class workflow inside the app?
+3. Should Markdown export ship with each surface redesign or remain a separate export phase?
 
 Open work ownership:
 

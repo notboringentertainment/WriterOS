@@ -93,7 +93,7 @@ It does not replace the workstreams in this PRD, but it changes how future UI an
 
 - **Voice Profile is shell/onboarding work.** It affects first-run experience, profile/settings access, and AI persona context.
 - **Treatment is studio surface work.** It affects the main writing surface navigation, document state, and Alex's project-facing coaching role.
-- **Document Preview is surface rendering work.** It affects how Synopsis, Outline, Story Bible, and Treatment can be read as authored documents.
+- **Document View is surface rendering work.** Synopsis and Treatment already have read-only Document Views; Outline and Story Bible remain the next structured-surface document-view opportunities.
 - **Storage planning must account for both scopes:** writer-scoped profile data and project-scoped writing documents.
 - **Alex connects both ideas:** Voice Profile gives Alex the writer's process and creative identity; Treatment gives Alex the project's draft-development artifact.
 
@@ -351,7 +351,7 @@ Success criteria:
    Decide durable writer/project storage before generated summaries, project libraries, or assuming profile memory can survive beyond local browser state.
 
 6. **Treatment follow-up slice.**
-   Continue Treatment work through `docs/product/treatment-surface-prd.md`, especially Document View, passage reorder, and agent-context refinements.
+   Continue Treatment work through `docs/product/treatment-surface-prd.md`, especially QA/readiness, deeper character fields, passage reorder, and only then agent-context refinements that require Treatment-specific metadata.
 
 7. **Measured pagination / export plan.**
    Treat page fidelity and export as their own product/technical effort.
@@ -374,7 +374,6 @@ Use these while gauging usability:
 
 1. Should surface orientation copy be always visible, collapsible, or shown only for empty/new surfaces?
 2. Should Document View be a toggle in the surface header or a preview button?
-3. Should Treatment Document View ship before or after Outline Document View V2?
-4. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
-5. What is the minimum storage plan needed before generated summaries?
-6. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?
+3. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
+4. What is the minimum storage plan needed before generated summaries?
+5. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?
