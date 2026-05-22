@@ -1,6 +1,6 @@
 import React from 'react'
 
-export interface TreatmentViewToggleProps {
+export interface DocumentViewToggleProps {
   value: 'edit' | 'document'
   onChange: (next: 'edit' | 'document') => void
 }
@@ -10,7 +10,7 @@ const SEGMENTS: { id: 'edit' | 'document'; label: string }[] = [
   { id: 'document', label: 'Document' },
 ]
 
-export function TreatmentViewToggle({ value, onChange }: TreatmentViewToggleProps) {
+export function DocumentViewToggle({ value, onChange }: DocumentViewToggleProps) {
   return (
     <div
       role="group"

@@ -2,10 +2,10 @@ import React from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
-import { SynopsisViewToggle } from './synopsis/SynopsisViewToggle'
 
 export interface SynopsisTabProps {
   document: AuthoredDocumentState<SynopsisDocumentContent>
@@ -88,7 +88,7 @@ export function SynopsisTab({
               onChange={handleFormatChange}
               variant="standalone"
             />
-            <SynopsisViewToggle
+            <DocumentViewToggle
               value={activeView}
               onChange={(next) => onViewPreferencesPatch({ activeView: next })}
             />

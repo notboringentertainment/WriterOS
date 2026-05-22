@@ -107,6 +107,11 @@ function paragraphs(value: string): string[] {
     .filter(Boolean)
 }
 
+function formatUpdatedAt(value: string): string | null {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString()
+}
+
 function hasCharacterText(character: TreatmentMainCharacter): boolean {
   return Object.entries(character).some(
     ([key, value]) => key !== 'id' && typeof value === 'string' && value.trim().length > 0,
@@ -197,8 +202,8 @@ export function TreatmentDocumentView({ content, projectFormat, updatedAt }: Tre
       const value = key === 'format' ? FORMAT_LABELS[activeFormat] : text(content.header[key])
       return { label, value }
     })
-    .filter(row => row.value.length > 0 && (row.label !== 'FORMAT' || hasAuthoredBody))
-  const formattedDate = new Date(updatedAt).toLocaleDateString()
+    .filter(row => row.value.length > 0)
+  const formattedDate = formatUpdatedAt(updatedAt)
 
   return (
     <div
@@ -354,16 +359,18 @@ export function TreatmentDocumentView({ content, projectFormat, updatedAt }: Tre
         </>
       )}
 
-      <p
-        style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: '0.75rem',
-          color: 'var(--fg-muted)',
-          margin: 0,
-        }}
-      >
-        Last edited {formattedDate}
-      </p>
+      {formattedDate && (
+        <p
+          style={{
+            fontFamily: 'var(--font-body)',
+            fontSize: '0.75rem',
+            color: 'var(--fg-muted)',
+            margin: 0,
+          }}
+        >
+          Last edited {formattedDate}
+        </p>
+      )}
     </div>
   )
 }

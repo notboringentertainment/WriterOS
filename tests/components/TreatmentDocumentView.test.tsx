@@ -100,4 +100,11 @@ describe('TreatmentDocumentView', () => {
     expect(screen.queryByText('FORMAT')).not.toBeInTheDocument()
     expect(screen.getByText(`Last edited ${new Date(updatedAt).toLocaleDateString()}`)).toBeInTheDocument()
   })
+
+  it('omits the Last edited footer when updatedAt is not a valid date', () => {
+    render(<TreatmentDocumentView content={createEmptyTreatmentContent()} updatedAt="" />)
+
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Last edited/)).not.toBeInTheDocument()
+  })
 })

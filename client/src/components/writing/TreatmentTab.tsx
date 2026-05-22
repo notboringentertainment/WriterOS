@@ -5,9 +5,9 @@ import type {
   TreatmentMainCharacter,
 } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import { TreatmentDocumentView } from './treatment/TreatmentDocumentView'
-import { TreatmentViewToggle } from './treatment/TreatmentViewToggle'
 import {
   TREATMENT_PASSAGE_TEMPLATES,
   createPassageSection,
@@ -258,7 +258,7 @@ export function TreatmentTab({
             onChange={(next) => onProjectFormatChange?.(next)}
             variant="standalone"
           />
-          <TreatmentViewToggle
+          <DocumentViewToggle
             value={activeView}
             onChange={(next) => onViewPreferencesPatch?.({ activeView: next })}
           />
