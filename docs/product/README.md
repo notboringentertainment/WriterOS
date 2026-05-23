@@ -35,6 +35,7 @@ This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script r
 - `docs/product/outline-story-coach-redesign-prd.md` is canonical for the Outline redesign and the broader surface standard: plain-language assessment in Edit View, professional structure underneath, polished document rendering.
 - `docs/product/treatment-surface-prd.md` is canonical for Treatment: a first-class prose surface stored in `documents.treatment.content`, guided by plain-language questions, rendered through a read-only Document View, supported by Alex, and available to agents as authored full-story flow.
 - `docs/product/app-home-import-storage-prd.md` is canonical for the app foundation outside writing surfaces: Home, project folder viewer, Final Draft `.fdx` import, project package storage, and localStorage migration.
+- `docs/product/script-workflow-polish-prd.md` is canonical for the approved post-foundation Script workflow polish slice: scratchpad sidebar, script status/locking flag, title page metadata/preview, and character/location autocomplete.
 - `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with newer surface-specific PRDs, the newer format/story-coach decisions win.
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
 - `docs/product/writer-voice-profile-prd.md` remains current for writer-scoped profile work. Voice Profile is not project format, Story Bible canon, or project memory.
@@ -70,4 +71,5 @@ Before more code, keep the product docs aligned in this order:
 | Story Bible story-coach redesign | `docs/product/story-bible-story-coach-redesign-prd.md` | Canonical PRD written; use before further Story Bible implementation |
 | Treatment surface design | `docs/product/treatment-surface-prd.md` | Implemented through read-only Document View; use Clear Path Ahead before further Treatment implementation |
 | App Home, screenplay import, and storage | `docs/product/app-home-import-storage-prd.md` | Canonical PRD written; required before Home, `.fdx` import, or shipped-app storage implementation |
+| Script workflow polish | `docs/product/script-workflow-polish-prd.md` | Approved next PRD scope; implement only after app foundation path |
 | Agent context migration from legacy mirrors to `documents.*` | `docs/product/agent-workflow-prd.md` plus surface-specific PRDs | Update whenever a surface changes source of truth |
