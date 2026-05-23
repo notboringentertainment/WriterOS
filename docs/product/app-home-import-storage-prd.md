@@ -23,6 +23,9 @@ This is not a general future-work bucket. If a task does not directly serve Home
 
 Current `main` has:
 
+- A functional Home surface backed by the current browser-local project library.
+- Home project search/sort, current-project open, project open, and new-project actions.
+- Explicit Home storage status showing browser fallback and disconnected external project folder state.
 - A TopBar project switcher and project actions.
 - Local project create/switch/save/rename/delete behavior.
 - Auto-save through browser `localStorage`.
@@ -31,10 +34,11 @@ Current `main` has:
 
 Current `main` does not have:
 
-- A Home screen.
-- A project folder viewer.
+- File-backed `.writeros` project packages.
+- A File System Access API project folder adapter.
+- A real project folder viewer.
 - A durable external project file/folder format.
-- Import from Final Draft `.fdx`.
+- Functional import from Final Draft `.fdx`.
 - Import from Fountain, PDF, DOCX, or other screenplay formats.
 - Export/import of complete WriterOS projects.
 - A migration path from localStorage projects to external project folders.
@@ -297,6 +301,8 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 - Add tests for project package serialization and corruption handling.
 
 ### Slice 2: Home Surface
+
+**Status:** V0 implemented on the current localStorage project library. File-backed folder discovery still waits for Slice 1.
 
 - Add Home route/shell state as the first surface before opening a project.
 - Show project folder selection/status.

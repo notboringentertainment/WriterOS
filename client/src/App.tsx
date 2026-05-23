@@ -12,6 +12,7 @@ import { OutlineTab } from './components/writing/OutlineTab'
 import { TreatmentTab } from './components/writing/TreatmentTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WritersRoom } from './components/writing/WritersRoom'
+import { HomeSurface } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
@@ -274,6 +275,23 @@ export default function App() {
   }
 
   const renderCenter = () => {
+    if (shellState.homeActive) {
+      return (
+        <HomeSurface
+          activeProjectId={project.activeProjectId}
+          projects={project.projects}
+          onOpenProject={(projectId) => {
+            project.switchProject(projectId)
+            shellState.openProjectWorkspace()
+          }}
+          onNewProject={() => {
+            project.createProject()
+            shellState.openProjectWorkspace()
+          }}
+        />
+      )
+    }
+
     const activeSurface = renderActiveSurface()
 
     return (

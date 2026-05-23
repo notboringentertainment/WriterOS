@@ -1,6 +1,7 @@
 import { defaultProjectState, loadProjectState, migrateState, saveProjectState } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type { ProjectState } from './projectState'
+import type { ProjectFormat } from '@shared/projectFormat'
 
 const PROJECT_LIBRARY_KEY = 'writeros_project_library'
 const ACTIVE_PROJECT_ID_KEY = 'writeros_active_project_id'
@@ -17,6 +18,8 @@ export interface ProjectSummary {
   title: string
   createdAt: number
   updatedAt: number
+  format?: ProjectFormat
+  sceneCount?: number
 }
 
 export interface ActiveProjectLibrary {
@@ -74,6 +77,8 @@ export function summarizeProjects(projects: StoredProject[]): ProjectSummary[] {
     title: normalizeProjectTitle(project.state.meta.title),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
+    format: project.state.meta.format,
+    sceneCount: project.state.script.scenes.length,
   }))
 }
 

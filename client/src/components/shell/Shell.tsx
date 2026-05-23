@@ -9,6 +9,7 @@ import type { ActiveTab } from '../../lib/wpRouting'
 import type { StoryBibleSection } from '../../lib/shellState'
 
 interface ShellState {
+  homeActive: boolean
   activeTab: ActiveTab
   writersRoomActive: boolean
   panelOpen: boolean
@@ -16,6 +17,8 @@ interface ShellState {
   storyBibleSection: StoryBibleSection | null
   voiceProfileOpen: boolean
   setActiveTab: (tab: ActiveTab) => void
+  openHome: () => void
+  openProjectWorkspace: () => void
   togglePanel: () => void
   enterWritersRoom: () => void
   exitWritersRoom: () => void
@@ -59,9 +62,9 @@ export function Shell({
   children,
 }: ShellProps) {
   const {
-    activeTab, writersRoomActive, panelOpen, focusMode,
+    homeActive, activeTab, writersRoomActive, panelOpen, focusMode,
     storyBibleSection, voiceProfileOpen,
-    setActiveTab, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
+    setActiveTab, openHome, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
     toggleVoiceProfile, closeVoiceProfile,
   } = shellState
 
@@ -71,6 +74,10 @@ export function Shell({
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault()
         togglePanel()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault()
+        openHome()
       }
       if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
         e.preventDefault()
@@ -89,7 +96,7 @@ export function Shell({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePanel, setActiveTab, enterWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
+  }, [togglePanel, openHome, setActiveTab, enterWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
 
   const handleWritersRoom = () => {
     if (writersRoomActive) exitWritersRoom()
@@ -101,6 +108,7 @@ export function Shell({
     <div style={styles.root}>
       {!focusMode && (
         <TopBar
+          homeActive={homeActive}
           activeTab={activeTab}
           writersRoomActive={writersRoomActive}
           projectTitle={projectTitle}
@@ -111,6 +119,7 @@ export function Shell({
           onNewProject={onNewProject}
           onSaveProject={onSaveProject}
           onDeleteProject={onDeleteProject}
+          onHome={openHome}
           onTabChange={setActiveTab}
           onWritersRoom={handleWritersRoom}
           onVoiceProfile={toggleVoiceProfile}
@@ -118,7 +127,7 @@ export function Shell({
         />
       )}
       <div style={styles.body}>
-        {!writersRoomActive && !focusMode && (
+        {!homeActive && !writersRoomActive && !focusMode && (
           <LeftRail
             open={panelOpen}
             onToggle={togglePanel}

@@ -10,6 +10,7 @@ const defaultRailProps = {
 
 function makeShellState(overrides = {}) {
   return {
+    homeActive: false,
     activeTab: 'script' as const,
     writersRoomActive: false,
     panelOpen: false,
@@ -17,6 +18,8 @@ function makeShellState(overrides = {}) {
     storyBibleSection: null,
     voiceProfileOpen: false,
     setActiveTab: vi.fn(),
+    openHome: vi.fn(),
+    openProjectWorkspace: vi.fn(),
     togglePanel: vi.fn(),
     enterWritersRoom: vi.fn(),
     exitWritersRoom: vi.fn(),
@@ -50,6 +53,33 @@ describe('Shell', () => {
     expect(setActiveTab).toHaveBeenNthCalledWith(3, 'outline')
     expect(setActiveTab).toHaveBeenNthCalledWith(4, 'treatment')
     expect(setActiveTab).toHaveBeenNthCalledWith(5, 'synopsis')
+  })
+
+  it('routes Cmd+0 to Home', () => {
+    const openHome = vi.fn()
+    const shellState = makeShellState({ openHome })
+    render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
+
+    fireEvent.keyDown(window, { key: '0', metaKey: true })
+
+    expect(openHome).toHaveBeenCalled()
+  })
+
+  it('hides the Writing Partner rail on Home', () => {
+    const shellState = makeShellState({ homeActive: true, panelOpen: true })
+    render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
+
+    expect(screen.queryByTitle('Writing Partner')).not.toBeInTheDocument()
+  })
+
+  it('routes Home button to shell state', () => {
+    const openHome = vi.fn()
+    const shellState = makeShellState({ openHome })
+    render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+
+    expect(openHome).toHaveBeenCalled()
   })
 
   it("routes Cmd+6 to Writer's Room", () => {

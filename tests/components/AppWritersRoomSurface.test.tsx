@@ -37,6 +37,7 @@ describe("App Writer's Room layout", () => {
 
   it('does not remount the active script surface when toggling Writer Room', () => {
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
 
     const scriptSurface = screen.getByTestId('script-tab-surface')
 

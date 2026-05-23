@@ -15,6 +15,7 @@ const WRITING_TABS: { id: WritingTab; label: string }[] = [
 ]
 
 interface TopBarProps {
+  homeActive?: boolean
   activeTab: WritingTab
   writersRoomActive: boolean
   projectTitle: string
@@ -25,6 +26,7 @@ interface TopBarProps {
   onNewProject?: () => void
   onSaveProject?: () => void
   onDeleteProject?: () => void
+  onHome?: () => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
   onVoiceProfile: () => void
@@ -32,6 +34,7 @@ interface TopBarProps {
 }
 
 export function TopBar({
+  homeActive = false,
   activeTab,
   writersRoomActive,
   projectTitle,
@@ -42,6 +45,7 @@ export function TopBar({
   onNewProject,
   onSaveProject,
   onDeleteProject,
+  onHome,
   onTabChange,
   onWritersRoom,
   onVoiceProfile,
@@ -99,9 +103,20 @@ export function TopBar({
         <span style={styles.logoText}>WriterOS</span>
       </div>
 
+      {onHome && (
+        <button
+          type="button"
+          aria-pressed={homeActive}
+          style={{ ...styles.homeButton, ...(homeActive ? styles.homeButtonActive : {}) }}
+          onClick={onHome}
+        >
+          Home
+        </button>
+      )}
+
       <nav role="tablist" style={styles.tabs}>
         {WRITING_TABS.map(tab => {
-          const isActive = activeTab === tab.id && !writersRoomActive
+          const isActive = activeTab === tab.id && !writersRoomActive && !homeActive
           return (
             <button
               key={tab.id}
@@ -258,6 +273,23 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     color: 'var(--fg)',
     letterSpacing: '-0.02em',
+  },
+  homeButton: {
+    background: 'none',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '4px 10px',
+    cursor: 'pointer',
+  },
+  homeButtonActive: {
+    color: 'var(--fg)',
+    borderColor: 'var(--border)',
+    background: 'var(--surface-2)',
   },
   tabs: { display: 'flex', gap: 2 },
   tab: {

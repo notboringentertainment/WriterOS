@@ -56,6 +56,7 @@ function makeProfile(): VoiceProfileDocument {
 
 async function sendSwarmMessage() {
   render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
 
   fireEvent.click(screen.getByTitle('Writing Partner'))
   fireEvent.change(screen.getByPlaceholderText('Message Writing Partner…'), {

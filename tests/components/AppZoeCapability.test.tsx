@@ -55,6 +55,7 @@ function makeProfile(): VoiceProfileDocument {
 
 function openRailAndSend(text: string) {
   render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
   fireEvent.click(screen.getByTitle('Writing Partner'))
   fireEvent.change(screen.getByPlaceholderText('Message Writing Partner…'), {
     target: { value: text },
