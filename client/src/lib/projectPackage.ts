@@ -1,0 +1,390 @@
+import { z } from 'zod'
+import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents'
+import { normalizeProjectFormat } from '@shared/projectFormat'
+import { documentsToLegacy } from './documentMigration'
+import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
+import { CURRENT_SCHEMA_VERSION, defaultProjectState, migrateState } from './projectState'
+import { buildScriptIndex } from './scriptIndex'
+import type { AgentId, ProjectState, ScriptScene, TranscriptMessage } from './projectState'
+import type { StoredProject } from './projectLibrary'
+
+export const WRITEROS_PACKAGE_EXTENSION = '.writeros'
+export const WRITEROS_PACKAGE_SCHEMA_VERSION = 1
+export const WRITEROS_APP_VERSION = '0.2.0'
+
+export const WRITEROS_PROJECT_MANIFEST_PATH = 'project.json'
+export const WRITEROS_SCRIPT_HTML_PATH = 'script/script.writeros.html'
+export const WRITEROS_DOCUMENT_PATHS = {
+  synopsis: 'documents/synopsis.json',
+  outline: 'documents/outline.json',
+  treatment: 'documents/treatment.json',
+  storyBible: 'documents/story-bible.json',
+} as const
+export const WRITEROS_TRANSCRIPT_PATHS = {
+  writingPartner: 'transcripts/writing-partner.json',
+  specialists: 'transcripts/specialists.json',
+} as const
+
+const SPECIALIST_AGENT_IDS = ['sam', 'casey', 'oliver', 'maya', 'zoe', 'alex'] as const
+
+type SpecialistAgentId = Extract<AgentId, typeof SPECIALIST_AGENT_IDS[number]>
+
+const TimestampStringSchema = z.string().refine(
+  value => Number.isFinite(Date.parse(value)),
+  'Expected a valid timestamp',
+)
+
+const SourceImportSchema = z.object({
+  kind: z.enum(['fdx', 'fountain', 'plain-text', 'unknown']),
+  originalFilename: z.string().optional(),
+  importedAt: TimestampStringSchema,
+  copiedSourcePath: z.string().optional(),
+}).passthrough()
+
+export const WriterOSProjectManifestSchema = z.object({
+  schemaVersion: z.literal(WRITEROS_PACKAGE_SCHEMA_VERSION),
+  projectId: z.string().min(1),
+  title: z.string(),
+  format: z.preprocess(value => normalizeProjectFormat(value), z.enum(['feature', 'series'])),
+  createdAt: TimestampStringSchema,
+  updatedAt: TimestampStringSchema,
+  openedAt: TimestampStringSchema,
+  sourceImport: SourceImportSchema.nullable(),
+  appVersion: z.string().min(1),
+}).passthrough()
+
+export type WriterOSProjectManifest = z.infer<typeof WriterOSProjectManifestSchema>
+
+export interface WriterOSProjectPackage {
+  manifest: WriterOSProjectManifest
+  files: Record<string, string>
+}
+
+export interface SerializeWriterOSProjectPackageOptions {
+  openedAt?: number
+  appVersion?: string
+  sourceImport?: WriterOSProjectManifest['sourceImport']
+}
+
+export type ProjectPackageErrorCode =
+  | 'missing-file'
+  | 'invalid-json'
+  | 'invalid-manifest'
+  | 'invalid-document'
+  | 'invalid-transcript'
+
+export interface ProjectPackageReadError {
+  code: ProjectPackageErrorCode
+  path: string
+  message: string
+}
+
+export type ProjectPackageReadResult =
+  | {
+      ok: true
+      manifest: WriterOSProjectManifest
+      project: StoredProject
+      warnings: string[]
+    }
+  | {
+      ok: false
+      error: ProjectPackageReadError
+      warnings: string[]
+    }
+
+function stringifyPackageJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`
+}
+
+function timestampFromNumber(value: number): string {
+  return new Date(value).toISOString()
+}
+
+function numberFromTimestamp(value: string): number {
+  return new Date(value).getTime()
+}
+
+function zodMessage(error: z.ZodError): string {
+  return error.issues
+    .map(issue => `${issue.path.join('.') || 'value'}: ${issue.message}`)
+    .join('; ')
+}
+
+function parseJsonFile(path: string, raw: string): { ok: true; value: unknown } | { ok: false; error: ProjectPackageReadError } {
+  try {
+    return { ok: true, value: JSON.parse(raw) }
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-json',
+        path,
+        message: `${path} is not valid JSON.`,
+      },
+    }
+  }
+}
+
+function requiredFile(files: Record<string, string | undefined>, path: string): string | ProjectPackageReadError {
+  const value = files[path]
+  if (typeof value === 'string') return value
+  return {
+    code: 'missing-file',
+    path,
+    message: `${path} is missing from the WriterOS project package.`,
+  }
+}
+
+export function getWriterOSProjectPackageDirectoryName(title: unknown, projectId: string): string {
+  const safeTitle = getDisplayProjectTitle(title)
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '')
+    .slice(0, 80)
+  const safeId = projectId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)
+  const base = safeTitle || getDisplayProjectTitle('')
+
+  return safeId
+    ? `${base} (${safeId})${WRITEROS_PACKAGE_EXTENSION}`
+    : `${base}${WRITEROS_PACKAGE_EXTENSION}`
+}
+
+function scriptScenesFromHtml(rawHtml: string): ScriptScene[] {
+  return buildScriptIndex(rawHtml).scenes.map(scene => ({
+    id: scene.id,
+    heading: scene.heading,
+    index: scene.index,
+  }))
+}
+
+function scriptMetaFromHtml(rawHtml: string): Pick<ProjectState['meta'], 'wordCount' | 'pageCount'> {
+  const index = buildScriptIndex(rawHtml)
+  return {
+    wordCount: index.totalWordCount,
+    pageCount: Math.max(1, index.estimatedPageCount || 1),
+  }
+}
+
+function specialistAgentsFromState(state: ProjectState): Record<SpecialistAgentId, ProjectState['agents'][SpecialistAgentId]> {
+  return Object.fromEntries(
+    SPECIALIST_AGENT_IDS.map(agentId => [agentId, state.agents[agentId]]),
+  ) as Record<SpecialistAgentId, ProjectState['agents'][SpecialistAgentId]>
+}
+
+export function serializeWriterOSProjectPackage(
+  project: StoredProject,
+  options: SerializeWriterOSProjectPackageOptions = {},
+): WriterOSProjectPackage {
+  const state = migrateState(project.state)
+  const manifest: WriterOSProjectManifest = {
+    schemaVersion: WRITEROS_PACKAGE_SCHEMA_VERSION,
+    projectId: project.id,
+    title: normalizeProjectTitle(state.meta.title),
+    format: normalizeProjectFormat(state.meta.format),
+    createdAt: timestampFromNumber(project.createdAt),
+    updatedAt: timestampFromNumber(project.updatedAt),
+    openedAt: timestampFromNumber(options.openedAt ?? project.updatedAt),
+    sourceImport: options.sourceImport ?? null,
+    appVersion: options.appVersion ?? WRITEROS_APP_VERSION,
+  }
+
+  return {
+    manifest,
+    files: {
+      [WRITEROS_PROJECT_MANIFEST_PATH]: stringifyPackageJson(manifest),
+      [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
+      [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
+      [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
+      [WRITEROS_DOCUMENT_PATHS.treatment]: stringifyPackageJson(state.documents.treatment),
+      [WRITEROS_DOCUMENT_PATHS.storyBible]: stringifyPackageJson(state.documents.storyBible),
+      [WRITEROS_TRANSCRIPT_PATHS.writingPartner]: stringifyPackageJson(state.agents.writingPartner),
+      [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
+    },
+  }
+}
+
+const TranscriptMessageSchema: z.ZodType<TranscriptMessage> = z.object({
+  id: z.string(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  speaker: z.string(),
+  ts: z.number(),
+  capabilityReceipt: z.unknown().optional(),
+}).passthrough() as z.ZodType<TranscriptMessage>
+
+const WritingPartnerAgentSchema: z.ZodType<ProjectState['agents']['writingPartner']> = z.object({
+  transcript: z.array(TranscriptMessageSchema),
+  lastActive: z.number().nullable(),
+})
+
+const SpecialistAgentSchema: z.ZodType<ProjectState['agents'][SpecialistAgentId]> = z.object({
+  transcript: z.array(TranscriptMessageSchema),
+  lastTouched: z.number().nullable(),
+})
+
+const SpecialistAgentsSchema: z.ZodType<Partial<Record<SpecialistAgentId, ProjectState['agents'][SpecialistAgentId]>>> = z.object({
+  sam: SpecialistAgentSchema.optional(),
+  casey: SpecialistAgentSchema.optional(),
+  oliver: SpecialistAgentSchema.optional(),
+  maya: SpecialistAgentSchema.optional(),
+  zoe: SpecialistAgentSchema.optional(),
+  alex: SpecialistAgentSchema.optional(),
+})
+
+function parseManifest(files: Record<string, string | undefined>): { ok: true; manifest: WriterOSProjectManifest } | { ok: false; error: ProjectPackageReadError } {
+  const rawManifest = requiredFile(files, WRITEROS_PROJECT_MANIFEST_PATH)
+  if (typeof rawManifest !== 'string') return { ok: false, error: rawManifest }
+
+  const parsedJson = parseJsonFile(WRITEROS_PROJECT_MANIFEST_PATH, rawManifest)
+  if (!parsedJson.ok) return { ok: false, error: parsedJson.error }
+
+  const parsedManifest = WriterOSProjectManifestSchema.safeParse(parsedJson.value)
+  if (!parsedManifest.success) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-manifest',
+        path: WRITEROS_PROJECT_MANIFEST_PATH,
+        message: zodMessage(parsedManifest.error),
+      },
+    }
+  }
+
+  return { ok: true, manifest: parsedManifest.data }
+}
+
+function parseDocuments(files: Record<string, string | undefined>): { ok: true; documents: ProjectDocuments } | { ok: false; error: ProjectPackageReadError } {
+  const rawDocuments: Partial<Record<keyof ProjectDocuments, unknown>> = {}
+
+  for (const [documentKey, path] of Object.entries(WRITEROS_DOCUMENT_PATHS) as Array<[keyof ProjectDocuments, string]>) {
+    const rawDocument = requiredFile(files, path)
+    if (typeof rawDocument !== 'string') return { ok: false, error: rawDocument }
+
+    const parsedJson = parseJsonFile(path, rawDocument)
+    if (!parsedJson.ok) return { ok: false, error: parsedJson.error }
+    rawDocuments[documentKey] = parsedJson.value
+  }
+
+  const parsedDocuments = ProjectDocumentsSchema.safeParse(rawDocuments)
+  if (!parsedDocuments.success) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-document',
+        path: 'documents',
+        message: zodMessage(parsedDocuments.error),
+      },
+    }
+  }
+
+  return { ok: true, documents: parsedDocuments.data }
+}
+
+function parseOptionalJson<T>(
+  files: Record<string, string | undefined>,
+  path: string,
+  schema: z.ZodType<T>,
+  fallback: T,
+): { ok: true; value: T; warning?: string } | { ok: false; error: ProjectPackageReadError } {
+  const raw = files[path]
+  if (typeof raw !== 'string') {
+    return {
+      ok: true,
+      value: fallback,
+      warning: `${path} is missing; using an empty transcript.`,
+    }
+  }
+
+  const parsedJson = parseJsonFile(path, raw)
+  if (!parsedJson.ok) return { ok: false, error: { ...parsedJson.error, code: 'invalid-transcript' } }
+
+  const parsed = schema.safeParse(parsedJson.value)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-transcript',
+        path,
+        message: zodMessage(parsed.error),
+      },
+    }
+  }
+
+  return { ok: true, value: parsed.data }
+}
+
+export function readWriterOSProjectPackage(
+  files: Record<string, string | undefined>,
+): ProjectPackageReadResult {
+  const warnings: string[] = []
+  const manifestResult = parseManifest(files)
+  if (!manifestResult.ok) return { ok: false, error: manifestResult.error, warnings }
+
+  const documentResult = parseDocuments(files)
+  if (!documentResult.ok) return { ok: false, error: documentResult.error, warnings }
+
+  const defaults = defaultProjectState()
+  const writingPartnerResult = parseOptionalJson(
+    files,
+    WRITEROS_TRANSCRIPT_PATHS.writingPartner,
+    WritingPartnerAgentSchema,
+    defaults.agents.writingPartner,
+  )
+  if (!writingPartnerResult.ok) return { ok: false, error: writingPartnerResult.error, warnings }
+  if (writingPartnerResult.warning) warnings.push(writingPartnerResult.warning)
+
+  const specialistResult = parseOptionalJson(
+    files,
+    WRITEROS_TRANSCRIPT_PATHS.specialists,
+    SpecialistAgentsSchema,
+    specialistAgentsFromState(defaults),
+  )
+  if (!specialistResult.ok) return { ok: false, error: specialistResult.error, warnings }
+  if (specialistResult.warning) warnings.push(specialistResult.warning)
+
+  const scriptHtml = files[WRITEROS_SCRIPT_HTML_PATH]
+  if (typeof scriptHtml !== 'string') {
+    warnings.push(`${WRITEROS_SCRIPT_HTML_PATH} is missing; using a blank script.`)
+  }
+  const rawHtml = scriptHtml ?? ''
+  const scriptMeta = scriptMetaFromHtml(rawHtml)
+  const legacy = documentsToLegacy(documentResult.documents, { outlineFormat: manifestResult.manifest.format })
+
+  const state = migrateState({
+    ...defaults,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    meta: {
+      ...defaults.meta,
+      title: normalizeProjectTitle(manifestResult.manifest.title),
+      format: normalizeProjectFormat(manifestResult.manifest.format),
+      ...scriptMeta,
+    },
+    script: {
+      rawHtml,
+      scenes: scriptScenesFromHtml(rawHtml),
+      revisionHistory: [],
+    },
+    documents: documentResult.documents,
+    synopsis: legacy.synopsis,
+    outline: legacy.outline,
+    storyBible: legacy.storyBible,
+    agents: {
+      ...defaults.agents,
+      writingPartner: writingPartnerResult.value,
+      ...specialistResult.value,
+    },
+  })
+
+  return {
+    ok: true,
+    manifest: manifestResult.manifest,
+    project: {
+      id: manifestResult.manifest.projectId,
+      createdAt: numberFromTimestamp(manifestResult.manifest.createdAt),
+      updatedAt: numberFromTimestamp(manifestResult.manifest.updatedAt),
+      state,
+    },
+    warnings,
+  }
+}

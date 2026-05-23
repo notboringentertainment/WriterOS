@@ -24,6 +24,7 @@ This is not a general future-work bucket. If a task does not directly serve Home
 Current `main` has:
 
 - A functional Home surface backed by the current browser-local project library.
+- A tested `.writeros` package serialization/read contract with a File System Access adapter seam.
 - Home project search/sort, current-project open, project open, and new-project actions.
 - Explicit Home storage status showing browser fallback and disconnected external project folder state.
 - A TopBar project switcher and project actions.
@@ -34,8 +35,8 @@ Current `main` has:
 
 Current `main` does not have:
 
-- File-backed `.writeros` project packages.
-- A File System Access API project folder adapter.
+- Home wired to file-backed `.writeros` project packages.
+- A selected/persisted File System Access API project folder.
 - A real project folder viewer.
 - A durable external project file/folder format.
 - Functional import from Final Draft `.fdx`.
@@ -293,6 +294,8 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 ## Implementation Slices
 
 ### Slice 1: Project Folder Contract
+
+**Status:** Package contract and File System Access adapter seam implemented. Home still uses the browser-local project library until Slice 2 wiring.
 
 - Implement `.writeros` project package folder behavior.
 - Define manifest and file layout.
