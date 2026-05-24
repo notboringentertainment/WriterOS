@@ -136,6 +136,26 @@ describe('useWriterOSProjectsFolder', () => {
     })
   })
 
+  it('surfaces an error when a file-backed project disappears before open', async () => {
+    storageMocks.listProjects.mockResolvedValue([])
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    await act(async () => {
+      await expect(result.current.openProject('missing-project')).rejects.toThrow(
+        'That WriterOS project package is no longer available in the selected folder.',
+      )
+    })
+
+    expect(result.current.status).toBe('error')
+    expect(result.current.errorMessage).toBe(
+      'That WriterOS project package is no longer available in the selected folder.',
+    )
+  })
+
   it('writes an opened file-backed project through the existing package ref', async () => {
     const state = defaultProjectState()
     state.meta.title = 'Harbor Lights Revised'

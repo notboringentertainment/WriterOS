@@ -192,7 +192,10 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     }
 
     if (!entry) {
-      throw new Error('That WriterOS project package is no longer available in the selected folder.')
+      const message = 'That WriterOS project package is no longer available in the selected folder.'
+      setStatus('error')
+      setErrorMessage(message)
+      throw new Error(message)
     }
 
     const result = await adapter.readProject(entry.ref)
