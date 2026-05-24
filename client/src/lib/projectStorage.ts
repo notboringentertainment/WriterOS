@@ -9,6 +9,7 @@ import {
   serializeWriterOSProjectPackage,
   type ProjectPackageReadError,
   type ProjectPackageReadResult,
+  type WriterOSProjectManifest,
 } from './projectPackage'
 import type { ProjectSummary, StoredProject } from './projectLibrary'
 import { summarizeProjects } from './projectLibrary'
@@ -56,6 +57,7 @@ export interface ProjectStorageProjectRef {
 
 export interface FileSystemAccessProjectRef extends ProjectStorageProjectRef {
   handle: WriterOSFileSystemDirectoryHandle
+  manifest: WriterOSProjectManifest
 }
 
 export type ProjectStorageListEntry<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> =
@@ -77,7 +79,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   defaultFolderLabel: string
   listProjects(): Promise<Array<ProjectStorageListEntry<TRef>>>
   readProject(ref: TRef): Promise<ProjectPackageReadResult>
-  writeProject(project: StoredProject): Promise<TRef>
+  writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
 }
 
 type ShowDirectoryPicker = (options?: {
@@ -162,7 +164,10 @@ async function withProjectsFolderHandleStore<T>(
     request.onsuccess = () => {
       result = request.result
     }
-    request.onerror = () => reject(request.error ?? new Error('Unable to use WriterOS folder storage.'))
+    request.onerror = () => {
+      database.close()
+      reject(request.error ?? new Error('Unable to use WriterOS folder storage.'))
+    }
     transaction.oncomplete = () => {
       database.close()
       resolve(result)
@@ -292,11 +297,17 @@ async function* iterateProjectFolder(rootHandle: WriterOSFileSystemDirectoryHand
   throw new Error('Selected project folder cannot be listed by this browser.')
 }
 
-function refFromProject(packageName: string, handle: WriterOSFileSystemDirectoryHandle, project: StoredProject): FileSystemAccessProjectRef {
+function refFromProject(
+  packageName: string,
+  handle: WriterOSFileSystemDirectoryHandle,
+  project: StoredProject,
+  manifest: WriterOSProjectManifest,
+): FileSystemAccessProjectRef {
   return {
     id: project.id,
     packageName,
     handle,
+    manifest,
     summary: summarizeProjects([project])[0],
   }
 }
@@ -318,7 +329,7 @@ export function createFileSystemAccessProjectStorageAdapter(
         if (result.ok) {
           entries.push({
             status: 'ready',
-            ref: refFromProject(packageName, handle, result.project),
+            ref: refFromProject(packageName, handle, result.project, result.manifest),
             warnings: result.warnings,
           })
         } else {
@@ -336,11 +347,14 @@ export function createFileSystemAccessProjectStorageAdapter(
     async readProject(ref) {
       return readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle))
     },
-    async writeProject(project) {
+    async writeProject(project, previousRef) {
       const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
-      const packageHandle = await rootHandle.getDirectoryHandle(packageName, { create: true })
-      await writeProjectPackageFiles(packageHandle, serializeWriterOSProjectPackage(project).files)
-      return refFromProject(packageName, packageHandle, project)
+      const packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
+      const nextPackage = serializeWriterOSProjectPackage(project, {
+        sourceImport: previousRef?.manifest.sourceImport,
+      })
+      await writeProjectPackageFiles(packageHandle, nextPackage.files)
+      return refFromProject(previousRef?.packageName ?? packageName, packageHandle, project, nextPackage.manifest)
     },
   }
 }

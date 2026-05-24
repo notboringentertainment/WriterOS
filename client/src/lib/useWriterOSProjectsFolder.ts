@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
   clearPersistedWriterOSProjectsFolderHandle,
@@ -10,10 +10,11 @@ import {
   pickWriterOSProjectsFolder,
   requestWriterOSProjectsFolderPermission,
   getWriterOSProjectsFolderPermission,
+  type FileSystemAccessProjectRef,
   type ProjectStorageListEntry,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
-import type { ProjectSummary } from './projectLibrary'
+import type { ProjectSummary, StoredProject } from './projectLibrary'
 
 export type WriterOSProjectsFolderStatus =
   | 'unsupported'
@@ -50,9 +51,19 @@ export interface WriterOSProjectsFolderState {
   chooseFolder: () => Promise<void>
   refreshFolder: () => Promise<void>
   forgetFolder: () => Promise<void>
+  openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
+  writeProject: (project: StoredProject) => Promise<WriterOSFolderProject>
 }
 
-function folderProjectFromListEntry(entry: Extract<ProjectStorageListEntry, { status: 'ready' }>): WriterOSFolderProject {
+export interface WriterOSFolderProjectOpenResult {
+  project: StoredProject
+  packageName: string
+  warnings: string[]
+}
+
+type ReadyFileSystemProjectEntry = Extract<ProjectStorageListEntry<FileSystemAccessProjectRef>, { status: 'ready' }>
+
+function folderProjectFromListEntry(entry: ReadyFileSystemProjectEntry): WriterOSFolderProject {
   return {
     id: entry.ref.id,
     packageName: entry.ref.packageName,
@@ -61,7 +72,7 @@ function folderProjectFromListEntry(entry: Extract<ProjectStorageListEntry, { st
   }
 }
 
-function corruptProjectFromListEntry(entry: Extract<ProjectStorageListEntry, { status: 'corrupt' }>): WriterOSCorruptFolderProject {
+function corruptProjectFromListEntry(entry: Extract<ProjectStorageListEntry<FileSystemAccessProjectRef>, { status: 'corrupt' }>): WriterOSCorruptFolderProject {
   return {
     packageName: entry.packageName,
     code: entry.error.code,
@@ -71,13 +82,13 @@ function corruptProjectFromListEntry(entry: Extract<ProjectStorageListEntry, { s
   }
 }
 
-function projectEntriesFromList(entries: ProjectStorageListEntry[]) {
+function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>>) {
   return {
     projects: entries
-      .filter((entry): entry is Extract<ProjectStorageListEntry, { status: 'ready' }> => entry.status === 'ready')
+      .filter((entry): entry is ReadyFileSystemProjectEntry => entry.status === 'ready')
       .map(folderProjectFromListEntry),
     corruptProjects: entries
-      .filter((entry): entry is Extract<ProjectStorageListEntry, { status: 'corrupt' }> => entry.status === 'corrupt')
+      .filter((entry): entry is Extract<ProjectStorageListEntry<FileSystemAccessProjectRef>, { status: 'corrupt' }> => entry.status === 'corrupt')
       .map(corruptProjectFromListEntry),
   }
 }
@@ -101,6 +112,15 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
   const [projects, setProjects] = useState<WriterOSFolderProject[]>([])
   const [corruptProjects, setCorruptProjects] = useState<WriterOSCorruptFolderProject[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const projectRefsRef = useRef(new Map<string, ReadyFileSystemProjectEntry>())
+
+  const updateProjectRefs = useCallback((entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>>) => {
+    projectRefsRef.current = new Map(
+      entries
+        .filter((entry): entry is ReadyFileSystemProjectEntry => entry.status === 'ready')
+        .map(entry => [entry.ref.id, entry]),
+    )
+  }, [])
 
   const scanFolder = useCallback(async (
     folderHandle: WriterOSFileSystemDirectoryHandle,
@@ -120,6 +140,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       setHandle(folderHandle)
       setProjects([])
       setCorruptProjects([])
+      projectRefsRef.current = new Map()
       setStatus('permission-needed')
       setErrorMessage('WriterOS needs permission to read this project folder again.')
       return
@@ -130,13 +151,88 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     const nextEntries = await adapter.listProjects()
     if (options.isCancelled?.()) return
 
+    updateProjectRefs(nextEntries)
     const nextProjects = projectEntriesFromList(nextEntries)
 
     setLabel(adapter.label)
     setProjects(nextProjects.projects)
     setCorruptProjects(nextProjects.corruptProjects)
     setStatus('ready')
-  }, [])
+  }, [updateProjectRefs])
+
+  const requireFolderPermission = useCallback(async () => {
+    if (!handle) {
+      throw new Error('Choose a WriterOS Projects folder before opening file-backed projects.')
+    }
+
+    const permission = await requestWriterOSProjectsFolderPermission(handle)
+    if (permission !== 'granted') {
+      setStatus('permission-needed')
+      setErrorMessage('WriterOS needs permission to read this project folder again.')
+      throw new Error('WriterOS needs permission to read this project folder again.')
+    }
+
+    return handle
+  }, [handle])
+
+  const openProject = useCallback(async (projectId: string): Promise<WriterOSFolderProjectOpenResult> => {
+    const folderHandle = await requireFolderPermission()
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    let entry = projectRefsRef.current.get(projectId)
+
+    if (!entry) {
+      const nextEntries = await adapter.listProjects()
+      updateProjectRefs(nextEntries)
+      const nextProjects = projectEntriesFromList(nextEntries)
+      setLabel(adapter.label)
+      setProjects(nextProjects.projects)
+      setCorruptProjects(nextProjects.corruptProjects)
+      setStatus('ready')
+      entry = projectRefsRef.current.get(projectId)
+    }
+
+    if (!entry) {
+      throw new Error('That WriterOS project package is no longer available in the selected folder.')
+    }
+
+    const result = await adapter.readProject(entry.ref)
+    if (!result.ok) {
+      setStatus('error')
+      setErrorMessage(result.error.message)
+      throw new Error(result.error.message)
+    }
+
+    setErrorMessage(null)
+    return {
+      project: result.project,
+      packageName: entry.ref.packageName,
+      warnings: result.warnings,
+    }
+  }, [requireFolderPermission, updateProjectRefs])
+
+  const writeProject = useCallback(async (project: StoredProject): Promise<WriterOSFolderProject> => {
+    const folderHandle = await requireFolderPermission()
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const previousEntry = projectRefsRef.current.get(project.id)
+    const ref = await adapter.writeProject(project, previousEntry?.ref)
+    const nextEntry: ReadyFileSystemProjectEntry = {
+      status: 'ready',
+      ref,
+      warnings: [],
+    }
+    projectRefsRef.current.set(project.id, nextEntry)
+    const nextProject = folderProjectFromListEntry(nextEntry)
+
+    setLabel(adapter.label)
+    setProjects(currentProjects => [
+      nextProject,
+      ...currentProjects.filter(currentProject => currentProject.id !== nextProject.id),
+    ])
+    setStatus('ready')
+    setErrorMessage(null)
+
+    return nextProject
+  }, [requireFolderPermission])
 
   const chooseFolder = useCallback(async () => {
     if (!fileSystemAccessSupported) {
@@ -187,6 +283,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       setLabel(null)
       setProjects([])
       setCorruptProjects([])
+      projectRefsRef.current = new Map()
       setErrorMessage(null)
       setStatus(fileSystemAccessSupported ? 'disconnected' : 'unsupported')
     }
@@ -240,5 +337,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     chooseFolder,
     refreshFolder,
     forgetFolder,
+    openProject,
+    writeProject,
   }
 }

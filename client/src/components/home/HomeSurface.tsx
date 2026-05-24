@@ -13,7 +13,10 @@ interface HomeSurfaceProps {
   folderProjects?: WriterOSFolderProject[]
   corruptFolderProjects?: WriterOSCorruptFolderProject[]
   storageStatus?: HomeProjectStorageStatus
+  activeStorageKind?: 'browser' | 'folder'
+  openingFolderProjectId?: string | null
   onOpenProject: (projectId: string) => void
+  onOpenFolderProject?: (projectId: string) => void
   onNewProject: () => void
   onChooseProjectFolder?: () => void
   onRefreshProjectFolder?: () => void
@@ -50,7 +53,10 @@ export function HomeSurface({
   folderProjects = [],
   corruptFolderProjects = [],
   storageStatus,
+  activeStorageKind = 'browser',
+  openingFolderProjectId = null,
   onOpenProject,
+  onOpenFolderProject,
   onNewProject,
   onChooseProjectFolder,
   onRefreshProjectFolder,
@@ -264,7 +270,8 @@ export function HomeSurface({
         {visibleProjects.length === 0 ? (
           <p style={styles.empty}>{formatEmptyState(query, showingFolderProjects, storage.status)}</p>
         ) : visibleProjects.map(row => {
-          const isActive = row.storageKind === 'browser' && row.project.id === activeProjectId
+          const isActive = row.storageKind === activeStorageKind && row.project.id === activeProjectId
+          const isOpening = row.storageKind === 'folder' && row.project.id === openingFolderProjectId
           const projectTitle = getDisplayProjectTitle(row.project.title)
           return (
             <article
@@ -287,13 +294,13 @@ export function HomeSurface({
                 type="button"
                 style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
                 aria-label={`Open ${projectTitle}`}
-                disabled={row.storageKind === 'folder'}
-                title={row.storageKind === 'folder' ? 'Opening file-backed projects is planned for the next storage slice.' : undefined}
+                disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
                 onClick={() => {
                   if (row.storageKind === 'browser') onOpenProject(row.project.id)
+                  else onOpenFolderProject?.(row.project.id)
                 }}
               >
-                Open
+                {isOpening ? 'Opening' : 'Open'}
               </button>
             </article>
           )
@@ -369,6 +376,7 @@ function formatEmptyState(
   if (!showingFolderProjects) return 'No projects yet. Create your first project.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
   if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
+  if (storageStatus === 'error') return 'Unable to scan the project folder.'
   return 'No .writeros projects found in this folder.'
 }
 

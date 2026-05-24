@@ -169,6 +169,7 @@ describe('HomeSurface', () => {
           errorMessage: null,
         }}
         onOpenProject={onOpenProject}
+        onOpenFolderProject={onOpenProject}
         onNewProject={vi.fn()}
       />
     )
@@ -184,9 +185,8 @@ describe('HomeSurface', () => {
     expect(screen.queryByText('Current project')).not.toBeInTheDocument()
 
     const openButton = within(list).getByRole('button', { name: 'Open Harbor Lights' })
-    expect(openButton).toBeDisabled()
     fireEvent.click(openButton)
-    expect(onOpenProject).not.toHaveBeenCalled()
+    expect(onOpenProject).toHaveBeenCalledWith('folder-project-1')
   })
 
   it('routes project folder actions', () => {
@@ -221,5 +221,27 @@ describe('HomeSurface', () => {
     expect(onChooseProjectFolder).toHaveBeenCalled()
     expect(onRefreshProjectFolder).toHaveBeenCalled()
     expect(onForgetProjectFolder).toHaveBeenCalled()
+  })
+
+  it('shows an explicit empty state when folder scanning fails', () => {
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        folderProjects={[]}
+        storageStatus={{
+          status: 'error',
+          label: 'WriterOS Projects',
+          defaultFolderLabel: '~/WriterOS Projects',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: true,
+          errorMessage: null,
+        }}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Unable to scan the project folder.')).toBeInTheDocument()
   })
 })
