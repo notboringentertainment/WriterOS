@@ -82,6 +82,8 @@ export default function App() {
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
   const [folderProjectError, setFolderProjectError] = useState<string | null>(null)
   const folderSaveNonceRef = useRef(0)
+  const writeProjectRef = useRef(projectFolder.writeProject)
+  writeProjectRef.current = projectFolder.writeProject
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
@@ -142,7 +144,7 @@ export default function App() {
 
     const nonce = ++folderSaveNonceRef.current
     try {
-      const folderProject = await projectFolder.writeProject(storedProject)
+      const folderProject = await writeProjectRef.current(storedProject)
       if (folderSaveNonceRef.current !== nonce) return
       setActiveProjectStorage(current => {
         if (current.kind !== 'folder' || current.projectId !== storedProject.id) return current
@@ -154,7 +156,7 @@ export default function App() {
       if (folderSaveNonceRef.current !== nonce) return
       setFolderProjectError(formatFolderProjectError(error))
     }
-  }, [formatFolderProjectError, projectFolder])
+  }, [formatFolderProjectError])
 
   useEffect(() => {
     if (!activeFolderProjectId) return
@@ -217,9 +219,12 @@ export default function App() {
 
   const handleChooseProjectFolder = useCallback(async () => {
     cancelPendingFolderSave()
-    setActiveProjectStorage({ kind: 'browser' })
     setFolderProjectError(null)
-    await projectFolder.chooseFolder()
+    const didConnectFolder = await projectFolder.chooseFolder()
+    if (didConnectFolder) {
+      cancelPendingFolderSave()
+      setActiveProjectStorage({ kind: 'browser' })
+    }
   }, [cancelPendingFolderSave, projectFolder])
 
   const handleForgetProjectFolder = useCallback(async () => {

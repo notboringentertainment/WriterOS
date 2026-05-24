@@ -48,7 +48,7 @@ export interface WriterOSProjectsFolderState {
   projects: WriterOSFolderProject[]
   corruptProjects: WriterOSCorruptFolderProject[]
   errorMessage: string | null
-  chooseFolder: () => Promise<void>
+  chooseFolder: () => Promise<boolean>
   refreshFolder: () => Promise<void>
   forgetFolder: () => Promise<void>
   openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
@@ -241,7 +241,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     if (!fileSystemAccessSupported) {
       setStatus('unsupported')
       setErrorMessage('File System Access API is not available in this browser.')
-      return
+      return false
     }
 
     try {
@@ -255,10 +255,12 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
           setErrorMessage('Project folder is connected for this session, but this browser could not remember it.')
         }
       }
+      return true
     } catch (error) {
-      if (isAbortError(error)) return
+      if (isAbortError(error)) return false
       setStatus('error')
       setErrorMessage(errorMessageFromUnknown(error))
+      return false
     }
   }, [fileSystemAccessSupported, folderPersistenceSupported, scanFolder])
 
