@@ -25,8 +25,10 @@ Current `main` has:
 
 - A functional Home surface backed by the current browser-local project library.
 - A tested `.writeros` package serialization/read contract with a File System Access adapter seam.
+- A Home project-folder controller that can select, remember, and rescan a File System Access API folder.
+- Home package discovery for ready and corrupt `.writeros` project folders.
 - Home project search/sort, current-project open, project open, and new-project actions.
-- Explicit Home storage status showing browser fallback and disconnected external project folder state.
+- Explicit Home storage status showing browser fallback, disconnected external folder, connected folder, permission-needed, and error states.
 - A TopBar project switcher and project actions.
 - Local project create/switch/save/rename/delete behavior.
 - Auto-save through browser `localStorage`.
@@ -35,10 +37,10 @@ Current `main` has:
 
 Current `main` does not have:
 
-- Home wired to file-backed `.writeros` project packages.
-- A selected/persisted File System Access API project folder.
-- A real project folder viewer.
-- A durable external project file/folder format.
+- Full Home open/save wiring to file-backed `.writeros` project packages.
+- Opening/loading file-backed `.writeros` project packages from Home.
+- Creating new projects directly in the selected external project folder.
+- A fully primary external-storage mode.
 - Functional import from Final Draft `.fdx`.
 - Import from Fountain, PDF, DOCX, or other screenplay formats.
 - Export/import of complete WriterOS projects.
@@ -305,7 +307,7 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 
 ### Slice 2: Home Surface
 
-**Status:** V0 implemented on the current localStorage project library. File-backed folder discovery still waits for Slice 1.
+**Status:** V0 implemented on the current localStorage project library. Folder selection, persisted folder handle support, and `.writeros` package discovery are implemented; opening/loading file-backed projects and migration visibility are still pending.
 
 - Add Home route/shell state as the first surface before opening a project.
 - Show project folder selection/status.

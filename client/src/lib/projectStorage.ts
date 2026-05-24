@@ -33,6 +33,8 @@ export interface WriterOSFileSystemDirectoryHandle {
   name: string
   getFileHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemFileHandle>
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemDirectoryHandle>
+  queryPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
+  requestPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
   entries?: () => AsyncIterableIterator<[string, WriterOSFileSystemHandle]>
   values?: () => AsyncIterableIterator<WriterOSFileSystemHandle>
 }
@@ -40,6 +42,11 @@ export interface WriterOSFileSystemDirectoryHandle {
 export type WriterOSFileSystemHandle =
   | WriterOSFileSystemFileHandle
   | WriterOSFileSystemDirectoryHandle
+
+export type WriterOSFileSystemPermissionState = 'granted' | 'denied' | 'prompt'
+export interface WriterOSFileSystemPermissionDescriptor {
+  mode?: 'read' | 'readwrite'
+}
 
 export interface ProjectStorageProjectRef {
   id: string
@@ -79,6 +86,10 @@ type ShowDirectoryPicker = (options?: {
   startIn?: 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos'
 }) => Promise<WriterOSFileSystemDirectoryHandle>
 
+const WRITEROS_PROJECTS_FOLDER_HANDLE_DB_NAME = 'writeros-project-folder'
+const WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME = 'handles'
+const WRITEROS_PROJECTS_FOLDER_HANDLE_KEY = 'projects-folder'
+
 function getShowDirectoryPicker(): ShowDirectoryPicker | undefined {
   const maybeGlobal = globalThis as typeof globalThis & {
     showDirectoryPicker?: ShowDirectoryPicker
@@ -92,6 +103,17 @@ export function isFileSystemAccessSupported(): boolean {
   return getShowDirectoryPicker() !== undefined
 }
 
+function getIndexedDB(): IDBFactory | undefined {
+  const maybeGlobal = globalThis as typeof globalThis & {
+    indexedDB?: IDBFactory
+  }
+  return maybeGlobal.indexedDB
+}
+
+export function isWriterOSProjectsFolderPersistenceSupported(): boolean {
+  return getIndexedDB() !== undefined
+}
+
 export async function pickWriterOSProjectsFolder(): Promise<WriterOSFileSystemDirectoryHandle> {
   const showDirectoryPicker = getShowDirectoryPicker()
   if (!showDirectoryPicker) {
@@ -103,6 +125,96 @@ export async function pickWriterOSProjectsFolder(): Promise<WriterOSFileSystemDi
     mode: 'readwrite',
     startIn: 'documents',
   })
+}
+
+function openProjectsFolderHandleDatabase(): Promise<IDBDatabase> {
+  const indexedDB = getIndexedDB()
+  if (!indexedDB) {
+    throw new Error('Folder persistence is not available in this browser.')
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(WRITEROS_PROJECTS_FOLDER_HANDLE_DB_NAME, 1)
+
+    request.onupgradeneeded = () => {
+      const database = request.result
+      if (!database.objectStoreNames.contains(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)) {
+        database.createObjectStore(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Unable to open WriterOS folder storage.'))
+  })
+}
+
+async function withProjectsFolderHandleStore<T>(
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const database = await openProjectsFolderHandleDatabase()
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME, mode)
+    const store = transaction.objectStore(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)
+    const request = operation(store)
+    let result: T
+
+    request.onsuccess = () => {
+      result = request.result
+    }
+    request.onerror = () => reject(request.error ?? new Error('Unable to use WriterOS folder storage.'))
+    transaction.oncomplete = () => {
+      database.close()
+      resolve(result)
+    }
+    transaction.onerror = () => {
+      database.close()
+      reject(transaction.error ?? new Error('Unable to complete WriterOS folder storage transaction.'))
+    }
+    transaction.onabort = () => {
+      database.close()
+      reject(transaction.error ?? new Error('WriterOS folder storage transaction was aborted.'))
+    }
+  })
+}
+
+export async function persistWriterOSProjectsFolderHandle(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<void> {
+  await withProjectsFolderHandleStore('readwrite', store =>
+    store.put(handle, WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+}
+
+export async function loadPersistedWriterOSProjectsFolderHandle(): Promise<WriterOSFileSystemDirectoryHandle | null> {
+  const handle = await withProjectsFolderHandleStore<WriterOSFileSystemDirectoryHandle | undefined>(
+    'readonly',
+    store => store.get(WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+
+  return handle?.kind === 'directory' ? handle : null
+}
+
+export async function clearPersistedWriterOSProjectsFolderHandle(): Promise<void> {
+  await withProjectsFolderHandleStore('readwrite', store =>
+    store.delete(WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+}
+
+export async function getWriterOSProjectsFolderPermission(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<WriterOSFileSystemPermissionState> {
+  if (!handle.queryPermission) return 'granted'
+  return handle.queryPermission({ mode: 'readwrite' })
+}
+
+export async function requestWriterOSProjectsFolderPermission(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<WriterOSFileSystemPermissionState> {
+  const currentPermission = await getWriterOSProjectsFolderPermission(handle)
+  if (currentPermission === 'granted') return currentPermission
+  if (!handle.requestPermission) return currentPermission
+  return handle.requestPermission({ mode: 'readwrite' })
 }
 
 function isNotFoundError(error: unknown): boolean {

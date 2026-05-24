@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
+import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
@@ -70,6 +71,7 @@ async function postOpenSwarmWritingPartner(body: {
 export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
+  const projectFolder = useWriterOSProjectsFolder()
   const [wpLoading, setWpLoading] = useState(false)
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
     rawHtml: project.state.script.rawHtml,
@@ -280,6 +282,16 @@ export default function App() {
         <HomeSurface
           activeProjectId={project.activeProjectId}
           projects={project.projects}
+          folderProjects={projectFolder.projects}
+          corruptFolderProjects={projectFolder.corruptProjects}
+          storageStatus={{
+            status: projectFolder.status,
+            label: projectFolder.label,
+            defaultFolderLabel: projectFolder.defaultFolderLabel,
+            fileSystemAccessSupported: projectFolder.fileSystemAccessSupported,
+            folderPersistenceSupported: projectFolder.folderPersistenceSupported,
+            errorMessage: projectFolder.errorMessage,
+          }}
           onOpenProject={(projectId) => {
             project.switchProject(projectId)
             shellState.openProjectWorkspace()
@@ -288,6 +300,9 @@ export default function App() {
             project.createProject()
             shellState.openProjectWorkspace()
           }}
+          onChooseProjectFolder={projectFolder.chooseFolder}
+          onRefreshProjectFolder={projectFolder.refreshFolder}
+          onForgetProjectFolder={projectFolder.forgetFolder}
         />
       )
     }

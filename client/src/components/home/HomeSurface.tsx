@@ -1,42 +1,122 @@
 import React, { useMemo, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
+import type {
+  WriterOSCorruptFolderProject,
+  WriterOSFolderProject,
+  WriterOSProjectsFolderStatus,
+} from '../../lib/useWriterOSProjectsFolder'
 
 interface HomeSurfaceProps {
   activeProjectId: string
   projects: ProjectSummary[]
+  folderProjects?: WriterOSFolderProject[]
+  corruptFolderProjects?: WriterOSCorruptFolderProject[]
+  storageStatus?: HomeProjectStorageStatus
   onOpenProject: (projectId: string) => void
   onNewProject: () => void
+  onChooseProjectFolder?: () => void
+  onRefreshProjectFolder?: () => void
+  onForgetProjectFolder?: () => void
 }
 
 type SortKey = 'updated' | 'title' | 'created'
+type HomeStorageStatusKind = WriterOSProjectsFolderStatus | 'browser-fallback'
+
+interface HomeProjectStorageStatus {
+  status: HomeStorageStatusKind
+  label: string | null
+  defaultFolderLabel: string
+  fileSystemAccessSupported: boolean
+  folderPersistenceSupported: boolean
+  errorMessage: string | null
+}
+
+type HomeProjectRow =
+  | {
+      storageKind: 'browser'
+      project: ProjectSummary
+    }
+  | {
+      storageKind: 'folder'
+      project: ProjectSummary
+      packageName: string
+      warnings: string[]
+    }
 
 export function HomeSurface({
   activeProjectId,
   projects,
+  folderProjects = [],
+  corruptFolderProjects = [],
+  storageStatus,
   onOpenProject,
   onNewProject,
+  onChooseProjectFolder,
+  onRefreshProjectFolder,
+  onForgetProjectFolder,
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const storage = storageStatus ?? {
+    status: 'browser-fallback' as const,
+    label: null,
+    defaultFolderLabel: '~/WriterOS Projects',
+    fileSystemAccessSupported: false,
+    folderPersistenceSupported: false,
+    errorMessage: null,
+  }
+  const isFolderSelected = Boolean(storage.label) && storage.status !== 'disconnected' && storage.status !== 'unsupported'
+  const showingFolderProjects = isFolderSelected && storage.status !== 'browser-fallback'
   const activeProject = projects.find(project => project.id === activeProjectId) ?? projects[0]
+
+  const projectRows = useMemo<HomeProjectRow[]>(() => {
+    if (showingFolderProjects) {
+      return folderProjects.map(folderProject => ({
+        storageKind: 'folder',
+        project: folderProject.summary,
+        packageName: folderProject.packageName,
+        warnings: folderProject.warnings,
+      }))
+    }
+
+    return projects.map(project => ({
+      storageKind: 'browser',
+      project,
+    }))
+  }, [folderProjects, projects, showingFolderProjects])
 
   const visibleProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     const filtered = normalizedQuery.length === 0
-      ? projects
-      : projects.filter(project =>
-          getDisplayProjectTitle(project.title).toLowerCase().includes(normalizedQuery)
+      ? projectRows
+      : projectRows.filter(row =>
+          getDisplayProjectTitle(row.project.title).toLowerCase().includes(normalizedQuery)
+          || (row.storageKind === 'folder' && row.packageName.toLowerCase().includes(normalizedQuery))
         )
 
     return filtered.slice().sort((a, b) => {
       if (sortKey === 'title') {
-        return getDisplayProjectTitle(a.title).localeCompare(getDisplayProjectTitle(b.title))
+        return getDisplayProjectTitle(a.project.title).localeCompare(getDisplayProjectTitle(b.project.title))
       }
-      if (sortKey === 'created') return b.createdAt - a.createdAt
-      return b.updatedAt - a.updatedAt
+      if (sortKey === 'created') return b.project.createdAt - a.project.createdAt
+      return b.project.updatedAt - a.project.updatedAt
     })
-  }, [projects, query, sortKey])
+  }, [projectRows, query, sortKey])
+
+  const folderActionLabel = storage.status === 'permission-needed'
+    ? 'Reconnect Folder'
+    : storage.label
+      ? 'Change Folder'
+      : 'Choose Folder'
+  const projectFolderAction = storage.status === 'permission-needed'
+    ? onRefreshProjectFolder
+    : onChooseProjectFolder
+  const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
+  const projectCount = showingFolderProjects ? folderProjects.length : projects.length
+  const projectCountMeta = showingFolderProjects
+    ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
+    : 'Saved in this browser'
 
   return (
     <section style={styles.root} aria-labelledby="home-heading">
@@ -49,6 +129,15 @@ export function HomeSurface({
           <button type="button" style={styles.primaryButton} onClick={onNewProject}>
             New Project
           </button>
+          {canUseFolderActions && (
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={projectFolderAction}
+            >
+              {folderActionLabel}
+            </button>
+          )}
           <button
             type="button"
             style={styles.secondaryButton}
@@ -63,22 +152,70 @@ export function HomeSurface({
       <div style={styles.statusGrid} aria-label="Storage status">
         <div style={styles.statusBlock}>
           <span style={styles.statusLabel}>Storage</span>
-          <strong style={styles.statusValue}>Browser fallback</strong>
-          <span style={styles.statusMeta}>Current prototype source</span>
+          <strong style={styles.statusValue}>{formatStorageStatus(storage.status)}</strong>
+          <span style={styles.statusMeta}>{formatStorageStatusMeta(storage)}</span>
         </div>
         <div style={styles.statusBlock}>
           <span style={styles.statusLabel}>Project folder</span>
-          <strong style={styles.statusValue}>Not connected</strong>
-          <span style={styles.statusMeta}>Target: ~/WriterOS Projects</span>
+          <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
+          <span style={styles.statusMeta}>Target: {storage.defaultFolderLabel}</span>
+          {storage.fileSystemAccessSupported ? (
+            <div style={styles.statusActions}>
+              <button
+                type="button"
+                style={styles.statusButton}
+                onClick={projectFolderAction}
+                disabled={!projectFolderAction}
+              >
+                {folderActionLabel}
+              </button>
+              {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
+                <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
+                  Refresh
+                </button>
+              )}
+              {storage.label && onForgetProjectFolder && (
+                <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
+                  Forget
+                </button>
+              )}
+            </div>
+          ) : (
+            <span style={styles.statusMeta}>Folder access is unavailable in this browser.</span>
+          )}
         </div>
         <div style={styles.statusBlock}>
           <span style={styles.statusLabel}>Projects</span>
+          <strong style={styles.statusValue}>{projectCount}</strong>
+          <span style={styles.statusMeta}>{projectCountMeta}</span>
+        </div>
+        <div style={styles.statusBlock}>
+          <span style={styles.statusLabel}>Local projects</span>
           <strong style={styles.statusValue}>{projects.length}</strong>
-          <span style={styles.statusMeta}>Saved in this browser</span>
+          <span style={styles.statusMeta}>
+            {showingFolderProjects ? 'Available for future migration' : 'Current project source'}
+          </span>
         </div>
       </div>
 
-      {activeProject && (
+      {storage.errorMessage && (
+        <div style={styles.notice} role="status">
+          {storage.errorMessage}
+        </div>
+      )}
+
+      {corruptFolderProjects.length > 0 && showingFolderProjects && (
+        <div style={styles.notice} aria-label="Project package warnings">
+          <strong style={styles.noticeTitle}>{corruptFolderProjects.length} project package needs attention</strong>
+          {corruptFolderProjects.map(project => (
+            <span key={project.packageName} style={styles.noticeLine}>
+              {project.packageName}: {project.message}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {activeProject && !showingFolderProjects && (
         <div style={styles.currentProject}>
           <div>
             <span style={styles.statusLabel}>Current project</span>
@@ -125,22 +262,36 @@ export function HomeSurface({
 
       <div style={styles.projectList} aria-label="Project list">
         {visibleProjects.length === 0 ? (
-          <p style={styles.empty}>No projects match that filter.</p>
-        ) : visibleProjects.map(project => {
-          const isActive = project.id === activeProjectId
+          <p style={styles.empty}>{formatEmptyState(query, showingFolderProjects, storage.status)}</p>
+        ) : visibleProjects.map(row => {
+          const isActive = row.storageKind === 'browser' && row.project.id === activeProjectId
+          const projectTitle = getDisplayProjectTitle(row.project.title)
           return (
-            <article key={project.id} style={{ ...styles.projectRow, ...(isActive ? styles.projectRowActive : {}) }}>
+            <article
+              key={`${row.storageKind}-${row.project.id}`}
+              style={{ ...styles.projectRow, ...(isActive ? styles.projectRowActive : {}) }}
+            >
               <div style={styles.projectMain}>
-                <h3 style={styles.projectTitle}>{getDisplayProjectTitle(project.title)}</h3>
+                <h3 style={styles.projectTitle}>{projectTitle}</h3>
                 <p style={styles.projectMeta}>
-                  {formatFormat(project.format)} · {formatSceneCount(project.sceneCount)} · Updated {formatTimestamp(project.updatedAt)}
+                  {formatFormat(row.project.format)} · {formatSceneCount(row.project.sceneCount)} · Updated {formatTimestamp(row.project.updatedAt)}
                 </p>
+                {row.storageKind === 'folder' && (
+                  <p style={styles.projectPackageMeta}>
+                    {row.packageName}
+                    {row.warnings.length > 0 ? ` · ${row.warnings.length} warning${row.warnings.length === 1 ? '' : 's'}` : ''}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
                 style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
-                aria-label={`Open ${getDisplayProjectTitle(project.title)}`}
-                onClick={() => onOpenProject(project.id)}
+                aria-label={`Open ${projectTitle}`}
+                disabled={row.storageKind === 'folder'}
+                title={row.storageKind === 'folder' ? 'Opening file-backed projects is planned for the next storage slice.' : undefined}
+                onClick={() => {
+                  if (row.storageKind === 'browser') onOpenProject(row.project.id)
+                }}
               >
                 Open
               </button>
@@ -150,6 +301,45 @@ export function HomeSurface({
       </div>
     </section>
   )
+}
+
+function formatStorageStatus(status: HomeStorageStatusKind) {
+  switch (status) {
+    case 'ready':
+      return 'External folder'
+    case 'loading':
+      return 'Checking folder'
+    case 'permission-needed':
+      return 'Permission needed'
+    case 'error':
+      return 'Folder error'
+    case 'unsupported':
+      return 'Browser fallback'
+    case 'disconnected':
+    case 'browser-fallback':
+      return 'Browser fallback'
+  }
+}
+
+function formatStorageStatusMeta(storage: HomeProjectStorageStatus) {
+  switch (storage.status) {
+    case 'ready':
+      return storage.folderPersistenceSupported
+        ? 'Selected folder is remembered for this browser'
+        : 'Selected folder is active for this session'
+    case 'loading':
+      return 'Scanning WriterOS project packages'
+    case 'permission-needed':
+      return 'Reconnect the selected folder to scan projects'
+    case 'error':
+      return 'Choose or refresh a project folder'
+    case 'unsupported':
+      return 'External folder access is unavailable'
+    case 'disconnected':
+      return 'Choose a WriterOS Projects folder'
+    case 'browser-fallback':
+      return 'Current prototype source'
+  }
 }
 
 function formatFormat(format: ProjectSummary['format']) {
@@ -168,6 +358,18 @@ function formatTimestamp(timestamp: number) {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+function formatEmptyState(
+  query: string,
+  showingFolderProjects: boolean,
+  storageStatus: HomeStorageStatusKind,
+) {
+  if (query.trim()) return 'No projects match that filter.'
+  if (!showingFolderProjects) return 'No projects match that filter.'
+  if (storageStatus === 'loading') return 'Scanning project folder...'
+  if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
+  return 'No .writeros projects found in this folder.'
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -241,6 +443,23 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--surface)',
     padding: 16,
   },
+  statusActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  statusButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 12,
+    padding: '6px 9px',
+  },
   statusLabel: {
     display: 'block',
     color: 'var(--fg-subtle)',
@@ -261,6 +480,29 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg-muted)',
     fontSize: 13,
     marginTop: 4,
+  },
+  notice: {
+    maxWidth: 1080,
+    margin: '0 auto 18px',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontSize: 14,
+    padding: '12px 14px',
+  },
+  noticeTitle: {
+    display: 'block',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontWeight: 500,
+    marginBottom: 4,
+  },
+  noticeLine: {
+    display: 'block',
+    marginTop: 3,
   },
   currentProject: {
     maxWidth: 1080,
@@ -369,6 +611,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg-muted)',
     fontSize: 13,
     marginTop: 4,
+  },
+  projectPackageMeta: {
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    marginTop: 5,
   },
   primarySmallButton: {
     borderWidth: 1,
