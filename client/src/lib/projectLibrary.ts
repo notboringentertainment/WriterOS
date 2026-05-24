@@ -1,4 +1,4 @@
-import { defaultProjectState, loadProjectState, migrateState, saveProjectState } from './projectState'
+import { defaultProjectState, loadProjectState, migrateState, saveProjectState, stripProjectRawSource } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type { ProjectState } from './projectState'
 import type { ProjectFormat } from '@shared/projectFormat'
@@ -64,7 +64,10 @@ function readProjectLibrary(): StoredProject[] {
 }
 
 function writeProjectLibrary(projects: StoredProject[]) {
-  localStorage.setItem(PROJECT_LIBRARY_KEY, JSON.stringify(projects))
+  localStorage.setItem(PROJECT_LIBRARY_KEY, JSON.stringify(projects.map(project => ({
+    ...project,
+    state: stripProjectRawSource(project.state),
+  }))))
 }
 
 function writeActiveProjectId(projectId: string) {
@@ -159,6 +162,24 @@ export function createBlankProject(projects: StoredProject[]) {
     createdAt: now(),
     updatedAt: now(),
     state: defaultProjectState(),
+  }
+  const nextProjects = [project, ...projects]
+  writeProjectLibrary(nextProjects)
+  writeActiveProjectId(project.id)
+  saveProjectState(project.state)
+  return {
+    activeProjectId: project.id,
+    state: project.state,
+    projects: nextProjects,
+  }
+}
+
+export function createProjectFromState(projects: StoredProject[], state: ProjectState) {
+  const project: StoredProject = {
+    id: createProjectId(),
+    createdAt: now(),
+    updatedAt: now(),
+    state: migrateState(state),
   }
   const nextProjects = [project, ...projects]
   writeProjectLibrary(nextProjects)

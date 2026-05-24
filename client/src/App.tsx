@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
+import { FdxImportError, importFdxFile } from './lib/fdxImport'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
@@ -44,6 +45,11 @@ function historyFromTranscript(transcript: TranscriptMessage[]) {
   return transcript.slice(-6).map(m => ({ role: m.role, content: m.content }))
 }
 
+function formatFdxImportError(error: unknown) {
+  if (error instanceof FdxImportError) return error.message
+  return error instanceof Error ? error.message : 'Unable to import the Final Draft file.'
+}
+
 async function postWPChat(body: {
   personaId: string
   message: string
@@ -81,6 +87,10 @@ export default function App() {
   const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
   const [folderProjectError, setFolderProjectError] = useState<string | null>(null)
+  const [fdxImportError, setFdxImportError] = useState<string | null>(null)
+  const [fdxImportWarnings, setFdxImportWarnings] = useState<string[]>([])
+  const [importingFdx, setImportingFdx] = useState(false)
+  const [scriptImportNonce, setScriptImportNonce] = useState(0)
   const folderSaveNonceRef = useRef(0)
   const writeProjectRef = useRef(projectFolder.writeProject)
   writeProjectRef.current = projectFolder.writeProject
@@ -174,6 +184,8 @@ export default function App() {
     cancelPendingFolderSave()
     setActiveProjectStorage({ kind: 'browser' })
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     project.switchProject(projectId)
     shellState.openProjectWorkspace()
   }, [cancelPendingFolderSave, project, shellState])
@@ -182,6 +194,8 @@ export default function App() {
     cancelPendingFolderSave()
     setOpeningFolderProjectId(projectId)
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     try {
       const openedProject = await projectFolder.openProject(projectId)
       project.openStoredProject(openedProject.project)
@@ -202,6 +216,8 @@ export default function App() {
     cancelPendingFolderSave()
     const createdProject = project.createProject()
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
 
     if (projectFolder.status === 'ready') {
       setActiveProjectStorage({
@@ -217,9 +233,71 @@ export default function App() {
     shellState.openProjectWorkspace()
   }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
 
+  const handleImportFdxAsNewProject = useCallback(async (file: File) => {
+    cancelPendingFolderSave()
+    setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
+    setImportingFdx(true)
+    try {
+      const imported = await importFdxFile(file)
+      setFdxImportWarnings(imported.warnings)
+      const createdProject = project.createProjectFromImportedScript(imported)
+      latestScriptSnapshotRef.current = {
+        rawHtml: imported.rawHtml,
+        scenes: imported.scenes,
+      }
+
+      if (projectFolder.status === 'ready') {
+        setActiveProjectStorage({
+          kind: 'folder',
+          projectId: createdProject.id,
+          packageName: '',
+        })
+        void persistFolderProject(createdProject, createdProject.id)
+      } else {
+        setActiveProjectStorage({ kind: 'browser' })
+      }
+
+      setScriptImportNonce(nonce => nonce + 1)
+      shellState.setActiveTab('script')
+    } catch (error) {
+      const message = formatFdxImportError(error)
+      setFdxImportError(message)
+      setFdxImportWarnings([])
+    } finally {
+      setImportingFdx(false)
+    }
+  }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
+
+  const handleReplaceScriptFromFdx = useCallback(async (file: File) => {
+    cancelPendingFolderSave()
+    setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
+    setImportingFdx(true)
+    try {
+      const imported = await importFdxFile(file)
+      setFdxImportWarnings(imported.warnings)
+      project.replaceScriptFromImport(imported)
+      latestScriptSnapshotRef.current = {
+        rawHtml: imported.rawHtml,
+        scenes: imported.scenes,
+      }
+      setScriptImportNonce(nonce => nonce + 1)
+    } catch (error) {
+      setFdxImportError(formatFdxImportError(error))
+      setFdxImportWarnings([])
+    } finally {
+      setImportingFdx(false)
+    }
+  }, [cancelPendingFolderSave, project])
+
   const handleChooseProjectFolder = useCallback(async () => {
     cancelPendingFolderSave()
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     const didConnectFolder = await projectFolder.chooseFolder()
     if (didConnectFolder) {
       cancelPendingFolderSave()
@@ -231,6 +309,8 @@ export default function App() {
     cancelPendingFolderSave()
     setActiveProjectStorage({ kind: 'browser' })
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     await projectFolder.forgetFolder()
   }, [cancelPendingFolderSave, projectFolder])
 
@@ -238,6 +318,8 @@ export default function App() {
     cancelPendingFolderSave()
     setActiveProjectStorage({ kind: 'browser' })
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     project.switchProject(projectId)
   }, [cancelPendingFolderSave, project])
 
@@ -250,6 +332,8 @@ export default function App() {
     cancelPendingFolderSave()
     setActiveProjectStorage({ kind: 'browser' })
     setFolderProjectError(null)
+    setFdxImportError(null)
+    setFdxImportWarnings([])
     project.deleteProject()
   }, [cancelPendingFolderSave, project])
 
@@ -353,12 +437,17 @@ export default function App() {
       case 'script':
         return (
           <ScriptTab
-            key={project.activeProjectId}
+            key={`${project.activeProjectId}:${scriptImportNonce}`}
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
             initialScript={project.state.script.rawHtml || undefined}
             onScriptChange={handleScriptChange}
             onScriptSnapshotChange={handleScriptSnapshotChange}
+            onImportFdx={handleImportFdxAsNewProject}
+            onReplaceFdx={handleReplaceScriptFromFdx}
+            importingFdx={importingFdx}
+            importError={fdxImportError}
+            importWarnings={fdxImportWarnings}
           />
         )
       case 'synopsis':
@@ -437,6 +526,9 @@ export default function App() {
           onOpenProject={handleOpenBrowserProject}
           onOpenFolderProject={handleOpenFolderProject}
           onNewProject={handleNewProject}
+          onImportFdx={handleImportFdxAsNewProject}
+          importingFdx={importingFdx}
+          importError={fdxImportError}
           onChooseProjectFolder={handleChooseProjectFolder}
           onRefreshProjectFolder={projectFolder.refreshFolder}
           onForgetProjectFolder={handleForgetProjectFolder}

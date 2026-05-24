@@ -4,9 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { buildScriptIndex } from '../../client/src/lib/scriptIndex'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
+import { importFdxXml } from '../../client/src/lib/fdxImport'
 
-// FDX context-preservation fixture gate only. This does not implement FDX import.
-// Future import code must satisfy these expectations before it is wired into Home or Script.
 // FUTURE COVERAGE: TitlePage, styled <Text>, (CONT'D), dual dialogue, empty runs.
 
 function readFixture(name: string): string {
@@ -14,7 +13,9 @@ function readFixture(name: string): string {
 }
 
 const sourceFdx = readFixture('context-preservation.fdx')
-const expectedWriterOSHtml = readFixture('context-preservation.expected.html').trim()
+const expectedWriterOSHtml = readFixture('context-preservation.expected.html')
+  .replace(/^<!--[\s\S]*?-->\s*/, '')
+  .trim()
 
 describe('FDX context-preservation fixture gate', () => {
   it('pins the source paragraph cases the FDX parser must preserve', () => {
@@ -141,11 +142,31 @@ describe('FDX context-preservation fixture gate', () => {
     expect(index.speakers).toEqual(['PRINCE KHALID AL-MANSOUR'])
   })
 
+  it('converts the fixture into the expected WriterOS screenplay HTML', () => {
+    const imported = importFdxXml(sourceFdx, {
+      filename: 'context-preservation.fdx',
+      importedAt: Date.parse('2026-05-24T00:00:00.000Z'),
+    })
+
+    expect(imported.rawHtml).toBe(expectedWriterOSHtml)
+    expect(imported.scenes.map(scene => scene.heading)).toEqual([
+      'INT. PALACE ATRIUM - NIGHT',
+      'EXT. OLD CITY CHECKPOINT - DAWN',
+    ])
+  })
+
   it('preserves agent-relevant screenplay context from the expected converted HTML', () => {
     const state = defaultProjectState()
     state.script.rawHtml = expectedWriterOSHtml
+    state.meta.sourceImport = {
+      kind: 'fdx',
+      originalFilename: 'context-preservation.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      rawSource: sourceFdx,
+    }
 
     const worldContext = buildProjectContext(state, 'What world details are established in the palace atrium scene?')
+    expect(JSON.stringify(worldContext)).not.toContain('<FinalDraft')
     expect(worldContext.script.contextReason).toBe('requested-scene')
     expect(worldContext.script.contextLabel).toBe('INT. PALACE ATRIUM - NIGHT')
     expect(worldContext.script.sceneHeadings).toEqual(['INT. PALACE ATRIUM - NIGHT'])

@@ -72,6 +72,41 @@ describe('HomeSurface', () => {
     expect(onNewProject).toHaveBeenCalled()
   })
 
+  it('routes Final Draft import file selection from Home', () => {
+    const onImportFdx = vi.fn()
+    const { getByTestId } = render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onImportFdx={onImportFdx}
+      />
+    )
+    const file = new File(['<FinalDraft />'], 'Pilot.fdx', { type: 'application/xml' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
+    fireEvent.change(getByTestId('home-fdx-import-input'), {
+      target: { files: [file] },
+    })
+
+    expect(onImportFdx).toHaveBeenCalledWith(file)
+  })
+
+  it('shows Final Draft import errors without requiring a folder error', () => {
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        importError="This file is not valid Final Draft XML."
+      />
+    )
+
+    expect(screen.getByText('This file is not valid Final Draft XML.')).toBeInTheDocument()
+  })
+
   it('filters projects by title', () => {
     render(
       <HomeSurface

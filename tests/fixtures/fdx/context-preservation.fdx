@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  FDX context-preservation fixture gate only.
-  WriterOS does not implement FDX import yet; parser work must make this fixture pass without flattening screenplay semantics.
+  FDX context-preservation fixture gate.
+  Parser work must keep these screenplay semantics intact.
 -->
 <FinalDraft DocumentType="Script" Template="No" Version="5">
   <Content>
