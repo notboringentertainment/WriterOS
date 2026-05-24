@@ -101,6 +101,47 @@ describe('Final Draft .fdx import', () => {
     ])
   })
 
+  it('drops blank Final Draft paragraphs instead of importing extra spacing blocks', () => {
+    const imported = importFdxXml(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <FinalDraft DocumentType="Script" Template="No" Version="5">
+        <Content>
+          <Paragraph Type="Scene Heading"><Text>INT. BALLROOM - LATER</Text></Paragraph>
+          <Paragraph Type="Action"><Text>   </Text></Paragraph>
+          <Paragraph><Text></Text></Paragraph>
+          <Paragraph Type="General" />
+          <Paragraph Type="Action"><Text>The glamorous event is in full swing.</Text></Paragraph>
+          <Paragraph Type="Action"><Text></Text></Paragraph>
+          <Paragraph Type="Character"><Text>ISAIAH</Text></Paragraph>
+        </Content>
+      </FinalDraft>
+    `)
+
+    expect(imported.rawHtml).toBe([
+      '<p data-element-type="scene-heading">INT. BALLROOM - LATER</p>',
+      '<p data-element-type="action">The glamorous event is in full swing.</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+    ].join('\n'))
+    expect(imported.warnings).toEqual([])
+  })
+
+  it('still warns when a non-blank paragraph has no Final Draft type', () => {
+    const imported = importFdxXml(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <FinalDraft DocumentType="Script" Template="No" Version="5">
+        <Content>
+          <Paragraph Type="Scene Heading"><Text>INT. ROOM - DAY</Text></Paragraph>
+          <Paragraph><Text>A real line with no type.</Text></Paragraph>
+        </Content>
+      </FinalDraft>
+    `)
+
+    expect(imported.rawHtml).toContain('<p data-element-type="action">A real line with no type.</p>')
+    expect(imported.warnings).toEqual([
+      'Final Draft paragraph without a type imported as Action.',
+    ])
+  })
+
   it('reports missing or blank Content safely', () => {
     expect(() => importFdxXml('<FinalDraft DocumentType="Script"><Content /></FinalDraft>')).toThrow(
       'This Final Draft file does not contain importable screenplay text.',

@@ -93,16 +93,6 @@ function typeForParagraph(paragraph: Element, warnings: string[]): ElementType {
   return 'action'
 }
 
-function trimOuterBlankBlocks<T extends { text: string }>(blocks: T[]): T[] {
-  const firstContentIndex = blocks.findIndex(block => block.text.length > 0)
-  if (firstContentIndex === -1) return []
-  let lastContentIndex = blocks.length - 1
-  while (lastContentIndex > firstContentIndex && blocks[lastContentIndex].text.length === 0) {
-    lastContentIndex -= 1
-  }
-  return blocks.slice(firstContentIndex, lastContentIndex + 1)
-}
-
 function extractTitle(root: Element): string | null {
   const titlePage = directChild(root, 'TitlePage')
   if (!titlePage) return null
@@ -146,10 +136,15 @@ export function importFdxXml(
 
   const warnings: string[] = []
   const paragraphs = descendants(content, 'Paragraph')
-  const blocks = trimOuterBlankBlocks(paragraphs.map(paragraph => ({
-    type: typeForParagraph(paragraph, warnings),
-    text: paragraphText(paragraph),
-  })))
+  const blocks = paragraphs.flatMap(paragraph => {
+    const text = paragraphText(paragraph)
+    if (text.length === 0) return []
+
+    return [{
+      type: typeForParagraph(paragraph, warnings),
+      text,
+    }]
+  })
 
   if (blocks.length === 0) {
     throw new FdxImportError('missing-content', 'This Final Draft file does not contain importable screenplay text.')
