@@ -5,6 +5,8 @@ import {
   getEnterNext,
   shouldUppercase,
   shouldSentenceCapitalize,
+  getScreenplaySpacingBefore,
+  SCREENPLAY_SPACING,
   countWords,
   estimatePageCount,
   ELEMENT_LABELS,
@@ -69,6 +71,43 @@ describe('shouldSentenceCapitalize', () => {
     expect(shouldSentenceCapitalize('scene-heading', '')).toBe(false)
     expect(shouldSentenceCapitalize('character', '')).toBe(false)
     expect(shouldSentenceCapitalize('parenthetical', '')).toBe(false)
+  })
+})
+
+describe('screenplay spacing', () => {
+  it('uses one Final Draft-style blank line after scene headings before action', () => {
+    expect(getScreenplaySpacingBefore('scene-heading', 'action')).toBe(1)
+  })
+
+  it('keeps action paragraphs single-spaced without extra blank lines', () => {
+    expect(getScreenplaySpacingBefore('action', 'action')).toBe(0)
+  })
+
+  it('breathes between action and character cues', () => {
+    expect(getScreenplaySpacingBefore('action', 'character')).toBe(1)
+  })
+
+  it('keeps dialogue blocks tight under cues and parentheticals', () => {
+    expect(getScreenplaySpacingBefore('character', 'dialogue')).toBe(0)
+    expect(getScreenplaySpacingBefore('character', 'parenthetical')).toBe(0)
+    expect(getScreenplaySpacingBefore('parenthetical', 'dialogue')).toBe(0)
+  })
+
+  it('adds one blank line before the next block after dialogue', () => {
+    expect(getScreenplaySpacingBefore('dialogue', 'action')).toBe(1)
+    expect(getScreenplaySpacingBefore('dialogue', 'character')).toBe(1)
+    expect(getScreenplaySpacingBefore('dialogue', 'scene-heading')).toBe(1)
+  })
+
+  it('does not add space before the first screenplay block', () => {
+    expect(getScreenplaySpacingBefore(null, 'scene-heading')).toBe(0)
+    expect(getScreenplaySpacingBefore(null, 'action')).toBe(0)
+  })
+
+  it('keeps the Slice A spacing scale to zero or one blank line', () => {
+    for (const row of Object.values(SCREENPLAY_SPACING)) {
+      expect(Object.values(row).every(value => value === 0 || value === 1)).toBe(true)
+    }
   })
 })
 
