@@ -91,6 +91,19 @@ describe('HomeSurface', () => {
     expect(within(list).getByText('Quiet Frequencies')).toBeInTheDocument()
   })
 
+  it('shows a generic empty state when browser-local projects are empty without a filter', () => {
+    render(
+      <HomeSurface
+        activeProjectId=""
+        projects={[]}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('No projects yet. Create your first project.')).toBeInTheDocument()
+  })
+
   it('sorts projects by title', () => {
     render(
       <HomeSurface
@@ -139,6 +152,13 @@ describe('HomeSurface', () => {
             message: 'project.json is not valid JSON.',
             warnings: [],
           },
+          {
+            packageName: 'Also Broken.writeros',
+            code: 'missing-file',
+            path: 'project.json',
+            message: 'project.json is missing from the WriterOS project package.',
+            warnings: [],
+          },
         ]}
         storageStatus={{
           status: 'ready',
@@ -155,6 +175,7 @@ describe('HomeSurface', () => {
 
     expect(screen.getByText('External folder')).toBeInTheDocument()
     expect(screen.getByText('WriterOS Projects')).toBeInTheDocument()
+    expect(screen.getByText('2 project packages need attention')).toBeInTheDocument()
     expect(screen.getByText('Broken.writeros: project.json is not valid JSON.')).toBeInTheDocument()
 
     const list = screen.getByLabelText('Project list')

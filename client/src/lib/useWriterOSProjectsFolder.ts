@@ -104,7 +104,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
 
   const scanFolder = useCallback(async (
     folderHandle: WriterOSFileSystemDirectoryHandle,
-    options: { requestPermission?: boolean } = {},
+    options: { requestPermission?: boolean; isCancelled?: () => boolean } = {},
   ) => {
     setStatus('loading')
     setErrorMessage(null)
@@ -113,6 +113,8 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     const permission = options.requestPermission
       ? await requestWriterOSProjectsFolderPermission(folderHandle)
       : await getWriterOSProjectsFolderPermission(folderHandle)
+
+    if (options.isCancelled?.()) return
 
     if (permission !== 'granted') {
       setHandle(folderHandle)
@@ -123,11 +125,13 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       return
     }
 
+    setHandle(folderHandle)
     const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
     const nextEntries = await adapter.listProjects()
+    if (options.isCancelled?.()) return
+
     const nextProjects = projectEntriesFromList(nextEntries)
 
-    setHandle(folderHandle)
     setLabel(adapter.label)
     setProjects(nextProjects.projects)
     setCorruptProjects(nextProjects.corruptProjects)
@@ -208,7 +212,8 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
           return
         }
 
-        await scanFolder(folderHandle)
+        await scanFolder(folderHandle, { isCancelled: () => cancelled })
+        if (cancelled) return
       } catch (error) {
         if (cancelled) return
         setStatus('error')

@@ -206,7 +206,7 @@ export function HomeSurface({
 
       {corruptFolderProjects.length > 0 && showingFolderProjects && (
         <div style={styles.notice} aria-label="Project package warnings">
-          <strong style={styles.noticeTitle}>{corruptFolderProjects.length} project package needs attention</strong>
+          <strong style={styles.noticeTitle}>{formatCorruptPackageCount(corruptFolderProjects.length)}</strong>
           {corruptFolderProjects.map(project => (
             <span key={project.packageName} style={styles.noticeLine}>
               {project.packageName}: {project.message}
@@ -366,10 +366,16 @@ function formatEmptyState(
   storageStatus: HomeStorageStatusKind,
 ) {
   if (query.trim()) return 'No projects match that filter.'
-  if (!showingFolderProjects) return 'No projects match that filter.'
+  if (!showingFolderProjects) return 'No projects yet. Create your first project.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
   if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
   return 'No .writeros projects found in this folder.'
+}
+
+function formatCorruptPackageCount(count: number) {
+  return count === 1
+    ? '1 project package needs attention'
+    : `${count} project packages need attention`
 }
 
 const styles: Record<string, React.CSSProperties> = {
