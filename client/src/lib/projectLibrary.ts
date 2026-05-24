@@ -132,6 +132,27 @@ export function saveProjectToLibrary(projectId: string, state: ProjectState, pro
   return nextProjects
 }
 
+export function activateStoredProject(project: StoredProject, projects: StoredProject[]): ActiveProjectLibrary {
+  const migratedProject: StoredProject = {
+    ...project,
+    state: migrateState(project.state),
+  }
+  const nextProjects = [
+    migratedProject,
+    ...projects.filter(existingProject => existingProject.id !== migratedProject.id),
+  ]
+
+  writeProjectLibrary(nextProjects)
+  writeActiveProjectId(migratedProject.id)
+  saveProjectState(migratedProject.state)
+
+  return {
+    activeProjectId: migratedProject.id,
+    state: migratedProject.state,
+    projects: nextProjects,
+  }
+}
+
 export function createBlankProject(projects: StoredProject[]) {
   const project: StoredProject = {
     id: createProjectId(),

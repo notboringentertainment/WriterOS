@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
+import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
@@ -16,6 +17,7 @@ import { HomeSurface } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
+import type { StoredProject } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 
@@ -24,6 +26,10 @@ type ScriptSnapshot = {
   scenes: ScriptScene[]
   focus?: ScriptFocusState
 }
+
+type ActiveProjectStorage =
+  | { kind: 'browser' }
+  | { kind: 'folder'; projectId: string; packageName: string }
 
 function makeMessage(
   role: 'user' | 'assistant',
@@ -70,7 +76,17 @@ async function postOpenSwarmWritingPartner(body: {
 export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
+  const projectFolder = useWriterOSProjectsFolder()
   const [wpLoading, setWpLoading] = useState(false)
+  const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
+  const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
+  const [folderProjectError, setFolderProjectError] = useState<string | null>(null)
+  const folderSaveNonceRef = useRef(0)
+  const writeProjectRef = useRef(projectFolder.writeProject)
+  writeProjectRef.current = projectFolder.writeProject
+  const activeFolderProjectId = activeProjectStorage.kind === 'folder'
+    ? activeProjectStorage.projectId
+    : null
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
     rawHtml: project.state.script.rawHtml,
     scenes: project.state.script.scenes,
@@ -110,6 +126,132 @@ export default function App() {
     },
     [project]
   )
+
+  const formatFolderProjectError = useCallback((error: unknown) => {
+    return error instanceof Error ? error.message : 'Unable to open or save the WriterOS project package.'
+  }, [])
+
+  const cancelPendingFolderSave = useCallback(() => {
+    folderSaveNonceRef.current += 1
+  }, [])
+
+  const persistFolderProject = useCallback(async (
+    storedProject: StoredProject | undefined,
+    targetProjectId: string | null,
+  ) => {
+    if (!storedProject) return
+    if (!targetProjectId || storedProject.id !== targetProjectId) return
+
+    const nonce = ++folderSaveNonceRef.current
+    try {
+      const folderProject = await writeProjectRef.current(storedProject)
+      if (folderSaveNonceRef.current !== nonce) return
+      setActiveProjectStorage(current => {
+        if (current.kind !== 'folder' || current.projectId !== storedProject.id) return current
+        if (current.packageName === folderProject.packageName) return current
+        return { kind: 'folder', projectId: storedProject.id, packageName: folderProject.packageName }
+      })
+      setFolderProjectError(null)
+    } catch (error) {
+      if (folderSaveNonceRef.current !== nonce) return
+      setFolderProjectError(formatFolderProjectError(error))
+    }
+  }, [formatFolderProjectError])
+
+  useEffect(() => {
+    if (!activeFolderProjectId) return
+    const storedProject = project.activeStoredProject
+    if (!storedProject || storedProject.id !== activeFolderProjectId) return
+
+    const timeout = window.setTimeout(() => {
+      void persistFolderProject(storedProject, activeFolderProjectId)
+    }, 600)
+
+    return () => window.clearTimeout(timeout)
+  }, [activeFolderProjectId, persistFolderProject, project.activeStoredProject])
+
+  const handleOpenBrowserProject = useCallback((projectId: string) => {
+    cancelPendingFolderSave()
+    setActiveProjectStorage({ kind: 'browser' })
+    setFolderProjectError(null)
+    project.switchProject(projectId)
+    shellState.openProjectWorkspace()
+  }, [cancelPendingFolderSave, project, shellState])
+
+  const handleOpenFolderProject = useCallback(async (projectId: string) => {
+    cancelPendingFolderSave()
+    setOpeningFolderProjectId(projectId)
+    setFolderProjectError(null)
+    try {
+      const openedProject = await projectFolder.openProject(projectId)
+      project.openStoredProject(openedProject.project)
+      setActiveProjectStorage({
+        kind: 'folder',
+        projectId: openedProject.project.id,
+        packageName: openedProject.packageName,
+      })
+      shellState.openProjectWorkspace()
+    } catch (error) {
+      setFolderProjectError(formatFolderProjectError(error))
+    } finally {
+      setOpeningFolderProjectId(null)
+    }
+  }, [cancelPendingFolderSave, formatFolderProjectError, project, projectFolder, shellState])
+
+  const handleNewProject = useCallback(() => {
+    cancelPendingFolderSave()
+    const createdProject = project.createProject()
+    setFolderProjectError(null)
+
+    if (projectFolder.status === 'ready') {
+      setActiveProjectStorage({
+        kind: 'folder',
+        projectId: createdProject.id,
+        packageName: '',
+      })
+      void persistFolderProject(createdProject, createdProject.id)
+    } else {
+      setActiveProjectStorage({ kind: 'browser' })
+    }
+
+    shellState.openProjectWorkspace()
+  }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
+
+  const handleChooseProjectFolder = useCallback(async () => {
+    cancelPendingFolderSave()
+    setFolderProjectError(null)
+    const didConnectFolder = await projectFolder.chooseFolder()
+    if (didConnectFolder) {
+      cancelPendingFolderSave()
+      setActiveProjectStorage({ kind: 'browser' })
+    }
+  }, [cancelPendingFolderSave, projectFolder])
+
+  const handleForgetProjectFolder = useCallback(async () => {
+    cancelPendingFolderSave()
+    setActiveProjectStorage({ kind: 'browser' })
+    setFolderProjectError(null)
+    await projectFolder.forgetFolder()
+  }, [cancelPendingFolderSave, projectFolder])
+
+  const handleProjectChange = useCallback((projectId: string) => {
+    cancelPendingFolderSave()
+    setActiveProjectStorage({ kind: 'browser' })
+    setFolderProjectError(null)
+    project.switchProject(projectId)
+  }, [cancelPendingFolderSave, project])
+
+  const handleSaveProject = useCallback(() => {
+    const savedProject = project.saveNow()
+    void persistFolderProject(savedProject, activeFolderProjectId)
+  }, [activeFolderProjectId, persistFolderProject, project])
+
+  const handleDeleteProject = useCallback(() => {
+    cancelPendingFolderSave()
+    setActiveProjectStorage({ kind: 'browser' })
+    setFolderProjectError(null)
+    project.deleteProject()
+  }, [cancelPendingFolderSave, project])
 
   const handleWPSend = useCallback(async (text: string) => {
     const openSwarmMessage = parseOpenSwarmCommand(text)
@@ -280,14 +422,24 @@ export default function App() {
         <HomeSurface
           activeProjectId={project.activeProjectId}
           projects={project.projects}
-          onOpenProject={(projectId) => {
-            project.switchProject(projectId)
-            shellState.openProjectWorkspace()
+          folderProjects={projectFolder.projects}
+          corruptFolderProjects={projectFolder.corruptProjects}
+          storageStatus={{
+            status: projectFolder.status,
+            label: projectFolder.label,
+            defaultFolderLabel: projectFolder.defaultFolderLabel,
+            fileSystemAccessSupported: projectFolder.fileSystemAccessSupported,
+            folderPersistenceSupported: projectFolder.folderPersistenceSupported,
+            errorMessage: folderProjectError ?? projectFolder.errorMessage,
           }}
-          onNewProject={() => {
-            project.createProject()
-            shellState.openProjectWorkspace()
-          }}
+          activeStorageKind={activeProjectStorage.kind}
+          openingFolderProjectId={openingFolderProjectId}
+          onOpenProject={handleOpenBrowserProject}
+          onOpenFolderProject={handleOpenFolderProject}
+          onNewProject={handleNewProject}
+          onChooseProjectFolder={handleChooseProjectFolder}
+          onRefreshProjectFolder={projectFolder.refreshFolder}
+          onForgetProjectFolder={handleForgetProjectFolder}
         />
       )
     }
@@ -325,10 +477,10 @@ export default function App() {
       activeProjectId={project.activeProjectId}
       projectSummaries={project.projects}
       onProjectTitleChange={title => project.setMeta({ title })}
-      onProjectChange={project.switchProject}
-      onNewProject={project.createProject}
-      onSaveProject={project.saveNow}
-      onDeleteProject={project.deleteProject}
+      onProjectChange={handleProjectChange}
+      onNewProject={handleNewProject}
+      onSaveProject={handleSaveProject}
+      onDeleteProject={handleDeleteProject}
       railProps={railProps}
     >
       {renderCenter()}

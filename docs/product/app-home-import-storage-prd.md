@@ -25,8 +25,13 @@ Current `main` has:
 
 - A functional Home surface backed by the current browser-local project library.
 - A tested `.writeros` package serialization/read contract with a File System Access adapter seam.
+- A Home project-folder controller that can select, remember, and rescan a File System Access API folder.
+- Home package discovery for ready and corrupt `.writeros` project folders.
+- Home open/load wiring for ready `.writeros` project folders discovered through the selected external folder.
+- File-backed save wiring for active folder projects, with browser-local storage retained as a cache/fallback.
+- New projects created while an external folder is connected are written to the selected project folder.
 - Home project search/sort, current-project open, project open, and new-project actions.
-- Explicit Home storage status showing browser fallback and disconnected external project folder state.
+- Explicit Home storage status showing browser fallback, disconnected external folder, connected folder, permission-needed, and error states.
 - A TopBar project switcher and project actions.
 - Local project create/switch/save/rename/delete behavior.
 - Auto-save through browser `localStorage`.
@@ -35,10 +40,7 @@ Current `main` has:
 
 Current `main` does not have:
 
-- Home wired to file-backed `.writeros` project packages.
-- A selected/persisted File System Access API project folder.
-- A real project folder viewer.
-- A durable external project file/folder format.
+- A fully primary external-storage mode after app reload without reopening/selecting the external package.
 - Functional import from Final Draft `.fdx`.
 - Import from Fountain, PDF, DOCX, or other screenplay formats.
 - Export/import of complete WriterOS projects.
@@ -305,7 +307,7 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 
 ### Slice 2: Home Surface
 
-**Status:** V0 implemented on the current localStorage project library. File-backed folder discovery still waits for Slice 1.
+**Status:** Home, folder selection, persisted folder handle support, `.writeros` package discovery, file-backed open/load, external-folder new-project creation, and active file-backed save wiring are implemented. localStorage migration visibility is still pending.
 
 - Add Home route/shell state as the first surface before opening a project.
 - Show project folder selection/status.

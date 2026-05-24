@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { defaultProjectState } from './projectState'
 import {
+  activateStoredProject,
   createBlankProject,
   deleteProjectFromLibrary,
   getStoredProject,
@@ -8,6 +9,7 @@ import {
   saveProjectToLibrary,
   summarizeProjects,
 } from './projectLibrary'
+import type { StoredProject } from './projectLibrary'
 import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
@@ -625,6 +627,7 @@ export function useProjectState() {
     setActiveProjectId(next.activeProjectId)
     setState(next.state)
     setProjects(next.projects)
+    return getStoredProject(next.activeProjectId, next.projects)!
   }, [activeProjectId, projects, state])
 
   const switchProject = useCallback((projectId: string) => {
@@ -640,9 +643,18 @@ export function useProjectState() {
     setProjects(nextProjects)
   }, [activeProjectId, projects, state])
 
+  const openStoredProject = useCallback((project: StoredProject) => {
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const next = activateStoredProject(project, savedProjects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [activeProjectId, projects, state])
+
   const saveNow = useCallback(() => {
     const nextProjects = saveProjectToLibrary(activeProjectId, state, projects)
     setProjects(nextProjects)
+    return getStoredProject(activeProjectId, nextProjects)!
   }, [activeProjectId, projects, state])
 
   const deleteProject = useCallback(() => {
@@ -655,6 +667,7 @@ export function useProjectState() {
   return {
     state,
     activeProjectId,
+    activeStoredProject: getStoredProject(activeProjectId, projects),
     projects: summarizeProjects(projects),
     setMeta,
     setProjectFormat,
@@ -686,6 +699,7 @@ export function useProjectState() {
     updateScript,
     createProject,
     switchProject,
+    openStoredProject,
     saveNow,
     deleteProject,
   }

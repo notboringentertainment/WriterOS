@@ -9,6 +9,7 @@ import {
   serializeWriterOSProjectPackage,
   type ProjectPackageReadError,
   type ProjectPackageReadResult,
+  type WriterOSProjectManifest,
 } from './projectPackage'
 import type { ProjectSummary, StoredProject } from './projectLibrary'
 import { summarizeProjects } from './projectLibrary'
@@ -33,6 +34,8 @@ export interface WriterOSFileSystemDirectoryHandle {
   name: string
   getFileHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemFileHandle>
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemDirectoryHandle>
+  queryPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
+  requestPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
   entries?: () => AsyncIterableIterator<[string, WriterOSFileSystemHandle]>
   values?: () => AsyncIterableIterator<WriterOSFileSystemHandle>
 }
@@ -40,6 +43,11 @@ export interface WriterOSFileSystemDirectoryHandle {
 export type WriterOSFileSystemHandle =
   | WriterOSFileSystemFileHandle
   | WriterOSFileSystemDirectoryHandle
+
+export type WriterOSFileSystemPermissionState = 'granted' | 'denied' | 'prompt'
+export interface WriterOSFileSystemPermissionDescriptor {
+  mode?: 'read' | 'readwrite'
+}
 
 export interface ProjectStorageProjectRef {
   id: string
@@ -49,6 +57,7 @@ export interface ProjectStorageProjectRef {
 
 export interface FileSystemAccessProjectRef extends ProjectStorageProjectRef {
   handle: WriterOSFileSystemDirectoryHandle
+  manifest: WriterOSProjectManifest
 }
 
 export type ProjectStorageListEntry<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> =
@@ -70,7 +79,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   defaultFolderLabel: string
   listProjects(): Promise<Array<ProjectStorageListEntry<TRef>>>
   readProject(ref: TRef): Promise<ProjectPackageReadResult>
-  writeProject(project: StoredProject): Promise<TRef>
+  writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
 }
 
 type ShowDirectoryPicker = (options?: {
@@ -78,6 +87,10 @@ type ShowDirectoryPicker = (options?: {
   mode?: 'read' | 'readwrite'
   startIn?: 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos'
 }) => Promise<WriterOSFileSystemDirectoryHandle>
+
+const WRITEROS_PROJECTS_FOLDER_HANDLE_DB_NAME = 'writeros-project-folder'
+const WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME = 'handles'
+const WRITEROS_PROJECTS_FOLDER_HANDLE_KEY = 'projects-folder'
 
 function getShowDirectoryPicker(): ShowDirectoryPicker | undefined {
   const maybeGlobal = globalThis as typeof globalThis & {
@@ -92,6 +105,17 @@ export function isFileSystemAccessSupported(): boolean {
   return getShowDirectoryPicker() !== undefined
 }
 
+function getIndexedDB(): IDBFactory | undefined {
+  const maybeGlobal = globalThis as typeof globalThis & {
+    indexedDB?: IDBFactory
+  }
+  return maybeGlobal.indexedDB
+}
+
+export function isWriterOSProjectsFolderPersistenceSupported(): boolean {
+  return getIndexedDB() !== undefined
+}
+
 export async function pickWriterOSProjectsFolder(): Promise<WriterOSFileSystemDirectoryHandle> {
   const showDirectoryPicker = getShowDirectoryPicker()
   if (!showDirectoryPicker) {
@@ -103,6 +127,99 @@ export async function pickWriterOSProjectsFolder(): Promise<WriterOSFileSystemDi
     mode: 'readwrite',
     startIn: 'documents',
   })
+}
+
+function openProjectsFolderHandleDatabase(): Promise<IDBDatabase> {
+  const indexedDB = getIndexedDB()
+  if (!indexedDB) {
+    throw new Error('Folder persistence is not available in this browser.')
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(WRITEROS_PROJECTS_FOLDER_HANDLE_DB_NAME, 1)
+
+    request.onupgradeneeded = () => {
+      const database = request.result
+      if (!database.objectStoreNames.contains(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)) {
+        database.createObjectStore(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Unable to open WriterOS folder storage.'))
+  })
+}
+
+async function withProjectsFolderHandleStore<T>(
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const database = await openProjectsFolderHandleDatabase()
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME, mode)
+    const store = transaction.objectStore(WRITEROS_PROJECTS_FOLDER_HANDLE_STORE_NAME)
+    const request = operation(store)
+    let result: T
+
+    request.onsuccess = () => {
+      result = request.result
+    }
+    request.onerror = () => {
+      database.close()
+      reject(request.error ?? new Error('Unable to use WriterOS folder storage.'))
+    }
+    transaction.oncomplete = () => {
+      database.close()
+      resolve(result)
+    }
+    transaction.onerror = () => {
+      database.close()
+      reject(transaction.error ?? new Error('Unable to complete WriterOS folder storage transaction.'))
+    }
+    transaction.onabort = () => {
+      database.close()
+      reject(transaction.error ?? new Error('WriterOS folder storage transaction was aborted.'))
+    }
+  })
+}
+
+export async function persistWriterOSProjectsFolderHandle(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<void> {
+  await withProjectsFolderHandleStore('readwrite', store =>
+    store.put(handle, WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+}
+
+export async function loadPersistedWriterOSProjectsFolderHandle(): Promise<WriterOSFileSystemDirectoryHandle | null> {
+  const handle = await withProjectsFolderHandleStore<WriterOSFileSystemDirectoryHandle | undefined>(
+    'readonly',
+    store => store.get(WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+
+  return handle?.kind === 'directory' ? handle : null
+}
+
+export async function clearPersistedWriterOSProjectsFolderHandle(): Promise<void> {
+  await withProjectsFolderHandleStore('readwrite', store =>
+    store.delete(WRITEROS_PROJECTS_FOLDER_HANDLE_KEY),
+  )
+}
+
+export async function getWriterOSProjectsFolderPermission(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<WriterOSFileSystemPermissionState> {
+  if (!handle.queryPermission) return 'granted'
+  return handle.queryPermission({ mode: 'readwrite' })
+}
+
+export async function requestWriterOSProjectsFolderPermission(
+  handle: WriterOSFileSystemDirectoryHandle,
+): Promise<WriterOSFileSystemPermissionState> {
+  const currentPermission = await getWriterOSProjectsFolderPermission(handle)
+  if (currentPermission === 'granted') return currentPermission
+  if (!handle.requestPermission) return currentPermission
+  return handle.requestPermission({ mode: 'readwrite' })
 }
 
 function isNotFoundError(error: unknown): boolean {
@@ -180,11 +297,17 @@ async function* iterateProjectFolder(rootHandle: WriterOSFileSystemDirectoryHand
   throw new Error('Selected project folder cannot be listed by this browser.')
 }
 
-function refFromProject(packageName: string, handle: WriterOSFileSystemDirectoryHandle, project: StoredProject): FileSystemAccessProjectRef {
+function refFromProject(
+  packageName: string,
+  handle: WriterOSFileSystemDirectoryHandle,
+  project: StoredProject,
+  manifest: WriterOSProjectManifest,
+): FileSystemAccessProjectRef {
   return {
     id: project.id,
     packageName,
     handle,
+    manifest,
     summary: summarizeProjects([project])[0],
   }
 }
@@ -206,7 +329,7 @@ export function createFileSystemAccessProjectStorageAdapter(
         if (result.ok) {
           entries.push({
             status: 'ready',
-            ref: refFromProject(packageName, handle, result.project),
+            ref: refFromProject(packageName, handle, result.project, result.manifest),
             warnings: result.warnings,
           })
         } else {
@@ -224,11 +347,14 @@ export function createFileSystemAccessProjectStorageAdapter(
     async readProject(ref) {
       return readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle))
     },
-    async writeProject(project) {
+    async writeProject(project, previousRef) {
       const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
-      const packageHandle = await rootHandle.getDirectoryHandle(packageName, { create: true })
-      await writeProjectPackageFiles(packageHandle, serializeWriterOSProjectPackage(project).files)
-      return refFromProject(packageName, packageHandle, project)
+      const packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
+      const nextPackage = serializeWriterOSProjectPackage(project, {
+        sourceImport: previousRef?.manifest.sourceImport,
+      })
+      await writeProjectPackageFiles(packageHandle, nextPackage.files)
+      return refFromProject(previousRef?.packageName ?? packageName, packageHandle, project, nextPackage.manifest)
     },
   }
 }

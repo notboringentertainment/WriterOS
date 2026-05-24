@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
+  activateStoredProject,
   loadActiveProjectLibrary,
   createBlankProject,
   saveProjectToLibrary,
@@ -100,5 +101,34 @@ describe('saveProjectToLibrary (regression coverage for saveNow path)', () => {
 
     expect(next[0].id).toBe(projectId)
     expect(next[0].updatedAt).toBeGreaterThan(firstUpdatedAt)
+  })
+})
+
+describe('activateStoredProject', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('activates an externally loaded project without changing its timestamps', () => {
+    const seeded = loadActiveProjectLibrary()
+    const externalState = defaultProjectState()
+    externalState.meta.title = 'Harbor Lights'
+    const externalProject = {
+      id: 'external-project',
+      createdAt: Date.parse('2026-05-01T10:00:00.000Z'),
+      updatedAt: Date.parse('2026-05-02T11:30:00.000Z'),
+      state: externalState,
+    }
+
+    const result = activateStoredProject(externalProject, seeded.projects)
+
+    expect(result.activeProjectId).toBe('external-project')
+    expect(result.projects[0]).toMatchObject({
+      id: 'external-project',
+      createdAt: externalProject.createdAt,
+      updatedAt: externalProject.updatedAt,
+      state: { meta: { title: 'Harbor Lights' } },
+    })
+    expect(localStorage.getItem(ACTIVE_KEY)).toBe('external-project')
   })
 })

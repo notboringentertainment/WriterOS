@@ -142,4 +142,26 @@ describe('File System Access project storage adapter', () => {
       }),
     ])
   })
+
+  it('updates an opened package in place when the project title changes', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+
+    const ref = await adapter.writeProject(project)
+    project.state.meta.title = 'The Salt Line Revised'
+    project.updatedAt = Date.parse('2026-05-03T12:00:00.000Z')
+    const updatedRef = await adapter.writeProject(project, ref)
+    const list = await adapter.listProjects()
+
+    expect(updatedRef.packageName).toBe('The Salt Line (8f4e2c9a).writeros')
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({
+      status: 'ready',
+      ref: {
+        packageName: 'The Salt Line (8f4e2c9a).writeros',
+        summary: { title: 'The Salt Line Revised' },
+      },
+    })
+  })
 })

@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
+import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
 import {
   createEmptySeriesContent,
@@ -154,6 +155,28 @@ describe('useProjectState', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'Untitled Project' }))
     expect(result.current.state.meta.title).toBe('')
+  })
+
+  it('opens an externally loaded project as the active project', () => {
+    const { result } = renderHook(() => useProjectState())
+    const externalState = defaultProjectState()
+    externalState.meta.title = 'Harbor Lights'
+    const externalProject: StoredProject = {
+      id: 'external-project',
+      createdAt: Date.parse('2026-05-01T10:00:00.000Z'),
+      updatedAt: Date.parse('2026-05-02T11:30:00.000Z'),
+      state: externalState,
+    }
+
+    act(() => result.current.openStoredProject(externalProject))
+
+    expect(result.current.activeProjectId).toBe('external-project')
+    expect(result.current.state.meta.title).toBe('Harbor Lights')
+    expect(result.current.activeStoredProject).toMatchObject({
+      id: 'external-project',
+      createdAt: externalProject.createdAt,
+      updatedAt: externalProject.updatedAt,
+    })
   })
 
   it('clearSynopsis empties every synopsis field and persists the change', () => {
