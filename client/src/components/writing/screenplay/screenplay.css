@@ -1,24 +1,29 @@
 /* ============================================================
    Screenplay CSS — WGA-standard element indentation
-   All measurements relative to ProseMirror content area.
-   Page padding: left 144px (1.5"), right 96px (1"), top/bottom 96px (1")
+   Units:
+   - Page geometry uses `in` (US Letter, 8.5" × 11").
+   - Element indents and spacing use `em` / `lh` so they scale with
+     the screenplay font (12pt Courier).
+   - Per-element indents and alignment mirror SCREENPLAY_INDENTS in
+     client/src/lib/screenplay.ts. Keep both in sync; the TS table
+     is the authoritative model, this stylesheet is the renderer.
    ============================================================ */
 
 /* ProseMirror editor resets */
 .ProseMirror {
   outline: none;
   caret-color: #333;
-  /* page padding = WGA margins */
-  padding: 96px 96px 96px 144px;
-  min-height: 1056px; /* 11" at 96dpi */
+  /* page padding = WGA margins (1" top/right/bottom, 1.5" left) */
+  padding: 1in 1in 1in 1.5in;
+  min-height: 11in;
   box-sizing: border-box;
 }
 
 /* All screenplay paragraphs */
 .ProseMirror p {
   font-family: 'Courier Prime', 'Courier New', monospace;
-  font-size: 12pt;   /* 16px at standard 96dpi */
-  line-height: 1;    /* single-spaced */
+  font-size: 12pt;
+  line-height: 1;
   margin: 0;
   padding: 0;
   white-space: pre-wrap;
@@ -35,43 +40,43 @@
   margin-top: 1lh;
 }
 
-/* ---- Element-specific indentation ----
+/* ---- Element-specific indentation (mirrors SCREENPLAY_INDENTS) ----
    Selectors use .ProseMirror p[data-element-type="..."] (specificity 0,2,1)
    to beat .ProseMirror p { margin: 0 } (specificity 0,1,1). */
 
-/* Scene Heading: full width, bold */
+/* Scene Heading: full width, bold. Indent { 0, 0, left } */
 .ProseMirror p[data-element-type="scene-heading"] {
   margin-left: 0;
   margin-right: 0;
   font-weight: 700;
 }
 
-/* Action: full width */
+/* Action: full width. Indent { 0, 0, left } */
 .ProseMirror p[data-element-type="action"] {
   margin-left: 0;
   margin-right: 0;
 }
 
-/* Character: ~2.2" from content left = 211px */
+/* Character. Indent { 13.2em, 0, left } */
 .ProseMirror p[data-element-type="character"] {
-  margin-left: 211px;
+  margin-left: 13.2em;
   margin-right: 0;
   text-transform: uppercase;
 }
 
-/* Dialogue: 1" left = 96px, 1.5" right = 144px */
+/* Dialogue. Indent { 6em, 9em, left } */
 .ProseMirror p[data-element-type="dialogue"] {
-  margin-left: 96px;
-  margin-right: 144px;
+  margin-left: 6em;
+  margin-right: 9em;
 }
 
-/* Parenthetical: 1.5" left = 144px, 2" right = 192px */
+/* Parenthetical. Indent { 9em, 12em, left } */
 .ProseMirror p[data-element-type="parenthetical"] {
-  margin-left: 144px;
-  margin-right: 192px;
+  margin-left: 9em;
+  margin-right: 12em;
 }
 
-/* Transition: flush right, uppercase */
+/* Transition. Indent { 0, 0, right } */
 .ProseMirror p[data-element-type="transition"] {
   text-align: right;
   margin-left: 0;
