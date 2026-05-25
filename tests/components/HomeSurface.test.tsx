@@ -447,6 +447,7 @@ describe('HomeSurface', () => {
 
       const list = screen.getByLabelText('Project list')
       expect(within(list).getByText(/No projects yet/)).toBeInTheDocument()
+      expect(within(list).getByRole('button', { name: 'Import .fdx' })).toBeInTheDocument()
       const createButtons = within(list).getAllByRole('button', { name: 'New Project' })
       expect(createButtons.length).toBeGreaterThan(0)
       fireEvent.click(createButtons[createButtons.length - 1])
