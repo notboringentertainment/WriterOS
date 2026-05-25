@@ -21,6 +21,7 @@ import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import { computePostDeleteStorageEffect } from './lib/homeDelete'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -362,10 +363,9 @@ export default function App() {
       const wasActive = project.activeProjectId === target.projectId
       const next = project.deleteProjectById(target.projectId)
 
-      if (wasActive || target.storageKind === 'folder') {
-        cancelPendingFolderSave()
-        setActiveProjectStorage({ kind: 'browser' })
-      }
+      const effect = computePostDeleteStorageEffect(target, wasActive)
+      if (effect.cancelPendingFolderSave) cancelPendingFolderSave()
+      if (effect.resetToBrowser) setActiveProjectStorage({ kind: 'browser' })
       if (!next.activeProjectId) {
         shellState.openHome()
       }

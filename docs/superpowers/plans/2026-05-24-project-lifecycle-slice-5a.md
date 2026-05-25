@@ -136,7 +136,7 @@ Archive subfolder is visible at `<WriterOS Projects>/Archive/`.
 ## Edge Cases
 
 - **Folder already missing on disk:** proceed with library cleanup; treat as success.
-- **Permission denied or revoked during disk op:** do not pretend the disk delete happened. Surface explicit warning/error. If user chooses library-only cleanup, the toast must say the folder remains on disk and where to find it.
+- **Permission denied or revoked during disk op:** do not pretend the disk delete happened. Surface an explicit warning/error and abort the library cleanup so the deleted project does not vanish from the library while its folder remains on disk. The writer can retry after re-granting permission. Offering an optional library-only cleanup path (with a toast warning that the folder remains on disk) is a possible future enhancement; it is **not** implemented in 5a-1.
 - **Browser-only mode (no folder selected):** delete and archive must still work via localStorage. No disk ops attempted.
 - **Active project deleted:** clear active selection, route to Home empty state, do not auto-create a blank project.
 - **Library empty after delete:** Home empty state with Create / Import CTAs.

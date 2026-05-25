@@ -423,8 +423,20 @@ export function HomeSurface({
                 disabled={deletingProjectId === deleteTarget.projectId}
                 onClick={async () => {
                   const target = deleteTarget
-                  setDeleteTarget(null)
-                  await onDeleteProject?.(target)
+                  if (!target) return
+                  // Keep the modal mounted during the await so the "Deleting"
+                  // label and the disabled state on Cancel are reachable, and
+                  // so the writer never sees the dialog disappear mid-action.
+                  // The parent surfaces any failure through the storage-error
+                  // notice that remains visible after the modal closes.
+                  try {
+                    await onDeleteProject?.(target)
+                  } catch {
+                    // Parent surfaces failures via the storage-error notice;
+                    // the modal still closes so the writer can read it.
+                  } finally {
+                    setDeleteTarget(null)
+                  }
                 }}
               >
                 {deletingProjectId === deleteTarget.projectId ? 'Deleting' : 'Delete project'}
