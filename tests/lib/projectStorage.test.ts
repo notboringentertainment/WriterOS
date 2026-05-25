@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createFileSystemAccessProjectStorageAdapter,
+  WRITEROS_ARCHIVE_SUBFOLDER_NAME,
   type WriterOSFileSystemDirectoryHandle,
   type WriterOSFileSystemFileHandle,
   type WriterOSFileSystemHandle,
@@ -349,6 +350,41 @@ describe('File System Access project storage adapter', () => {
       expect(result.ok).toBe(false)
       if (result.ok) throw new Error('expected failure')
       expect(result.reason).toBe('permission-denied')
+    })
+
+    it('cleans up the archive copy if removing the active package fails', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'denied'
+
+      const result = await adapter.archiveProject(ref)
+
+      expect(result.ok).toBe(false)
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0].status).toBe('ready')
+      if (list[0].status !== 'ready') throw new Error('expected ready entry')
+      expect(list[0].archived).toBeFalsy()
+    })
+
+    it('cleans up the restored active copy if removing the archive package fails', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      const archived = await adapter.archiveProject(ref)
+      if (!archived.ok) throw new Error('archive prerequisite failed')
+      const archiveRoot = await root.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME) as FakeDirectoryHandleWithRemove
+      archiveRoot.removeBehavior = 'denied'
+
+      const result = await adapter.restoreProject(archived.ref)
+
+      expect(result.ok).toBe(false)
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0].status).toBe('ready')
+      if (list[0].status !== 'ready') throw new Error('expected ready entry')
+      expect(list[0].archived).toBe(true)
     })
 
     it('rejects archive on browsers without removeEntry', async () => {

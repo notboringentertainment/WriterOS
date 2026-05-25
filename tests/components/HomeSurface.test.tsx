@@ -564,6 +564,42 @@ describe('HomeSurface', () => {
       expect(within(list).queryByText('The Salt Line')).not.toBeInTheDocument()
     })
 
+    it('clears the filter when switching between Active and Archive views (Slice 5a-2)', () => {
+      const mixedProjects = [
+        ...projects,
+        {
+          id: 'project-3',
+          title: 'Archived One',
+          createdAt: 500,
+          updatedAt: 600,
+          format: 'feature' as const,
+          sceneCount: 1,
+          archivedAt: '2026-05-25T00:00:00.000Z',
+        },
+      ]
+
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={mixedProjects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={vi.fn()}
+          onRestoreProject={vi.fn()}
+        />
+      )
+
+      fireEvent.change(screen.getByLabelText('Filter projects'), {
+        target: { value: 'salt' },
+      })
+      expect(screen.getByLabelText('Filter projects')).toHaveValue('salt')
+
+      fireEvent.click(screen.getByRole('tab', { name: /Archive \(1\)/ }))
+
+      expect(screen.getByLabelText('Filter projects')).toHaveValue('')
+      expect(within(screen.getByLabelText('Project list')).getByText('Archived One')).toBeInTheDocument()
+    })
+
     it('Archive card shows Restore + Delete and no Open (Slice 5a-2)', () => {
       const mixedProjects = [
         ...projects,

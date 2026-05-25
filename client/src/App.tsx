@@ -152,23 +152,25 @@ export default function App() {
   const persistFolderProject = useCallback(async (
     storedProject: StoredProject | undefined,
     targetProjectId: string | null,
-  ) => {
-    if (!storedProject) return
-    if (!targetProjectId || storedProject.id !== targetProjectId) return
+  ): Promise<boolean> => {
+    if (!storedProject) return true
+    if (!targetProjectId || storedProject.id !== targetProjectId) return true
 
     const nonce = ++folderSaveNonceRef.current
     try {
       const folderProject = await writeProjectRef.current(storedProject)
-      if (folderSaveNonceRef.current !== nonce) return
+      if (folderSaveNonceRef.current !== nonce) return false
       setActiveProjectStorage(current => {
         if (current.kind !== 'folder' || current.projectId !== storedProject.id) return current
         if (current.packageName === folderProject.packageName) return current
         return { kind: 'folder', projectId: storedProject.id, packageName: folderProject.packageName }
       })
       setFolderProjectError(null)
+      return true
     } catch (error) {
-      if (folderSaveNonceRef.current !== nonce) return
+      if (folderSaveNonceRef.current !== nonce) return false
       setFolderProjectError(formatFolderProjectError(error))
+      return false
     }
   }, [formatFolderProjectError])
 
@@ -177,7 +179,9 @@ export default function App() {
     const storedProject = project.activeStoredProject
     if (!storedProject || storedProject.id !== activeFolderProjectId) return
 
+    const scheduledSaveNonce = folderSaveNonceRef.current
     const timeout = window.setTimeout(() => {
+      if (folderSaveNonceRef.current !== scheduledSaveNonce) return
       void persistFolderProject(storedProject, activeFolderProjectId)
     }, 600)
 
@@ -350,6 +354,18 @@ export default function App() {
     setFolderProjectError(null)
 
     try {
+      const wasActive = project.activeProjectId === target.projectId
+      const isActiveFolderProject =
+        wasActive &&
+        activeProjectStorage.kind === 'folder' &&
+        activeProjectStorage.projectId === target.projectId
+
+      if (isActiveFolderProject) {
+        cancelPendingFolderSave()
+        const didFlush = await persistFolderProject(project.activeStoredProject, target.projectId)
+        if (!didFlush) return
+      }
+
       if (target.storageKind === 'folder') {
         const result = await projectFolder.archiveProject(target.projectId)
         if (!result.ok) {
@@ -358,7 +374,6 @@ export default function App() {
         }
       }
 
-      const wasActive = project.activeProjectId === target.projectId
       const next = project.archiveProjectById(target.projectId)
 
       if (wasActive) {
@@ -371,7 +386,7 @@ export default function App() {
     } finally {
       setArchivingProjectId(null)
     }
-  }, [archivingProjectId, cancelPendingFolderSave, project, projectFolder, shellState])
+  }, [activeProjectStorage, archivingProjectId, cancelPendingFolderSave, persistFolderProject, project, projectFolder, shellState])
 
   const handleRestoreHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeArchiveTarget) => {
     if (restoringProjectId) return

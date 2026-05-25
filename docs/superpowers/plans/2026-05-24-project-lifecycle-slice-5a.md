@@ -1,8 +1,8 @@
 # Slice 5a — Project Lifecycle (Archive + Delete cascade)
 
 **Date:** 2026-05-24
-**Status:** Planned, pre-implementation
-**Branch context:** `main` after PR #7 (Slice C screenplay indent + casing)
+**Status:** Implemented through Slice 5a-2 Archive PR review
+**Branch context:** `main` after PR #8; PR 5a-2 on `slice-5a-2-project-archive`
 **Owner PRD:** `docs/product/app-home-import-storage-prd.md` (Slice 5 — pulled forward)
 
 ## Product Framing

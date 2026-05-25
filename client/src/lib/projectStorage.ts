@@ -250,6 +250,27 @@ function isPermissionDeniedError(error: unknown): boolean {
   return error.name === 'NotAllowedError' || error.name === 'SecurityError'
 }
 
+async function removeEntryIfPresent(parent: WriterOSFileSystemDirectoryHandle, name: string): Promise<void> {
+  if (typeof parent.removeEntry !== 'function') return
+  try {
+    await parent.removeEntry(name, { recursive: true })
+  } catch {
+    // Best-effort cleanup after a failed move.
+  }
+}
+
+async function getExistingDirectoryHandle(
+  parent: WriterOSFileSystemDirectoryHandle,
+  name: string,
+): Promise<WriterOSFileSystemDirectoryHandle | null> {
+  try {
+    return await parent.getDirectoryHandle(name)
+  } catch (error) {
+    if (isNotFoundError(error)) return null
+    throw error
+  }
+}
+
 async function readTextFile(rootHandle: WriterOSFileSystemDirectoryHandle, path: string): Promise<string | undefined> {
   const parts = path.split('/').filter(Boolean)
   let directory = rootHandle
@@ -486,14 +507,27 @@ export function createFileSystemAccessProjectStorageAdapter(
           message: 'This browser cannot move project folders. Archive is unavailable.',
         }
       }
+      let archiveRoot: WriterOSFileSystemDirectoryHandle | null = null
+      let destinationCreated = false
       try {
-        const archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME, { create: true })
+        archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME, { create: true })
+        if (await getExistingDirectoryHandle(archiveRoot, ref.packageName)) {
+          return {
+            ok: false,
+            reason: 'failed',
+            message: 'Archive already contains a project folder with this name.',
+          }
+        }
         const destHandle = await archiveRoot.getDirectoryHandle(ref.packageName, { create: true })
+        destinationCreated = true
         await copyDirectoryRecursive(ref.handle, destHandle)
         await rootHandle.removeEntry(ref.packageName, { recursive: true })
         const nextRef: FileSystemAccessProjectRef = { ...ref, handle: destHandle }
         return { ok: true, ref: nextRef }
       } catch (error) {
+        if (archiveRoot && destinationCreated) {
+          await removeEntryIfPresent(archiveRoot, ref.packageName)
+        }
         if (isPermissionDeniedError(error)) {
           return {
             ok: false,
@@ -509,6 +543,7 @@ export function createFileSystemAccessProjectStorageAdapter(
       }
     },
     async restoreProject(ref) {
+      let destinationCreated = false
       try {
         const archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME)
         if (typeof archiveRoot.removeEntry !== 'function') {
@@ -518,12 +553,23 @@ export function createFileSystemAccessProjectStorageAdapter(
             message: 'This browser cannot move project folders. Restore is unavailable.',
           }
         }
+        if (await getExistingDirectoryHandle(rootHandle, ref.packageName)) {
+          return {
+            ok: false,
+            reason: 'failed',
+            message: 'Active projects already contain a folder with this name.',
+          }
+        }
         const destHandle = await rootHandle.getDirectoryHandle(ref.packageName, { create: true })
+        destinationCreated = true
         await copyDirectoryRecursive(ref.handle, destHandle)
         await archiveRoot.removeEntry(ref.packageName, { recursive: true })
         const nextRef: FileSystemAccessProjectRef = { ...ref, handle: destHandle }
         return { ok: true, ref: nextRef }
       } catch (error) {
+        if (destinationCreated) {
+          await removeEntryIfPresent(rootHandle, ref.packageName)
+        }
         if (isNotFoundError(error)) {
           return {
             ok: false,

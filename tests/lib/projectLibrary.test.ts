@@ -225,7 +225,9 @@ describe('loadActiveProjectLibrary skips archived projects (Slice 5a-2)', () => 
     const reloaded = loadActiveProjectLibrary()
 
     expect(reloaded.projects.length).toBeGreaterThan(0)
+    expect(reloaded.activeProjectId).not.toBe('')
     const reloadedActive = reloaded.projects.find(p => p.id === reloaded.activeProjectId)
+    expect(reloadedActive).toBeDefined()
     expect(reloadedActive?.archivedAt).toBeFalsy()
   })
 

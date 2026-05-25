@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type {
@@ -101,6 +101,10 @@ export function HomeSurface({
   const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<HomeArchiveTarget | null>(null)
   const [view, setView] = useState<HomeView>(initialView)
+  const switchView = useCallback((next: HomeView) => {
+    if (next !== view) setQuery('')
+    setView(next)
+  }, [view])
   const fdxInputRef = useRef<HTMLInputElement>(null)
   const storage = storageStatus ?? {
     status: 'browser-fallback' as const,
@@ -326,7 +330,7 @@ export function HomeSurface({
           role="tab"
           aria-selected={view === 'active'}
           style={view === 'active' ? styles.viewToggleButtonActive : styles.viewToggleButton}
-          onClick={() => setView('active')}
+          onClick={() => switchView('active')}
         >
           Active ({activeCount})
         </button>
@@ -335,7 +339,7 @@ export function HomeSurface({
           role="tab"
           aria-selected={view === 'archive'}
           style={view === 'archive' ? styles.viewToggleButtonActive : styles.viewToggleButton}
-          onClick={() => setView('archive')}
+          onClick={() => switchView('archive')}
         >
           Archive ({archivedCount})
         </button>

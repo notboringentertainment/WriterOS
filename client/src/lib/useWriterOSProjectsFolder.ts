@@ -166,6 +166,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
 
     setLabel(adapter.label)
     setProjects(nextProjects.projects)
+    setArchivedProjects(nextProjects.archivedProjects)
     setCorruptProjects(nextProjects.corruptProjects)
     setStatus('ready')
   }, [updateProjectRefs])
