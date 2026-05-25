@@ -16,6 +16,16 @@ export interface StoredProject {
   // active-project selection on reload; they remain restorable from the
   // Home Archive view.
   archivedAt?: string
+  // Slice 4: marker stamped when this project has been migrated to a
+  // folder-backed package via the File System Access adapter. Constraint-only
+  // for this slice — the marker is preserved through read/write but not yet
+  // surfaced in UI. `packageName` is the on-disk folder name; `folderLabel`
+  // is the user-readable parent folder; `migratedAt` is the ISO-8601 stamp.
+  migratedToFolder?: {
+    folderLabel: string
+    packageName: string
+    migratedAt: string
+  }
 }
 
 export interface ProjectSummary {
@@ -48,6 +58,11 @@ function hasPersistedProjectLibrary(): boolean {
   return localStorage.getItem(PROJECT_LIBRARY_KEY) !== null
 }
 
+// Test-only re-export: exposes the otherwise-private readProjectLibrary so
+// tests can verify raw localStorage round-trips without going through the
+// loadActiveProjectLibrary auto-seed / active-selection logic.
+export const __testReadProjectLibrary = (): StoredProject[] => readProjectLibrary()
+
 function readProjectLibrary(): StoredProject[] {
   try {
     const raw = localStorage.getItem(PROJECT_LIBRARY_KEY)
@@ -61,12 +76,25 @@ function readProjectLibrary(): StoredProject[] {
         const candidate = item as Partial<StoredProject>
         if (typeof candidate.id !== 'string' || !candidate.state) return null
         const archivedAt = typeof candidate.archivedAt === 'string' ? candidate.archivedAt : undefined
+        const migratedToFolder =
+          candidate.migratedToFolder &&
+          typeof candidate.migratedToFolder === 'object' &&
+          typeof candidate.migratedToFolder.folderLabel === 'string' &&
+          typeof candidate.migratedToFolder.packageName === 'string' &&
+          typeof candidate.migratedToFolder.migratedAt === 'string'
+            ? {
+                folderLabel: candidate.migratedToFolder.folderLabel,
+                packageName: candidate.migratedToFolder.packageName,
+                migratedAt: candidate.migratedToFolder.migratedAt,
+              }
+            : undefined
         return {
           id: candidate.id,
           createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : now(),
           updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : now(),
           state: migrateState(candidate.state),
           ...(archivedAt ? { archivedAt } : {}),
+          ...(migratedToFolder ? { migratedToFolder } : {}),
         }
       })
       .filter((item): item is StoredProject => item !== null)
@@ -158,6 +186,8 @@ export function saveProjectToLibrary(projectId: string, state: ProjectState, pro
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     state,
+    ...(existing?.archivedAt ? { archivedAt: existing.archivedAt } : {}),
+    ...(existing?.migratedToFolder ? { migratedToFolder: existing.migratedToFolder } : {}),
   }
   const nextProjects = [
     nextProject,

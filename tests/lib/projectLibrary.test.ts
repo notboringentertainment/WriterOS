@@ -7,6 +7,8 @@ import {
   saveProjectToLibrary,
   deleteProjectFromLibrary,
   restoreProjectInLibrary,
+  summarizeProjects,
+  __testReadProjectLibrary,
 } from '../../client/src/lib/projectLibrary'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
@@ -242,6 +244,87 @@ describe('loadActiveProjectLibrary skips archived projects (Slice 5a-2)', () => 
     // Archived project is preserved in storage so the writer can restore it.
     expect(reloaded.projects).toHaveLength(1)
     expect(reloaded.projects[0].archivedAt).toBeTruthy()
+  })
+})
+
+describe('migratedToFolder marker (Slice 4)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('round-trips a migrated marker through readProjectLibrary', () => {
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 'Project (abc12345).writeros',
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const projects = __testReadProjectLibrary()
+    const summaries = summarizeProjects(projects)
+    expect(summaries[0]).toMatchObject({ id: 'p1' })
+    expect(projects[0].migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Project (abc12345).writeros',
+      migratedAt: '2026-05-25T12:00:00.000Z',
+    })
+  })
+
+  it('drops migratedToFolder when nested fields are not all strings', () => {
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 123, // invalid: not a string
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const projects = __testReadProjectLibrary()
+    expect(projects[0].migratedToFolder).toBeUndefined()
+  })
+
+  it('survives writeProjectLibrary round-trip via saveProjectToLibrary', () => {
+    // Seed library with a project that already has migratedToFolder.
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 'Project (abc12345).writeros',
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const initial = __testReadProjectLibrary()
+    // Save the same project state through the standard write path.
+    saveProjectToLibrary('p1', initial[0].state, initial)
+
+    const reread = __testReadProjectLibrary()
+    expect(reread[0].migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Project (abc12345).writeros',
+      migratedAt: '2026-05-25T12:00:00.000Z',
+    })
   })
 })
 
