@@ -93,6 +93,8 @@ export default function App() {
   const [importingFdx, setImportingFdx] = useState(false)
   const [scriptImportNonce, setScriptImportNonce] = useState(0)
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
+  const [archivingProjectId, setArchivingProjectId] = useState<string | null>(null)
+  const [restoringProjectId, setRestoringProjectId] = useState<string | null>(null)
   const folderSaveNonceRef = useRef(0)
   const writeProjectRef = useRef(projectFolder.writeProject)
   writeProjectRef.current = projectFolder.writeProject
@@ -342,6 +344,55 @@ export default function App() {
     }
   }, [cancelPendingFolderSave, project, shellState])
 
+  const handleArchiveHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeArchiveTarget) => {
+    if (archivingProjectId) return
+    setArchivingProjectId(target.projectId)
+    setFolderProjectError(null)
+
+    try {
+      if (target.storageKind === 'folder') {
+        const result = await projectFolder.archiveProject(target.projectId)
+        if (!result.ok) {
+          setFolderProjectError(result.message)
+          return
+        }
+      }
+
+      const wasActive = project.activeProjectId === target.projectId
+      const next = project.archiveProjectById(target.projectId)
+
+      if (wasActive) {
+        cancelPendingFolderSave()
+        setActiveProjectStorage({ kind: 'browser' })
+      }
+      if (!next.activeProjectId) {
+        shellState.openHome()
+      }
+    } finally {
+      setArchivingProjectId(null)
+    }
+  }, [archivingProjectId, cancelPendingFolderSave, project, projectFolder, shellState])
+
+  const handleRestoreHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeArchiveTarget) => {
+    if (restoringProjectId) return
+    setRestoringProjectId(target.projectId)
+    setFolderProjectError(null)
+
+    try {
+      if (target.storageKind === 'folder') {
+        const result = await projectFolder.restoreProject(target.projectId)
+        if (!result.ok) {
+          setFolderProjectError(result.message)
+          return
+        }
+      }
+
+      project.restoreProjectById(target.projectId)
+    } finally {
+      setRestoringProjectId(null)
+    }
+  }, [project, projectFolder, restoringProjectId])
+
   const handleDeleteHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeDeleteTarget) => {
     if (deletingProjectId) return
     setDeletingProjectId(target.projectId)
@@ -561,10 +612,15 @@ export default function App() {
           activeStorageKind={activeProjectStorage.kind}
           openingFolderProjectId={openingFolderProjectId}
           deletingProjectId={deletingProjectId}
+          archivingProjectId={archivingProjectId}
+          restoringProjectId={restoringProjectId}
+          archivedFolderProjects={projectFolder.archivedProjects}
           onOpenProject={handleOpenBrowserProject}
           onOpenFolderProject={handleOpenFolderProject}
           onNewProject={handleNewProject}
           onDeleteProject={handleDeleteHomeProject}
+          onArchiveProject={handleArchiveHomeProject}
+          onRestoreProject={handleRestoreHomeProject}
           onImportFdx={handleImportFdxAsNewProject}
           importingFdx={importingFdx}
           importError={fdxImportError}

@@ -17,6 +17,9 @@ import { summarizeProjects } from './projectLibrary'
 
 export const DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL = '~/WriterOS Projects'
 export const FILE_SYSTEM_ACCESS_PICKER_ID = 'writeros-projects'
+// Visible subfolder under the chosen WriterOS Projects folder that holds
+// archived `.writeros` packages. The writer can see and back this up.
+export const WRITEROS_ARCHIVE_SUBFOLDER_NAME = 'Archive'
 
 export interface WriterOSFileSystemWritable {
   write(data: string): Promise<void>
@@ -67,16 +70,23 @@ export type ProjectStorageListEntry<TRef extends ProjectStorageProjectRef = Proj
       status: 'ready'
       ref: TRef
       warnings: string[]
+      // True when the package was discovered inside the Archive/ subfolder.
+      archived?: boolean
     }
   | {
       status: 'corrupt'
       packageName: string
       error: ProjectPackageReadError
       warnings: string[]
+      archived?: boolean
     }
 
 export type RemoveProjectResult =
   | { ok: true; folderAlreadyMissing: boolean }
+  | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
+
+export type ArchiveProjectResult<TRef extends ProjectStorageProjectRef> =
+  | { ok: true; ref: TRef }
   | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
 
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
@@ -87,6 +97,8 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   readProject(ref: TRef): Promise<ProjectPackageReadResult>
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
+  archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
+  restoreProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
 }
 
 type ShowDirectoryPicker = (options?: {
@@ -294,6 +306,28 @@ async function writeProjectPackageFiles(
   }
 }
 
+async function copyDirectoryRecursive(
+  source: WriterOSFileSystemDirectoryHandle,
+  destination: WriterOSFileSystemDirectoryHandle,
+): Promise<void> {
+  for await (const [name, handle] of iterateProjectFolder(source)) {
+    if (handle.kind === 'file') {
+      const file = await handle.getFile()
+      const content = await file.text()
+      const destFile = await destination.getFileHandle(name, { create: true })
+      const writable = await destFile.createWritable()
+      try {
+        await writable.write(content)
+      } finally {
+        await writable.close()
+      }
+    } else {
+      const destSub = await destination.getDirectoryHandle(name, { create: true })
+      await copyDirectoryRecursive(handle, destSub)
+    }
+  }
+}
+
 async function* iterateProjectFolder(rootHandle: WriterOSFileSystemDirectoryHandle): AsyncIterableIterator<[string, WriterOSFileSystemHandle]> {
   if (rootHandle.entries) {
     yield* rootHandle.entries()
@@ -334,9 +368,15 @@ export function createFileSystemAccessProjectStorageAdapter(
     defaultFolderLabel: DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
     async listProjects() {
       const entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>> = []
+      let archiveHandle: WriterOSFileSystemDirectoryHandle | undefined
 
       for await (const [packageName, handle] of iterateProjectFolder(rootHandle)) {
-        if (handle.kind !== 'directory' || !packageName.endsWith(WRITEROS_PACKAGE_EXTENSION)) continue
+        if (handle.kind !== 'directory') continue
+        if (packageName === WRITEROS_ARCHIVE_SUBFOLDER_NAME) {
+          archiveHandle = handle
+          continue
+        }
+        if (!packageName.endsWith(WRITEROS_PACKAGE_EXTENSION)) continue
 
         const result = readWriterOSProjectPackage(await readProjectPackageFiles(handle))
         if (result.ok) {
@@ -352,6 +392,35 @@ export function createFileSystemAccessProjectStorageAdapter(
             error: result.error,
             warnings: result.warnings,
           })
+        }
+      }
+
+      if (archiveHandle) {
+        for await (const [packageName, handle] of iterateProjectFolder(archiveHandle)) {
+          if (handle.kind !== 'directory' || !packageName.endsWith(WRITEROS_PACKAGE_EXTENSION)) continue
+          const result = readWriterOSProjectPackage(await readProjectPackageFiles(handle))
+          if (result.ok) {
+            // Stamp archivedAt on the StoredProject so the UI can render the
+            // archived view consistently. The package on disk does not store
+            // archivedAt independently in V1 — its location under Archive/ is
+            // the source of truth.
+            const archivedAt = result.project.archivedAt || new Date(result.project.updatedAt).toISOString()
+            const stampedProject: StoredProject = { ...result.project, archivedAt }
+            entries.push({
+              status: 'ready',
+              ref: refFromProject(packageName, handle, stampedProject, result.manifest),
+              warnings: result.warnings,
+              archived: true,
+            })
+          } else {
+            entries.push({
+              status: 'corrupt',
+              packageName,
+              error: result.error,
+              warnings: result.warnings,
+              archived: true,
+            })
+          }
         }
       }
 
@@ -377,8 +446,19 @@ export function createFileSystemAccessProjectStorageAdapter(
           message: 'This browser cannot delete project folders. Remove the folder from disk manually.',
         }
       }
+      // ref.handle may live under Archive/ if the project was archived;
+      // pick the correct parent to call removeEntry on.
+      const parent = await getPackageParentHandle(rootHandle, ref.handle).catch(() => rootHandle)
+      const remover: WriterOSFileSystemDirectoryHandle = parent
       try {
-        await rootHandle.removeEntry(ref.packageName, { recursive: true })
+        if (typeof remover.removeEntry !== 'function') {
+          return {
+            ok: false,
+            reason: 'unsupported',
+            message: 'This browser cannot delete project folders. Remove the folder from disk manually.',
+          }
+        }
+        await remover.removeEntry(ref.packageName, { recursive: true })
         return { ok: true, folderAlreadyMissing: false }
       } catch (error) {
         if (isNotFoundError(error)) {
@@ -398,5 +478,92 @@ export function createFileSystemAccessProjectStorageAdapter(
         }
       }
     },
+    async archiveProject(ref) {
+      if (typeof rootHandle.removeEntry !== 'function') {
+        return {
+          ok: false,
+          reason: 'unsupported',
+          message: 'This browser cannot move project folders. Archive is unavailable.',
+        }
+      }
+      try {
+        const archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME, { create: true })
+        const destHandle = await archiveRoot.getDirectoryHandle(ref.packageName, { create: true })
+        await copyDirectoryRecursive(ref.handle, destHandle)
+        await rootHandle.removeEntry(ref.packageName, { recursive: true })
+        const nextRef: FileSystemAccessProjectRef = { ...ref, handle: destHandle }
+        return { ok: true, ref: nextRef }
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          return {
+            ok: false,
+            reason: 'permission-denied',
+            message: 'WriterOS could not move the project to Archive because permission was denied.',
+          }
+        }
+        return {
+          ok: false,
+          reason: 'failed',
+          message: error instanceof Error ? error.message : 'Unable to archive the project folder.',
+        }
+      }
+    },
+    async restoreProject(ref) {
+      try {
+        const archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME)
+        if (typeof archiveRoot.removeEntry !== 'function') {
+          return {
+            ok: false,
+            reason: 'unsupported',
+            message: 'This browser cannot move project folders. Restore is unavailable.',
+          }
+        }
+        const destHandle = await rootHandle.getDirectoryHandle(ref.packageName, { create: true })
+        await copyDirectoryRecursive(ref.handle, destHandle)
+        await archiveRoot.removeEntry(ref.packageName, { recursive: true })
+        const nextRef: FileSystemAccessProjectRef = { ...ref, handle: destHandle }
+        return { ok: true, ref: nextRef }
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return {
+            ok: false,
+            reason: 'failed',
+            message: 'Archived project folder is missing from disk.',
+          }
+        }
+        if (isPermissionDeniedError(error)) {
+          return {
+            ok: false,
+            reason: 'permission-denied',
+            message: 'WriterOS could not restore the project because permission was denied.',
+          }
+        }
+        return {
+          ok: false,
+          reason: 'failed',
+          message: error instanceof Error ? error.message : 'Unable to restore the project folder.',
+        }
+      }
+    },
   }
+}
+
+async function getPackageParentHandle(
+  rootHandle: WriterOSFileSystemDirectoryHandle,
+  packageHandle: WriterOSFileSystemDirectoryHandle,
+): Promise<WriterOSFileSystemDirectoryHandle> {
+  // The package was archived if it lives inside Archive/. Resolve the parent
+  // by looking up the Archive subfolder and checking whether the package's
+  // identity (by name) is present.
+  try {
+    const archiveRoot = await rootHandle.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME)
+    for await (const [name, handle] of iterateProjectFolder(archiveRoot)) {
+      if (handle.kind === 'directory' && name === packageHandle.name) {
+        return archiveRoot
+      }
+    }
+  } catch {
+    // Archive folder not present; fall through.
+  }
+  return rootHandle
 }

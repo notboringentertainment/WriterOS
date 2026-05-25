@@ -11,19 +11,31 @@ export type HomeDeleteTarget =
   | { storageKind: 'browser'; projectId: string; title: string }
   | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
 
+export type HomeArchiveTarget =
+  | { storageKind: 'browser'; projectId: string; title: string }
+  | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
+
+export type HomeView = 'active' | 'archive'
+
 interface HomeSurfaceProps {
   activeProjectId: string
   projects: ProjectSummary[]
   folderProjects?: WriterOSFolderProject[]
+  archivedFolderProjects?: WriterOSFolderProject[]
   corruptFolderProjects?: WriterOSCorruptFolderProject[]
   storageStatus?: HomeProjectStorageStatus
   activeStorageKind?: 'browser' | 'folder'
   openingFolderProjectId?: string | null
   deletingProjectId?: string | null
+  archivingProjectId?: string | null
+  restoringProjectId?: string | null
+  initialView?: HomeView
   onOpenProject: (projectId: string) => void
   onOpenFolderProject?: (projectId: string) => void
   onNewProject: () => void
   onDeleteProject?: (target: HomeDeleteTarget) => void | Promise<void>
+  onArchiveProject?: (target: HomeArchiveTarget) => void | Promise<void>
+  onRestoreProject?: (target: HomeArchiveTarget) => void | Promise<void>
   onImportFdx?: (file: File) => void | Promise<void>
   importingFdx?: boolean
   importError?: string | null
@@ -48,27 +60,35 @@ type HomeProjectRow =
   | {
       storageKind: 'browser'
       project: ProjectSummary
+      archived: boolean
     }
   | {
       storageKind: 'folder'
       project: ProjectSummary
       packageName: string
       warnings: string[]
+      archived: boolean
     }
 
 export function HomeSurface({
   activeProjectId,
   projects,
   folderProjects = [],
+  archivedFolderProjects = [],
   corruptFolderProjects = [],
   storageStatus,
   activeStorageKind = 'browser',
   openingFolderProjectId = null,
   deletingProjectId = null,
+  archivingProjectId = null,
+  restoringProjectId = null,
+  initialView = 'active',
   onOpenProject,
   onOpenFolderProject,
   onNewProject,
   onDeleteProject,
+  onArchiveProject,
+  onRestoreProject,
   onImportFdx,
   importingFdx = false,
   importError = null,
@@ -79,6 +99,8 @@ export function HomeSurface({
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<HomeArchiveTarget | null>(null)
+  const [view, setView] = useState<HomeView>(initialView)
   const fdxInputRef = useRef<HTMLInputElement>(null)
   const storage = storageStatus ?? {
     status: 'browser-fallback' as const,
@@ -94,19 +116,37 @@ export function HomeSurface({
 
   const projectRows = useMemo<HomeProjectRow[]>(() => {
     if (showingFolderProjects) {
-      return folderProjects.map(folderProject => ({
+      const source = view === 'archive' ? archivedFolderProjects : folderProjects
+      return source.map(folderProject => ({
         storageKind: 'folder',
         project: folderProject.summary,
         packageName: folderProject.packageName,
         warnings: folderProject.warnings,
+        archived: view === 'archive',
       }))
     }
 
-    return projects.map(project => ({
+    const partition = view === 'archive'
+      ? projects.filter(project => project.archivedAt)
+      : projects.filter(project => !project.archivedAt)
+
+    return partition.map(project => ({
       storageKind: 'browser',
       project,
+      archived: Boolean(project.archivedAt),
     }))
-  }, [folderProjects, projects, showingFolderProjects])
+  }, [archivedFolderProjects, folderProjects, projects, showingFolderProjects, view])
+
+  const activeBrowserCount = useMemo(
+    () => projects.filter(project => !project.archivedAt).length,
+    [projects],
+  )
+  const archivedBrowserCount = useMemo(
+    () => projects.filter(project => project.archivedAt).length,
+    [projects],
+  )
+  const activeCount = showingFolderProjects ? folderProjects.length : activeBrowserCount
+  const archivedCount = showingFolderProjects ? archivedFolderProjects.length : archivedBrowserCount
 
   const visibleProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -135,7 +175,7 @@ export function HomeSurface({
     ? onRefreshProjectFolder
     : onChooseProjectFolder
   const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
-  const projectCount = showingFolderProjects ? folderProjects.length : projects.length
+  const projectCount = view === 'archive' ? archivedCount : activeCount
   const projectCountMeta = showingFolderProjects
     ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
     : 'Saved in this browser'
@@ -280,6 +320,27 @@ export function HomeSurface({
         </div>
       )}
 
+      <div style={styles.viewToggle} role="tablist" aria-label="Project view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'active'}
+          style={view === 'active' ? styles.viewToggleButtonActive : styles.viewToggleButton}
+          onClick={() => setView('active')}
+        >
+          Active ({activeCount})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'archive'}
+          style={view === 'archive' ? styles.viewToggleButtonActive : styles.viewToggleButton}
+          onClick={() => setView('archive')}
+        >
+          Archive ({archivedCount})
+        </button>
+      </div>
+
       <div style={styles.toolbar}>
         <label style={styles.searchLabel}>
           <span style={styles.statusLabel}>Filter</span>
@@ -309,8 +370,8 @@ export function HomeSurface({
       <div style={styles.projectList} aria-label="Project list">
         {visibleProjects.length === 0 ? (
           <div style={styles.empty}>
-            <p>{formatEmptyState(query, showingFolderProjects, storage.status)}</p>
-            {query.trim() === '' && !showingFolderProjects && (
+            <p>{formatEmptyState(query, showingFolderProjects, storage.status, view)}</p>
+            {query.trim() === '' && view === 'active' && !showingFolderProjects && (
               <div style={styles.emptyActions}>
                 <button type="button" style={styles.primaryButton} onClick={onNewProject}>
                   New Project
@@ -348,18 +409,70 @@ export function HomeSurface({
                 )}
               </div>
               <div style={styles.projectActions}>
-                <button
-                  type="button"
-                  style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
-                  aria-label={`Open ${projectTitle}`}
-                  disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
-                  onClick={() => {
-                    if (row.storageKind === 'browser') onOpenProject(row.project.id)
-                    else onOpenFolderProject?.(row.project.id)
-                  }}
-                >
-                  {isOpening ? 'Opening' : 'Open'}
-                </button>
+                {!row.archived && (
+                  <button
+                    type="button"
+                    style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
+                    aria-label={`Open ${projectTitle}`}
+                    disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
+                    onClick={() => {
+                      if (row.storageKind === 'browser') onOpenProject(row.project.id)
+                      else onOpenFolderProject?.(row.project.id)
+                    }}
+                  >
+                    {isOpening ? 'Opening' : 'Open'}
+                  </button>
+                )}
+                {row.archived && onRestoreProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Restore ${projectTitle}`}
+                    disabled={restoringProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeArchiveTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      void onRestoreProject(target)
+                    }}
+                  >
+                    {restoringProjectId === row.project.id ? 'Restoring' : 'Restore'}
+                  </button>
+                )}
+                {!row.archived && onArchiveProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Archive ${projectTitle}`}
+                    disabled={archivingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeArchiveTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      setArchiveTarget(target)
+                    }}
+                  >
+                    {archivingProjectId === row.project.id ? 'Archiving' : 'Archive'}
+                  </button>
+                )}
                 {onDeleteProject && (
                   <button
                     type="button"
@@ -390,6 +503,52 @@ export function HomeSurface({
           )
         })}
       </div>
+
+      {archiveTarget && (
+        <div role="dialog" aria-modal="true" aria-labelledby="home-archive-title" style={styles.modalBackdrop}>
+          <div style={styles.modalCard}>
+            <h2 id="home-archive-title" style={styles.modalTitle}>
+              Archive &ldquo;{archiveTarget.title}&rdquo;?
+            </h2>
+            <p style={styles.modalBody}>
+              The project will be hidden from your Active list and moved into the Archive view. You can restore it from there at any time.
+            </p>
+            {archiveTarget.storageKind === 'folder' && (
+              <p style={styles.modalBody}>
+                The <code>{archiveTarget.packageName}</code> folder will be moved into <code>Archive/</code> inside your WriterOS Projects folder.
+              </p>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setArchiveTarget(null)}
+                disabled={archivingProjectId === archiveTarget.projectId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                disabled={archivingProjectId === archiveTarget.projectId}
+                onClick={async () => {
+                  const target = archiveTarget
+                  if (!target) return
+                  try {
+                    await onArchiveProject?.(target)
+                  } catch {
+                    // Parent surfaces failure via the storage-error notice.
+                  } finally {
+                    setArchiveTarget(null)
+                  }
+                }}
+              >
+                {archivingProjectId === archiveTarget.projectId ? 'Archiving' : 'Archive project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div role="dialog" aria-modal="true" aria-labelledby="home-delete-title" style={styles.modalBackdrop}>
@@ -510,8 +669,14 @@ function formatEmptyState(
   query: string,
   showingFolderProjects: boolean,
   storageStatus: HomeStorageStatusKind,
+  view: HomeView,
 ) {
   if (query.trim()) return 'No projects match that filter.'
+  if (view === 'archive') {
+    return showingFolderProjects
+      ? 'No archived .writeros projects in this folder.'
+      : 'No archived projects yet. Archive a project from the Active list to keep it restorable.'
+  }
   if (!showingFolderProjects) return 'No projects yet. Create a new project or import a Final Draft .fdx to get started.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
   if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
@@ -682,6 +847,34 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg-muted)',
     fontSize: 14,
     marginTop: 4,
+  },
+  viewToggle: {
+    maxWidth: 1080,
+    margin: '0 auto 12px',
+    display: 'flex',
+    gap: 8,
+  },
+  viewToggleButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '8px 14px',
+  },
+  viewToggleButtonActive: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--primary-dim)',
+    borderRadius: 6,
+    background: 'var(--primary-dim)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '8px 14px',
   },
   toolbar: {
     maxWidth: 1080,

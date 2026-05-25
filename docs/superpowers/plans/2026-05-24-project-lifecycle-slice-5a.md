@@ -167,9 +167,14 @@ Out of scope for 5a-1:
 - Rename refactor.
 - Card substance indicators beyond title/format/updated.
 
-### PR 5a-2 — Archive
+### PR 5a-2 — Archive (implemented)
 
 Branch: `slice-5a-2-project-archive`
+
+Inline Rename on Home cards is intentionally deferred to a follow-up: the
+existing rename uses a TopBar inline title editor that does not reuse cleanly
+on Home cards. Renaming via the open project still works; surfacing it on
+Home cards is its own small slice.
 
 Scope:
 

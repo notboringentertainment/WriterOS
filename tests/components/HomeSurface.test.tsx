@@ -520,6 +520,195 @@ describe('HomeSurface', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
+    it('shows Active/Archive toggle with counts and filters cards (Slice 5a-2)', () => {
+      const mixedProjects = [
+        ...projects,
+        {
+          id: 'project-3',
+          title: 'Archived One',
+          createdAt: 500,
+          updatedAt: 600,
+          format: 'feature' as const,
+          sceneCount: 1,
+          archivedAt: '2026-05-25T00:00:00.000Z',
+        },
+      ]
+
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={mixedProjects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={vi.fn()}
+          onRestoreProject={vi.fn()}
+        />
+      )
+
+      // Active count = 2 (project-1, project-2), Archive count = 1
+      const activeTab = screen.getByRole('tab', { name: /Active \(2\)/ })
+      const archiveTab = screen.getByRole('tab', { name: /Archive \(1\)/ })
+      expect(activeTab).toHaveAttribute('aria-selected', 'true')
+      expect(archiveTab).toHaveAttribute('aria-selected', 'false')
+
+      // Active list shows non-archived projects.
+      let list = screen.getByLabelText('Project list')
+      expect(within(list).getByText('The Salt Line')).toBeInTheDocument()
+      expect(within(list).getByText('Quiet Frequencies')).toBeInTheDocument()
+      expect(within(list).queryByText('Archived One')).not.toBeInTheDocument()
+
+      fireEvent.click(archiveTab)
+
+      list = screen.getByLabelText('Project list')
+      expect(within(list).getByText('Archived One')).toBeInTheDocument()
+      expect(within(list).queryByText('The Salt Line')).not.toBeInTheDocument()
+    })
+
+    it('Archive card shows Restore + Delete and no Open (Slice 5a-2)', () => {
+      const mixedProjects = [
+        ...projects,
+        {
+          id: 'project-3',
+          title: 'Archived One',
+          createdAt: 500,
+          updatedAt: 600,
+          format: 'feature' as const,
+          sceneCount: 1,
+          archivedAt: '2026-05-25T00:00:00.000Z',
+        },
+      ]
+
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={mixedProjects}
+          initialView="archive"
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={vi.fn()}
+          onRestoreProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+        />
+      )
+
+      expect(screen.getByRole('button', { name: 'Restore Archived One' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Delete Archived One' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Open Archived One' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Archive Archived One' })).not.toBeInTheDocument()
+    })
+
+    it('opens an Archive confirm modal with exact title and cascade copy (Slice 5a-2)', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={vi.fn()}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Archive Quiet Frequencies' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText(/Archive .*Quiet Frequencies/)).toBeInTheDocument()
+      expect(within(dialog).getByText(/hidden from your Active list/)).toBeInTheDocument()
+    })
+
+    it('mentions the Archive subfolder move for folder-backed projects (Slice 5a-2)', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          folderProjects={[
+            {
+              id: 'project-1',
+              packageName: 'The Salt Line.writeros',
+              summary: projects[0],
+              warnings: [],
+            },
+          ]}
+          storageStatus={{
+            status: 'ready',
+            label: 'WriterOS Projects',
+            defaultFolderLabel: '~/WriterOS Projects',
+            fileSystemAccessSupported: true,
+            folderPersistenceSupported: true,
+            errorMessage: null,
+          }}
+          activeStorageKind="folder"
+          onOpenProject={vi.fn()}
+          onOpenFolderProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={vi.fn()}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Archive The Salt Line' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText(/The Salt Line\.writeros/)).toBeInTheDocument()
+      expect(dialog.textContent).toMatch(/moved into/)
+    })
+
+    it('calls onArchiveProject with the correct target on confirm (Slice 5a-2)', async () => {
+      const onArchiveProject = vi.fn().mockResolvedValue(undefined)
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onArchiveProject={onArchiveProject}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Archive The Salt Line' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive project' }))
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(onArchiveProject).toHaveBeenCalledWith({
+        storageKind: 'browser',
+        projectId: 'project-1',
+        title: 'The Salt Line',
+      })
+    })
+
+    it('Restore button fires onRestoreProject with the archive target (Slice 5a-2)', () => {
+      const onRestoreProject = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={[
+            {
+              id: 'project-archive',
+              title: 'Old Draft',
+              createdAt: 500,
+              updatedAt: 600,
+              format: 'feature' as const,
+              sceneCount: 0,
+              archivedAt: '2026-05-25T00:00:00.000Z',
+            },
+          ]}
+          initialView="archive"
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onRestoreProject={onRestoreProject}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore Old Draft' }))
+
+      expect(onRestoreProject).toHaveBeenCalledWith({
+        storageKind: 'browser',
+        projectId: 'project-archive',
+        title: 'Old Draft',
+      })
+    })
+
     it('shows Create / Import CTAs in the empty browser state', () => {
       const onNewProject = vi.fn()
       const onImportFdx = vi.fn()
