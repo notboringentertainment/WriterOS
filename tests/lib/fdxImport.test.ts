@@ -122,7 +122,31 @@ describe('Final Draft .fdx import', () => {
       '<p data-element-type="action">The glamorous event is in full swing.</p>',
       '<p data-element-type="character">ISAIAH</p>',
     ].join('\n'))
-    expect(imported.warnings).toEqual([])
+    expect(imported.warnings).toEqual([
+      '4 blank Final Draft paragraphs dropped because WriterOS renders screenplay spacing from element rules.',
+    ])
+  })
+
+  it('warns when page markers are dropped because pagination import is deferred', () => {
+    const imported = importFdxXml(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <FinalDraft DocumentType="Script" Template="No" Version="5">
+        <Content>
+          <Paragraph Type="Scene Heading"><Text>INT. ROOM - DAY</Text></Paragraph>
+          <Paragraph Type="Page Break" />
+          <Paragraph><DynamicLabel Type="Page #" /></Paragraph>
+          <Paragraph Type="Action"><Text>The next page starts here.</Text></Paragraph>
+        </Content>
+      </FinalDraft>
+    `)
+
+    expect(imported.rawHtml).toBe([
+      '<p data-element-type="scene-heading">INT. ROOM - DAY</p>',
+      '<p data-element-type="action">The next page starts here.</p>',
+    ].join('\n'))
+    expect(imported.warnings).toEqual([
+      '2 Final Draft page markers dropped because pagination import is not yet supported.',
+    ])
   })
 
   it('still warns when a non-blank paragraph has no Final Draft type', () => {
@@ -140,6 +164,22 @@ describe('Final Draft .fdx import', () => {
     expect(imported.warnings).toEqual([
       'Final Draft paragraph without a type imported as Action.',
     ])
+  })
+
+  it('keeps the dirty screenshot FDX fixture free of metadata spacing blocks', () => {
+    const imported = importFdxXml(readFixture('dirty-spacing.fdx'), {
+      filename: 'dirty-spacing.fdx',
+    })
+
+    expect(imported.rawHtml).toBe([
+      '<p data-element-type="action">A beat.</p>',
+      '<p data-element-type="character">DANTE (O.S.)</p>',
+      '<p data-element-type="dialogue">Roger that.</p>',
+      '<p data-element-type="scene-heading">INT. BALLROOM - later</p>',
+      '<p data-element-type="action">The glamorous event is in full swing. ISAIAH moves with a sense of purpose, his eyes never resting as he scans for any potential threats.</p>',
+    ].join('\n'))
+    expect(imported.rawHtml).not.toContain('></p>')
+    expect(imported.warnings).toEqual([])
   })
 
   it('reports missing or blank Content safely', () => {

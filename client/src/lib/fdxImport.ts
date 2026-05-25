@@ -58,6 +58,15 @@ function descendants(element: Element, name: string): Element[] {
   return found
 }
 
+function isNestedInsideParagraph(element: Element, boundary: Element): boolean {
+  let parent = element.parentElement
+  while (parent && parent !== boundary) {
+    if (localName(parent) === 'Paragraph') return true
+    parent = parent.parentElement
+  }
+  return false
+}
+
 function hasXmlParseError(doc: Document): boolean {
   return localName(doc.documentElement) === 'parsererror' || doc.getElementsByTagName('parsererror').length > 0
 }
@@ -91,6 +100,18 @@ function typeForParagraph(paragraph: Element, warnings: string[]): ElementType {
       : 'Final Draft paragraph without a type imported as Action.',
   )
   return 'action'
+}
+
+function finalDraftParagraphType(paragraph: Element): string {
+  return (paragraph.getAttribute('Type') ?? '').trim()
+}
+
+function formatDroppedCount(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function hasDynamicLabel(paragraph: Element): boolean {
+  return descendants(paragraph, 'DynamicLabel').length > 0
 }
 
 function extractTitle(root: Element): string | null {
@@ -136,15 +157,38 @@ export function importFdxXml(
 
   const warnings: string[] = []
   const paragraphs = descendants(content, 'Paragraph')
+    .filter(paragraph => !isNestedInsideParagraph(paragraph, content))
+  let droppedBlankParagraphs = 0
+  let droppedPageMarkers = 0
   const blocks = paragraphs.flatMap(paragraph => {
     const text = paragraphText(paragraph)
-    if (text.length === 0) return []
+    if (text.length === 0) {
+      const paragraphType = finalDraftParagraphType(paragraph)
+      if (paragraphType === 'Page Break' || hasDynamicLabel(paragraph)) {
+        droppedPageMarkers += 1
+      } else {
+        droppedBlankParagraphs += 1
+      }
+      return []
+    }
 
     return [{
       type: typeForParagraph(paragraph, warnings),
       text,
     }]
   })
+
+  // Blank paragraphs are source noise: spacing is rendered from screenplay.ts adjacency rules.
+  if (droppedBlankParagraphs > 0) {
+    warnings.push(
+      `${formatDroppedCount(droppedBlankParagraphs, 'blank Final Draft paragraph')} dropped because WriterOS renders screenplay spacing from element rules.`,
+    )
+  }
+  if (droppedPageMarkers > 0) {
+    warnings.push(
+      `${formatDroppedCount(droppedPageMarkers, 'Final Draft page marker')} dropped because pagination import is not yet supported.`,
+    )
+  }
 
   if (blocks.length === 0) {
     throw new FdxImportError('missing-content', 'This Final Draft file does not contain importable screenplay text.')
