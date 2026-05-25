@@ -121,6 +121,7 @@ describe('normalizeElementType', () => {
   it('keeps known element types and falls back to action for unknown stored values', () => {
     expect(normalizeElementType('dialogue')).toBe('dialogue')
     expect(normalizeElementType('future-type')).toBe('action')
+    expect(normalizeElementType('__proto__')).toBe('action')
     expect(normalizeElementType(null)).toBe('action')
   })
 })

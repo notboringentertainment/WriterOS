@@ -16,7 +16,7 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
 }
 
 export function isElementType(value: unknown): value is ElementType {
-  return typeof value === 'string' && value in ELEMENT_LABELS
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ELEMENT_LABELS, value)
 }
 
 export function normalizeElementType(value: unknown): ElementType {
