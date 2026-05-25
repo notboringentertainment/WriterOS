@@ -152,11 +152,64 @@ describe('sentence capitalization text input', () => {
     expect(editor.state.doc.firstChild?.textContent).toBe('He w')
   })
 
-  it('does not sentence-capitalize character cues', () => {
-    editor = makeEditor('<p data-element-type="character"></p>')
+  it('does not sentence-capitalize parenthetical text', () => {
+    editor = makeEditor('<p data-element-type="parenthetical"></p>')
     editor.commands.setTextSelection(1)
     expect(typeTextInput(editor, 'b')).toBe(false)
     expect(editor.state.doc.firstChild?.textContent).toBe('b')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Real-time uppercase — handleTextInput uppercases letters typed into
+// scene-heading, character, and transition so saved HTML matches the visual.
+// ---------------------------------------------------------------------------
+
+describe('real-time uppercase text input', () => {
+  let editor: Editor
+
+  afterEach(() => editor.destroy())
+
+  it('uppercases letters typed into scene-heading', () => {
+    editor = makeEditor('<p data-element-type="scene-heading"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'i')).toBe(true)
+    expect(typeTextInput(editor, 'n')).toBe(true)
+    expect(typeTextInput(editor, 't')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('INT')
+  })
+
+  it('uppercases letters typed into character', () => {
+    editor = makeEditor('<p data-element-type="character"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'b')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('B')
+  })
+
+  it('uppercases letters typed into transition (regression: CSS lie)', () => {
+    editor = makeEditor('<p data-element-type="transition"></p>')
+    editor.commands.setTextSelection(1)
+    expect(typeTextInput(editor, 'c')).toBe(true)
+    expect(typeTextInput(editor, 'u')).toBe(true)
+    expect(typeTextInput(editor, 't')).toBe(true)
+    expect(editor.state.doc.firstChild?.textContent).toBe('CUT')
+  })
+
+  it('leaves uppercase-letter input alone (no double-dispatch)', () => {
+    editor = makeEditor('<p data-element-type="character"></p>')
+    editor.commands.setTextSelection(1)
+    // Uppercase input does not match /[a-z]/, so handler returns false and
+    // ProseMirror's default insert path runs.
+    expect(typeTextInput(editor, 'A')).toBe(false)
+    expect(editor.state.doc.firstChild?.textContent).toBe('A')
+  })
+
+  it('leaves digit input alone in uppercase elements', () => {
+    editor = makeEditor('<p data-element-type="scene-heading">INT</p>')
+    const end = editor.state.doc.content.size - 1
+    editor.commands.setTextSelection(end)
+    expect(typeTextInput(editor, '1')).toBe(false)
+    expect(editor.state.doc.firstChild?.textContent).toBe('INT1')
   })
 })
 

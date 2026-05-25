@@ -105,8 +105,33 @@ const ENTER_NEXT: Record<ElementType, ElementType> = {
   'transition':     'scene-heading',
 }
 
-const UPPERCASE_ELEMENTS = new Set<ElementType>(['scene-heading', 'character'])
+const UPPERCASE_ELEMENTS = new Set<ElementType>(['scene-heading', 'character', 'transition'])
 const SENTENCE_CASE_ELEMENTS = new Set<ElementType>(['action', 'dialogue'])
+
+// Screenplay layout — indent and alignment per element type, in em.
+// 1em = the screenplay font size (12pt Courier ≈ 16px at 96dpi, so 1em ≈ 1/6").
+// CSS in screenplay.css mirrors these values. Keep both in sync; the table is
+// the authoritative model (used in tests + future export tooling), CSS is the renderer.
+export type ScreenplayTextAlign = 'left' | 'right'
+
+export interface ScreenplayIndent {
+  marginLeftEm: number
+  marginRightEm: number
+  textAlign: ScreenplayTextAlign
+}
+
+export const SCREENPLAY_INDENTS: Record<ElementType, ScreenplayIndent> = {
+  'scene-heading':  { marginLeftEm: 0,    marginRightEm: 0,  textAlign: 'left'  },
+  'action':         { marginLeftEm: 0,    marginRightEm: 0,  textAlign: 'left'  },
+  'character':      { marginLeftEm: 13.2, marginRightEm: 0,  textAlign: 'left'  },
+  'dialogue':       { marginLeftEm: 6,    marginRightEm: 9,  textAlign: 'left'  },
+  'parenthetical':  { marginLeftEm: 9,    marginRightEm: 12, textAlign: 'left'  },
+  'transition':     { marginLeftEm: 0,    marginRightEm: 0,  textAlign: 'right' },
+}
+
+export function getIndent(type: ElementType): ScreenplayIndent {
+  return SCREENPLAY_INDENTS[type]
+}
 
 export function getTabNext(type: ElementType): ElementType {
   return TAB_NEXT[type]

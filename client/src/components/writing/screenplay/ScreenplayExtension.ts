@@ -97,6 +97,12 @@ export const ScreenplayExtension = Extension.create({
             if (node.type.name !== 'paragraph') return false
 
             const currentType = normalizeElementType(node.attrs.elementType)
+
+            if (shouldUppercase(currentType)) {
+              view.dispatch(view.state.tr.insertText(text.toUpperCase(), from, to))
+              return true
+            }
+
             const textBeforeCursor = node.textBetween(0, $from.parentOffset)
             if (!shouldSentenceCapitalize(currentType, textBeforeCursor)) return false
 
