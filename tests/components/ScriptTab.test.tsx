@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ScriptTab } from '../../client/src/components/writing/ScriptTab'
 import type { Editor } from '@tiptap/core'
 
@@ -73,5 +73,80 @@ describe('ScriptTab', () => {
       expect(latestSnapshot.rawHtml).toContain('Fresh visible line')
     })
     expect(onScriptChange).toHaveBeenCalledTimes(persistedCallsBeforeEdit)
+  })
+
+  it('requires confirmation before replacing existing script with an FDX import', async () => {
+    const onReplaceFdx = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { getByTestId } = render(
+      <ScriptTab
+        initialScript="<p data-element-type='action'>Existing pages</p>"
+        onReplaceFdx={onReplaceFdx}
+      />
+    )
+    const file = new File(['<FinalDraft />'], 'Replacement.fdx', { type: 'application/xml' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace .fdx' }))
+    fireEvent.change(getByTestId('script-fdx-replace-input'), {
+      target: { files: [file] },
+    })
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(onReplaceFdx).not.toHaveBeenCalled()
+
+    confirmSpy.mockReturnValue(true)
+    fireEvent.change(getByTestId('script-fdx-replace-input'), {
+      target: { files: [file] },
+    })
+
+    expect(onReplaceFdx).toHaveBeenCalledWith(file)
+    confirmSpy.mockRestore()
+  })
+
+  it('does not ask for replacement confirmation when the script is blank', () => {
+    const onReplaceFdx = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    const { getByTestId } = render(<ScriptTab onReplaceFdx={onReplaceFdx} />)
+    const file = new File(['<FinalDraft />'], 'First Draft.fdx', { type: 'application/xml' })
+
+    fireEvent.change(getByTestId('script-fdx-replace-input'), {
+      target: { files: [file] },
+    })
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(onReplaceFdx).toHaveBeenCalledWith(file)
+    confirmSpy.mockRestore()
+  })
+
+  it('imports from Script as a new project without replacement confirmation', () => {
+    const onImportFdx = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    const { getByTestId } = render(
+      <ScriptTab
+        initialScript="<p data-element-type='action'>Existing pages</p>"
+        onImportFdx={onImportFdx}
+      />
+    )
+    const file = new File(['<FinalDraft />'], 'New Project.fdx', { type: 'application/xml' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
+    fireEvent.change(getByTestId('script-fdx-import-input'), {
+      target: { files: [file] },
+    })
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(onImportFdx).toHaveBeenCalledWith(file)
+    confirmSpy.mockRestore()
+  })
+
+  it('surfaces import warnings after a successful import', () => {
+    render(
+      <ScriptTab
+        importWarnings={['Unknown Final Draft paragraph type "New Act" imported as Action.']}
+      />
+    )
+
+    expect(screen.getByText('1 import warning')).toBeInTheDocument()
+    expect(screen.getByText('Unknown Final Draft paragraph type "New Act" imported as Action.')).toBeInTheDocument()
   })
 })

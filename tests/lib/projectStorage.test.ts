@@ -164,4 +164,29 @@ describe('File System Access project storage adapter', () => {
       },
     })
   })
+
+  it('copies imported FDX source into a file-backed project package', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+    project.state.meta.sourceImport = {
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    }
+
+    const ref = await adapter.writeProject(project)
+    const read = await adapter.readProject(ref)
+
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.error.message)
+    expect(read.manifest.sourceImport).toMatchObject({
+      kind: 'fdx',
+      copiedSourcePath: 'script/imported-source.fdx',
+    })
+    expect(read.project.state.meta.sourceImport).toMatchObject({
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    })
+  })
 })

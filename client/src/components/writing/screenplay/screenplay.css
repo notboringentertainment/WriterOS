@@ -26,9 +26,13 @@
   color: var(--script-text, #1a1814);
 }
 
-/* One blank line before scene headings (except the first) */
-.ProseMirror p + p[data-element-type="scene-heading"] {
-  margin-top: 16px;
+/* Spacing is rendered from the screenplay adjacency table in screenplay.ts. */
+.ProseMirror p[data-screenplay-space-before="0"] {
+  margin-top: 0;
+}
+
+.ProseMirror p[data-screenplay-space-before="1"] {
+  margin-top: 1lh;
 }
 
 /* ---- Element-specific indentation ----
@@ -73,13 +77,6 @@
   margin-left: 0;
   margin-right: 0;
   text-transform: uppercase;
-}
-
-/* Dialogue runs tight under character cues, then breathes before the next block. */
-.ProseMirror p[data-element-type="dialogue"] + p[data-element-type="action"],
-.ProseMirror p[data-element-type="dialogue"] + p[data-element-type="character"],
-.ProseMirror p[data-element-type="dialogue"] + p[data-element-type="scene-heading"] {
-  margin-top: 16px;
 }
 
 /* Scene heading placeholder */

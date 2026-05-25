@@ -179,6 +179,64 @@ describe('useProjectState', () => {
     })
   })
 
+  it('creates a new active project from an imported Final Draft script', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => {
+      result.current.createProjectFromImportedScript({
+        title: 'Imported Pilot',
+        rawHtml: '<p data-element-type="scene-heading">INT. LAB - NIGHT</p>',
+        scenes: [{ id: 'scene-1', heading: 'INT. LAB - NIGHT', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Pilot.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+          rawSource: '<FinalDraft />',
+        },
+      })
+    })
+
+    expect(result.current.state.meta.title).toBe('Imported Pilot')
+    expect(result.current.state.script.scenes).toEqual([
+      { id: 'scene-1', heading: 'INT. LAB - NIGHT', index: 1 },
+    ])
+    expect(result.current.state.meta.sourceImport).toMatchObject({
+      kind: 'fdx',
+      originalFilename: 'Imported Pilot.fdx',
+      rawSource: '<FinalDraft />',
+    })
+    expect(result.current.projects[0].title).toBe('Imported Pilot')
+    expect(localStorage.getItem('writeros_project_state')).not.toContain('<FinalDraft />')
+    expect(localStorage.getItem('writeros_project_library')).not.toContain('<FinalDraft />')
+  })
+
+  it('replaces only the current script from import and preserves an existing project title', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setMeta({ title: 'Working Title' }))
+    act(() => {
+      result.current.replaceScriptFromImport({
+        title: 'Imported Title',
+        rawHtml: '<p data-element-type="scene-heading">EXT. DOCK - DAWN</p>',
+        scenes: [{ id: 'scene-1', heading: 'EXT. DOCK - DAWN', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Title.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+          rawSource: '<FinalDraft />',
+        },
+      })
+    })
+
+    expect(result.current.state.meta.title).toBe('Working Title')
+    expect(result.current.state.script.rawHtml).toContain('EXT. DOCK - DAWN')
+    expect(result.current.state.meta.sourceImport?.originalFilename).toBe('Imported Title.fdx')
+  })
+
   it('clearSynopsis empties every synopsis field and persists the change', () => {
     const { result } = renderHook(() => useProjectState())
 

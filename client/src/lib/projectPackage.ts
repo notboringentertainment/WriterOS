@@ -5,7 +5,7 @@ import { documentsToLegacy } from './documentMigration'
 import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
 import { CURRENT_SCHEMA_VERSION, defaultProjectState, migrateState } from './projectState'
 import { buildScriptIndex } from './scriptIndex'
-import type { AgentId, ProjectState, ScriptScene, TranscriptMessage } from './projectState'
+import type { AgentId, ProjectSourceImportMetadata, ProjectState, ScriptScene, TranscriptMessage } from './projectState'
 import type { StoredProject } from './projectLibrary'
 
 export const WRITEROS_PACKAGE_EXTENSION = '.writeros'
@@ -14,6 +14,7 @@ export const WRITEROS_APP_VERSION = '0.2.0'
 
 export const WRITEROS_PROJECT_MANIFEST_PATH = 'project.json'
 export const WRITEROS_SCRIPT_HTML_PATH = 'script/script.writeros.html'
+export const WRITEROS_IMPORTED_FDX_SOURCE_PATH = 'script/imported-source.fdx'
 export const WRITEROS_DOCUMENT_PATHS = {
   synopsis: 'documents/synopsis.json',
   outline: 'documents/outline.json',
@@ -63,7 +64,7 @@ export interface WriterOSProjectPackage {
 export interface SerializeWriterOSProjectPackageOptions {
   openedAt?: number
   appVersion?: string
-  sourceImport?: WriterOSProjectManifest['sourceImport']
+  sourceImport?: ProjectSourceImportMetadata | WriterOSProjectManifest['sourceImport']
 }
 
 export type ProjectPackageErrorCode =
@@ -172,11 +173,41 @@ function specialistAgentsFromState(state: ProjectState): Record<SpecialistAgentI
   ) as Record<SpecialistAgentId, ProjectState['agents'][SpecialistAgentId]>
 }
 
+function sourceImportForManifest(sourceImport: ProjectSourceImportMetadata | WriterOSProjectManifest['sourceImport'] | undefined | null): WriterOSProjectManifest['sourceImport'] {
+  if (!sourceImport) return null
+
+  const copiedSourcePath =
+    sourceImport.copiedSourcePath
+    ?? (sourceImport.kind === 'fdx' && 'rawSource' in sourceImport && typeof sourceImport.rawSource === 'string'
+      ? WRITEROS_IMPORTED_FDX_SOURCE_PATH
+      : undefined)
+
+  return {
+    kind: sourceImport.kind,
+    ...(sourceImport.originalFilename ? { originalFilename: sourceImport.originalFilename } : {}),
+    importedAt: sourceImport.importedAt,
+    ...(copiedSourcePath ? { copiedSourcePath } : {}),
+  }
+}
+
+function stateSourceImportFromManifest(
+  sourceImport: WriterOSProjectManifest['sourceImport'],
+  rawSource: string | undefined,
+): ProjectSourceImportMetadata | null {
+  if (!sourceImport) return null
+
+  return {
+    ...sourceImport,
+    ...(rawSource && sourceImport.kind === 'fdx' ? { rawSource } : {}),
+  }
+}
+
 export function serializeWriterOSProjectPackage(
   project: StoredProject,
   options: SerializeWriterOSProjectPackageOptions = {},
 ): WriterOSProjectPackage {
   const state = migrateState(project.state)
+  const packageSourceImport = options.sourceImport ?? state.meta.sourceImport
   const manifest: WriterOSProjectManifest = {
     schemaVersion: WRITEROS_PACKAGE_SCHEMA_VERSION,
     projectId: project.id,
@@ -185,22 +216,32 @@ export function serializeWriterOSProjectPackage(
     createdAt: timestampFromNumber(project.createdAt),
     updatedAt: timestampFromNumber(project.updatedAt),
     openedAt: timestampFromNumber(options.openedAt ?? project.updatedAt),
-    sourceImport: options.sourceImport ?? null,
+    sourceImport: sourceImportForManifest(packageSourceImport),
     appVersion: options.appVersion ?? WRITEROS_APP_VERSION,
+  }
+
+  const files: Record<string, string> = {
+    [WRITEROS_PROJECT_MANIFEST_PATH]: stringifyPackageJson(manifest),
+    [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
+    [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
+    [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
+    [WRITEROS_DOCUMENT_PATHS.treatment]: stringifyPackageJson(state.documents.treatment),
+    [WRITEROS_DOCUMENT_PATHS.storyBible]: stringifyPackageJson(state.documents.storyBible),
+    [WRITEROS_TRANSCRIPT_PATHS.writingPartner]: stringifyPackageJson(state.agents.writingPartner),
+    [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
+  }
+
+  const rawFdxSource =
+    state.meta.sourceImport?.rawSource
+    ?? (packageSourceImport && 'rawSource' in packageSourceImport ? packageSourceImport.rawSource : undefined)
+
+  if (packageSourceImport?.kind === 'fdx' && typeof rawFdxSource === 'string' && rawFdxSource.length > 0) {
+    files[WRITEROS_IMPORTED_FDX_SOURCE_PATH] = rawFdxSource
   }
 
   return {
     manifest,
-    files: {
-      [WRITEROS_PROJECT_MANIFEST_PATH]: stringifyPackageJson(manifest),
-      [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
-      [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
-      [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
-      [WRITEROS_DOCUMENT_PATHS.treatment]: stringifyPackageJson(state.documents.treatment),
-      [WRITEROS_DOCUMENT_PATHS.storyBible]: stringifyPackageJson(state.documents.storyBible),
-      [WRITEROS_TRANSCRIPT_PATHS.writingPartner]: stringifyPackageJson(state.agents.writingPartner),
-      [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
-    },
+    files,
   }
 }
 
@@ -358,6 +399,10 @@ export function readWriterOSProjectPackage(
       ...defaults.meta,
       title: normalizeProjectTitle(manifestResult.manifest.title),
       format: normalizeProjectFormat(manifestResult.manifest.format),
+      sourceImport: stateSourceImportFromManifest(
+        manifestResult.manifest.sourceImport,
+        files[WRITEROS_IMPORTED_FDX_SOURCE_PATH],
+      ),
       ...scriptMeta,
     },
     script: {

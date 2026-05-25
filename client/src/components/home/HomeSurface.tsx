@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type {
@@ -18,6 +18,9 @@ interface HomeSurfaceProps {
   onOpenProject: (projectId: string) => void
   onOpenFolderProject?: (projectId: string) => void
   onNewProject: () => void
+  onImportFdx?: (file: File) => void | Promise<void>
+  importingFdx?: boolean
+  importError?: string | null
   onChooseProjectFolder?: () => void
   onRefreshProjectFolder?: () => void
   onForgetProjectFolder?: () => void
@@ -58,12 +61,16 @@ export function HomeSurface({
   onOpenProject,
   onOpenFolderProject,
   onNewProject,
+  onImportFdx,
+  importingFdx = false,
+  importError = null,
   onChooseProjectFolder,
   onRefreshProjectFolder,
   onForgetProjectFolder,
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const fdxInputRef = useRef<HTMLInputElement>(null)
   const storage = storageStatus ?? {
     status: 'browser-fallback' as const,
     label: null,
@@ -123,6 +130,15 @@ export function HomeSurface({
   const projectCountMeta = showingFolderProjects
     ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
     : 'Saved in this browser'
+  const handleImportFdxFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    void onImportFdx?.(file)
+  }
+  const noticeMessages = [storage.errorMessage, importError].filter(
+    (message): message is string => Boolean(message)
+  )
 
   return (
     <section style={styles.root} aria-labelledby="home-heading">
@@ -147,11 +163,19 @@ export function HomeSurface({
           <button
             type="button"
             style={styles.secondaryButton}
-            disabled
-            title="Final Draft import is planned for the next implementation slice."
+            disabled={!onImportFdx || importingFdx}
+            onClick={() => fdxInputRef.current?.click()}
           >
-            Import .fdx
+            {importingFdx ? 'Importing' : 'Import .fdx'}
           </button>
+          <input
+            ref={fdxInputRef}
+            data-testid="home-fdx-import-input"
+            type="file"
+            accept=".fdx,application/xml,text/xml"
+            style={styles.hiddenInput}
+            onChange={handleImportFdxFile}
+          />
         </div>
       </div>
 
@@ -204,9 +228,16 @@ export function HomeSurface({
         </div>
       </div>
 
-      {storage.errorMessage && (
+      {noticeMessages.length > 0 && (
         <div style={styles.notice} role="status">
-          {storage.errorMessage}
+          {noticeMessages.map((message, index) => (
+            <span
+              key={`${index}-${message}`}
+              style={index === 0 ? undefined : styles.noticeLine}
+            >
+              {message}
+            </span>
+          ))}
         </div>
       )}
 
@@ -660,5 +691,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg-muted)',
     fontSize: 15,
     padding: '28px 12px',
+  },
+  hiddenInput: {
+    display: 'none',
   },
 }

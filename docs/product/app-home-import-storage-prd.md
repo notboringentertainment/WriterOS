@@ -70,7 +70,7 @@ Additional decisions:
 - Home is a full first app route/surface, not a marketing page and not only a TopBar modal.
 - Imported `.fdx` source files are copied into the project package by default when file-backed storage is active.
 - localStorage migration requires explicit writer confirmation after a storage folder is selected.
-- The Script surface owns import/replace once a project is open; Home owns import-as-new-project.
+- Home and Script both support import-as-new-project. The Script surface also owns explicit import/replace once a project is open.
 
 Cloud sync, account storage, and collaboration are separate future decisions. The V1 shipped-app path is local-first, user-owned project folders.
 
@@ -166,7 +166,8 @@ WriterOS must recognize `.fdx` files and import them into the screenplay editor 
 Required behavior:
 
 - Accept `.fdx` through Home import.
-- Accept `.fdx` from the Script surface as an import/replace action.
+- Accept `.fdx` from the Script surface as an import-as-new-project action.
+- Accept `.fdx` from the Script surface as an explicit replace action.
 - Recognize `.fdx` by file extension and validate that the file parses as Final Draft XML.
 - Parse Final Draft XML rather than treating it as plain text.
 - Convert Final Draft paragraph types into WriterOS screenplay element types.
@@ -288,7 +289,7 @@ Build order:
 1. Lock the `.writeros` project package reader/writer and default `~/WriterOS Projects` folder behavior.
 2. Add Home as the app entry surface with project folder selection, project list, recent projects, create/open, and migration visibility.
 3. Add `.fdx` parser/import support and wire it first to import-as-new-project from Home.
-4. Add Script import/replace with confirmation and no partial overwrite on failure.
+4. Add Script import-as-new-project and explicit replace with confirmation and no partial overwrite on failure.
 5. Migrate existing localStorage projects into `.writeros` packages once file-backed storage is stable.
 
 This sequence gives WriterOS a shippable app foundation before expanding more writing-surface polish.
@@ -317,10 +318,12 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 
 ### Slice 3: Final Draft Import
 
+**Status:** Implemented on the Final Draft import slice branch. The parser converts `.fdx` screenplay paragraphs into Script HTML/state, Home and Script import create a new project, explicit Script replace requires confirmation, import source metadata is stored, and file-backed packages copy the original `.fdx` source when available.
+
 - Add `.fdx` parser with fixtures.
 - Convert parsed screenplay paragraphs into Script editor HTML/state.
 - Add Home import flow that creates a new project.
-- Add Script import/replace flow with confirmation.
+- Add Script import-as-new-project and explicit replace flow with confirmation.
 - Verify imported script indexing, scene extraction, and dialogue context.
 
 ### Slice 4: External Storage Migration
@@ -344,7 +347,8 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 - A writer can see and open projects from that folder.
 - A writer can create a new project from Home.
 - A writer can import a `.fdx` file from Home and land in Script with correct screenplay block formatting.
-- A writer can import/replace a `.fdx` file from Script only after confirmation.
+- A writer can import a `.fdx` file from Script and see it reflected as a new project.
+- A writer can replace the current Script from a `.fdx` file only after confirmation.
 - Malformed or unsupported imports fail without altering the current project.
 - Existing localStorage projects can be migrated to external project folders.
 - Agent script context still works after opening or importing a project.
@@ -361,7 +365,8 @@ Required tests:
 - `.fdx` parser fixture for unknown paragraph types.
 - `.fdx` parser fixture for XML entities/unicode.
 - `.fdx` import creates a project.
-- Script import/replace requires confirmation.
+- Script import creates a project.
+- Script replace requires confirmation.
 - Failed import does not mutate existing script.
 - Imported script feeds scene index and agent context.
 

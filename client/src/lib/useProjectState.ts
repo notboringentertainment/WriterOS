@@ -3,6 +3,7 @@ import { defaultProjectState } from './projectState'
 import {
   activateStoredProject,
   createBlankProject,
+  createProjectFromState,
   deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
@@ -10,7 +11,7 @@ import {
   summarizeProjects,
 } from './projectLibrary'
 import type { StoredProject } from './projectLibrary'
-import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
+import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
@@ -31,6 +32,15 @@ import {
 import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { createOutlineEpisode } from './outlineDeck'
+
+export interface ImportedScriptPayload {
+  rawHtml: string
+  scenes: ScriptScene[]
+  title?: string | null
+  wordCount: number
+  pageCount: number
+  sourceImport: ProjectSourceImportMetadata
+}
 
 function nextTimestampAfter(value: string): string {
   return new Date(Math.max(Date.now(), new Date(value).getTime() + 1)).toISOString()
@@ -621,6 +631,25 @@ export function useProjectState() {
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
   }, [update])
 
+  const stateFromImportedScript = useCallback((importedScript: ImportedScriptPayload): ProjectState => {
+    const importedState = defaultProjectState()
+    return {
+      ...importedState,
+      meta: {
+        ...importedState.meta,
+        title: normalizeProjectTitle(importedScript.title),
+        wordCount: importedScript.wordCount,
+        pageCount: importedScript.pageCount,
+        sourceImport: importedScript.sourceImport,
+      },
+      script: {
+        ...importedState.script,
+        rawHtml: importedScript.rawHtml,
+        scenes: importedScript.scenes,
+      },
+    }
+  }, [])
+
   const createProject = useCallback(() => {
     const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
     const next = createBlankProject(savedProjects)
@@ -629,6 +658,33 @@ export function useProjectState() {
     setProjects(next.projects)
     return getStoredProject(next.activeProjectId, next.projects)!
   }, [activeProjectId, projects, state])
+
+  const createProjectFromImportedScript = useCallback((importedScript: ImportedScriptPayload) => {
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const next = createProjectFromState(savedProjects, stateFromImportedScript(importedScript))
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+    return getStoredProject(next.activeProjectId, next.projects)!
+  }, [activeProjectId, projects, state, stateFromImportedScript])
+
+  const replaceScriptFromImport = useCallback((importedScript: ImportedScriptPayload) => {
+    update(s => ({
+      ...s,
+      meta: {
+        ...s.meta,
+        title: normalizeProjectTitle(s.meta.title || importedScript.title),
+        wordCount: importedScript.wordCount,
+        pageCount: importedScript.pageCount,
+        sourceImport: importedScript.sourceImport,
+      },
+      script: {
+        ...s.script,
+        rawHtml: importedScript.rawHtml,
+        scenes: importedScript.scenes,
+      },
+    }))
+  }, [update])
 
   const switchProject = useCallback((projectId: string) => {
     if (projectId === activeProjectId) return
@@ -698,6 +754,8 @@ export function useProjectState() {
     clearTranscript,
     updateScript,
     createProject,
+    createProjectFromImportedScript,
+    replaceScriptFromImport,
     switchProject,
     openStoredProject,
     saveNow,

@@ -37,6 +37,26 @@ describe('ScreenplayToolbar', () => {
     expect(onToggleFocusMode).toHaveBeenCalled()
   })
 
+  it('routes Final Draft import and replace actions separately', () => {
+    const onImportFdx = vi.fn()
+    const onReplaceFdx = vi.fn()
+    render(
+      <ScreenplayToolbar
+        {...defaultProps}
+        onImportFdx={onImportFdx}
+        onReplaceFdx={onReplaceFdx}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
+    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(onReplaceFdx).toHaveBeenCalledTimes(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace .fdx' }))
+    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(onReplaceFdx).toHaveBeenCalledTimes(1)
+  })
+
   it('hides when focusMode is true', () => {
     const { container } = render(<ScreenplayToolbar {...defaultProps} focusMode={true} />)
     expect(container.firstChild).toBeNull()

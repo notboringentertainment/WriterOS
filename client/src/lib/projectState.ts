@@ -32,6 +32,16 @@ export interface ScriptScene {
   index: number
 }
 
+export type ProjectSourceImportKind = 'fdx' | 'fountain' | 'plain-text' | 'unknown'
+
+export interface ProjectSourceImportMetadata {
+  kind: ProjectSourceImportKind
+  originalFilename?: string
+  importedAt: string
+  copiedSourcePath?: string
+  rawSource?: string
+}
+
 export interface Beat {
   id: string
   name: string
@@ -52,7 +62,14 @@ export interface Character {
 
 export interface ProjectState {
   schemaVersion: number
-  meta: { title: string; genre: string; format: ProjectFormat; wordCount: number; pageCount: number }
+  meta: {
+    title: string
+    genre: string
+    format: ProjectFormat
+    wordCount: number
+    pageCount: number
+    sourceImport: ProjectSourceImportMetadata | null
+  }
   script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
@@ -68,6 +85,19 @@ export interface ProjectState {
     alex:   { transcript: TranscriptMessage[]; lastTouched: number | null }
   }
   memory: { decisions: unknown[]; flags: unknown[]; handoffs: unknown[] }
+}
+
+export function stripProjectRawSource(state: ProjectState): ProjectState {
+  if (!state.meta.sourceImport?.rawSource) return state
+
+  const { rawSource: _rawSource, ...sourceImport } = state.meta.sourceImport
+  return {
+    ...state,
+    meta: {
+      ...state.meta,
+      sourceImport,
+    },
+  }
 }
 
 const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
@@ -91,7 +121,7 @@ const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
 export function defaultProjectState(): ProjectState {
   const base = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
+    meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0, sourceImport: null },
     script: { rawHtml: '', scenes: [], revisionHistory: [] },
     outline: {
       beatType: 'save-the-cat',
@@ -135,6 +165,31 @@ function rawSynopsisHeaderFormat(rawDocuments: unknown): unknown {
   const header = (content as Record<string, unknown>).header
   if (!header || typeof header !== 'object') return undefined
   return (header as Record<string, unknown>).format
+}
+
+function normalizeSourceImport(value: unknown): ProjectSourceImportMetadata | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const kind = raw.kind
+  const importedAt = raw.importedAt
+
+  if (
+    kind !== 'fdx' &&
+    kind !== 'fountain' &&
+    kind !== 'plain-text' &&
+    kind !== 'unknown'
+  ) {
+    return null
+  }
+  if (typeof importedAt !== 'string' || !Number.isFinite(Date.parse(importedAt))) return null
+
+  return {
+    kind,
+    importedAt,
+    ...(typeof raw.originalFilename === 'string' ? { originalFilename: raw.originalFilename } : {}),
+    ...(typeof raw.copiedSourcePath === 'string' ? { copiedSourcePath: raw.copiedSourcePath } : {}),
+    ...(typeof raw.rawSource === 'string' ? { rawSource: raw.rawSource } : {}),
+  }
 }
 
 function syncSynopsisFormatMirror(
@@ -222,6 +277,7 @@ export function migrateState(raw: unknown): ProjectState {
     format: promotedFormat,
     wordCount: typeof rawMeta.wordCount === 'number' ? rawMeta.wordCount : defaults.meta.wordCount,
     pageCount: typeof rawMeta.pageCount === 'number' ? rawMeta.pageCount : defaults.meta.pageCount,
+    sourceImport: normalizeSourceImport(rawMeta.sourceImport),
   }
 
   const rawAgents = state.agents && typeof state.agents === 'object'
@@ -304,7 +360,7 @@ export function migrateState(raw: unknown): ProjectState {
 export function saveProjectState(state: ProjectState): void {
   const projectFormat = normalizeProjectFormat(state.meta.format)
   const mirroredSynopsis = mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis)
-  const stateToSave: ProjectState = {
+  const stateToSave: ProjectState = stripProjectRawSource({
     ...state,
     schemaVersion: CURRENT_SCHEMA_VERSION,
     meta: {
@@ -317,7 +373,7 @@ export function saveProjectState(state: ProjectState): void {
       treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
     },
-  }
+  })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
 }
 

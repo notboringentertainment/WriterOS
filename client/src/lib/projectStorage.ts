@@ -1,5 +1,6 @@
 import {
   WRITEROS_DOCUMENT_PATHS,
+  WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_PACKAGE_EXTENSION,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
@@ -261,6 +262,7 @@ async function readProjectPackageFiles(handle: WriterOSFileSystemDirectoryHandle
   const paths = [
     WRITEROS_PROJECT_MANIFEST_PATH,
     WRITEROS_SCRIPT_HTML_PATH,
+    WRITEROS_IMPORTED_FDX_SOURCE_PATH,
     WRITEROS_DOCUMENT_PATHS.synopsis,
     WRITEROS_DOCUMENT_PATHS.outline,
     WRITEROS_DOCUMENT_PATHS.treatment,
@@ -351,7 +353,7 @@ export function createFileSystemAccessProjectStorageAdapter(
       const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
       const packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
       const nextPackage = serializeWriterOSProjectPackage(project, {
-        sourceImport: previousRef?.manifest.sourceImport,
+        sourceImport: project.state.meta.sourceImport ?? previousRef?.manifest.sourceImport,
       })
       await writeProjectPackageFiles(packageHandle, nextPackage.files)
       return refFromProject(previousRef?.packageName ?? packageName, packageHandle, project, nextPackage.manifest)

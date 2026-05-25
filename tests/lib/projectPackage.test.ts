@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   WRITEROS_DOCUMENT_PATHS,
+  WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
   WRITEROS_TRANSCRIPT_PATHS,
@@ -92,6 +93,39 @@ describe('WriterOS project packages', () => {
     expect(result.project.state.agents.writingPartner.transcript[0].content).toBe(
       'Help me tighten the opening.',
     )
+  })
+
+  it('stores Final Draft import metadata and source copy when present', () => {
+    const storedProject = makeStoredProject()
+    storedProject.state.meta.sourceImport = {
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    }
+
+    const projectPackage = serializeWriterOSProjectPackage(storedProject)
+    const manifest = JSON.parse(projectPackage.files[WRITEROS_PROJECT_MANIFEST_PATH])
+
+    expect(manifest.sourceImport).toEqual({
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      copiedSourcePath: WRITEROS_IMPORTED_FDX_SOURCE_PATH,
+    })
+    expect(projectPackage.files[WRITEROS_IMPORTED_FDX_SOURCE_PATH]).toBe(
+      '<FinalDraft><Content /></FinalDraft>',
+    )
+
+    const result = readWriterOSProjectPackage(projectPackage.files)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.error.message)
+    expect(result.project.state.meta.sourceImport).toMatchObject({
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      copiedSourcePath: WRITEROS_IMPORTED_FDX_SOURCE_PATH,
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    })
   })
 
   it('reports a missing manifest as a corrupt package', () => {
