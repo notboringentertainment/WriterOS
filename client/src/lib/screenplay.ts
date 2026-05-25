@@ -15,6 +15,14 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
   'transition':     'Transition',
 }
 
+export function isElementType(value: unknown): value is ElementType {
+  return typeof value === 'string' && value in ELEMENT_LABELS
+}
+
+export function normalizeElementType(value: unknown): ElementType {
+  return isElementType(value) ? value : 'action'
+}
+
 export type ScreenplayBlankLines = 0 | 1
 
 // WriterOS V1 matches Final Draft's tighter default: one blank line around

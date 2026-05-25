@@ -6,6 +6,7 @@ import {
   shouldUppercase,
   shouldSentenceCapitalize,
   getScreenplaySpacingBefore,
+  normalizeElementType,
   SCREENPLAY_SPACING,
   countWords,
   estimatePageCount,
@@ -113,6 +114,14 @@ describe('screenplay spacing', () => {
     for (const row of Object.values(SCREENPLAY_SPACING)) {
       expect(Object.values(row).every(value => value === 0 || value === 1)).toBe(true)
     }
+  })
+})
+
+describe('normalizeElementType', () => {
+  it('keeps known element types and falls back to action for unknown stored values', () => {
+    expect(normalizeElementType('dialogue')).toBe('dialogue')
+    expect(normalizeElementType('future-type')).toBe('action')
+    expect(normalizeElementType(null)).toBe('action')
   })
 })
 

@@ -7,6 +7,7 @@ import {
   getTabPrev,
   getEnterNext,
   getScreenplaySpacingBefore,
+  normalizeElementType,
   shouldSentenceCapitalize,
   shouldUppercase,
 } from '../../../lib/screenplay'
@@ -30,10 +31,9 @@ export const ScreenplayExtension = Extension.create({
         attributes: {
           elementType: {
             default: 'action' as ElementType,
-            parseHTML: el =>
-              (el.getAttribute('data-element-type') as ElementType) ?? 'action',
+            parseHTML: el => normalizeElementType(el.getAttribute('data-element-type')),
             renderHTML: attrs => ({
-              'data-element-type': attrs.elementType as string,
+              'data-element-type': normalizeElementType(attrs.elementType),
             }),
           },
         },
@@ -76,7 +76,7 @@ export const ScreenplayExtension = Extension.create({
             state.doc.forEach((node, offset) => {
               if (node.type.name !== 'paragraph') return
 
-              const currentType = (node.attrs.elementType ?? 'action') as ElementType
+              const currentType = normalizeElementType(node.attrs.elementType)
               const blankLinesBefore = getScreenplaySpacingBefore(previousType, currentType)
               decorations.push(
                 Decoration.node(offset, offset + node.nodeSize, {
@@ -96,7 +96,7 @@ export const ScreenplayExtension = Extension.create({
             const node = $from.parent
             if (node.type.name !== 'paragraph') return false
 
-            const currentType = (node.attrs.elementType ?? 'action') as ElementType
+            const currentType = normalizeElementType(node.attrs.elementType)
             const textBeforeCursor = node.textBetween(0, $from.parentOffset)
             if (!shouldSentenceCapitalize(currentType, textBeforeCursor)) return false
 
@@ -115,7 +115,7 @@ export const ScreenplayExtension = Extension.create({
         const node = $anchor.parent
         if (node.type.name !== 'paragraph') return false
 
-        const currentType = (node.attrs.elementType ?? 'action') as ElementType
+        const currentType = normalizeElementType(node.attrs.elementType)
         const nextType = getTabNext(currentType)
 
         if (shouldUppercase(currentType)) {
@@ -131,7 +131,7 @@ export const ScreenplayExtension = Extension.create({
         const node = $anchor.parent
         if (node.type.name !== 'paragraph') return false
 
-        const currentType = (node.attrs.elementType ?? 'action') as ElementType
+        const currentType = normalizeElementType(node.attrs.elementType)
         const prevType = getTabPrev(currentType)
 
         if (shouldUppercase(currentType)) {
@@ -149,7 +149,7 @@ export const ScreenplayExtension = Extension.create({
 
         if ($anchor.parentOffset !== node.content.size) return false
 
-        const currentType = (node.attrs.elementType ?? 'action') as ElementType
+        const currentType = normalizeElementType(node.attrs.elementType)
         const nextType = getEnterNext(currentType)
 
         if (shouldUppercase(currentType)) {
@@ -172,7 +172,7 @@ export const ScreenplayExtension = Extension.create({
 
         if (node.content.size !== 0) return false
 
-        const currentType = (node.attrs.elementType ?? 'action') as ElementType
+        const currentType = normalizeElementType(node.attrs.elementType)
 
         if (currentType === 'dialogue') {
           editor.commands.setElementType('character')
