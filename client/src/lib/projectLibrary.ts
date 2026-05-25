@@ -11,6 +11,11 @@ export interface StoredProject {
   createdAt: number
   updatedAt: number
   state: ProjectState
+  // ISO-8601 timestamp set when the writer archives the project. Absent =
+  // active. Archived projects are hidden from the Home Active list and from
+  // active-project selection on reload; they remain restorable from the
+  // Home Archive view.
+  archivedAt?: string
 }
 
 export interface ProjectSummary {
@@ -20,6 +25,7 @@ export interface ProjectSummary {
   updatedAt: number
   format?: ProjectFormat
   sceneCount?: number
+  archivedAt?: string
 }
 
 export interface ActiveProjectLibrary {
@@ -54,11 +60,13 @@ function readProjectLibrary(): StoredProject[] {
         if (!item || typeof item !== 'object') return null
         const candidate = item as Partial<StoredProject>
         if (typeof candidate.id !== 'string' || !candidate.state) return null
+        const archivedAt = typeof candidate.archivedAt === 'string' ? candidate.archivedAt : undefined
         return {
           id: candidate.id,
           createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : now(),
           updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : now(),
           state: migrateState(candidate.state),
+          ...(archivedAt ? { archivedAt } : {}),
         }
       })
       .filter((item): item is StoredProject => item !== null)
@@ -86,13 +94,21 @@ export function summarizeProjects(projects: StoredProject[]): ProjectSummary[] {
     updatedAt: project.updatedAt,
     format: project.state.meta.format,
     sceneCount: project.state.script.scenes.length,
+    ...(project.archivedAt ? { archivedAt: project.archivedAt } : {}),
   }))
 }
 
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
   const projects = readProjectLibrary()
   const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
-  const activeProject = projects.find(project => project.id === activeProjectId) ?? projects[0]
+  // Archived projects are never auto-selected as the active project. The
+  // writer can still restore them from the Home Archive view.
+  const activeCandidates = projects.filter(project => !project.archivedAt)
+  const requestedActive = projects.find(project => project.id === activeProjectId)
+  const activeProject =
+    requestedActive && !requestedActive.archivedAt
+      ? requestedActive
+      : activeCandidates[0]
 
   if (activeProject) {
     writeActiveProjectId(activeProject.id)
@@ -104,15 +120,17 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
     }
   }
 
-  // Distinguish "first run" from "intentionally cleared via delete-all":
-  // - never persisted -> seed a starter project (existing onboarding behavior)
-  // - persisted as []  -> respect empty state; user lands on Home
+  // Distinguish "first run" from "intentionally cleared via delete-all" /
+  // "everything archived":
+  // - never persisted        -> seed a starter project (onboarding behavior)
+  // - persisted as []        -> respect empty state; user lands on Home
+  // - all archived           -> keep archived projects; land Home with no active
   if (hasPersistedProjectLibrary()) {
     localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
     return {
       activeProjectId: '',
       state: defaultProjectState(),
-      projects: [],
+      projects,
     }
   }
 
@@ -212,6 +230,79 @@ export function getStoredProject(projectId: string, projects: StoredProject[]) {
   return projects.find(project => project.id === projectId)
 }
 
+export function archiveProjectInLibrary(
+  projectId: string,
+  projects: StoredProject[],
+): ActiveProjectLibrary {
+  const target = projects.find(project => project.id === projectId)
+  if (!target || target.archivedAt) {
+    const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? projects[0]?.id ?? ''
+    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    return {
+      activeProjectId: active?.id ?? '',
+      state: active?.state ?? defaultProjectState(),
+      projects,
+    }
+  }
+
+  const archivedAt = new Date().toISOString()
+  const nextProjects = projects.map(project =>
+    project.id === projectId ? { ...project, archivedAt } : project,
+  )
+
+  const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
+  const archivedActive = previousActiveId === projectId
+
+  writeProjectLibrary(nextProjects)
+
+  if (archivedActive) {
+    // Archiving the active project closes the active session and returns
+    // the writer to Home, mirroring the delete-active contract.
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects: nextProjects,
+    }
+  }
+
+  return {
+    activeProjectId: previousActiveId ?? '',
+    state: nextProjects.find(project => project.id === previousActiveId)?.state ?? defaultProjectState(),
+    projects: nextProjects,
+  }
+}
+
+export function restoreProjectInLibrary(
+  projectId: string,
+  projects: StoredProject[],
+): ActiveProjectLibrary {
+  const target = projects.find(project => project.id === projectId)
+  if (!target || !target.archivedAt) {
+    const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? ''
+    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    return {
+      activeProjectId: active?.id ?? '',
+      state: active?.state ?? defaultProjectState(),
+      projects,
+    }
+  }
+
+  const nextProjects = projects.map(project =>
+    project.id === projectId ? { ...project, archivedAt: undefined } : project,
+  )
+
+  // Restore is non-destructive: keep the existing active selection. The
+  // writer can open the restored project explicitly from the Active list.
+  writeProjectLibrary(nextProjects)
+  const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
+  return {
+    activeProjectId: previousActiveId ?? '',
+    state: nextProjects.find(project => project.id === previousActiveId)?.state ?? defaultProjectState(),
+    projects: nextProjects,
+  }
+}
+
 export function deleteProjectFromLibrary(
   projectId: string,
   projects: StoredProject[],
@@ -242,16 +333,19 @@ export function deleteProjectFromLibrary(
   }
 
   const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
+  const remainingActiveCandidates = remaining.filter(project => !project.archivedAt)
   const nextActive =
     previousActiveId && previousActiveId !== projectId
-      ? remaining.find(project => project.id === previousActiveId) ?? remaining[0]
-      : remaining[0]
+      ? remainingActiveCandidates.find(project => project.id === previousActiveId)
+      : undefined
   // If the deleted project was active, clear active selection and route Home;
   // do not silently switch focus to a neighbor project.
   const deletedActive = previousActiveId === projectId
 
   writeProjectLibrary(remaining)
-  if (deletedActive) {
+  if (deletedActive || !nextActive) {
+    // Either the active project was deleted, or the previous active selection
+    // is gone / now archived. Either way, land Home with no active session.
     localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
     return {
       activeProjectId: '',

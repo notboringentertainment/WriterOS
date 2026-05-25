@@ -1,8 +1,8 @@
 # Slice 5a — Project Lifecycle (Archive + Delete cascade)
 
 **Date:** 2026-05-24
-**Status:** Planned, pre-implementation
-**Branch context:** `main` after PR #7 (Slice C screenplay indent + casing)
+**Status:** Implemented through Slice 5a-2 Archive PR review
+**Branch context:** `main` after PR #8; PR 5a-2 on `slice-5a-2-project-archive`
 **Owner PRD:** `docs/product/app-home-import-storage-prd.md` (Slice 5 — pulled forward)
 
 ## Product Framing
@@ -125,7 +125,7 @@ Active vs Archive partition is derived from `archivedAt` presence. No separate a
 - `archiveProjectFolder(rootHandle, folderName)` — ensures `Archive/` subdirectory exists, copies folder into it, removes original. (FSA has no native move.)
 - `restoreProjectFolder(rootHandle, folderName)` — inverse of archive.
 
-Archive subfolder is visible at `<WriterOS Projects>/Archive/`.
+Archive subfolder is visible as `Archive/` inside the selected folder.
 
 ### `useProjectState.ts` additions
 
@@ -167,9 +167,14 @@ Out of scope for 5a-1:
 - Rename refactor.
 - Card substance indicators beyond title/format/updated.
 
-### PR 5a-2 — Archive
+### PR 5a-2 — Archive (implemented)
 
 Branch: `slice-5a-2-project-archive`
+
+Inline Rename on Home cards is intentionally deferred to a follow-up: the
+existing rename uses a TopBar inline title editor that does not reuse cleanly
+on Home cards. Renaming via the open project still works; surfacing it on
+Home cards is its own small slice.
 
 Scope:
 
@@ -178,7 +183,7 @@ Scope:
 - Home `Active | Archive` toggle.
 - Archive view cards (Restore + Delete).
 - File-backed `archiveProjectFolder` / `restoreProjectFolder` adapter ops.
-- Archive subfolder created lazily under `<WriterOS Projects>/Archive/`.
+- Archive subfolder created lazily inside the selected folder.
 - Confirm modal for Archive with exact title.
 
 ## Tests
@@ -227,7 +232,7 @@ Scope:
 - Archive moves a project to the Archive view; it disappears from the Active list.
 - Archive view renders Restore + Delete on each card.
 - Restore returns the project to the Active list.
-- File-backed: archived project's `.writeros` folder is moved under `<WriterOS Projects>/Archive/`; restore moves it back.
+- File-backed: archived project's `.writeros` folder is moved under `Archive/` inside the selected folder; restore moves it back.
 
 ## PRD Update
 

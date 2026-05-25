@@ -10,6 +10,7 @@ import {
   pickWriterOSProjectsFolder,
   requestWriterOSProjectsFolderPermission,
   getWriterOSProjectsFolderPermission,
+  type ArchiveProjectResult,
   type FileSystemAccessProjectRef,
   type ProjectStorageListEntry,
   type RemoveProjectResult,
@@ -52,9 +53,12 @@ export interface WriterOSProjectsFolderState {
   chooseFolder: () => Promise<boolean>
   refreshFolder: () => Promise<void>
   forgetFolder: () => Promise<void>
+  archivedProjects: WriterOSFolderProject[]
   openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
   writeProject: (project: StoredProject) => Promise<WriterOSFolderProject>
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
+  archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
+  restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
 }
 
 export interface WriterOSFolderProjectOpenResult {
@@ -85,10 +89,10 @@ function corruptProjectFromListEntry(entry: Extract<ProjectStorageListEntry<File
 }
 
 function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>>) {
+  const ready = entries.filter((entry): entry is ReadyFileSystemProjectEntry => entry.status === 'ready')
   return {
-    projects: entries
-      .filter((entry): entry is ReadyFileSystemProjectEntry => entry.status === 'ready')
-      .map(folderProjectFromListEntry),
+    projects: ready.filter(entry => !entry.archived).map(folderProjectFromListEntry),
+    archivedProjects: ready.filter(entry => entry.archived).map(folderProjectFromListEntry),
     corruptProjects: entries
       .filter((entry): entry is Extract<ProjectStorageListEntry<FileSystemAccessProjectRef>, { status: 'corrupt' }> => entry.status === 'corrupt')
       .map(corruptProjectFromListEntry),
@@ -96,7 +100,7 @@ function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSyste
 }
 
 function errorMessageFromUnknown(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to read the selected WriterOS Projects folder.'
+  return error instanceof Error ? error.message : 'Unable to read the selected folder.'
 }
 
 function isAbortError(error: unknown): boolean {
@@ -112,11 +116,14 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
   )
   const [label, setLabel] = useState<string | null>(null)
   const [projects, setProjects] = useState<WriterOSFolderProject[]>([])
+  const [archivedProjects, setArchivedProjects] = useState<WriterOSFolderProject[]>([])
   const [corruptProjects, setCorruptProjects] = useState<WriterOSCorruptFolderProject[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const projectRefsRef = useRef(new Map<string, ReadyFileSystemProjectEntry>())
 
   const updateProjectRefs = useCallback((entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>>) => {
+    // Both active and archived ready entries get tracked so we can resolve
+    // their handles for archive / restore / delete from anywhere on Home.
     projectRefsRef.current = new Map(
       entries
         .filter((entry): entry is ReadyFileSystemProjectEntry => entry.status === 'ready')
@@ -141,6 +148,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     if (permission !== 'granted') {
       setHandle(folderHandle)
       setProjects([])
+      setArchivedProjects([])
       setCorruptProjects([])
       projectRefsRef.current = new Map()
       setStatus('permission-needed')
@@ -158,13 +166,14 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
 
     setLabel(adapter.label)
     setProjects(nextProjects.projects)
+    setArchivedProjects(nextProjects.archivedProjects)
     setCorruptProjects(nextProjects.corruptProjects)
     setStatus('ready')
   }, [updateProjectRefs])
 
   const requireFolderPermission = useCallback(async () => {
     if (!handle) {
-      throw new Error('Choose a WriterOS Projects folder before opening file-backed projects.')
+      throw new Error('Choose a folder before opening file-backed projects.')
     }
 
     const permission = await requestWriterOSProjectsFolderPermission(handle)
@@ -188,6 +197,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       const nextProjects = projectEntriesFromList(nextEntries)
       setLabel(adapter.label)
       setProjects(nextProjects.projects)
+      setArchivedProjects(nextProjects.archivedProjects)
       setCorruptProjects(nextProjects.corruptProjects)
       setStatus('ready')
       entry = projectRefsRef.current.get(projectId)
@@ -264,6 +274,71 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     if (result.ok) {
       projectRefsRef.current.delete(projectId)
       setProjects(currentProjects => currentProjects.filter(project => project.id !== projectId))
+      setArchivedProjects(currentProjects => currentProjects.filter(project => project.id !== projectId))
+      setErrorMessage(null)
+    } else {
+      setErrorMessage(result.message)
+    }
+
+    return result
+  }, [requireFolderPermission])
+
+  const archiveProject = useCallback(async (projectId: string): Promise<ArchiveProjectResult<FileSystemAccessProjectRef>> => {
+    const entry = projectRefsRef.current.get(projectId)
+    if (!entry) {
+      return { ok: false, reason: 'failed', message: 'Project folder is not currently tracked.' }
+    }
+
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      return { ok: false, reason: 'permission-denied', message: errorMessageFromUnknown(error) }
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const result = await adapter.archiveProject(entry.ref)
+
+    if (result.ok) {
+      const movedEntry: ReadyFileSystemProjectEntry = { ...entry, ref: result.ref }
+      projectRefsRef.current.set(projectId, movedEntry)
+      setProjects(currentProjects => currentProjects.filter(project => project.id !== projectId))
+      setArchivedProjects(currentProjects => [
+        folderProjectFromListEntry(movedEntry),
+        ...currentProjects.filter(project => project.id !== projectId),
+      ])
+      setErrorMessage(null)
+    } else {
+      setErrorMessage(result.message)
+    }
+
+    return result
+  }, [requireFolderPermission])
+
+  const restoreProject = useCallback(async (projectId: string): Promise<ArchiveProjectResult<FileSystemAccessProjectRef>> => {
+    const entry = projectRefsRef.current.get(projectId)
+    if (!entry) {
+      return { ok: false, reason: 'failed', message: 'Project folder is not currently tracked.' }
+    }
+
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      return { ok: false, reason: 'permission-denied', message: errorMessageFromUnknown(error) }
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const result = await adapter.restoreProject(entry.ref)
+
+    if (result.ok) {
+      const movedEntry: ReadyFileSystemProjectEntry = { ...entry, ref: result.ref }
+      projectRefsRef.current.set(projectId, movedEntry)
+      setArchivedProjects(currentProjects => currentProjects.filter(project => project.id !== projectId))
+      setProjects(currentProjects => [
+        folderProjectFromListEntry(movedEntry),
+        ...currentProjects.filter(project => project.id !== projectId),
+      ])
       setErrorMessage(null)
     } else {
       setErrorMessage(result.message)
@@ -322,6 +397,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       setHandle(null)
       setLabel(null)
       setProjects([])
+      setArchivedProjects([])
       setCorruptProjects([])
       projectRefsRef.current = new Map()
       setErrorMessage(null)
@@ -377,8 +453,11 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     chooseFolder,
     refreshFolder,
     forgetFolder,
+    archivedProjects,
     openProject,
     writeProject,
     deleteProject,
+    archiveProject,
+    restoreProject,
   }
 }

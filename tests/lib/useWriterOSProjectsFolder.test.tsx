@@ -17,14 +17,14 @@ const storageMocks = vi.hoisted(() => ({
   writeProject: vi.fn(),
   folderHandle: {
     kind: 'directory' as const,
-    name: 'WriterOS Projects',
+    name: "Ben's Projects",
     getFileHandle: vi.fn(),
     getDirectoryHandle: vi.fn(),
   },
 }))
 
 vi.mock('../../client/src/lib/projectStorage', () => ({
-  DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL: '~/WriterOS Projects',
+  DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL: 'Selected folder',
   clearPersistedWriterOSProjectsFolderHandle: vi.fn(),
   createFileSystemAccessProjectStorageAdapter: storageMocks.createFileSystemAccessProjectStorageAdapter,
   getWriterOSProjectsFolderPermission: storageMocks.getWriterOSProjectsFolderPermission,
@@ -49,8 +49,8 @@ describe('useWriterOSProjectsFolder', () => {
     storageMocks.writeProject.mockReset()
     storageMocks.createFileSystemAccessProjectStorageAdapter.mockReturnValue({
       kind: 'file-system-access',
-      label: 'WriterOS Projects',
-      defaultFolderLabel: '~/WriterOS Projects',
+      label: "Ben's Projects",
+      defaultFolderLabel: 'Selected folder',
       listProjects: storageMocks.listProjects,
       readProject: storageMocks.readProject,
       writeProject: storageMocks.writeProject,
@@ -134,6 +134,74 @@ describe('useWriterOSProjectsFolder', () => {
       packageName: 'Harbor Lights (folderpr).writeros',
       warnings: ['script/script.writeros.html is missing; using a blank script.'],
     })
+  })
+
+  it('hydrates archived projects during the initial folder scan', async () => {
+    const activeRef = {
+      id: 'folder-project-1',
+      packageName: 'Harbor Lights (folderpr).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'folder-project-1',
+        title: 'Harbor Lights',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'folder-project-1',
+        title: 'Harbor Lights',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+    const archivedRef = {
+      id: 'folder-project-archived',
+      packageName: 'Old Draft (folderar).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'folder-project-archived',
+        title: 'Old Draft',
+        createdAt: 500,
+        updatedAt: 600,
+        format: 'feature' as const,
+        sceneCount: 0,
+        archivedAt: '2026-05-25T00:00:00.000Z',
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'folder-project-archived',
+        title: 'Old Draft',
+        format: 'feature' as const,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-02T00:00:00.000Z',
+        openedAt: '2026-04-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+    storageMocks.listProjects.mockResolvedValue([
+      { status: 'ready', ref: activeRef, warnings: [] },
+      { status: 'ready', ref: archivedRef, warnings: [], archived: true },
+    ])
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    expect(result.current.projects).toMatchObject([
+      { id: 'folder-project-1', packageName: 'Harbor Lights (folderpr).writeros' },
+    ])
+    expect(result.current.archivedProjects).toMatchObject([
+      { id: 'folder-project-archived', packageName: 'Old Draft (folderar).writeros' },
+    ])
   })
 
   it('surfaces an error when a file-backed project disappears before open', async () => {

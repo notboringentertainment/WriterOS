@@ -52,18 +52,12 @@ WriterOS should become a local-first project app before it becomes a cloud app.
 
 The shipped-app storage model should be:
 
-- A user-selected **WriterOS Projects** folder.
+- A user-selected project library folder, named however the writer wants.
 - One `.writeros` folder/package per project.
 - Project data stored as ordinary files that can be backed up, moved, and inspected.
 - `localStorage` retained only as a browser-preview fallback and migration source.
 
-Default suggested folder:
-
-```text
-~/WriterOS Projects
-```
-
-The app may suggest this path, but the writer must be able to choose another folder. The folder should not default to the repo directory or to an iCloud-synced Desktop path.
+WriterOS should not prescribe or foreground a default folder name. The writer can choose a folder such as `~/Ben's Projects`, `~/Studio Work`, or any other location that makes sense for their project library. The folder should not default to the repo directory.
 
 Additional decisions:
 
@@ -82,7 +76,7 @@ Home must not be a marketing page. It is an operational project launcher.
 
 Required Home jobs:
 
-- Show the selected WriterOS Projects folder.
+- Show the selected project library folder.
 - Show projects discovered in that folder.
 - Show recent projects.
 - Open an existing project.
@@ -253,7 +247,7 @@ The first non-`.fdx` implementation slice should be `.fountain`, not PDF. PDF im
 The first external-storage implementation must include a migration path:
 
 - Detect existing localStorage projects.
-- Offer to migrate them into the selected WriterOS Projects folder after explicit confirmation.
+- Offer to migrate them into the selected folder after explicit confirmation.
 - Preserve project ids where safe.
 - Preserve active project selection.
 - Preserve project title, format, script, structured documents, transcripts, and view preferences.
@@ -286,7 +280,7 @@ The next implementation track should be this PRD, not more Treatment polish or a
 
 Build order:
 
-1. Lock the `.writeros` project package reader/writer and default `~/WriterOS Projects` folder behavior.
+1. Lock the `.writeros` project package reader/writer and user-chosen folder behavior.
 2. Add Home as the app entry surface with project folder selection, project list, recent projects, create/open, and migration visibility.
 3. Add `.fdx` parser/import support and wire it first to import-as-new-project from Home.
 4. Add Script import-as-new-project and explicit replace with confirmation and no partial overwrite on failure.
@@ -348,12 +342,12 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 - Delete cascades the entire `ProjectState` (script + synopsis + outline + story bible + treatment + transcripts + metadata + view prefs) and removes the on-disk `.writeros` folder when file-backed.
 - Permission denial on disk delete surfaces an explicit warning and aborts cleanup; folder-already-missing proceeds with library cleanup.
 - Empty library after delete returns the writer to Home with explicit Create / Import CTAs (no silent auto-creation of a blank project).
-- Archive (5a-2) ships after Delete (5a-1) with a Home `Active | Archive` toggle and a visible `<WriterOS Projects>/Archive/` subfolder for file-backed projects.
+- Archive (5a-2) ships after Delete (5a-1) with a Home `Active | Archive` toggle and a visible `Archive/` subfolder inside the selected folder for file-backed projects.
 
 ## Acceptance Criteria
 
 - A writer can launch WriterOS into Home without an already-open project.
-- A writer can choose a WriterOS Projects folder.
+- A writer can choose a folder for their project library.
 - A writer can see and open projects from that folder.
 - A writer can create a new project from Home.
 - A writer can import a `.fdx` file from Home and land in Script with correct screenplay block formatting.

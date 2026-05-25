@@ -912,4 +912,59 @@ describe('useProjectState — clearSynopsis dual reset', () => {
       expect(result.current.activeProjectId).toBe('')
     })
   })
+
+  describe('archive / restore by id (Slice 5a-2)', () => {
+    it('archive sets archivedAt and clears active when archiving the active project', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const activeId = result.current.activeProjectId
+
+      act(() => {
+        result.current.archiveProjectById(activeId)
+      })
+
+      expect(result.current.activeProjectId).toBe('')
+      // Summary should still surface the archived project so Home can show it.
+      const archived = result.current.projects.find(p => p.id === activeId)
+      expect(archived?.archivedAt).toBeTruthy()
+    })
+
+    it('archive of a non-active project leaves the active project alone', () => {
+      const { result } = renderHook(() => useProjectState())
+      let secondId = ''
+      act(() => {
+        const created = result.current.createProject()
+        secondId = created.id
+      })
+      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
+      act(() => result.current.switchProject(firstId))
+
+      act(() => {
+        result.current.archiveProjectById(secondId)
+      })
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)?.archivedAt).toBeTruthy()
+    })
+
+    it('restore clears archivedAt and does not auto-activate', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const archivedId = result.current.activeProjectId
+      act(() => result.current.archiveProjectById(archivedId))
+      expect(result.current.activeProjectId).toBe('')
+
+      act(() => {
+        result.current.restoreProjectById(archivedId)
+      })
+
+      expect(result.current.projects.find(p => p.id === archivedId)?.archivedAt).toBeUndefined()
+      // Restore does not silently re-open the project.
+      expect(result.current.activeProjectId).toBe('')
+    })
+  })
 })

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   activateStoredProject,
+  archiveProjectInLibrary,
   loadActiveProjectLibrary,
   createBlankProject,
   saveProjectToLibrary,
   deleteProjectFromLibrary,
+  restoreProjectInLibrary,
 } from '../../client/src/lib/projectLibrary'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
@@ -122,6 +124,124 @@ describe('saveProjectToLibrary (regression coverage for saveNow path)', () => {
 
     expect(next[0].id).toBe(projectId)
     expect(next[0].updatedAt).toBeGreaterThan(firstUpdatedAt)
+  })
+})
+
+describe('archiveProjectInLibrary (Slice 5a-2)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('sets archivedAt on the target project and persists', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+    const other = seeded.projects.find(p => p.id !== activeId)!
+
+    const result = archiveProjectInLibrary(other.id, seeded.projects)
+
+    const archived = result.projects.find(p => p.id === other.id)
+    expect(archived?.archivedAt).toBeTruthy()
+    const stored = JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? '[]')
+    expect(stored.find((p: { id: string; archivedAt?: string }) => p.id === other.id)?.archivedAt).toBeTruthy()
+    // Active project unchanged when a non-active project is archived.
+    expect(result.activeProjectId).toBe(activeId)
+  })
+
+  it('clears active selection when the active project is archived', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+
+    const result = archiveProjectInLibrary(activeId, seeded.projects)
+
+    expect(result.activeProjectId).toBe('')
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+    expect(result.projects.find(p => p.id === activeId)?.archivedAt).toBeTruthy()
+  })
+
+  it('no-ops on an already-archived project', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+    const other = seeded.projects.find(p => p.id !== activeId)!
+    const first = archiveProjectInLibrary(other.id, seeded.projects)
+    const firstStamp = first.projects.find(p => p.id === other.id)?.archivedAt
+
+    const second = archiveProjectInLibrary(other.id, first.projects)
+
+    expect(second.projects.find(p => p.id === other.id)?.archivedAt).toBe(firstStamp)
+  })
+})
+
+describe('restoreProjectInLibrary (Slice 5a-2)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('clears archivedAt and persists', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+    const other = seeded.projects.find(p => p.id !== activeId)!
+    const archived = archiveProjectInLibrary(other.id, seeded.projects)
+
+    const result = restoreProjectInLibrary(other.id, archived.projects)
+
+    expect(result.projects.find(p => p.id === other.id)?.archivedAt).toBeUndefined()
+    const stored = JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? '[]')
+    expect(stored.find((p: { id: string; archivedAt?: string }) => p.id === other.id)?.archivedAt).toBeUndefined()
+  })
+
+  it('does not auto-activate a restored project', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+    const other = seeded.projects.find(p => p.id !== activeId)!
+    const archived = archiveProjectInLibrary(other.id, seeded.projects)
+    // Active was untouched.
+    expect(archived.activeProjectId).toBe(activeId)
+
+    const result = restoreProjectInLibrary(other.id, archived.projects)
+
+    expect(result.activeProjectId).toBe(activeId)
+  })
+
+  it('no-ops on a not-archived project', () => {
+    const seeded = seedLibrary()
+    const other = seeded.projects.find(p => p.id !== seeded.activeProjectId)!
+
+    const result = restoreProjectInLibrary(other.id, seeded.projects)
+
+    expect(result.projects.find(p => p.id === other.id)?.archivedAt).toBeUndefined()
+  })
+})
+
+describe('loadActiveProjectLibrary skips archived projects (Slice 5a-2)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('does not auto-select an archived project as active on reload', () => {
+    const seeded = seedLibrary()
+    const activeId = seeded.activeProjectId
+    archiveProjectInLibrary(activeId, seeded.projects)
+
+    const reloaded = loadActiveProjectLibrary()
+
+    expect(reloaded.projects.length).toBeGreaterThan(0)
+    expect(reloaded.activeProjectId).not.toBe('')
+    const reloadedActive = reloaded.projects.find(p => p.id === reloaded.activeProjectId)
+    expect(reloadedActive).toBeDefined()
+    expect(reloadedActive?.archivedAt).toBeFalsy()
+  })
+
+  it('lands Home with no active when every persisted project is archived', () => {
+    localStorage.clear()
+    const only = loadActiveProjectLibrary()
+    const id = only.activeProjectId
+    archiveProjectInLibrary(id, only.projects)
+
+    const reloaded = loadActiveProjectLibrary()
+    expect(reloaded.activeProjectId).toBe('')
+    // Archived project is preserved in storage so the writer can restore it.
+    expect(reloaded.projects).toHaveLength(1)
+    expect(reloaded.projects[0].archivedAt).toBeTruthy()
   })
 })
 

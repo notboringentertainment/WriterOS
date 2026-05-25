@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createFileSystemAccessProjectStorageAdapter,
+  WRITEROS_ARCHIVE_SUBFOLDER_NAME,
   type WriterOSFileSystemDirectoryHandle,
   type WriterOSFileSystemFileHandle,
   type WriterOSFileSystemHandle,
@@ -253,6 +254,149 @@ describe('File System Access project storage adapter', () => {
       if (result.ok) throw new Error('expected failure')
       expect(result.reason).toBe('failed')
       expect(result.message).toBe('disk on fire')
+    })
+  })
+
+  describe('archive / restore folder move (Slice 5a-2)', () => {
+    class FakeDirectoryHandleWithRemove extends FakeDirectoryHandle {
+      removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []
+      removeBehavior: 'success' | 'not-found' | 'denied' | 'unknown-error' = 'success'
+
+      async removeEntry(name: string, options?: { recursive?: boolean }): Promise<void> {
+        this.removeAttempts.push({ name, recursive: options?.recursive })
+        switch (this.removeBehavior) {
+          case 'success':
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(this as any).children.delete(name)
+            return
+          case 'not-found':
+            throw Object.assign(new Error(`${name} not found`), { name: 'NotFoundError' })
+          case 'denied':
+            throw Object.assign(new Error('permission denied'), { name: 'NotAllowedError' })
+          case 'unknown-error':
+            throw new Error('disk on fire')
+        }
+      }
+    }
+
+    function makeRoot() {
+      // Need removeEntry on subdirectories too. Replace the default factory
+      // by patching children created via getDirectoryHandle so they are also
+      // FakeDirectoryHandleWithRemove instances.
+      class TreeRoot extends FakeDirectoryHandleWithRemove {
+        async getDirectoryHandle(name: string, options: { create?: boolean } = {}): Promise<WriterOSFileSystemDirectoryHandle> {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const children: Map<string, WriterOSFileSystemHandle> = (this as any).children
+          const existing = children.get(name)
+          if (existing) {
+            if (existing.kind === 'directory') return existing
+            throw new Error(`${name} is not a directory`)
+          }
+          if (!options.create) throw Object.assign(new Error(`${name} not found`), { name: 'NotFoundError' })
+
+          const next = new TreeRoot(name)
+          children.set(name, next)
+          return next
+        }
+      }
+      return new TreeRoot('WriterOS Projects')
+    }
+
+    it('archive moves a package into Archive/ and removes the original', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+
+      const result = await adapter.archiveProject(ref)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('archive failed')
+      expect(result.ref.packageName).toBe(ref.packageName)
+      expect(result.ref.handle).not.toBe(ref.handle)
+
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0]).toMatchObject({
+        status: 'ready',
+        archived: true,
+      })
+    })
+
+    it('restore moves a package back out of Archive/ and removes the archived copy', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      const archived = await adapter.archiveProject(ref)
+      if (!archived.ok) throw new Error('archive prerequisite failed')
+
+      const result = await adapter.restoreProject(archived.ref)
+
+      expect(result.ok).toBe(true)
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0].status).toBe('ready')
+      if (list[0].status !== 'ready') throw new Error('expected ready entry')
+      expect(list[0].archived).toBeFalsy()
+    })
+
+    it('surfaces permission-denied as an explicit failure during archive', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'denied'
+
+      const result = await adapter.archiveProject(ref)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure')
+      expect(result.reason).toBe('permission-denied')
+    })
+
+    it('cleans up the archive copy if removing the active package fails', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'denied'
+
+      const result = await adapter.archiveProject(ref)
+
+      expect(result.ok).toBe(false)
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0].status).toBe('ready')
+      if (list[0].status !== 'ready') throw new Error('expected ready entry')
+      expect(list[0].archived).toBeFalsy()
+    })
+
+    it('cleans up the restored active copy if removing the archive package fails', async () => {
+      const root = makeRoot()
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      const archived = await adapter.archiveProject(ref)
+      if (!archived.ok) throw new Error('archive prerequisite failed')
+      const archiveRoot = await root.getDirectoryHandle(WRITEROS_ARCHIVE_SUBFOLDER_NAME) as FakeDirectoryHandleWithRemove
+      archiveRoot.removeBehavior = 'denied'
+
+      const result = await adapter.restoreProject(archived.ref)
+
+      expect(result.ok).toBe(false)
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(1)
+      expect(list[0].status).toBe('ready')
+      if (list[0].status !== 'ready') throw new Error('expected ready entry')
+      expect(list[0].archived).toBe(true)
+    })
+
+    it('rejects archive on browsers without removeEntry', async () => {
+      const root = new FakeDirectoryHandle('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+
+      const result = await adapter.archiveProject(ref)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure')
+      expect(result.reason).toBe('unsupported')
     })
   })
 
