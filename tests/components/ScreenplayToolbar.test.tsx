@@ -49,10 +49,12 @@ describe('ScreenplayToolbar', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Replace .fdx' }))
+    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(onReplaceFdx).toHaveBeenCalledTimes(0)
 
-    expect(onImportFdx).toHaveBeenCalled()
-    expect(onReplaceFdx).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Replace .fdx' }))
+    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(onReplaceFdx).toHaveBeenCalledTimes(1)
   })
 
   it('hides when focusMode is true', () => {

@@ -107,6 +107,30 @@ describe('HomeSurface', () => {
     expect(screen.getByText('This file is not valid Final Draft XML.')).toBeInTheDocument()
   })
 
+  it('shows Final Draft import errors alongside storage errors', () => {
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        storageStatus={{
+          status: 'error',
+          label: 'WriterOS Projects',
+          defaultFolderLabel: '~/WriterOS Projects',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: true,
+          errorMessage: 'Unable to scan the project folder.',
+        }}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        importError="This file is not valid Final Draft XML."
+      />
+    )
+
+    const status = screen.getByRole('status')
+    expect(within(status).getByText('Unable to scan the project folder.')).toBeInTheDocument()
+    expect(within(status).getByText('This file is not valid Final Draft XML.')).toBeInTheDocument()
+  })
+
   it('filters projects by title', () => {
     render(
       <HomeSurface

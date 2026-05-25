@@ -104,6 +104,11 @@ describe('screenplay spacing', () => {
     expect(getScreenplaySpacingBefore(null, 'action')).toBe(0)
   })
 
+  it('falls back safely for stored element types outside the spacing table', () => {
+    expect(getScreenplaySpacingBefore('future-type' as never, 'action')).toBe(0)
+    expect(getScreenplaySpacingBefore('action', 'future-type' as never)).toBe(0)
+  })
+
   it('keeps the Slice A spacing scale to zero or one blank line', () => {
     for (const row of Object.values(SCREENPLAY_SPACING)) {
       expect(Object.values(row).every(value => value === 0 || value === 1)).toBe(true)

@@ -136,6 +136,9 @@ export function HomeSurface({
     if (!file) return
     void onImportFdx?.(file)
   }
+  const noticeMessages = [storage.errorMessage, importError].filter(
+    (message): message is string => Boolean(message)
+  )
 
   return (
     <section style={styles.root} aria-labelledby="home-heading">
@@ -225,9 +228,16 @@ export function HomeSurface({
         </div>
       </div>
 
-      {(storage.errorMessage || importError) && (
+      {noticeMessages.length > 0 && (
         <div style={styles.notice} role="status">
-          {storage.errorMessage ?? importError}
+          {noticeMessages.map((message, index) => (
+            <span
+              key={`${index}-${message}`}
+              style={index === 0 ? undefined : styles.noticeLine}
+            >
+              {message}
+            </span>
+          ))}
         </div>
       )}
 

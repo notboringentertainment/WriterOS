@@ -229,9 +229,10 @@ export async function importFdxFile(file: File): Promise<ImportedFdxScreenplay> 
   return importFdxXml(await decodeFdxFile(file), { filename: file.name })
 }
 
-function normalizeDeclaredEncoding(value: string): string {
+function normalizeDeclaredEncoding(value: string, utf16Fallback: string | null = null): string {
   const normalized = value.trim().toLowerCase().replace(/_/g, '-')
   if (normalized === 'utf8') return 'utf-8'
+  if (normalized === 'utf16' || normalized === 'utf-16') return utf16Fallback ?? 'utf-16le'
   if (normalized === 'latin1') return 'iso-8859-1'
   return normalized
 }
@@ -242,9 +243,10 @@ function declaredXmlEncoding(preview: string): string | null {
 
 async function decodeFdxFile(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
-  const preview = new TextDecoder('utf-8', { fatal: false }).decode(buffer.slice(0, 512))
+  const previewDecoderName = detectUtf16Encoding(buffer) ?? 'utf-8'
+  const preview = new TextDecoder(previewDecoderName, { fatal: false }).decode(buffer.slice(0, 512))
   const encoding = declaredXmlEncoding(preview)
-  const decoderName = encoding ? normalizeDeclaredEncoding(encoding) : 'utf-8'
+  const decoderName = encoding ? normalizeDeclaredEncoding(encoding, previewDecoderName) : previewDecoderName
 
   if (decoderName === 'windows-1252') return decodeWindows1252(buffer)
 
@@ -256,6 +258,27 @@ async function decodeFdxFile(file: File): Promise<string> {
       `This Final Draft file declares unsupported text encoding "${encoding}".`,
     )
   }
+}
+
+function detectUtf16Encoding(buffer: ArrayBuffer): 'utf-16le' | 'utf-16be' | null {
+  const bytes = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 512))
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return 'utf-16le'
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return 'utf-16be'
+
+  let evenNulls = 0
+  let oddNulls = 0
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] !== 0) continue
+    if (index % 2 === 0) {
+      evenNulls += 1
+    } else {
+      oddNulls += 1
+    }
+  }
+
+  if (oddNulls >= 2 && oddNulls > evenNulls * 2) return 'utf-16le'
+  if (evenNulls >= 2 && evenNulls > oddNulls * 2) return 'utf-16be'
+  return null
 }
 
 const WINDOWS_1252_CONTROL_CHARS: Record<number, string> = {

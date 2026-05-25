@@ -125,7 +125,7 @@ export function shouldSentenceCapitalize(type: ElementType, textBeforeCursor: st
 
 export function getScreenplaySpacingBefore(previousType: ElementType | null, currentType: ElementType): ScreenplayBlankLines {
   if (previousType === null) return 0
-  return SCREENPLAY_SPACING[previousType][currentType]
+  return SCREENPLAY_SPACING[previousType]?.[currentType] ?? 0
 }
 
 export function countWords(text: string): number {

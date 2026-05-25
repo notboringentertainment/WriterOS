@@ -11,6 +11,16 @@ function expectedHtml(name: string): string {
   return readFixture(name).replace(/^<!--[\s\S]*?-->\s*/, '').trim()
 }
 
+function encodeUtf16Le(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length * 2)
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    bytes[index * 2] = code & 0xFF
+    bytes[index * 2 + 1] = code >> 8
+  }
+  return bytes
+}
+
 describe('Final Draft .fdx import', () => {
   it('converts the context-preservation fixture into WriterOS script HTML', () => {
     const imported = importFdxXml(readFixture('context-preservation.fdx'), {
@@ -227,6 +237,22 @@ describe('Final Draft .fdx import', () => {
     const imported = await importFdxFile(file)
 
     expect(imported.rawHtml).toContain('“smart quote”')
+  })
+
+  it('decodes UTF-16 Final Draft files before XML parsing', async () => {
+    const source = `<?xml version="1.0" encoding="UTF-16"?>
+      <FinalDraft DocumentType="Script" Template="No" Version="5">
+        <Content>
+          <Paragraph Type="Scene Heading"><Text>INT. ROOM - DAY</Text></Paragraph>
+          <Paragraph Type="Action"><Text>The room waits.</Text></Paragraph>
+        </Content>
+      </FinalDraft>`
+    const file = new File([encodeUtf16Le(source)], 'Utf16.fdx', { type: 'application/xml' })
+
+    const imported = await importFdxFile(file)
+
+    expect(imported.rawHtml).toContain('INT. ROOM - DAY')
+    expect(imported.rawHtml).toContain('The room waits.')
   })
 
   it('derives a clean fallback title from the filename', () => {

@@ -34,6 +34,7 @@ describe('ScreenplayEditor spacing', () => {
       '0',
       '1',
     ])
+    expect(savedHtml.length).toBeGreaterThan(0)
     expect(savedHtml).not.toContain('data-screenplay-space-before')
   })
 })
