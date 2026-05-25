@@ -21,6 +21,7 @@ import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import { computePostDeleteStorageEffect } from './lib/homeDelete'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -91,6 +92,7 @@ export default function App() {
   const [fdxImportWarnings, setFdxImportWarnings] = useState<string[]>([])
   const [importingFdx, setImportingFdx] = useState(false)
   const [scriptImportNonce, setScriptImportNonce] = useState(0)
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const folderSaveNonceRef = useRef(0)
   const writeProjectRef = useRef(projectFolder.writeProject)
   writeProjectRef.current = projectFolder.writeProject
@@ -334,8 +336,43 @@ export default function App() {
     setFolderProjectError(null)
     setFdxImportError(null)
     setFdxImportWarnings([])
-    project.deleteProject()
-  }, [cancelPendingFolderSave, project])
+    const next = project.deleteProject()
+    if (!next.activeProjectId) {
+      shellState.openHome()
+    }
+  }, [cancelPendingFolderSave, project, shellState])
+
+  const handleDeleteHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeDeleteTarget) => {
+    if (deletingProjectId) return
+    setDeletingProjectId(target.projectId)
+    setFolderProjectError(null)
+
+    try {
+      if (target.storageKind === 'folder') {
+        const result = await projectFolder.deleteProject(target.projectId)
+        if (!result.ok) {
+          // Surface explicit failure. Do not pretend disk cleanup happened and
+          // do not proceed to library cleanup — folder still on disk means the
+          // project will reappear on next folder scan, which would confuse the
+          // user about what "delete" did.
+          setFolderProjectError(result.message)
+          return
+        }
+      }
+
+      const wasActive = project.activeProjectId === target.projectId
+      const next = project.deleteProjectById(target.projectId)
+
+      const effect = computePostDeleteStorageEffect(target, wasActive)
+      if (effect.cancelPendingFolderSave) cancelPendingFolderSave()
+      if (effect.resetToBrowser) setActiveProjectStorage({ kind: 'browser' })
+      if (!next.activeProjectId) {
+        shellState.openHome()
+      }
+    } finally {
+      setDeletingProjectId(null)
+    }
+  }, [cancelPendingFolderSave, deletingProjectId, project, projectFolder, shellState])
 
   const handleWPSend = useCallback(async (text: string) => {
     const openSwarmMessage = parseOpenSwarmCommand(text)
@@ -523,9 +560,11 @@ export default function App() {
           }}
           activeStorageKind={activeProjectStorage.kind}
           openingFolderProjectId={openingFolderProjectId}
+          deletingProjectId={deletingProjectId}
           onOpenProject={handleOpenBrowserProject}
           onOpenFolderProject={handleOpenFolderProject}
           onNewProject={handleNewProject}
+          onDeleteProject={handleDeleteHomeProject}
           onImportFdx={handleImportFdxAsNewProject}
           importingFdx={importingFdx}
           importError={fdxImportError}

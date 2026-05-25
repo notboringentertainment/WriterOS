@@ -7,6 +7,10 @@ import type {
   WriterOSProjectsFolderStatus,
 } from '../../lib/useWriterOSProjectsFolder'
 
+export type HomeDeleteTarget =
+  | { storageKind: 'browser'; projectId: string; title: string }
+  | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
+
 interface HomeSurfaceProps {
   activeProjectId: string
   projects: ProjectSummary[]
@@ -15,9 +19,11 @@ interface HomeSurfaceProps {
   storageStatus?: HomeProjectStorageStatus
   activeStorageKind?: 'browser' | 'folder'
   openingFolderProjectId?: string | null
+  deletingProjectId?: string | null
   onOpenProject: (projectId: string) => void
   onOpenFolderProject?: (projectId: string) => void
   onNewProject: () => void
+  onDeleteProject?: (target: HomeDeleteTarget) => void | Promise<void>
   onImportFdx?: (file: File) => void | Promise<void>
   importingFdx?: boolean
   importError?: string | null
@@ -58,9 +64,11 @@ export function HomeSurface({
   storageStatus,
   activeStorageKind = 'browser',
   openingFolderProjectId = null,
+  deletingProjectId = null,
   onOpenProject,
   onOpenFolderProject,
   onNewProject,
+  onDeleteProject,
   onImportFdx,
   importingFdx = false,
   importError = null,
@@ -70,6 +78,7 @@ export function HomeSurface({
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
   const fdxInputRef = useRef<HTMLInputElement>(null)
   const storage = storageStatus ?? {
     status: 'browser-fallback' as const,
@@ -299,7 +308,24 @@ export function HomeSurface({
 
       <div style={styles.projectList} aria-label="Project list">
         {visibleProjects.length === 0 ? (
-          <p style={styles.empty}>{formatEmptyState(query, showingFolderProjects, storage.status)}</p>
+          <div style={styles.empty}>
+            <p>{formatEmptyState(query, showingFolderProjects, storage.status)}</p>
+            {query.trim() === '' && !showingFolderProjects && (
+              <div style={styles.emptyActions}>
+                <button type="button" style={styles.primaryButton} onClick={onNewProject}>
+                  New Project
+                </button>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  disabled={!onImportFdx || importingFdx}
+                  onClick={() => fdxInputRef.current?.click()}
+                >
+                  {importingFdx ? 'Importing' : 'Import .fdx'}
+                </button>
+              </div>
+            )}
+          </div>
         ) : visibleProjects.map(row => {
           const isActive = row.storageKind === activeStorageKind && row.project.id === activeProjectId
           const isOpening = row.storageKind === 'folder' && row.project.id === openingFolderProjectId
@@ -321,22 +347,104 @@ export function HomeSurface({
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
-                aria-label={`Open ${projectTitle}`}
-                disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
-                onClick={() => {
-                  if (row.storageKind === 'browser') onOpenProject(row.project.id)
-                  else onOpenFolderProject?.(row.project.id)
-                }}
-              >
-                {isOpening ? 'Opening' : 'Open'}
-              </button>
+              <div style={styles.projectActions}>
+                <button
+                  type="button"
+                  style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
+                  aria-label={`Open ${projectTitle}`}
+                  disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
+                  onClick={() => {
+                    if (row.storageKind === 'browser') onOpenProject(row.project.id)
+                    else onOpenFolderProject?.(row.project.id)
+                  }}
+                >
+                  {isOpening ? 'Opening' : 'Open'}
+                </button>
+                {onDeleteProject && (
+                  <button
+                    type="button"
+                    style={styles.destructiveSmallButton}
+                    aria-label={`Delete ${projectTitle}`}
+                    disabled={deletingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeDeleteTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      setDeleteTarget(target)
+                    }}
+                  >
+                    {deletingProjectId === row.project.id ? 'Deleting' : 'Delete'}
+                  </button>
+                )}
+              </div>
             </article>
           )
         })}
       </div>
+
+      {deleteTarget && (
+        <div role="dialog" aria-modal="true" aria-labelledby="home-delete-title" style={styles.modalBackdrop}>
+          <div style={styles.modalCard}>
+            <h2 id="home-delete-title" style={styles.modalTitle}>
+              Delete &ldquo;{deleteTarget.title}&rdquo;?
+            </h2>
+            <p style={styles.modalBody}>
+              This removes the script, synopsis, outline, story bible, treatment, and all transcripts for this project.
+            </p>
+            {deleteTarget.storageKind === 'folder' && (
+              <p style={styles.modalBody}>
+                The <code>{deleteTarget.packageName}</code> folder will be removed from disk. This cannot be undone.
+              </p>
+            )}
+            {deleteTarget.storageKind === 'browser' && (
+              <p style={styles.modalBody}>This cannot be undone.</p>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setDeleteTarget(null)}
+                disabled={deletingProjectId === deleteTarget.projectId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.destructiveButton}
+                disabled={deletingProjectId === deleteTarget.projectId}
+                onClick={async () => {
+                  const target = deleteTarget
+                  if (!target) return
+                  // Keep the modal mounted during the await so the "Deleting"
+                  // label and the disabled state on Cancel are reachable, and
+                  // so the writer never sees the dialog disappear mid-action.
+                  // The parent surfaces any failure through the storage-error
+                  // notice that remains visible after the modal closes.
+                  try {
+                    await onDeleteProject?.(target)
+                  } catch {
+                    // Parent surfaces failures via the storage-error notice;
+                    // the modal still closes so the writer can read it.
+                  } finally {
+                    setDeleteTarget(null)
+                  }
+                }}
+              >
+                {deletingProjectId === deleteTarget.projectId ? 'Deleting' : 'Delete project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -404,7 +512,7 @@ function formatEmptyState(
   storageStatus: HomeStorageStatusKind,
 ) {
   if (query.trim()) return 'No projects match that filter.'
-  if (!showingFolderProjects) return 'No projects yet. Create your first project.'
+  if (!showingFolderProjects) return 'No projects yet. Create a new project or import a Final Draft .fdx to get started.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
   if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
   if (storageStatus === 'error') return 'Unable to scan the project folder.'
@@ -673,7 +781,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-display)',
     fontSize: 13,
     padding: '7px 12px',
-    marginRight: 12,
   },
   secondarySmallButton: {
     borderWidth: 1,
@@ -685,12 +792,83 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-display)',
     fontSize: 13,
     padding: '7px 12px',
+  },
+  destructiveSmallButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'hsl(0 60% 45%)',
+    borderRadius: 6,
+    background: 'transparent',
+    color: 'hsl(0 60% 55%)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '7px 12px',
+  },
+  destructiveButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'hsl(0 60% 45%)',
+    borderRadius: 6,
+    background: 'hsl(0 60% 45%)',
+    color: '#fff',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 14px',
+  },
+  projectActions: {
+    display: 'flex',
+    gap: 8,
+    flexShrink: 0,
     marginRight: 12,
+  },
+  modalBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'hsla(220, 20%, 5%, 0.55)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    zIndex: 50,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 480,
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: 24,
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 500,
+    color: 'var(--fg)',
+    marginBottom: 12,
+  },
+  modalBody: {
+    fontSize: 14,
+    color: 'var(--fg-muted)',
+    lineHeight: 1.5,
+    marginBottom: 10,
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 18,
   },
   empty: {
     color: 'var(--fg-muted)',
     fontSize: 15,
     padding: '28px 12px',
+  },
+  emptyActions: {
+    display: 'flex',
+    gap: 10,
+    marginTop: 14,
+    flexWrap: 'wrap',
   },
   hiddenInput: {
     display: 'none',

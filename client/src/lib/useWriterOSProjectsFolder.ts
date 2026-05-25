@@ -12,6 +12,7 @@ import {
   getWriterOSProjectsFolderPermission,
   type FileSystemAccessProjectRef,
   type ProjectStorageListEntry,
+  type RemoveProjectResult,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
 import type { ProjectSummary, StoredProject } from './projectLibrary'
@@ -53,6 +54,7 @@ export interface WriterOSProjectsFolderState {
   forgetFolder: () => Promise<void>
   openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
   writeProject: (project: StoredProject) => Promise<WriterOSFolderProject>
+  deleteProject: (projectId: string) => Promise<RemoveProjectResult>
 }
 
 export interface WriterOSFolderProjectOpenResult {
@@ -237,6 +239,39 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return nextProject
   }, [requireFolderPermission])
 
+  const deleteProject = useCallback(async (projectId: string): Promise<RemoveProjectResult> => {
+    const entry = projectRefsRef.current.get(projectId)
+    if (!entry) {
+      // Folder not tracked here — treat as success so the library cleanup can
+      // proceed without surfacing a false failure.
+      return { ok: true, folderAlreadyMissing: true }
+    }
+
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'permission-denied',
+        message: errorMessageFromUnknown(error),
+      }
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const result = await adapter.removeProject(entry.ref)
+
+    if (result.ok) {
+      projectRefsRef.current.delete(projectId)
+      setProjects(currentProjects => currentProjects.filter(project => project.id !== projectId))
+      setErrorMessage(null)
+    } else {
+      setErrorMessage(result.message)
+    }
+
+    return result
+  }, [requireFolderPermission])
+
   const chooseFolder = useCallback(async () => {
     if (!fileSystemAccessSupported) {
       setStatus('unsupported')
@@ -344,5 +379,6 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     forgetFolder,
     openProject,
     writeProject,
+    deleteProject,
   }
 }

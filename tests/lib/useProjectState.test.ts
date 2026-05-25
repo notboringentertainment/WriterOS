@@ -862,4 +862,54 @@ describe('useProjectState — clearSynopsis dual reset', () => {
     expect(after).not.toBe(before)
     expect(typeof after).toBe('string')
   })
+
+  describe('deleteProjectById (Slice 5a)', () => {
+    it('deletes a non-active project without changing the active project', () => {
+      const { result } = renderHook(() => useProjectState())
+      let secondId = ''
+      act(() => {
+        const created = result.current.createProject()
+        secondId = created.id
+      })
+      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
+      act(() => result.current.switchProject(firstId))
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)).toBeDefined()
+
+      act(() => {
+        result.current.deleteProjectById(secondId)
+      })
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)).toBeUndefined()
+    })
+
+    it('clears active selection when the active project is deleted', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const activeId = result.current.activeProjectId
+
+      act(() => {
+        result.current.deleteProjectById(activeId)
+      })
+
+      expect(result.current.activeProjectId).toBe('')
+      expect(result.current.state.meta.title).toBe('')
+    })
+
+    it('leaves the library empty after deleting the only project', () => {
+      const { result } = renderHook(() => useProjectState())
+      const onlyId = result.current.activeProjectId
+
+      act(() => {
+        result.current.deleteProjectById(onlyId)
+      })
+
+      expect(result.current.projects).toHaveLength(0)
+      expect(result.current.activeProjectId).toBe('')
+    })
+  })
 })

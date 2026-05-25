@@ -165,6 +165,97 @@ describe('File System Access project storage adapter', () => {
     })
   })
 
+  describe('removeProject (Slice 5a)', () => {
+    class FakeDirectoryHandleWithRemove extends FakeDirectoryHandle {
+      removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []
+      removeBehavior: 'success' | 'not-found' | 'denied' | 'unknown-error' = 'success'
+
+      async removeEntry(name: string, options?: { recursive?: boolean }): Promise<void> {
+        this.removeAttempts.push({ name, recursive: options?.recursive })
+        switch (this.removeBehavior) {
+          case 'success':
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(this as any).children.delete(name)
+            return
+          case 'not-found':
+            throw Object.assign(new Error(`${name} not found`), { name: 'NotFoundError' })
+          case 'denied':
+            throw Object.assign(new Error('permission denied'), { name: 'NotAllowedError' })
+          case 'unknown-error':
+            throw new Error('disk on fire')
+        }
+      }
+    }
+
+    it('returns unsupported when the directory handle has no removeEntry', async () => {
+      const root = new FakeDirectoryHandle('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result).toEqual({
+        ok: false,
+        reason: 'unsupported',
+        message: expect.stringContaining('cannot delete'),
+      })
+    })
+
+    it('removes the package folder on the happy path', async () => {
+      const root = new FakeDirectoryHandleWithRemove('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result).toEqual({ ok: true, folderAlreadyMissing: false })
+      expect(root.removeAttempts).toEqual([
+        { name: 'The Salt Line (8f4e2c9a).writeros', recursive: true },
+      ])
+      const list = await adapter.listProjects()
+      expect(list).toHaveLength(0)
+    })
+
+    it('treats a missing folder as success (folderAlreadyMissing: true)', async () => {
+      const root = new FakeDirectoryHandleWithRemove('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'not-found'
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result).toEqual({ ok: true, folderAlreadyMissing: true })
+    })
+
+    it('surfaces a permission-denied failure explicitly', async () => {
+      const root = new FakeDirectoryHandleWithRemove('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'denied'
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure')
+      expect(result.reason).toBe('permission-denied')
+      expect(result.message).toMatch(/permission was denied/)
+    })
+
+    it('surfaces unknown errors as a generic failure', async () => {
+      const root = new FakeDirectoryHandleWithRemove('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      root.removeBehavior = 'unknown-error'
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected failure')
+      expect(result.reason).toBe('failed')
+      expect(result.message).toBe('disk on fire')
+    })
+  })
+
   it('copies imported FDX source into a file-backed project package', async () => {
     const root = new FakeDirectoryHandle('WriterOS Projects')
     const adapter = createFileSystemAccessProjectStorageAdapter(root)

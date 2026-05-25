@@ -340,6 +340,16 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 - Export complete project package.
 - Add backup/restore documentation.
 
+**Status:** Archive + Delete were pulled forward into Slice 5a (Project Lifecycle) ahead of Slice 4 due to acute need for whole-project cleanup. See `docs/superpowers/plans/2026-05-24-project-lifecycle-slice-5a.md`. The remaining Slice 5 items (Reveal in Finder, Duplicate, Export complete project package, backup/restore docs) remain in Slice 5.
+
+### Slice 5a: Project Lifecycle (Archive + Delete cascade)
+
+- Home project cards expose project-scoped actions (Open, Rename, Archive, Delete) with confirm modals that auto-populate the project title.
+- Delete cascades the entire `ProjectState` (script + synopsis + outline + story bible + treatment + transcripts + metadata + view prefs) and removes the on-disk `.writeros` folder when file-backed.
+- Permission denial on disk delete surfaces an explicit warning and aborts cleanup; folder-already-missing proceeds with library cleanup.
+- Empty library after delete returns the writer to Home with explicit Create / Import CTAs (no silent auto-creation of a blank project).
+- Archive (5a-2) ships after Delete (5a-1) with a Home `Active | Archive` toggle and a visible `<WriterOS Projects>/Archive/` subfolder for file-backed projects.
+
 ## Acceptance Criteria
 
 - A writer can launch WriterOS into Home without an already-open project.

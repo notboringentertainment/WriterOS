@@ -38,6 +38,10 @@ function createProjectId() {
     : `project-${now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function hasPersistedProjectLibrary(): boolean {
+  return localStorage.getItem(PROJECT_LIBRARY_KEY) !== null
+}
+
 function readProjectLibrary(): StoredProject[] {
   try {
     const raw = localStorage.getItem(PROJECT_LIBRARY_KEY)
@@ -97,6 +101,18 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
       activeProjectId: activeProject.id,
       state: activeProject.state,
       projects,
+    }
+  }
+
+  // Distinguish "first run" from "intentionally cleared via delete-all":
+  // - never persisted -> seed a starter project (existing onboarding behavior)
+  // - persisted as []  -> respect empty state; user lands on Home
+  if (hasPersistedProjectLibrary()) {
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects: [],
     }
   }
 
@@ -214,8 +230,15 @@ export function deleteProjectFromLibrary(
   const remaining = projects.filter(project => project.id !== projectId)
 
   if (remaining.length === 0) {
+    // Persist the empty library explicitly so loadActiveProjectLibrary respects
+    // the user's intent and does not auto-seed a blank starter project.
     writeProjectLibrary([])
-    return createBlankProject([])
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects: [],
+    }
   }
 
   const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
@@ -223,8 +246,20 @@ export function deleteProjectFromLibrary(
     previousActiveId && previousActiveId !== projectId
       ? remaining.find(project => project.id === previousActiveId) ?? remaining[0]
       : remaining[0]
+  // If the deleted project was active, clear active selection and route Home;
+  // do not silently switch focus to a neighbor project.
+  const deletedActive = previousActiveId === projectId
 
   writeProjectLibrary(remaining)
+  if (deletedActive) {
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects: remaining,
+    }
+  }
+
   writeActiveProjectId(nextActive.id)
   saveProjectState(nextActive.state)
 

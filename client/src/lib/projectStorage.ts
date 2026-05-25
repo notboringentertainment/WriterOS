@@ -35,6 +35,7 @@ export interface WriterOSFileSystemDirectoryHandle {
   name: string
   getFileHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemFileHandle>
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<WriterOSFileSystemDirectoryHandle>
+  removeEntry?: (name: string, options?: { recursive?: boolean }) => Promise<void>
   queryPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
   requestPermission?: (descriptor?: WriterOSFileSystemPermissionDescriptor) => Promise<WriterOSFileSystemPermissionState>
   entries?: () => AsyncIterableIterator<[string, WriterOSFileSystemHandle]>
@@ -74,6 +75,10 @@ export type ProjectStorageListEntry<TRef extends ProjectStorageProjectRef = Proj
       warnings: string[]
     }
 
+export type RemoveProjectResult =
+  | { ok: true; folderAlreadyMissing: boolean }
+  | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access'
   label: string
@@ -81,6 +86,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   listProjects(): Promise<Array<ProjectStorageListEntry<TRef>>>
   readProject(ref: TRef): Promise<ProjectPackageReadResult>
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
+  removeProject(ref: TRef): Promise<RemoveProjectResult>
 }
 
 type ShowDirectoryPicker = (options?: {
@@ -227,6 +233,11 @@ function isNotFoundError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'NotFoundError')
 }
 
+function isPermissionDeniedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('name' in error)) return false
+  return error.name === 'NotAllowedError' || error.name === 'SecurityError'
+}
+
 async function readTextFile(rootHandle: WriterOSFileSystemDirectoryHandle, path: string): Promise<string | undefined> {
   const parts = path.split('/').filter(Boolean)
   let directory = rootHandle
@@ -357,6 +368,35 @@ export function createFileSystemAccessProjectStorageAdapter(
       })
       await writeProjectPackageFiles(packageHandle, nextPackage.files)
       return refFromProject(previousRef?.packageName ?? packageName, packageHandle, project, nextPackage.manifest)
+    },
+    async removeProject(ref) {
+      if (typeof rootHandle.removeEntry !== 'function') {
+        return {
+          ok: false,
+          reason: 'unsupported',
+          message: 'This browser cannot delete project folders. Remove the folder from disk manually.',
+        }
+      }
+      try {
+        await rootHandle.removeEntry(ref.packageName, { recursive: true })
+        return { ok: true, folderAlreadyMissing: false }
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return { ok: true, folderAlreadyMissing: true }
+        }
+        if (isPermissionDeniedError(error)) {
+          return {
+            ok: false,
+            reason: 'permission-denied',
+            message: 'WriterOS could not delete the project folder because permission was denied.',
+          }
+        }
+        return {
+          ok: false,
+          reason: 'failed',
+          message: error instanceof Error ? error.message : 'Unable to delete the project folder.',
+        }
+      }
     },
   }
 }
