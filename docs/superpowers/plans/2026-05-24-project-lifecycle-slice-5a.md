@@ -125,7 +125,7 @@ Active vs Archive partition is derived from `archivedAt` presence. No separate a
 - `archiveProjectFolder(rootHandle, folderName)` — ensures `Archive/` subdirectory exists, copies folder into it, removes original. (FSA has no native move.)
 - `restoreProjectFolder(rootHandle, folderName)` — inverse of archive.
 
-Archive subfolder is visible at `<WriterOS Projects>/Archive/`.
+Archive subfolder is visible as `Archive/` inside the selected folder.
 
 ### `useProjectState.ts` additions
 
@@ -183,7 +183,7 @@ Scope:
 - Home `Active | Archive` toggle.
 - Archive view cards (Restore + Delete).
 - File-backed `archiveProjectFolder` / `restoreProjectFolder` adapter ops.
-- Archive subfolder created lazily under `<WriterOS Projects>/Archive/`.
+- Archive subfolder created lazily inside the selected folder.
 - Confirm modal for Archive with exact title.
 
 ## Tests
@@ -232,7 +232,7 @@ Scope:
 - Archive moves a project to the Archive view; it disappears from the Active list.
 - Archive view renders Restore + Delete on each card.
 - Restore returns the project to the Active list.
-- File-backed: archived project's `.writeros` folder is moved under `<WriterOS Projects>/Archive/`; restore moves it back.
+- File-backed: archived project's `.writeros` folder is moved under `Archive/` inside the selected folder; restore moves it back.
 
 ## PRD Update
 

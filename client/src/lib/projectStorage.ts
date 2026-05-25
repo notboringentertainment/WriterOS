@@ -15,9 +15,9 @@ import {
 import type { ProjectSummary, StoredProject } from './projectLibrary'
 import { summarizeProjects } from './projectLibrary'
 
-export const DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL = '~/WriterOS Projects'
+export const DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL = 'Selected folder'
 export const FILE_SYSTEM_ACCESS_PICKER_ID = 'writeros-projects'
-// Visible subfolder under the chosen WriterOS Projects folder that holds
+// Visible subfolder under the chosen folder that holds
 // archived `.writeros` packages. The writer can see and back this up.
 export const WRITEROS_ARCHIVE_SUBFOLDER_NAME = 'Archive'
 

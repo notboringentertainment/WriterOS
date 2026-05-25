@@ -109,7 +109,7 @@ export function HomeSurface({
   const storage = storageStatus ?? {
     status: 'browser-fallback' as const,
     label: null,
-    defaultFolderLabel: '~/WriterOS Projects',
+    defaultFolderLabel: '',
     fileSystemAccessSupported: false,
     folderPersistenceSupported: false,
     errorMessage: null,
@@ -232,16 +232,11 @@ export function HomeSurface({
         </div>
       </div>
 
-      <div style={styles.statusGrid} aria-label="Storage status">
+      <div style={styles.statusGrid} aria-label="Project library status">
         <div style={styles.statusBlock}>
-          <span style={styles.statusLabel}>Storage</span>
-          <strong style={styles.statusValue}>{formatStorageStatus(storage.status)}</strong>
-          <span style={styles.statusMeta}>{formatStorageStatusMeta(storage)}</span>
-        </div>
-        <div style={styles.statusBlock}>
-          <span style={styles.statusLabel}>Project folder</span>
+          <span style={styles.statusLabel}>Folder</span>
           <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
-          <span style={styles.statusMeta}>Target: {storage.defaultFolderLabel}</span>
+          <span style={styles.statusMeta}>{formatFolderStatusMeta(storage)}</span>
           {storage.fileSystemAccessSupported ? (
             <div style={styles.statusActions}>
               <button
@@ -519,7 +514,7 @@ export function HomeSurface({
             </p>
             {archiveTarget.storageKind === 'folder' && (
               <p style={styles.modalBody}>
-                The <code>{archiveTarget.packageName}</code> folder will be moved into <code>Archive/</code> inside your WriterOS Projects folder.
+                The <code>{archiveTarget.packageName}</code> folder will be moved into <code>Archive/</code> inside your selected folder.
               </p>
             )}
             <div style={styles.modalActions}>
@@ -612,42 +607,23 @@ export function HomeSurface({
   )
 }
 
-function formatStorageStatus(status: HomeStorageStatusKind) {
-  switch (status) {
-    case 'ready':
-      return 'External folder'
-    case 'loading':
-      return 'Checking folder'
-    case 'permission-needed':
-      return 'Permission needed'
-    case 'error':
-      return 'Folder error'
-    case 'unsupported':
-      return 'Browser fallback'
-    case 'disconnected':
-    case 'browser-fallback':
-      return 'Browser fallback'
-  }
-}
-
-function formatStorageStatusMeta(storage: HomeProjectStorageStatus) {
+function formatFolderStatusMeta(storage: HomeProjectStorageStatus) {
   switch (storage.status) {
     case 'ready':
       return storage.folderPersistenceSupported
-        ? 'Selected folder is remembered for this browser'
-        : 'Selected folder is active for this session'
+        ? 'Remembered in this browser'
+        : 'Connected for this session'
     case 'loading':
-      return 'Scanning WriterOS project packages'
+      return 'Scanning projects'
     case 'permission-needed':
       return 'Reconnect the selected folder to scan projects'
     case 'error':
-      return 'Choose or refresh a project folder'
+      return 'Choose or refresh a folder'
     case 'unsupported':
-      return 'External folder access is unavailable'
+      return 'Folder access is unavailable in this browser'
     case 'disconnected':
-      return 'Choose a WriterOS Projects folder'
     case 'browser-fallback':
-      return 'Current prototype source'
+      return 'Choose any folder'
   }
 }
 

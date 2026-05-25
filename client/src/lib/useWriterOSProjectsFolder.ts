@@ -100,7 +100,7 @@ function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSyste
 }
 
 function errorMessageFromUnknown(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to read the selected WriterOS Projects folder.'
+  return error instanceof Error ? error.message : 'Unable to read the selected folder.'
 }
 
 function isAbortError(error: unknown): boolean {
@@ -173,7 +173,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
 
   const requireFolderPermission = useCallback(async () => {
     if (!handle) {
-      throw new Error('Choose a WriterOS Projects folder before opening file-backed projects.')
+      throw new Error('Choose a folder before opening file-backed projects.')
     }
 
     const permission = await requestWriterOSProjectsFolderPermission(handle)

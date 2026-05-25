@@ -22,7 +22,7 @@ const projects = [
 ]
 
 describe('HomeSurface', () => {
-  it('shows storage status, current project, and project rows', () => {
+  it('shows folder status, current project, and project rows', () => {
     render(
       <HomeSurface
         activeProjectId="project-1"
@@ -33,8 +33,9 @@ describe('HomeSurface', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument()
-    expect(screen.getByText('Browser fallback')).toBeInTheDocument()
     expect(screen.getByText('Not connected')).toBeInTheDocument()
+    expect(screen.getByText('Choose any folder')).toBeInTheDocument()
+    expect(screen.queryByText('Browser fallback')).not.toBeInTheDocument()
     const list = screen.getByLabelText('Project list')
     expect(within(list).getByText('The Salt Line')).toBeInTheDocument()
     expect(within(list).getByText('Quiet Frequencies')).toBeInTheDocument()
@@ -114,8 +115,8 @@ describe('HomeSurface', () => {
         projects={projects}
         storageStatus={{
           status: 'error',
-          label: 'WriterOS Projects',
-          defaultFolderLabel: '~/WriterOS Projects',
+          label: "Ben's Projects",
+          defaultFolderLabel: 'Selected folder',
           fileSystemAccessSupported: true,
           folderPersistenceSupported: true,
           errorMessage: 'Unable to scan the project folder.',
@@ -223,8 +224,8 @@ describe('HomeSurface', () => {
         ]}
         storageStatus={{
           status: 'ready',
-          label: 'WriterOS Projects',
-          defaultFolderLabel: '~/WriterOS Projects',
+          label: "Ben's Projects",
+          defaultFolderLabel: 'Selected folder',
           fileSystemAccessSupported: true,
           folderPersistenceSupported: true,
           errorMessage: null,
@@ -235,8 +236,8 @@ describe('HomeSurface', () => {
       />
     )
 
-    expect(screen.getByText('External folder')).toBeInTheDocument()
-    expect(screen.getByText('WriterOS Projects')).toBeInTheDocument()
+    expect(screen.getByText("Ben's Projects")).toBeInTheDocument()
+    expect(screen.getByText('Remembered in this browser')).toBeInTheDocument()
     expect(screen.getByText('2 project packages need attention')).toBeInTheDocument()
     expect(screen.getByText('Broken.writeros: project.json is not valid JSON.')).toBeInTheDocument()
 
@@ -261,8 +262,8 @@ describe('HomeSurface', () => {
         projects={projects}
         storageStatus={{
           status: 'ready',
-          label: 'WriterOS Projects',
-          defaultFolderLabel: '~/WriterOS Projects',
+          label: "Ben's Projects",
+          defaultFolderLabel: 'Selected folder',
           fileSystemAccessSupported: true,
           folderPersistenceSupported: true,
           errorMessage: null,
@@ -292,8 +293,8 @@ describe('HomeSurface', () => {
         folderProjects={[]}
         storageStatus={{
           status: 'error',
-          label: 'WriterOS Projects',
-          defaultFolderLabel: '~/WriterOS Projects',
+          label: "Ben's Projects",
+          defaultFolderLabel: 'Selected folder',
           fileSystemAccessSupported: true,
           folderPersistenceSupported: true,
           errorMessage: null,
@@ -368,12 +369,12 @@ describe('HomeSurface', () => {
               warnings: [],
             },
           ]}
-          storageStatus={{
-            status: 'ready',
-            label: 'WriterOS Projects',
-            defaultFolderLabel: '~/WriterOS Projects',
-            fileSystemAccessSupported: true,
-            folderPersistenceSupported: true,
+            storageStatus={{
+              status: 'ready',
+              label: "Ben's Projects",
+              defaultFolderLabel: 'Selected folder',
+              fileSystemAccessSupported: true,
+              folderPersistenceSupported: true,
             errorMessage: null,
           }}
           activeStorageKind="folder"
@@ -664,12 +665,12 @@ describe('HomeSurface', () => {
               warnings: [],
             },
           ]}
-          storageStatus={{
-            status: 'ready',
-            label: 'WriterOS Projects',
-            defaultFolderLabel: '~/WriterOS Projects',
-            fileSystemAccessSupported: true,
-            folderPersistenceSupported: true,
+            storageStatus={{
+              status: 'ready',
+              label: "Ben's Projects",
+              defaultFolderLabel: 'Selected folder',
+              fileSystemAccessSupported: true,
+              folderPersistenceSupported: true,
             errorMessage: null,
           }}
           activeStorageKind="folder"

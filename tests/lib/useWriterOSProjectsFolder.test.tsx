@@ -17,14 +17,14 @@ const storageMocks = vi.hoisted(() => ({
   writeProject: vi.fn(),
   folderHandle: {
     kind: 'directory' as const,
-    name: 'WriterOS Projects',
+    name: "Ben's Projects",
     getFileHandle: vi.fn(),
     getDirectoryHandle: vi.fn(),
   },
 }))
 
 vi.mock('../../client/src/lib/projectStorage', () => ({
-  DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL: '~/WriterOS Projects',
+  DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL: 'Selected folder',
   clearPersistedWriterOSProjectsFolderHandle: vi.fn(),
   createFileSystemAccessProjectStorageAdapter: storageMocks.createFileSystemAccessProjectStorageAdapter,
   getWriterOSProjectsFolderPermission: storageMocks.getWriterOSProjectsFolderPermission,
@@ -49,8 +49,8 @@ describe('useWriterOSProjectsFolder', () => {
     storageMocks.writeProject.mockReset()
     storageMocks.createFileSystemAccessProjectStorageAdapter.mockReturnValue({
       kind: 'file-system-access',
-      label: 'WriterOS Projects',
-      defaultFolderLabel: '~/WriterOS Projects',
+      label: "Ben's Projects",
+      defaultFolderLabel: 'Selected folder',
       listProjects: storageMocks.listProjects,
       readProject: storageMocks.readProject,
       writeProject: storageMocks.writeProject,
