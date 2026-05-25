@@ -713,12 +713,17 @@ export function useProjectState() {
     return getStoredProject(activeProjectId, nextProjects)!
   }, [activeProjectId, projects, state])
 
-  const deleteProject = useCallback(() => {
-    const next = deleteProjectFromLibrary(activeProjectId, projects)
+  const deleteProjectById = useCallback((projectId: string) => {
+    const next = deleteProjectFromLibrary(projectId, projects)
     setActiveProjectId(next.activeProjectId)
     setState(next.state)
     setProjects(next.projects)
-  }, [activeProjectId, projects])
+    return next
+  }, [projects])
+
+  const deleteProject = useCallback(() => {
+    return deleteProjectById(activeProjectId)
+  }, [activeProjectId, deleteProjectById])
 
   return {
     state,
@@ -760,5 +765,6 @@ export function useProjectState() {
     openStoredProject,
     saveNow,
     deleteProject,
+    deleteProjectById,
   }
 }

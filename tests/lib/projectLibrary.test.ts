@@ -43,20 +43,21 @@ describe('deleteProjectFromLibrary', () => {
     expect(stored.find((p: { id: string }) => p.id === otherProject.id)).toBeUndefined()
   })
 
-  it('deletes the active project and switches to the most-recent remaining project', () => {
+  it('clears active selection when the deleted project was active (Slice 5a: route Home, do not auto-switch)', () => {
     const seeded = seedLibrary()
     const activeId = seeded.activeProjectId
-    const nextExpectedActive = seeded.projects.find(p => p.id !== activeId)!.id
 
     const result = deleteProjectFromLibrary(activeId, seeded.projects)
 
     expect(result.projects.find(p => p.id === activeId)).toBeUndefined()
-    expect(result.activeProjectId).toBe(nextExpectedActive)
-    expect(result.state).toEqual(result.projects.find(p => p.id === nextExpectedActive)!.state)
-    expect(localStorage.getItem(ACTIVE_KEY)).toBe(nextExpectedActive)
+    expect(result.activeProjectId).toBe('')
+    expect(result.state.meta.title).toBe('')
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+    // Library itself still contains the remaining projects.
+    expect(result.projects).toHaveLength(seeded.projects.length - 1)
   })
 
-  it('seeds a blank project when the deleted project is the only one', () => {
+  it('returns the empty-library sentinel when the deleted project is the only one (Slice 5a)', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-18T12:00:00.000Z'))
     localStorage.clear()
@@ -66,11 +67,31 @@ describe('deleteProjectFromLibrary', () => {
 
     const result = deleteProjectFromLibrary(onlyId, onlyLibrary.projects)
 
-    expect(result.projects).toHaveLength(1)
-    expect(result.projects[0].id).not.toBe(onlyId)
-    expect(result.activeProjectId).toBe(result.projects[0].id)
-    expect(result.state).toEqual(defaultProjectState())
-    expect(localStorage.getItem(ACTIVE_KEY)).toBe(result.activeProjectId)
+    expect(result.projects).toHaveLength(0)
+    expect(result.activeProjectId).toBe('')
+    expect(result.state.meta.title).toBe('')
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+    // Empty library is persisted, not removed — distinguishes "intentionally
+    // cleared" from "first run" on next loadActiveProjectLibrary call.
+    expect(localStorage.getItem(LIBRARY_KEY)).toBe('[]')
+  })
+
+  it('respects intentionally-empty library on reload (no auto-seed)', () => {
+    localStorage.clear()
+    const onlyLibrary = loadActiveProjectLibrary()
+    const onlyId = onlyLibrary.activeProjectId
+    deleteProjectFromLibrary(onlyId, onlyLibrary.projects)
+
+    const reloaded = loadActiveProjectLibrary()
+    expect(reloaded.projects).toHaveLength(0)
+    expect(reloaded.activeProjectId).toBe('')
+  })
+
+  it('auto-seeds a starter project on first ever load (no persisted library)', () => {
+    localStorage.clear()
+    const fresh = loadActiveProjectLibrary()
+    expect(fresh.projects).toHaveLength(1)
+    expect(fresh.activeProjectId).toBe(fresh.projects[0].id)
   })
 
   it('returns the library unchanged when the project id is not found', () => {

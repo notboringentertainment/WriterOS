@@ -160,7 +160,9 @@ describe('HomeSurface', () => {
       />
     )
 
-    expect(screen.getByText('No projects yet. Create your first project.')).toBeInTheDocument()
+    expect(
+      screen.getByText('No projects yet. Create a new project or import a Final Draft .fdx to get started.')
+    ).toBeInTheDocument()
   })
 
   it('sorts projects by title', () => {
@@ -302,5 +304,153 @@ describe('HomeSurface', () => {
     )
 
     expect(screen.getByText('Unable to scan the project folder.')).toBeInTheDocument()
+  })
+
+  describe('project Delete (Slice 5a)', () => {
+    it('renders Delete next to Open on each project card when onDeleteProject is provided', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+        />
+      )
+
+      expect(screen.getByRole('button', { name: 'Delete The Salt Line' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Delete Quiet Frequencies' })).toBeInTheDocument()
+    })
+
+    it('does not render Delete buttons when onDeleteProject is omitted', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+        />
+      )
+
+      expect(screen.queryByRole('button', { name: /^Delete / })).not.toBeInTheDocument()
+    })
+
+    it('opens a confirm dialog showing the exact project title and cascade copy', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Quiet Frequencies' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText(/Delete .*Quiet Frequencies/)).toBeInTheDocument()
+      expect(
+        within(dialog).getByText(/script, synopsis, outline, story bible, treatment, and all transcripts/)
+      ).toBeInTheDocument()
+    })
+
+    it('mentions the .writeros folder will be removed for folder-backed projects', () => {
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          folderProjects={[
+            {
+              id: 'project-1',
+              packageName: 'The Salt Line.writeros',
+              summary: projects[0],
+              warnings: [],
+            },
+          ]}
+          storageStatus={{
+            status: 'ready',
+            label: 'WriterOS Projects',
+            defaultFolderLabel: '~/WriterOS Projects',
+            fileSystemAccessSupported: true,
+            folderPersistenceSupported: true,
+            errorMessage: null,
+          }}
+          activeStorageKind="folder"
+          onOpenProject={vi.fn()}
+          onOpenFolderProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete The Salt Line' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText(/The Salt Line\.writeros/)).toBeInTheDocument()
+      expect(within(dialog).getByText(/removed from disk/)).toBeInTheDocument()
+    })
+
+    it('calls onDeleteProject with the correct target when confirmed', () => {
+      const onDeleteProject = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onDeleteProject={onDeleteProject}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Quiet Frequencies' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Delete project' }))
+
+      expect(onDeleteProject).toHaveBeenCalledWith({
+        storageKind: 'browser',
+        projectId: 'project-2',
+        title: 'Quiet Frequencies',
+      })
+    })
+
+    it('does not call onDeleteProject when canceled', () => {
+      const onDeleteProject = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId="project-1"
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          onDeleteProject={onDeleteProject}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete The Salt Line' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      expect(onDeleteProject).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('shows Create / Import CTAs in the empty browser state', () => {
+      const onNewProject = vi.fn()
+      const onImportFdx = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={[]}
+          onOpenProject={vi.fn()}
+          onNewProject={onNewProject}
+          onImportFdx={onImportFdx}
+        />
+      )
+
+      const list = screen.getByLabelText('Project list')
+      expect(within(list).getByText(/No projects yet/)).toBeInTheDocument()
+      const createButtons = within(list).getAllByRole('button', { name: 'New Project' })
+      expect(createButtons.length).toBeGreaterThan(0)
+      fireEvent.click(createButtons[createButtons.length - 1])
+      expect(onNewProject).toHaveBeenCalled()
+    })
   })
 })
