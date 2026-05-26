@@ -456,12 +456,40 @@ export function createFileSystemAccessProjectStorageAdapter(
       }
 
       const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
-      const packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
       const nextPackage = serializeWriterOSProjectPackage(project, {
         sourceImport: project.state.meta.sourceImport ?? previousRef?.manifest.sourceImport,
       })
-      await writeProjectPackageFiles(packageHandle, nextPackage.files)
-      return refFromProject(previousRef?.packageName ?? packageName, packageHandle, project, nextPackage.manifest)
+      let packageHandle: WriterOSFileSystemDirectoryHandle
+      let nextPackageName = packageName
+
+      if (previousRef && previousRef.packageName !== packageName) {
+        const parent = await getPackageParentHandle(rootHandle, previousRef.handle)
+        if (typeof parent.removeEntry === 'function') {
+          if (await getExistingDirectoryHandle(parent, packageName)) {
+            throw new Error('A WriterOS project package with this name already exists.')
+          }
+
+          const renamedHandle = await parent.getDirectoryHandle(packageName, { create: true })
+          try {
+            await copyDirectoryRecursive(previousRef.handle, renamedHandle)
+            await writeProjectPackageFiles(renamedHandle, nextPackage.files)
+            await parent.removeEntry(previousRef.packageName, { recursive: true })
+            packageHandle = renamedHandle
+          } catch (error) {
+            await removeEntryIfPresent(parent, packageName)
+            throw error
+          }
+        } else {
+          packageHandle = previousRef.handle
+          nextPackageName = previousRef.packageName
+          await writeProjectPackageFiles(packageHandle, nextPackage.files)
+        }
+      } else {
+        packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
+        await writeProjectPackageFiles(packageHandle, nextPackage.files)
+      }
+
+      return refFromProject(nextPackageName, packageHandle, project, nextPackage.manifest)
     },
     async removeProject(ref) {
       if (typeof rootHandle.removeEntry !== 'function') {

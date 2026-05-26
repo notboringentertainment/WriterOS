@@ -552,7 +552,7 @@ describe('useWriterOSProjectsFolder', () => {
     ])
   })
 
-  it('writes an opened file-backed project through the existing package ref', async () => {
+  it('updates an opened file-backed project from the adapter returned package ref', async () => {
     const state = defaultProjectState()
     state.meta.title = 'Harbor Lights Revised'
     const project: StoredProject = {
@@ -587,6 +587,7 @@ describe('useWriterOSProjectsFolder', () => {
     }
     const writtenRef = {
       ...ref,
+      packageName: 'Harbor Lights Revised (folderpr).writeros',
       summary: {
         ...ref.summary,
         title: 'Harbor Lights Revised',
@@ -609,8 +610,11 @@ describe('useWriterOSProjectsFolder', () => {
     expect(storageMocks.writeProject).toHaveBeenCalledWith(project, ref)
     expect(writtenProject).toMatchObject({
       id: 'folder-project-1',
-      packageName: 'Harbor Lights (folderpr).writeros',
+      packageName: 'Harbor Lights Revised (folderpr).writeros',
       summary: { title: 'Harbor Lights Revised' },
     })
+    expect(result.current.projects).toMatchObject([
+      { id: 'folder-project-1', packageName: 'Harbor Lights Revised (folderpr).writeros' },
+    ])
   })
 })
