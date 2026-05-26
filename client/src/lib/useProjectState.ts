@@ -8,6 +8,7 @@ import {
   deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
+  projectsForActiveLibrary,
   restoreProjectInLibrary,
   saveProjectToLibrary,
   summarizeProjects,
@@ -763,7 +764,10 @@ export function useProjectState() {
     state,
     activeProjectId,
     activeStoredProject: getStoredProject(activeProjectId, projects),
-    projects: summarizeProjects(projects),
+    // Display summaries intentionally hide migrated localStorage backups.
+    // `storedProjects` below remains raw so migration/recovery code can still
+    // see the non-destructive backup marker.
+    projects: summarizeProjects(projectsForActiveLibrary(projects)),
     // Raw stored projects, including the localStorage-only `migratedToFolder`
     // marker. App.tsx uses this for migration scans; consumers that only need
     // display data should keep using the summarized `projects` array above.

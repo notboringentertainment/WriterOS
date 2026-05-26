@@ -417,7 +417,7 @@ describe('markProjectsMigrated', () => {
 })
 
 describe('getUnmigratedProjects', () => {
-  it('returns only entries without a migratedToFolder marker', () => {
+  it('returns only active entries without a migratedToFolder marker', () => {
     const projects = [
       {
         id: 'p1',
@@ -431,6 +431,13 @@ describe('getUnmigratedProjects', () => {
         createdAt: 3,
         updatedAt: 4,
         state: defaultProjectState(),
+      },
+      {
+        id: 'p3',
+        createdAt: 5,
+        updatedAt: 6,
+        state: defaultProjectState(),
+        archivedAt: '2026-05-25T00:00:00.000Z',
       },
     ]
     expect(getUnmigratedProjects(projects).map(p => p.id)).toEqual(['p2'])

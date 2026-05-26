@@ -433,6 +433,80 @@ describe('useWriterOSProjectsFolder', () => {
     expect(migrationResults[0].migratedAt).toEqual(expect.any(String))
   })
 
+  it('runMigration surfaces mixed per-project failures without hiding successful writes', async () => {
+    storageMocks.listProjects.mockReset()
+    const stateOne = defaultProjectState()
+    stateOne.meta.title = 'Successful Move'
+    const stateTwo = defaultProjectState()
+    stateTwo.meta.title = 'Stuck Draft'
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state: stateOne,
+    }
+    const projectTwo: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state: stateTwo,
+    }
+    const refOne = {
+      id: 'p1',
+      packageName: 'Successful Move (p1xxxxx).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'p1',
+        title: 'Successful Move',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'p1',
+        title: 'Successful Move',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    storageMocks.writeProject
+      .mockResolvedValueOnce(refOne)
+      .mockRejectedValueOnce(new Error('disk full'))
+    storageMocks.listProjects.mockResolvedValueOnce([
+      { status: 'ready', ref: refOne, warnings: [] },
+    ])
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectTwo])
+    })
+
+    expect(migrationResults).toEqual([
+      expect.objectContaining({ projectId: 'p1', ok: true }),
+      { projectId: 'p2', ok: false, error: 'disk full' },
+    ])
+    expect(result.current.status).toBe('ready')
+    expect(result.current.errorMessage).toContain('1 browser project failed to migrate')
+    expect(result.current.errorMessage).toContain('Stuck Draft: disk full')
+    expect(result.current.projects).toMatchObject([
+      { id: 'p1', packageName: 'Successful Move (p1xxxxx).writeros' },
+    ])
+  })
+
   it('writes an opened file-backed project through the existing package ref', async () => {
     const state = defaultProjectState()
     state.meta.title = 'Harbor Lights Revised'

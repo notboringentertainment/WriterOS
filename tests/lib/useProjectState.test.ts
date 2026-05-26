@@ -496,6 +496,7 @@ describe('useProjectState', () => {
     // Per Decision 3: when the active project is migrated, reload drops the
     // active session — writer returns to Home.
     expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects.find(project => project.id === activeId)).toBeUndefined()
     // The migrated project remains in the stored projects array so the marker
     // survives re-reads.
     expect(result.current.storedProjects.find(p => p.id === activeId)?.migratedToFolder).toEqual({

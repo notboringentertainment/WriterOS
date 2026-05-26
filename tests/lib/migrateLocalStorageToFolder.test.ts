@@ -60,11 +60,15 @@ describe('migrateLocalStorageToFolder', () => {
     expect(results[0]).toMatchObject({ ok: true, packageName: 'p1.writeros', folderLabel: 'MyDocs' })
   })
 
-  it('skips projects that already have a migratedToFolder marker', async () => {
+  it('skips projects that already have a migratedToFolder marker or are archived', async () => {
     const projects: StoredProject[] = [
       makeStoredProject({
         id: 'p1',
         migratedToFolder: { folderLabel: 'F', packageName: 'p1.writeros', migratedAt: 'now' },
+      }),
+      makeStoredProject({
+        id: 'p-archived',
+        archivedAt: '2026-05-25T00:00:00.000Z',
       }),
       makeStoredProject({ id: 'p2' }),
     ]

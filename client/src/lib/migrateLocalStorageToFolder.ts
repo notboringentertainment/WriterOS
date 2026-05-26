@@ -9,6 +9,8 @@ import type { StoredProject } from './projectLibrary'
 // Contract:
 // - Projects whose `migratedToFolder` marker is already set are SKIPPED
 //   entirely and produce no result entry.
+// - Archived projects are also SKIPPED in V1; otherwise archive entries would
+//   be written as active root-level `.writeros` packages.
 // - Per-project failures are captured as `{ ok: false, error }` and do NOT
 //   abort the loop; remaining projects still get a chance to migrate.
 // - Result order preserves the input order, modulo skipped entries.
@@ -43,7 +45,7 @@ export async function migrateLocalStorageToFolder(
   const results: MigrationResult[] = []
 
   for (const project of projects) {
-    if (project.migratedToFolder) continue
+    if (project.migratedToFolder || project.archivedAt) continue
     try {
       const ref = await adapter.writeProject(project)
       results.push({

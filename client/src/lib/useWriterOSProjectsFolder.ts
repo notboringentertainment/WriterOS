@@ -16,7 +16,12 @@ import {
   type RemoveProjectResult,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
-import type { ProjectSummary, StoredProject } from './projectLibrary'
+import {
+  getUnmigratedProjects,
+  summarizeProjects,
+  type ProjectSummary,
+  type StoredProject,
+} from './projectLibrary'
 import { migrateLocalStorageToFolder, type MigrationResult } from './migrateLocalStorageToFolder'
 
 export type WriterOSProjectsFolderStatus =
@@ -103,6 +108,30 @@ function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSyste
 
 function errorMessageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to read the selected folder.'
+}
+
+function formatMigrationFailureMessage(
+  results: MigrationResult[],
+  projects: StoredProject[],
+): string | null {
+  const failures = results.filter((result): result is Extract<MigrationResult, { ok: false }> => !result.ok)
+  if (failures.length === 0) return null
+
+  const titleByProjectId = new Map(
+    summarizeProjects(projects).map(project => [project.id, project.title || 'Untitled Project']),
+  )
+  const failureDetails = failures.slice(0, 3).map(failure => {
+    const title = titleByProjectId.get(failure.projectId) ?? failure.projectId
+    return `${title}: ${failure.error}`
+  })
+  const prefix = failures.length === 1
+    ? '1 browser project failed to migrate'
+    : `${failures.length} browser projects failed to migrate`
+  const suffix = failures.length > failureDetails.length
+    ? `; ${failures.length - failureDetails.length} more not shown`
+    : ''
+
+  return `${prefix}: ${failureDetails.join('; ')}${suffix}`
 }
 
 function isAbortError(error: unknown): boolean {
@@ -356,8 +385,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     } catch (error) {
       // Match the coordinator contract: pre-migrated projects have no result
       // entry. Unmigrated projects each get a permission-denied failure.
-      return unmigratedProjects
-        .filter(project => !project.migratedToFolder)
+      return getUnmigratedProjects(unmigratedProjects)
         .map(project => ({
           projectId: project.id,
           ok: false as const,
@@ -378,14 +406,15 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       const message = errorMessageFromUnknown(error)
       setStatus('error')
       setErrorMessage(message)
-      return unmigratedProjects
-        .filter(project => !project.migratedToFolder)
+      return getUnmigratedProjects(unmigratedProjects)
         .map(project => ({
           projectId: project.id,
           ok: false as const,
           error: message,
         }))
     }
+
+    const migrationFailureMessage = formatMigrationFailureMessage(results, unmigratedProjects)
 
     // Refresh the projects list so newly-migrated packages appear in
     // folderProjects. CRITICAL: a refresh failure here must NOT discard the
@@ -402,10 +431,15 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       setArchivedProjects(nextProjects.archivedProjects)
       setCorruptProjects(nextProjects.corruptProjects)
       setStatus('ready')
-      setErrorMessage(null)
+      setErrorMessage(migrationFailureMessage)
     } catch (error) {
+      const refreshFailureMessage = errorMessageFromUnknown(error)
       setStatus('error')
-      setErrorMessage(errorMessageFromUnknown(error))
+      setErrorMessage(
+        migrationFailureMessage
+          ? `${migrationFailureMessage}. ${refreshFailureMessage}`
+          : refreshFailureMessage,
+      )
     }
 
     return results

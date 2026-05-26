@@ -168,11 +168,11 @@ export function markProjectsMigrated(
   return next
 }
 
-// Slice 4: pure read helper for "what still needs migrating". Mirrors
-// projectsForActiveLibrary in implementation but exists as a separate name
-// to keep call-site intent explicit (active selection vs. migration scan).
+// Slice 4: pure read helper for "what still needs migrating". Archived
+// projects are deliberately excluded in V1 so migration never converts a
+// browser Archive entry into an active root-level `.writeros` package.
 export function getUnmigratedProjects(projects: StoredProject[]): StoredProject[] {
-  return projects.filter(project => !project.migratedToFolder)
+  return projects.filter(project => !project.migratedToFolder && !project.archivedAt)
 }
 
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
