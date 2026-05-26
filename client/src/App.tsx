@@ -103,7 +103,9 @@ export default function App() {
   )
   const folderSaveNonceRef = useRef(0)
   const writeProjectRef = useRef(projectFolder.writeProject)
+  const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
+  markStoredProjectsMigratedRef.current = project.markStoredProjectsMigrated
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
@@ -166,6 +168,20 @@ export default function App() {
     try {
       const folderProject = await writeProjectRef.current(storedProject)
       if (folderSaveNonceRef.current !== nonce) return false
+      const folderLabel = projectFolder.label ?? projectFolder.defaultFolderLabel
+      const existingMarker = storedProject.migratedToFolder
+      if (
+        !existingMarker ||
+        existingMarker.folderLabel !== folderLabel ||
+        existingMarker.packageName !== folderProject.packageName
+      ) {
+        markStoredProjectsMigratedRef.current([{
+          projectId: storedProject.id,
+          folderLabel,
+          packageName: folderProject.packageName,
+          migratedAt: new Date().toISOString(),
+        }])
+      }
       setActiveProjectStorage(current => {
         if (current.kind !== 'folder' || current.projectId !== storedProject.id) return current
         if (current.packageName === folderProject.packageName) return current
@@ -178,7 +194,7 @@ export default function App() {
       setFolderProjectError(formatFolderProjectError(error))
       return false
     }
-  }, [formatFolderProjectError])
+  }, [formatFolderProjectError, projectFolder.defaultFolderLabel, projectFolder.label])
 
   useEffect(() => {
     if (!activeFolderProjectId) return

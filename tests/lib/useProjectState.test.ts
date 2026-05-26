@@ -526,6 +526,42 @@ describe('useProjectState', () => {
       migratedAt: '2026-05-25T00:00:00.000Z',
     })
   })
+
+  it('markStoredProjectsMigrated hides a folder-backed browser fallback without closing the active session', () => {
+    const { result } = renderHook(() => useProjectState())
+    let createdId = ''
+
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    act(() => {
+      result.current.markStoredProjectsMigrated([{
+        projectId: createdId,
+        folderLabel: 'WriterOS Projects',
+        packageName: 'QA Storage Rename (7bbe52ff).writeros',
+        migratedAt: '2026-05-26T15:15:00.000Z',
+      }])
+    })
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('')
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
+    expect(result.current.activeStoredProject?.migratedToFolder).toEqual({
+      folderLabel: 'WriterOS Projects',
+      packageName: 'QA Storage Rename (7bbe52ff).writeros',
+      migratedAt: '2026-05-26T15:15:00.000Z',
+    })
+
+    act(() => result.current.setMeta({ title: 'QA Storage Rename' }))
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('QA Storage Rename')
+    expect(result.current.activeStoredProject?.migratedToFolder?.packageName).toBe(
+      'QA Storage Rename (7bbe52ff).writeros',
+    )
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
+  })
 })
 
 describe('useProjectState — setSynopsisDocument', () => {

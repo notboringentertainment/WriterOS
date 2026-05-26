@@ -197,7 +197,7 @@ export function HomeSurface({
   }, [projectRows, query, sortKey])
 
   const folderActionLabel = storage.status === 'permission-needed'
-    ? 'Reconnect Folder'
+    ? 'Allow Folder Access'
     : storage.label
       ? 'Change Folder'
       : 'Choose Folder'
@@ -205,6 +205,11 @@ export function HomeSurface({
     ? onRefreshProjectFolder
     : onChooseProjectFolder
   const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
+  const hasStatusActions = storage.fileSystemAccessSupported && (
+    Boolean(storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed')
+    || Boolean(storage.label && onForgetProjectFolder)
+    || (!showMigrationModal && canShowMigrationModal)
+  )
   const projectCount = view === 'archive' ? archivedCount : activeCount
   const projectCountMeta = showingFolderProjects
     ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
@@ -264,36 +269,30 @@ export function HomeSurface({
           <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
           <span style={styles.statusMeta}>{formatFolderStatusMeta(storage)}</span>
           {storage.fileSystemAccessSupported ? (
-            <div style={styles.statusActions}>
-              <button
-                type="button"
-                style={styles.statusButton}
-                onClick={projectFolderAction}
-                disabled={!projectFolderAction}
-              >
-                {folderActionLabel}
-              </button>
-              {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
-                <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
-                  Refresh
-                </button>
-              )}
-              {storage.label && onForgetProjectFolder && (
-                <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
-                  Forget
-                </button>
-              )}
-              {!showMigrationModal && canShowMigrationModal && (
-                <button
-                  type="button"
-                  style={styles.statusButton}
-                  onClick={() => setMigrationDismissed(false)}
-                  disabled={migratingLocalStorage}
-                >
-                  Migrate browser projects
-                </button>
-              )}
-            </div>
+            hasStatusActions && (
+              <div style={styles.statusActions}>
+                {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
+                  <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
+                    Refresh
+                  </button>
+                )}
+                {storage.label && onForgetProjectFolder && (
+                  <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
+                    Forget
+                  </button>
+                )}
+                {!showMigrationModal && canShowMigrationModal && (
+                  <button
+                    type="button"
+                    style={styles.statusButton}
+                    onClick={() => setMigrationDismissed(false)}
+                    disabled={migratingLocalStorage}
+                  >
+                    Migrate browser projects
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <span style={styles.statusMeta}>Folder access is unavailable in this browser.</span>
           )}
@@ -661,7 +660,7 @@ function formatFolderStatusMeta(storage: HomeProjectStorageStatus) {
     case 'loading':
       return 'Scanning projects'
     case 'permission-needed':
-      return 'Reconnect the selected folder to scan projects'
+      return 'Allow access to the selected folder to scan projects'
     case 'error':
       return 'Choose or refresh a folder'
     case 'unsupported':
@@ -704,7 +703,7 @@ function formatEmptyState(
   }
   if (!showingFolderProjects) return 'No projects yet. Create a new project or import a Final Draft .fdx to get started.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
-  if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
+  if (storageStatus === 'permission-needed') return 'Allow folder access to show projects.'
   if (storageStatus === 'error') return 'Unable to scan the project folder.'
   return 'No .writeros projects found in this folder.'
 }

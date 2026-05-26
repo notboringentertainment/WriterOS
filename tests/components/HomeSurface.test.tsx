@@ -285,6 +285,35 @@ describe('HomeSurface', () => {
     expect(onForgetProjectFolder).toHaveBeenCalled()
   })
 
+  it('uses folder-access copy when the remembered folder needs permission', () => {
+    const onRefreshProjectFolder = vi.fn()
+
+    render(
+      <HomeSurface
+        activeProjectId=""
+        projects={[]}
+        storageStatus={{
+          status: 'permission-needed',
+          label: 'WriterOS Projects',
+          defaultFolderLabel: 'Selected folder',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: true,
+          errorMessage: null,
+        }}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onRefreshProjectFolder={onRefreshProjectFolder}
+      />
+    )
+
+    expect(screen.getAllByRole('button', { name: 'Allow Folder Access' })).toHaveLength(1)
+    expect(screen.getByText('Allow access to the selected folder to scan projects')).toBeInTheDocument()
+    expect(screen.getByText('Allow folder access to show projects.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow Folder Access' }))
+    expect(onRefreshProjectFolder).toHaveBeenCalledTimes(1)
+  })
+
   it('shows an explicit empty state when folder scanning fails', () => {
     render(
       <HomeSurface

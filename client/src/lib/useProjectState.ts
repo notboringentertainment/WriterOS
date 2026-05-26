@@ -8,12 +8,13 @@ import {
   deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
+  markProjectsMigrated,
   projectsForActiveLibrary,
   restoreProjectInLibrary,
   saveProjectToLibrary,
   summarizeProjects,
 } from './projectLibrary'
-import type { StoredProject } from './projectLibrary'
+import type { MigrationMarker, StoredProject } from './projectLibrary'
 import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
@@ -760,6 +761,13 @@ export function useProjectState() {
     setProjects(next.projects)
   }, [])
 
+  // Folder-backed projects still keep a browser fallback copy while the app is
+  // running. Once the folder write succeeds, mark that copy as already moved so
+  // Home does not offer to migrate the same project back into the same folder.
+  const markStoredProjectsMigrated = useCallback((markers: MigrationMarker[]) => {
+    setProjects(currentProjects => markProjectsMigrated(currentProjects, markers))
+  }, [])
+
   return {
     state,
     activeProjectId,
@@ -811,5 +819,6 @@ export function useProjectState() {
     archiveProjectById,
     restoreProjectById,
     reloadLibrary,
+    markStoredProjectsMigrated,
   }
 }
