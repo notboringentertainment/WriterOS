@@ -283,7 +283,7 @@ export function HomeSurface({
                   Forget
                 </button>
               )}
-              {canShowMigrationModal && (
+              {!showMigrationModal && canShowMigrationModal && (
                 <button
                   type="button"
                   style={styles.statusButton}

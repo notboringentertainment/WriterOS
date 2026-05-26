@@ -942,8 +942,49 @@ describe('HomeSurface', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    it('Migrate browser projects button is disabled while migrating', () => {
+    it('does not show the "Migrate browser projects" status-row button while the modal is open', () => {
       render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      // The migration modal opens automatically on first render. While it is
+      // open, the status-row affordance that would reopen the same modal is
+      // redundant and confusing — it must not render.
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Migrate browser projects' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('Migrate browser projects button is disabled while migrating', () => {
+      // The status-row affordance is hidden while the modal is open (see the
+      // prior test), so we first dismiss the modal, then flip the surface into
+      // its migrating state so the affordance is reachable and we can assert
+      // it is disabled.
+      const { rerender } = render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      rerender(
         <HomeSurface
           activeProjectId=""
           projects={projects}
