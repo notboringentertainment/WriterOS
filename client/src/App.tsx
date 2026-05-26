@@ -101,7 +101,7 @@ export default function App() {
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const [archivingProjectId, setArchivingProjectId] = useState<string | null>(null)
   const [restoringProjectId, setRestoringProjectId] = useState<string | null>(null)
-  const [revealingProjectId, setRevealingProjectId] = useState<string | null>(null)
+  const [showingProjectInFolderId, setShowingProjectInFolderId] = useState<string | null>(null)
   const [duplicatingProjectId, setDuplicatingProjectId] = useState<string | null>(null)
   const [migratingLocalStorage, setMigratingLocalStorage] = useState(false)
   const unmigratedProjects = useMemo(
@@ -437,20 +437,20 @@ export default function App() {
     }
   }, [project, projectFolder, restoringProjectId])
 
-  const handleRevealHomeProject = useCallback(async (target: HomePackageActionTarget) => {
-    if (revealingProjectId) return
-    setRevealingProjectId(target.projectId)
+  const handleShowHomeProjectInFolder = useCallback(async (target: HomePackageActionTarget) => {
+    if (showingProjectInFolderId) return
+    setShowingProjectInFolderId(target.projectId)
     setFolderProjectError(null)
 
     try {
-      const result = await projectFolder.revealProject(target.projectId)
+      const result = await projectFolder.showProjectInFolder(target.projectId)
       if (!result.ok) {
         setFolderProjectError(result.message)
       }
     } finally {
-      setRevealingProjectId(null)
+      setShowingProjectInFolderId(null)
     }
-  }, [projectFolder, revealingProjectId])
+  }, [projectFolder, showingProjectInFolderId])
 
   const handleDuplicateHomeProject = useCallback(async (target: HomePackageActionTarget) => {
     if (duplicatingProjectId) return
@@ -736,7 +736,7 @@ export default function App() {
           deletingProjectId={deletingProjectId}
           archivingProjectId={archivingProjectId}
           restoringProjectId={restoringProjectId}
-          revealingProjectId={revealingProjectId}
+          showingProjectInFolderId={showingProjectInFolderId}
           duplicatingProjectId={duplicatingProjectId}
           archivedFolderProjects={projectFolder.archivedProjects}
           onOpenProject={handleOpenBrowserProject}
@@ -745,7 +745,7 @@ export default function App() {
           onDeleteProject={handleDeleteHomeProject}
           onArchiveProject={handleArchiveHomeProject}
           onRestoreProject={handleRestoreHomeProject}
-          onRevealProject={handleRevealHomeProject}
+          onShowProjectInFolder={handleShowHomeProjectInFolder}
           onDuplicateProject={handleDuplicateHomeProject}
           onImportFdx={handleImportFdxAsNewProject}
           importingFdx={importingFdx}

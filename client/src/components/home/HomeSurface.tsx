@@ -37,7 +37,7 @@ interface HomeSurfaceProps {
   deletingProjectId?: string | null
   archivingProjectId?: string | null
   restoringProjectId?: string | null
-  revealingProjectId?: string | null
+  showingProjectInFolderId?: string | null
   duplicatingProjectId?: string | null
   initialView?: HomeView
   onOpenProject: (projectId: string) => void
@@ -46,7 +46,7 @@ interface HomeSurfaceProps {
   onDeleteProject?: (target: HomeDeleteTarget) => void | Promise<void>
   onArchiveProject?: (target: HomeArchiveTarget) => void | Promise<void>
   onRestoreProject?: (target: HomeArchiveTarget) => void | Promise<void>
-  onRevealProject?: (target: HomePackageActionTarget) => void | Promise<void>
+  onShowProjectInFolder?: (target: HomePackageActionTarget) => void | Promise<void>
   onDuplicateProject?: (target: HomePackageActionTarget) => void | Promise<void>
   onImportFdx?: (file: File) => void | Promise<void>
   importingFdx?: boolean
@@ -98,7 +98,7 @@ export function HomeSurface({
   deletingProjectId = null,
   archivingProjectId = null,
   restoringProjectId = null,
-  revealingProjectId = null,
+  showingProjectInFolderId = null,
   duplicatingProjectId = null,
   initialView = 'active',
   onOpenProject,
@@ -107,7 +107,7 @@ export function HomeSurface({
   onDeleteProject,
   onArchiveProject,
   onRestoreProject,
-  onRevealProject,
+  onShowProjectInFolder,
   onDuplicateProject,
   onImportFdx,
   importingFdx = false,
@@ -472,12 +472,12 @@ export function HomeSurface({
                     {isOpening ? 'Opening' : 'Open'}
                   </button>
                 )}
-                {!row.archived && row.storageKind === 'folder' && onRevealProject && (
+                {!row.archived && row.storageKind === 'folder' && onShowProjectInFolder && (
                   <button
                     type="button"
                     style={styles.secondarySmallButton}
-                    aria-label={`Reveal ${projectTitle} in Finder`}
-                    disabled={revealingProjectId === row.project.id}
+                    aria-label={`Show ${projectTitle} in Folder`}
+                    disabled={showingProjectInFolderId === row.project.id}
                     onClick={() => {
                       const target: HomePackageActionTarget = {
                         storageKind: 'folder',
@@ -485,10 +485,10 @@ export function HomeSurface({
                         title: projectTitle,
                         packageName: row.packageName,
                       }
-                      void onRevealProject(target)
+                      void onShowProjectInFolder(target)
                     }}
                   >
-                    {revealingProjectId === row.project.id ? 'Revealing' : 'Reveal'}
+                    {showingProjectInFolderId === row.project.id ? 'Showing' : 'Show in Folder'}
                   </button>
                 )}
                 {!row.archived && row.storageKind === 'folder' && onDuplicateProject && (

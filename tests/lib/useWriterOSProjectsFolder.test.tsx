@@ -18,7 +18,7 @@ const storageMocks = vi.hoisted(() => ({
   removeProject: vi.fn(),
   archiveProject: vi.fn(),
   restoreProject: vi.fn(),
-  revealProject: vi.fn(),
+  showProjectInFolder: vi.fn(),
   duplicateProject: vi.fn(),
   folderHandle: {
     kind: 'directory' as const,
@@ -55,7 +55,7 @@ describe('useWriterOSProjectsFolder', () => {
     storageMocks.removeProject.mockReset()
     storageMocks.archiveProject.mockReset()
     storageMocks.restoreProject.mockReset()
-    storageMocks.revealProject.mockReset()
+    storageMocks.showProjectInFolder.mockReset()
     storageMocks.duplicateProject.mockReset()
     storageMocks.createFileSystemAccessProjectStorageAdapter.mockReturnValue({
       kind: 'file-system-access',
@@ -67,7 +67,7 @@ describe('useWriterOSProjectsFolder', () => {
       removeProject: storageMocks.removeProject,
       archiveProject: storageMocks.archiveProject,
       restoreProject: storageMocks.restoreProject,
-      revealProject: storageMocks.revealProject,
+      showProjectInFolder: storageMocks.showProjectInFolder,
       duplicateProject: storageMocks.duplicateProject,
     })
   })
@@ -633,7 +633,7 @@ describe('useWriterOSProjectsFolder', () => {
     ])
   })
 
-  it('revealProject forwards the tracked package ref and surfaces unsupported browser reveal', async () => {
+  it('showProjectInFolder forwards the tracked package ref and surfaces unsupported browser show-in-folder', async () => {
     const ref = {
       id: 'folder-project-1',
       packageName: 'Harbor Lights (folderpr).writeros',
@@ -659,10 +659,10 @@ describe('useWriterOSProjectsFolder', () => {
       },
     }
     storageMocks.listProjects.mockResolvedValue([{ status: 'ready', ref, warnings: [] }])
-    storageMocks.revealProject.mockResolvedValue({
+    storageMocks.showProjectInFolder.mockResolvedValue({
       ok: false,
       reason: 'unsupported',
-      message: 'This browser build cannot reveal project packages in Finder.',
+      message: 'This browser build cannot show project packages in your system file browser yet.',
     })
     const { result } = renderHook(() => useWriterOSProjectsFolder())
 
@@ -670,14 +670,14 @@ describe('useWriterOSProjectsFolder', () => {
       await result.current.chooseFolder()
     })
 
-    let revealResult
+    let showResult
     await act(async () => {
-      revealResult = await result.current.revealProject('folder-project-1')
+      showResult = await result.current.showProjectInFolder('folder-project-1')
     })
 
-    expect(storageMocks.revealProject).toHaveBeenCalledWith(ref)
-    expect(revealResult).toMatchObject({ ok: false, reason: 'unsupported' })
-    expect(result.current.errorMessage).toBe('This browser build cannot reveal project packages in Finder.')
+    expect(storageMocks.showProjectInFolder).toHaveBeenCalledWith(ref)
+    expect(showResult).toMatchObject({ ok: false, reason: 'unsupported' })
+    expect(result.current.errorMessage).toBe('This browser build cannot show project packages in your system file browser yet.')
   })
 
   it('duplicateProject forwards the tracked package ref and prepends the duplicated project', async () => {

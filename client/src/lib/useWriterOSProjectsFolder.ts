@@ -14,7 +14,7 @@ import {
   type DuplicateProjectResult,
   type FileSystemAccessProjectRef,
   type ProjectStorageListEntry,
-  type RevealProjectResult,
+  type ShowProjectInFolderResult,
   type RemoveProjectResult,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
@@ -67,7 +67,7 @@ export interface WriterOSProjectsFolderState {
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
   restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
-  revealProject: (projectId: string) => Promise<RevealProjectResult>
+  showProjectInFolder: (projectId: string) => Promise<ShowProjectInFolderResult>
   duplicateProject: (projectId: string) => Promise<DuplicateProjectResult<FileSystemAccessProjectRef>>
   runMigration: (unmigratedProjects: StoredProject[]) => Promise<MigrationResult[]>
 }
@@ -382,7 +382,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return result
   }, [requireFolderPermission])
 
-  const revealProject = useCallback(async (projectId: string): Promise<RevealProjectResult> => {
+  const showProjectInFolder = useCallback(async (projectId: string): Promise<ShowProjectInFolderResult> => {
     const entry = projectRefsRef.current.get(projectId)
     if (!entry) {
       return { ok: false, reason: 'failed', message: 'Project folder is not currently tracked.' }
@@ -396,7 +396,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     }
 
     const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
-    const result = await adapter.revealProject(entry.ref)
+    const result = await adapter.showProjectInFolder(entry.ref)
     setErrorMessage(result.ok ? null : result.message)
     return result
   }, [requireFolderPermission])
@@ -616,7 +616,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     deleteProject,
     archiveProject,
     restoreProject,
-    revealProject,
+    showProjectInFolder,
     duplicateProject,
     runMigration,
   }

@@ -235,17 +235,17 @@ describe('File System Access project storage adapter', () => {
     })
   })
 
-  it('reports that Finder reveal is unavailable in the browser adapter', async () => {
+  it('reports that show-in-folder is unavailable in the browser adapter', async () => {
     const root = new FakeDirectoryHandle('WriterOS Projects')
     const adapter = createFileSystemAccessProjectStorageAdapter(root)
     const ref = await adapter.writeProject(makeStoredProject())
 
-    const result = await adapter.revealProject(ref)
+    const result = await adapter.showProjectInFolder(ref)
 
     expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('expected unsupported reveal')
+    if (result.ok) throw new Error('expected unsupported show-in-folder')
     expect(result.reason).toBe('unsupported')
-    expect(result.message).toContain('Finder')
+    expect(result.message).toContain('system file browser')
     expect(result.message).toContain('The Salt Line (8f4e2c9a).writeros')
   })
 

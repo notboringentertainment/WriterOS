@@ -90,7 +90,7 @@ export type ArchiveProjectResult<TRef extends ProjectStorageProjectRef> =
   | { ok: true; ref: TRef }
   | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
 
-export type RevealProjectResult =
+export type ShowProjectInFolderResult =
   | { ok: true }
   | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
 
@@ -108,7 +108,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
   restoreProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
-  revealProject(ref: TRef): Promise<RevealProjectResult>
+  showProjectInFolder(ref: TRef): Promise<ShowProjectInFolderResult>
   duplicateProject(ref: TRef): Promise<DuplicateProjectResult<TRef>>
 }
 
@@ -654,11 +654,11 @@ export function createFileSystemAccessProjectStorageAdapter(
         }
       }
     },
-    async revealProject(ref) {
+    async showProjectInFolder(ref) {
       return {
         ok: false,
         reason: 'unsupported',
-        message: `This browser build cannot reveal project packages in Finder. Open ${folderLabel} in Finder and look for ${ref.packageName}.`,
+        message: `This browser build cannot show project packages in your system file browser yet. Open ${folderLabel} and look for ${ref.packageName}.`,
       }
     },
     async duplicateProject(ref) {

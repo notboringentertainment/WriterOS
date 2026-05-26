@@ -251,8 +251,8 @@ describe('HomeSurface', () => {
     expect(onOpenProject).toHaveBeenCalledWith('folder-project-1')
   })
 
-  it('routes file-backed package reveal and duplicate actions', () => {
-    const onRevealProject = vi.fn()
+  it('routes file-backed show-in-folder and duplicate actions', () => {
+    const onShowProjectInFolder = vi.fn()
     const onDuplicateProject = vi.fn()
     render(
       <HomeSurface
@@ -285,12 +285,12 @@ describe('HomeSurface', () => {
         onOpenProject={vi.fn()}
         onOpenFolderProject={vi.fn()}
         onNewProject={vi.fn()}
-        onRevealProject={onRevealProject}
+        onShowProjectInFolder={onShowProjectInFolder}
         onDuplicateProject={onDuplicateProject}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal Harbor Lights in Finder' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show Harbor Lights in Folder' }))
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate Harbor Lights' }))
 
     const target = {
@@ -299,23 +299,23 @@ describe('HomeSurface', () => {
       title: 'Harbor Lights',
       packageName: 'Harbor Lights (abc123ef).writeros',
     }
-    expect(onRevealProject).toHaveBeenCalledWith(target)
+    expect(onShowProjectInFolder).toHaveBeenCalledWith(target)
     expect(onDuplicateProject).toHaveBeenCalledWith(target)
   })
 
-  it('keeps package reveal and duplicate off browser-local project rows', () => {
+  it('keeps show-in-folder and duplicate off browser-local project rows', () => {
     render(
       <HomeSurface
         activeProjectId="project-1"
         projects={projects}
         onOpenProject={vi.fn()}
         onNewProject={vi.fn()}
-        onRevealProject={vi.fn()}
+        onShowProjectInFolder={vi.fn()}
         onDuplicateProject={vi.fn()}
       />
     )
 
-    expect(screen.queryByRole('button', { name: 'Reveal The Salt Line in Finder' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show The Salt Line in Folder' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Duplicate The Salt Line' })).not.toBeInTheDocument()
   })
 
