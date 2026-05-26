@@ -8,11 +8,13 @@ import {
   deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
+  markProjectsMigrated,
+  projectsForActiveLibrary,
   restoreProjectInLibrary,
   saveProjectToLibrary,
   summarizeProjects,
 } from './projectLibrary'
-import type { StoredProject } from './projectLibrary'
+import type { MigrationMarker, StoredProject } from './projectLibrary'
 import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
@@ -743,11 +745,41 @@ export function useProjectState() {
     return deleteProjectById(activeProjectId)
   }, [activeProjectId, deleteProjectById])
 
+  // Slice 4: re-read the persisted library and re-sync hook state. Used after
+  // an out-of-band mutation to the localStorage library (e.g., stamping
+  // `migratedToFolder` markers) so the active library, the active project id,
+  // and the active session state stay in sync with what was just written.
+  //
+  // Per Decision 3 of the migration plan: if the currently-active project was
+  // migrated to a folder-backed package, `loadActiveProjectLibrary` refuses to
+  // activate it and returns activeProjectId='' + a default state — which
+  // naturally drops the writer back to Home.
+  const reloadLibrary = useCallback(() => {
+    const next = loadActiveProjectLibrary()
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [])
+
+  // Folder-backed projects still keep a browser fallback copy while the app is
+  // running. Once the folder write succeeds, mark that copy as already moved so
+  // Home does not offer to migrate the same project back into the same folder.
+  const markStoredProjectsMigrated = useCallback((markers: MigrationMarker[]) => {
+    setProjects(currentProjects => markProjectsMigrated(currentProjects, markers))
+  }, [])
+
   return {
     state,
     activeProjectId,
     activeStoredProject: getStoredProject(activeProjectId, projects),
-    projects: summarizeProjects(projects),
+    // Display summaries intentionally hide migrated localStorage backups.
+    // `storedProjects` below remains raw so migration/recovery code can still
+    // see the non-destructive backup marker.
+    projects: summarizeProjects(projectsForActiveLibrary(projects)),
+    // Raw stored projects, including the localStorage-only `migratedToFolder`
+    // marker. App.tsx uses this for migration scans; consumers that only need
+    // display data should keep using the summarized `projects` array above.
+    storedProjects: projects,
     setMeta,
     setProjectFormat,
     clearSynopsis,
@@ -786,5 +818,7 @@ export function useProjectState() {
     deleteProjectById,
     archiveProjectById,
     restoreProjectById,
+    reloadLibrary,
+    markStoredProjectsMigrated,
   }
 }

@@ -16,6 +16,16 @@ export interface StoredProject {
   // active-project selection on reload; they remain restorable from the
   // Home Archive view.
   archivedAt?: string
+  // Slice 4: marker stamped when this project has been migrated to a
+  // folder-backed package via the File System Access adapter. Constraint-only
+  // for this slice — the marker is preserved through read/write but not yet
+  // surfaced in UI. `packageName` is the on-disk folder name; `folderLabel`
+  // is the user-readable parent folder; `migratedAt` is the ISO-8601 stamp.
+  migratedToFolder?: {
+    folderLabel: string
+    packageName: string
+    migratedAt: string
+  }
 }
 
 export interface ProjectSummary {
@@ -48,6 +58,11 @@ function hasPersistedProjectLibrary(): boolean {
   return localStorage.getItem(PROJECT_LIBRARY_KEY) !== null
 }
 
+// Test-only re-export: exposes the otherwise-private readProjectLibrary so
+// tests can verify raw localStorage round-trips without going through the
+// loadActiveProjectLibrary auto-seed / active-selection logic.
+export const __testReadProjectLibrary = (): StoredProject[] => readProjectLibrary()
+
 function readProjectLibrary(): StoredProject[] {
   try {
     const raw = localStorage.getItem(PROJECT_LIBRARY_KEY)
@@ -60,13 +75,28 @@ function readProjectLibrary(): StoredProject[] {
         if (!item || typeof item !== 'object') return null
         const candidate = item as Partial<StoredProject>
         if (typeof candidate.id !== 'string' || !candidate.state) return null
+        const id = candidate.id.trim()
+        if (id.length === 0) return null
         const archivedAt = typeof candidate.archivedAt === 'string' ? candidate.archivedAt : undefined
+        const migratedToFolder =
+          candidate.migratedToFolder &&
+          typeof candidate.migratedToFolder === 'object' &&
+          typeof candidate.migratedToFolder.folderLabel === 'string' &&
+          typeof candidate.migratedToFolder.packageName === 'string' &&
+          typeof candidate.migratedToFolder.migratedAt === 'string'
+            ? {
+                folderLabel: candidate.migratedToFolder.folderLabel,
+                packageName: candidate.migratedToFolder.packageName,
+                migratedAt: candidate.migratedToFolder.migratedAt,
+              }
+            : undefined
         return {
-          id: candidate.id,
+          id,
           createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : now(),
           updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : now(),
           state: migrateState(candidate.state),
           ...(archivedAt ? { archivedAt } : {}),
+          ...(migratedToFolder ? { migratedToFolder } : {}),
         }
       })
       .filter((item): item is StoredProject => item !== null)
@@ -98,15 +128,84 @@ export function summarizeProjects(projects: StoredProject[]): ProjectSummary[] {
   }))
 }
 
+// Slice 4: projects that have been migrated to a folder-backed package are
+// preserved in the localStorage library (so we can restore the marker on
+// re-read) but must never be auto-activated or surfaced as a candidate for
+// active selection. They live in a parallel "moved" state; the writer
+// re-enters them via the folder-open flow.
+export function projectsForActiveLibrary(projects: StoredProject[]): StoredProject[] {
+  return projects.filter(project => !project.migratedToFolder)
+}
+
+// Slice 4: descriptor passed to markProjectsMigrated when one or more projects
+// have been migrated to folder-backed packages on disk.
+export interface MigrationMarker {
+  projectId: string
+  folderLabel: string
+  packageName: string
+  migratedAt: string
+}
+
+// Slice 4: stamps `migratedToFolder` onto the matching projects and persists
+// the library. Non-matching projects are returned unchanged. This does not
+// delete any localStorage entries — the marker is the only mutation.
+export function markProjectsMigrated(
+  projects: StoredProject[],
+  markers: MigrationMarker[],
+): StoredProject[] {
+  const byId = new Map(markers.map(marker => [marker.projectId, marker]))
+  const next = projects.map(project => {
+    const marker = byId.get(project.id)
+    if (!marker) return project
+    return {
+      ...project,
+      migratedToFolder: {
+        folderLabel: marker.folderLabel,
+        packageName: marker.packageName,
+        migratedAt: marker.migratedAt,
+      },
+    }
+  })
+  writeProjectLibrary(next)
+  return next
+}
+
+// Slice 4: pure read helper for "what still needs migrating". Archived
+// projects are deliberately excluded in V1 so migration never converts a
+// browser Archive entry into an active root-level `.writeros` package.
+export function getUnmigratedProjects(projects: StoredProject[]): StoredProject[] {
+  return projects.filter(project => project.id.trim().length > 0 && !project.migratedToFolder && !project.archivedAt)
+}
+
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
   const projects = readProjectLibrary()
   const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
-  // Archived projects are never auto-selected as the active project. The
-  // writer can still restore them from the Home Archive view.
-  const activeCandidates = projects.filter(project => !project.archivedAt)
+
+  // Slice 4: if the stored active id points to a project that has been
+  // migrated to a folder-backed package, refuse to activate it. The
+  // localStorage copy is constraint-only — the canonical content lives on
+  // disk and must be re-entered via the folder-open flow. We keep the
+  // migrated project in the returned `projects` array so other read paths
+  // can still see the marker.
+  const storedActive = projects.find(project => project.id === activeProjectId)
+  if (storedActive?.migratedToFolder) {
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects,
+    }
+  }
+
+  // Archived and migrated projects are never auto-selected as the active
+  // project. Archived: writer can restore from the Home Archive view.
+  // Migrated: writer re-opens from disk via the folder-open flow.
+  const activeCandidates = projectsForActiveLibrary(projects).filter(
+    project => !project.archivedAt,
+  )
   const requestedActive = projects.find(project => project.id === activeProjectId)
   const activeProject =
-    requestedActive && !requestedActive.archivedAt
+    requestedActive && !requestedActive.archivedAt && !requestedActive.migratedToFolder
       ? requestedActive
       : activeCandidates[0]
 
@@ -152,19 +251,24 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
 }
 
 export function saveProjectToLibrary(projectId: string, state: ProjectState, projects: StoredProject[]) {
-  const existing = projects.find(project => project.id === projectId)
+  const id = projectId.trim()
+  if (id.length === 0) return projects
+
+  const existing = projects.find(project => project.id === id)
   const nextProject: StoredProject = {
-    id: projectId,
+    id,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     state,
+    ...(existing?.archivedAt ? { archivedAt: existing.archivedAt } : {}),
+    ...(existing?.migratedToFolder ? { migratedToFolder: existing.migratedToFolder } : {}),
   }
   const nextProjects = [
     nextProject,
-    ...projects.filter(project => project.id !== projectId),
+    ...projects.filter(project => project.id !== id),
   ]
   writeProjectLibrary(nextProjects)
-  writeActiveProjectId(projectId)
+  writeActiveProjectId(id)
   saveProjectState(state)
   return nextProjects
 }
@@ -237,7 +341,9 @@ export function archiveProjectInLibrary(
   const target = projects.find(project => project.id === projectId)
   if (!target || target.archivedAt) {
     const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? projects[0]?.id ?? ''
-    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    const active = projects.find(
+      project => project.id === activeProjectId && !project.archivedAt && !project.migratedToFolder,
+    )
     return {
       activeProjectId: active?.id ?? '',
       state: active?.state ?? defaultProjectState(),
@@ -280,7 +386,9 @@ export function restoreProjectInLibrary(
   const target = projects.find(project => project.id === projectId)
   if (!target || !target.archivedAt) {
     const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? ''
-    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    const active = projects.find(
+      project => project.id === activeProjectId && !project.archivedAt && !project.migratedToFolder,
+    )
     return {
       activeProjectId: active?.id ?? '',
       state: active?.state ?? defaultProjectState(),
@@ -333,7 +441,12 @@ export function deleteProjectFromLibrary(
   }
 
   const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
-  const remainingActiveCandidates = remaining.filter(project => !project.archivedAt)
+  // Active fallback excludes both archived and migrated projects — a
+  // migrated project's localStorage copy is constraint-only and must not
+  // be re-activated implicitly.
+  const remainingActiveCandidates = projectsForActiveLibrary(remaining).filter(
+    project => !project.archivedAt,
+  )
   const nextActive =
     previousActiveId && previousActiveId !== projectId
       ? remainingActiveCandidates.find(project => project.id === previousActiveId)

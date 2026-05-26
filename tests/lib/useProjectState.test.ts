@@ -457,6 +457,27 @@ describe('useProjectState', () => {
     expect(result.current.state.script.rawHtml).toBe('<p data-element-type="action">Keep this page.</p>')
   })
 
+  it('createProject from an empty library does not preserve a blank placeholder project', () => {
+    localStorage.setItem('writeros_project_library', '[]')
+    localStorage.removeItem('writeros_active_project_id')
+    const { result } = renderHook(() => useProjectState())
+
+    expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects).toHaveLength(0)
+
+    let createdId = ''
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    expect(createdId).not.toBe('')
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.projects).toHaveLength(1)
+    expect(result.current.storedProjects.map(project => project.id)).toEqual([createdId])
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!)
+    expect(stored.map((project: StoredProject) => project.id)).toEqual([createdId])
+  })
+
   it('addMessage persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     const msg: TranscriptMessage = { id: 'msg3', role: 'user', content: 'persist me', speaker: 'Writer', ts: 3 }
@@ -464,6 +485,82 @@ describe('useProjectState', () => {
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.agents.writingPartner.transcript).toHaveLength(1)
     expect(stored.agents.writingPartner.transcript[0].content).toBe('persist me')
+  })
+
+  it('reloadLibrary picks up out-of-band stored library mutations', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    // Stamp a migrated marker on the active project out-of-band, mirroring
+    // what markProjectsMigrated does. After reloadLibrary the active session
+    // should drop back to "no active project" per loadActiveProjectLibrary's
+    // refusal to activate migrated projects.
+    const activeId = result.current.activeProjectId
+    expect(activeId).not.toBe('')
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!) as StoredProject[]
+    const mutated = stored.map(project =>
+      project.id === activeId
+        ? {
+            ...project,
+            migratedToFolder: {
+              folderLabel: 'MyDocs',
+              packageName: 'Untitled.writeros',
+              migratedAt: '2026-05-25T00:00:00.000Z',
+            },
+          }
+        : project,
+    )
+    localStorage.setItem('writeros_project_library', JSON.stringify(mutated))
+
+    act(() => result.current.reloadLibrary())
+
+    // Per Decision 3: when the active project is migrated, reload drops the
+    // active session — writer returns to Home.
+    expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects.find(project => project.id === activeId)).toBeUndefined()
+    // The migrated project remains in the stored projects array so the marker
+    // survives re-reads.
+    expect(result.current.storedProjects.find(p => p.id === activeId)?.migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Untitled.writeros',
+      migratedAt: '2026-05-25T00:00:00.000Z',
+    })
+  })
+
+  it('markStoredProjectsMigrated hides a folder-backed browser fallback without closing the active session', () => {
+    const { result } = renderHook(() => useProjectState())
+    let createdId = ''
+
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    act(() => {
+      result.current.markStoredProjectsMigrated([{
+        projectId: createdId,
+        folderLabel: 'WriterOS Projects',
+        packageName: 'QA Storage Rename (7bbe52ff).writeros',
+        migratedAt: '2026-05-26T15:15:00.000Z',
+      }])
+    })
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('')
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
+    expect(result.current.activeStoredProject?.migratedToFolder).toEqual({
+      folderLabel: 'WriterOS Projects',
+      packageName: 'QA Storage Rename (7bbe52ff).writeros',
+      migratedAt: '2026-05-26T15:15:00.000Z',
+    })
+
+    act(() => result.current.setMeta({ title: 'QA Storage Rename' }))
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('QA Storage Rename')
+    expect(result.current.activeStoredProject?.migratedToFolder?.packageName).toBe(
+      'QA Storage Rename (7bbe52ff).writeros',
+    )
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
   })
 })
 

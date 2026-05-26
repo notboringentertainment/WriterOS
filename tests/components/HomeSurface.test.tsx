@@ -285,6 +285,35 @@ describe('HomeSurface', () => {
     expect(onForgetProjectFolder).toHaveBeenCalled()
   })
 
+  it('uses folder-access copy when the remembered folder needs permission', () => {
+    const onRefreshProjectFolder = vi.fn()
+
+    render(
+      <HomeSurface
+        activeProjectId=""
+        projects={[]}
+        storageStatus={{
+          status: 'permission-needed',
+          label: 'WriterOS Projects',
+          defaultFolderLabel: 'Selected folder',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: true,
+          errorMessage: null,
+        }}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onRefreshProjectFolder={onRefreshProjectFolder}
+      />
+    )
+
+    expect(screen.getAllByRole('button', { name: 'Allow Folder Access' })).toHaveLength(1)
+    expect(screen.getByText('Allow access to the selected folder to scan projects')).toBeInTheDocument()
+    expect(screen.getByText('Allow folder access to show projects.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow Folder Access' }))
+    expect(onRefreshProjectFolder).toHaveBeenCalledTimes(1)
+  })
+
   it('shows an explicit empty state when folder scanning fails', () => {
     render(
       <HomeSurface
@@ -766,6 +795,242 @@ describe('HomeSurface', () => {
       expect(createButtons.length).toBeGreaterThan(0)
       fireEvent.click(createButtons[createButtons.length - 1])
       expect(onNewProject).toHaveBeenCalled()
+    })
+  })
+
+  describe('localStorage → folder migration prompt', () => {
+    const readyStorageStatus = {
+      status: 'ready' as const,
+      label: 'MyDocs',
+      defaultFolderLabel: 'Selected folder',
+      fileSystemAccessSupported: true,
+      folderPersistenceSupported: true,
+      errorMessage: null,
+    }
+
+    it('shows the migration modal when a folder is connected and unmigrated projects exist', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[
+            { id: 'p1', title: 'Romeo' },
+            { id: 'p2', title: 'Juliet' },
+          ]}
+        />
+      )
+      expect(screen.getByRole('dialog')).toHaveAccessibleName(/migrate.*projects/i)
+    })
+
+    it('does not show the modal when no folder is connected', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('does not show the modal when there are no unmigrated projects', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[]}
+        />
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('clicking migrate calls onMigrateLocalStorage', () => {
+      const onMigrateLocalStorage = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+          onMigrateLocalStorage={onMigrateLocalStorage}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /Migrate 1 project/i }))
+      expect(onMigrateLocalStorage).toHaveBeenCalledTimes(1)
+    })
+
+    it('Cancel dismisses the modal and Migrate browser projects link reopens it', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /Migrate browser projects/i }))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('does NOT re-open the modal when unmigrated count decreases after a dismiss', () => {
+      const { rerender } = render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[
+            { id: 'p1', title: 'Romeo' },
+            { id: 'p2', title: 'Juliet' },
+            { id: 'p3', title: 'Hamlet' },
+          ]}
+        />
+      )
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // Simulate a partial migration: count drops from 3 → 1.
+      rerender(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p3', title: 'Hamlet' }]}
+        />
+      )
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('DOES re-open the modal when unmigrated count increases above the previous value', () => {
+      const { rerender } = render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[
+            { id: 'p1', title: 'Romeo' },
+            { id: 'p2', title: 'Juliet' },
+          ]}
+        />
+      )
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // Simulate writer adding a new browser project later: count grows 2 → 3.
+      rerender(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[
+            { id: 'p1', title: 'Romeo' },
+            { id: 'p2', title: 'Juliet' },
+            { id: 'p3', title: 'Hamlet' },
+          ]}
+        />
+      )
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('does not show the "Migrate browser projects" status-row button while the modal is open', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      // The migration modal opens automatically on first render. While it is
+      // open, the status-row affordance that would reopen the same modal is
+      // redundant and confusing — it must not render.
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Migrate browser projects' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('Migrate browser projects button is disabled while migrating', () => {
+      // The status-row affordance is hidden while the modal is open (see the
+      // prior test), so we first dismiss the modal, then flip the surface into
+      // its migrating state so the affordance is reachable and we can assert
+      // it is disabled.
+      const { rerender } = render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      rerender(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+          migratingLocalStorage
+        />
+      )
+
+      // The status-row affordance lives outside the dialog. Querying by name
+      // would match the in-modal primary "Migrate 1 project" too, so scope
+      // explicitly to the exact status-row label.
+      const button = screen.getByRole('button', { name: 'Migrate browser projects' })
+      expect(button).toBeDisabled()
     })
   })
 })

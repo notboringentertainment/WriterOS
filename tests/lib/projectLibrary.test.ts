@@ -6,7 +6,12 @@ import {
   createBlankProject,
   saveProjectToLibrary,
   deleteProjectFromLibrary,
+  getUnmigratedProjects,
+  markProjectsMigrated,
+  projectsForActiveLibrary,
   restoreProjectInLibrary,
+  summarizeProjects,
+  __testReadProjectLibrary,
 } from '../../client/src/lib/projectLibrary'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
@@ -125,6 +130,34 @@ describe('saveProjectToLibrary (regression coverage for saveNow path)', () => {
     expect(next[0].id).toBe(projectId)
     expect(next[0].updatedAt).toBeGreaterThan(firstUpdatedAt)
   })
+
+  it('does not create a phantom stored project when no active project exists', () => {
+    const state = defaultProjectState()
+
+    const next = saveProjectToLibrary('', state, [])
+
+    expect(next).toEqual([])
+    expect(localStorage.getItem(LIBRARY_KEY)).toBeNull()
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+  })
+
+  it('normalizes project ids before matching and persisting', () => {
+    const state = defaultProjectState()
+    const existing = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state,
+    }
+
+    const next = saveProjectToLibrary(' p1 ', state, [existing])
+
+    expect(next).toHaveLength(1)
+    expect(next[0].id).toBe('p1')
+    expect(localStorage.getItem(ACTIVE_KEY)).toBe('p1')
+    const persisted = JSON.parse(localStorage.getItem(LIBRARY_KEY)!)
+    expect(persisted.map((project: { id: string }) => project.id)).toEqual(['p1'])
+  })
 })
 
 describe('archiveProjectInLibrary (Slice 5a-2)', () => {
@@ -242,6 +275,238 @@ describe('loadActiveProjectLibrary skips archived projects (Slice 5a-2)', () => 
     // Archived project is preserved in storage so the writer can restore it.
     expect(reloaded.projects).toHaveLength(1)
     expect(reloaded.projects[0].archivedAt).toBeTruthy()
+  })
+})
+
+describe('migratedToFolder marker (Slice 4)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('drops stored entries with blank ids', () => {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([
+      {
+        id: '',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+      },
+      {
+        id: 'p1',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]))
+
+    expect(__testReadProjectLibrary().map(project => project.id)).toEqual(['p1'])
+  })
+
+  it('trims stored project ids during localStorage reads', () => {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([
+      {
+        id: ' p1 ',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+      },
+    ]))
+
+    expect(__testReadProjectLibrary().map(project => project.id)).toEqual(['p1'])
+  })
+
+  it('round-trips a migrated marker through readProjectLibrary', () => {
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 'Project (abc12345).writeros',
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const projects = __testReadProjectLibrary()
+    const summaries = summarizeProjects(projects)
+    expect(summaries[0]).toMatchObject({ id: 'p1' })
+    expect(projects[0].migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Project (abc12345).writeros',
+      migratedAt: '2026-05-25T12:00:00.000Z',
+    })
+  })
+
+  it('drops migratedToFolder when nested fields are not all strings', () => {
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 123, // invalid: not a string
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const projects = __testReadProjectLibrary()
+    expect(projects[0].migratedToFolder).toBeUndefined()
+  })
+
+  it('survives writeProjectLibrary round-trip via saveProjectToLibrary', () => {
+    // Seed library with a project that already has migratedToFolder.
+    const stored = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: {
+          folderLabel: 'MyDocs',
+          packageName: 'Project (abc12345).writeros',
+          migratedAt: '2026-05-25T12:00:00.000Z',
+        },
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stored))
+
+    const initial = __testReadProjectLibrary()
+    // Save the same project state through the standard write path.
+    saveProjectToLibrary('p1', initial[0].state, initial)
+
+    const reread = __testReadProjectLibrary()
+    expect(reread[0].migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Project (abc12345).writeros',
+      migratedAt: '2026-05-25T12:00:00.000Z',
+    })
+  })
+})
+
+describe('loadActiveProjectLibrary with migrated projects (Slice 4)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('does not activate a migrated project on reload', () => {
+    const migrated = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state: defaultProjectState(),
+      migratedToFolder: {
+        folderLabel: 'F',
+        packageName: 'P.writeros',
+        migratedAt: 'now',
+      },
+    }
+    const active = {
+      id: 'p2',
+      createdAt: 3,
+      updatedAt: 4,
+      state: defaultProjectState(),
+    }
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([migrated, active]))
+    localStorage.setItem(ACTIVE_KEY, 'p1')
+
+    const result = loadActiveProjectLibrary()
+    expect(result.activeProjectId).toBe('')
+    expect(result.projects.map(p => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('projectsForActiveLibrary excludes migrated entries', () => {
+    const migrated = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state: defaultProjectState(),
+      migratedToFolder: {
+        folderLabel: 'F',
+        packageName: 'P.writeros',
+        migratedAt: 'now',
+      },
+    }
+    const active = {
+      id: 'p2',
+      createdAt: 3,
+      updatedAt: 4,
+      state: defaultProjectState(),
+    }
+    const unmigrated = projectsForActiveLibrary([migrated, active])
+    expect(unmigrated.map(p => p.id)).toEqual(['p2'])
+  })
+})
+
+describe('markProjectsMigrated', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('stamps a migrated marker and writes back', () => {
+    const projects = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+      },
+      {
+        id: 'p2',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(projects))
+
+    const result = markProjectsMigrated(projects, [
+      { projectId: 'p1', folderLabel: 'F', packageName: 'P.writeros', migratedAt: 'now' },
+    ])
+
+    expect(result.find(p => p.id === 'p1')?.migratedToFolder?.packageName).toBe('P.writeros')
+    expect(result.find(p => p.id === 'p2')?.migratedToFolder).toBeUndefined()
+    const persisted = JSON.parse(localStorage.getItem(LIBRARY_KEY)!)
+    expect(persisted.find((p: { id: string; migratedToFolder?: { packageName: string } }) => p.id === 'p1').migratedToFolder.packageName).toBe('P.writeros')
+  })
+})
+
+describe('getUnmigratedProjects', () => {
+  it('returns only active entries without a migratedToFolder marker', () => {
+    const projects = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: { folderLabel: 'F', packageName: 'P', migratedAt: 'now' },
+      },
+      {
+        id: 'p2',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+      {
+        id: 'p3',
+        createdAt: 5,
+        updatedAt: 6,
+        state: defaultProjectState(),
+        archivedAt: '2026-05-25T00:00:00.000Z',
+      },
+      {
+        id: '',
+        createdAt: 7,
+        updatedAt: 8,
+        state: defaultProjectState(),
+      },
+    ]
+    expect(getUnmigratedProjects(projects).map(p => p.id)).toEqual(['p2'])
   })
 })
 

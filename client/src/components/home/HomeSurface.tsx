@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type {
@@ -6,6 +6,7 @@ import type {
   WriterOSFolderProject,
   WriterOSProjectsFolderStatus,
 } from '../../lib/useWriterOSProjectsFolder'
+import { MigrateLocalStorageModal } from './MigrateLocalStorageModal'
 
 export type HomeDeleteTarget =
   | { storageKind: 'browser'; projectId: string; title: string }
@@ -42,6 +43,10 @@ interface HomeSurfaceProps {
   onChooseProjectFolder?: () => void
   onRefreshProjectFolder?: () => void
   onForgetProjectFolder?: () => void
+  unmigratedProjects?: { id: string; title: string }[]
+  folderLabel?: string | null
+  onMigrateLocalStorage?: () => void
+  migratingLocalStorage?: boolean
 }
 
 type SortKey = 'updated' | 'title' | 'created'
@@ -95,12 +100,33 @@ export function HomeSurface({
   onChooseProjectFolder,
   onRefreshProjectFolder,
   onForgetProjectFolder,
+  unmigratedProjects,
+  folderLabel,
+  onMigrateLocalStorage,
+  migratingLocalStorage = false,
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<HomeArchiveTarget | null>(null)
   const [view, setView] = useState<HomeView>(initialView)
+  const [migrationDismissed, setMigrationDismissed] = useState(false)
+  const unmigratedCount = unmigratedProjects?.length ?? 0
+  // Re-open the modal after a dismiss only when the count of unmigrated browser
+  // projects *increases* (e.g., the writer adds a new browser-backed project
+  // later). Decreases — including the count dropping after a partial migration
+  // success — must NOT auto-reset the dismissed flag; otherwise the modal pops
+  // back open on the same flow the writer just cancelled.
+  const prevUnmigratedCountRef = useRef(unmigratedCount)
+  useEffect(() => {
+    if (unmigratedCount > prevUnmigratedCountRef.current) {
+      setMigrationDismissed(false)
+    }
+    prevUnmigratedCountRef.current = unmigratedCount
+  }, [unmigratedCount])
+  const canShowMigrationModal =
+    storageStatus?.status === 'ready' && unmigratedCount > 0
+  const showMigrationModal = canShowMigrationModal && !migrationDismissed
   const switchView = useCallback((next: HomeView) => {
     if (next !== view) setQuery('')
     setView(next)
@@ -171,7 +197,7 @@ export function HomeSurface({
   }, [projectRows, query, sortKey])
 
   const folderActionLabel = storage.status === 'permission-needed'
-    ? 'Reconnect Folder'
+    ? 'Allow Folder Access'
     : storage.label
       ? 'Change Folder'
       : 'Choose Folder'
@@ -179,6 +205,11 @@ export function HomeSurface({
     ? onRefreshProjectFolder
     : onChooseProjectFolder
   const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
+  const hasStatusActions = storage.fileSystemAccessSupported && (
+    Boolean(storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed')
+    || Boolean(storage.label && onForgetProjectFolder)
+    || (!showMigrationModal && canShowMigrationModal)
+  )
   const projectCount = view === 'archive' ? archivedCount : activeCount
   const projectCountMeta = showingFolderProjects
     ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
@@ -238,26 +269,30 @@ export function HomeSurface({
           <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
           <span style={styles.statusMeta}>{formatFolderStatusMeta(storage)}</span>
           {storage.fileSystemAccessSupported ? (
-            <div style={styles.statusActions}>
-              <button
-                type="button"
-                style={styles.statusButton}
-                onClick={projectFolderAction}
-                disabled={!projectFolderAction}
-              >
-                {folderActionLabel}
-              </button>
-              {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
-                <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
-                  Refresh
-                </button>
-              )}
-              {storage.label && onForgetProjectFolder && (
-                <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
-                  Forget
-                </button>
-              )}
-            </div>
+            hasStatusActions && (
+              <div style={styles.statusActions}>
+                {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
+                  <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
+                    Refresh
+                  </button>
+                )}
+                {storage.label && onForgetProjectFolder && (
+                  <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
+                    Forget
+                  </button>
+                )}
+                {!showMigrationModal && canShowMigrationModal && (
+                  <button
+                    type="button"
+                    style={styles.statusButton}
+                    onClick={() => setMigrationDismissed(false)}
+                    disabled={migratingLocalStorage}
+                  >
+                    Migrate browser projects
+                  </button>
+                )}
+              </div>
+            )
           ) : (
             <span style={styles.statusMeta}>Folder access is unavailable in this browser.</span>
           )}
@@ -603,6 +638,15 @@ export function HomeSurface({
           </div>
         </div>
       )}
+
+      <MigrateLocalStorageModal
+        open={showMigrationModal}
+        projects={unmigratedProjects ?? []}
+        folderLabel={folderLabel ?? storage.label ?? ''}
+        migrating={migratingLocalStorage}
+        onMigrate={() => onMigrateLocalStorage?.()}
+        onCancel={() => setMigrationDismissed(true)}
+      />
     </section>
   )
 }
@@ -616,7 +660,7 @@ function formatFolderStatusMeta(storage: HomeProjectStorageStatus) {
     case 'loading':
       return 'Scanning projects'
     case 'permission-needed':
-      return 'Reconnect the selected folder to scan projects'
+      return 'Allow access to the selected folder to scan projects'
     case 'error':
       return 'Choose or refresh a folder'
     case 'unsupported':
@@ -659,7 +703,7 @@ function formatEmptyState(
   }
   if (!showingFolderProjects) return 'No projects yet. Create a new project or import a Final Draft .fdx to get started.'
   if (storageStatus === 'loading') return 'Scanning project folder...'
-  if (storageStatus === 'permission-needed') return 'Reconnect the project folder to show projects.'
+  if (storageStatus === 'permission-needed') return 'Allow folder access to show projects.'
   if (storageStatus === 'error') return 'Unable to scan the project folder.'
   return 'No .writeros projects found in this folder.'
 }

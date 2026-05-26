@@ -16,7 +16,13 @@ import {
   type RemoveProjectResult,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
-import type { ProjectSummary, StoredProject } from './projectLibrary'
+import {
+  getUnmigratedProjects,
+  summarizeProjects,
+  type ProjectSummary,
+  type StoredProject,
+} from './projectLibrary'
+import { migrateLocalStorageToFolder, type MigrationResult } from './migrateLocalStorageToFolder'
 
 export type WriterOSProjectsFolderStatus =
   | 'unsupported'
@@ -59,6 +65,7 @@ export interface WriterOSProjectsFolderState {
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
   restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
+  runMigration: (unmigratedProjects: StoredProject[]) => Promise<MigrationResult[]>
 }
 
 export interface WriterOSFolderProjectOpenResult {
@@ -101,6 +108,30 @@ function projectEntriesFromList(entries: Array<ProjectStorageListEntry<FileSyste
 
 function errorMessageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to read the selected folder.'
+}
+
+function formatMigrationFailureMessage(
+  results: MigrationResult[],
+  projects: StoredProject[],
+): string | null {
+  const failures = results.filter((result): result is Extract<MigrationResult, { ok: false }> => !result.ok)
+  if (failures.length === 0) return null
+
+  const titleByProjectId = new Map(
+    summarizeProjects(projects).map(project => [project.id, project.title || 'Untitled Project']),
+  )
+  const failureDetails = failures.slice(0, 3).map(failure => {
+    const title = titleByProjectId.get(failure.projectId) ?? failure.projectId
+    return `${title}: ${failure.error}`
+  })
+  const prefix = failures.length === 1
+    ? '1 browser project failed to migrate'
+    : `${failures.length} browser projects failed to migrate`
+  const suffix = failures.length > failureDetails.length
+    ? `; ${failures.length - failureDetails.length} more not shown`
+    : ''
+
+  return `${prefix}: ${failureDetails.join('; ')}${suffix}`
 }
 
 function isAbortError(error: unknown): boolean {
@@ -347,6 +378,73 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return result
   }, [requireFolderPermission])
 
+  const runMigration = useCallback(async (unmigratedProjects: StoredProject[]): Promise<MigrationResult[]> => {
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      // Match the coordinator contract: pre-migrated projects have no result
+      // entry. Unmigrated projects each get a permission-denied failure.
+      return getUnmigratedProjects(unmigratedProjects)
+        .map(project => ({
+          projectId: project.id,
+          ok: false as const,
+          error: errorMessageFromUnknown(error),
+        }))
+    }
+
+    // Coordinator catches per-project errors internally but defensively guard
+    // a top-level throw (e.g. adapter constructor surprises).
+    let adapter: ReturnType<typeof createFileSystemAccessProjectStorageAdapter>
+    let results: MigrationResult[]
+    try {
+      adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+      results = await migrateLocalStorageToFolder(adapter, unmigratedProjects, {
+        folderLabel: adapter.label,
+      })
+    } catch (error) {
+      const message = errorMessageFromUnknown(error)
+      setStatus('error')
+      setErrorMessage(message)
+      return getUnmigratedProjects(unmigratedProjects)
+        .map(project => ({
+          projectId: project.id,
+          ok: false as const,
+          error: message,
+        }))
+    }
+
+    const migrationFailureMessage = formatMigrationFailureMessage(results, unmigratedProjects)
+
+    // Refresh the projects list so newly-migrated packages appear in
+    // folderProjects. CRITICAL: a refresh failure here must NOT discard the
+    // successful results above — projects are already on disk, and the caller
+    // must still stamp migratedToFolder markers for them. Otherwise the next
+    // session shows the migration modal again and re-writes duplicate packages
+    // for the same project ids.
+    try {
+      const nextEntries = await adapter.listProjects()
+      updateProjectRefs(nextEntries)
+      const nextProjects = projectEntriesFromList(nextEntries)
+      setLabel(adapter.label)
+      setProjects(nextProjects.projects)
+      setArchivedProjects(nextProjects.archivedProjects)
+      setCorruptProjects(nextProjects.corruptProjects)
+      setStatus('ready')
+      setErrorMessage(migrationFailureMessage)
+    } catch (error) {
+      const refreshFailureMessage = errorMessageFromUnknown(error)
+      setStatus('error')
+      setErrorMessage(
+        migrationFailureMessage
+          ? `${migrationFailureMessage}. ${refreshFailureMessage}`
+          : refreshFailureMessage,
+      )
+    }
+
+    return results
+  }, [requireFolderPermission, updateProjectRefs])
+
   const chooseFolder = useCallback(async () => {
     if (!fileSystemAccessSupported) {
       setStatus('unsupported')
@@ -459,5 +557,6 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     deleteProject,
     archiveProject,
     restoreProject,
+    runMigration,
   }
 }

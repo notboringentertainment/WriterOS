@@ -54,7 +54,7 @@ The shipped-app storage model should be:
 
 - A user-selected project library folder, named however the writer wants.
 - One `.writeros` folder/package per project.
-- Project data stored as ordinary files that can be backed up, moved, and inspected.
+- Project data stored inside that package as ordinary files that can be backed up, moved, and recovered.
 - `localStorage` retained only as a browser-preview fallback and migration source.
 
 WriterOS should not prescribe or foreground a default folder name. The writer can choose a folder such as `~/Ben's Projects`, `~/Studio Work`, or any other location that makes sense for their project library. The folder should not default to the repo directory.
@@ -67,6 +67,48 @@ Additional decisions:
 - Home and Script both support import-as-new-project. The Script surface also owns explicit import/replace once a project is open.
 
 Cloud sync, account storage, and collaboration are separate future decisions. The V1 shipped-app path is local-first, user-owned project folders.
+
+## User-Facing Storage Model
+
+The writer-facing mental model must stay simple:
+
+```text
+WriterOS Projects/
+  My Movie.writeros
+  Pilot Draft.writeros
+  Archive/
+```
+
+The selected folder is a **project library**, not a single project. It is the place where WriterOS stores and discovers projects.
+
+Each `.writeros` item is one project. A writer should be able to recognize, back up, move, archive, restore, and open projects by project name without understanding the internal storage layout.
+
+The internal package contents are implementation details:
+
+```text
+My Movie.writeros/
+  project.json
+  script/
+  documents/
+  transcripts/
+  assets/
+```
+
+Those internals exist so WriterOS can keep script text, structured documents, transcripts, imported sources, references, and future assets reliable and recoverable. They should not become the ordinary writer-facing UX.
+
+Shipped-app expectations:
+
+- Finder / file-browser presentation should make a `.writeros` project feel like one project file/package, not a loose folder the writer is expected to manage manually.
+- Home should show one row/card per project, using package metadata and project title.
+- Rename, archive, delete, duplicate, reveal, export, and restore should operate on the project package as a single unit.
+- Project package internals may remain accessible for advanced recovery or support workflows, but WriterOS should not require normal users to inspect `project.json`, `documents/`, `script/`, or `transcripts/`.
+- The app may maintain a recent-projects or package-index cache for speed, but the selected folder and `.writeros` packages must remain recoverable by scanning the filesystem.
+- Browser/localStorage language should disappear from the normal shipped-app mental model. In the browser build, localStorage is a preview fallback and migration source only.
+- Any future workspace-level `vault/` or project-level reference-file area must be presented as deliberate writer-owned reference storage, not as arbitrary package internals.
+
+Current browser-build caveat:
+
+The File System Access API exposes `.writeros` packages as ordinary directories in the selected folder. That is acceptable for the browser implementation slice, but it is not the desired end-state UX. The product target is an app-managed package/file experience where writers see projects by name and WriterOS manages the package contents safely.
 
 ## Home Surface
 
@@ -108,7 +150,8 @@ Out of scope for the first Home slice:
 
 Each WriterOS project is stored as a `.writeros` folder/package. The implementation can still refine exact JSON fields, but the product-level package contract is fixed here:
 
-- A project folder is the durable source of truth.
+- A project package is the durable source of truth.
+- The package should be treated as one project in all writer-facing UX.
 - Each project has one manifest file.
 - Script, structured documents, transcripts, and metadata are stored separately enough to avoid one giant fragile blob.
 - Derived indexes and retrieval packs are rebuildable and should not be canonical.
@@ -145,11 +188,13 @@ My Project.writeros/
 
 Implementation may refine the internal layout, but it must preserve these product properties:
 
+- one writer-facing project package per project
 - human-ownable files
 - safe backup/move behavior
 - no silent dependence on browser storage
 - clear migration path from localStorage
 - clean handling when project files are missing or corrupted
+- no normal-user requirement to inspect or manipulate internal package files
 
 ## Final Draft Import
 

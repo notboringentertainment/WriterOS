@@ -224,6 +224,334 @@ describe('useWriterOSProjectsFolder', () => {
     )
   })
 
+  it('runMigration writes each unmigrated project via adapter and refreshes the project list', async () => {
+    // Reset before queueing once-values so previously-queued resolutions
+    // from sibling tests cannot bleed across.
+    storageMocks.listProjects.mockReset()
+    const state = defaultProjectState()
+    state.meta.title = 'Migration Project'
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const projectTwo: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state,
+    }
+
+    const buildRef = (id: string, packageName: string) => ({
+      id,
+      packageName,
+      handle: storageMocks.folderHandle,
+      summary: {
+        id,
+        title: packageName.replace(/\.writeros$/, ''),
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: id,
+        title: packageName.replace(/\.writeros$/, ''),
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    })
+
+    const refOne = buildRef('p1', 'Migration Project (p1xxxxx).writeros')
+    const refTwo = buildRef('p2', 'Migration Project (p2xxxxx).writeros')
+
+    // Initial scan after chooseFolder returns nothing on disk.
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    // First write resolves to refOne; second write resolves to refTwo.
+    storageMocks.writeProject.mockResolvedValueOnce(refOne)
+    storageMocks.writeProject.mockResolvedValueOnce(refTwo)
+    // Final refresh after migration returns both newly-written packages.
+    storageMocks.listProjects.mockResolvedValueOnce([
+      { status: 'ready', ref: refOne, warnings: [] },
+      { status: 'ready', ref: refTwo, warnings: [] },
+    ])
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectTwo])
+    })
+
+    expect(migrationResults).toHaveLength(2)
+    expect(migrationResults.every((r: any) => r.ok)).toBe(true)
+    expect(storageMocks.writeProject).toHaveBeenNthCalledWith(1, projectOne)
+    expect(storageMocks.writeProject).toHaveBeenNthCalledWith(2, projectTwo)
+    expect(result.current.label).toBe("Ben's Projects")
+    expect(result.current.projects).toMatchObject([
+      { id: 'p1', packageName: 'Migration Project (p1xxxxx).writeros' },
+      { id: 'p2', packageName: 'Migration Project (p2xxxxx).writeros' },
+    ])
+    expect(result.current.status).toBe('ready')
+  })
+
+  it('runMigration surfaces permission-denied as a failure result per unmigrated project', async () => {
+    storageMocks.listProjects.mockReset()
+    const state = defaultProjectState()
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const projectAlreadyMigrated: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state,
+      migratedToFolder: {
+        folderLabel: 'Old Folder',
+        packageName: 'Old (p2xxxxx).writeros',
+        migratedAt: '2026-05-01T00:00:00.000Z',
+      },
+    }
+
+    storageMocks.listProjects.mockResolvedValueOnce([])
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    // After the folder is connected, future permission requests are denied.
+    storageMocks.requestWriterOSProjectsFolderPermission.mockResolvedValue('denied')
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectAlreadyMigrated])
+    })
+
+    expect(migrationResults).toHaveLength(1)
+    expect(migrationResults[0]).toMatchObject({ projectId: 'p1', ok: false })
+    expect(migrationResults[0].error).toMatch(/permission/i)
+    expect(storageMocks.writeProject).not.toHaveBeenCalled()
+  })
+
+  it('runMigration maps adapter construction failures to project failure results', async () => {
+    storageMocks.listProjects.mockReset()
+    storageMocks.createFileSystemAccessProjectStorageAdapter.mockReset()
+    const state = defaultProjectState()
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const adapter = {
+      kind: 'file-system-access',
+      label: "Ben's Projects",
+      defaultFolderLabel: 'Selected folder',
+      listProjects: storageMocks.listProjects,
+      readProject: storageMocks.readProject,
+      writeProject: storageMocks.writeProject,
+    }
+
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    storageMocks.createFileSystemAccessProjectStorageAdapter
+      .mockReturnValueOnce(adapter)
+      .mockImplementationOnce(() => {
+        throw new Error('adapter unavailable')
+      })
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne])
+    })
+
+    expect(migrationResults).toEqual([
+      { projectId: 'p1', ok: false, error: 'adapter unavailable' },
+    ])
+    expect(result.current.status).toBe('error')
+    expect(result.current.errorMessage).toBe('adapter unavailable')
+    expect(storageMocks.writeProject).not.toHaveBeenCalled()
+  })
+
+  it('runMigration preserves successful write results when the post-migration refresh fails', async () => {
+    storageMocks.listProjects.mockReset()
+    const state = defaultProjectState()
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const projectAlreadyMigrated: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state,
+      migratedToFolder: {
+        folderLabel: 'Old Folder',
+        packageName: 'Old (p2xxxxx).writeros',
+        migratedAt: '2026-05-01T00:00:00.000Z',
+      },
+    }
+
+    const refOne = {
+      id: 'p1',
+      packageName: 'Migration Project (p1xxxxx).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'p1',
+        title: 'Migration Project',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'p1',
+        title: 'Migration Project',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+
+    // Initial scan after chooseFolder returns nothing on disk.
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    // The migration write itself succeeds.
+    storageMocks.writeProject.mockResolvedValueOnce(refOne)
+    // The post-migration refresh listProjects() throws (e.g., transient
+    // permission revoke after the migration write). Critically, the
+    // successful write above must NOT be discarded — projects are already
+    // on disk and the caller still needs to stamp markedToFolder markers.
+    storageMocks.listProjects.mockRejectedValueOnce(new Error('disk read failed during refresh'))
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectAlreadyMigrated])
+    })
+
+    // Hook surfaces the refresh failure for the UI.
+    expect(result.current.status).toBe('error')
+    expect(result.current.errorMessage).not.toBeNull()
+    expect(result.current.errorMessage).toMatch(/disk read failed during refresh/)
+    // Pre-migrated project should NOT appear in results; only the unmigrated one.
+    // AND that result must reflect the successful write — otherwise the caller
+    // skips stamping the migratedToFolder marker and the writer ends up with
+    // duplicate packages on the next session.
+    expect(migrationResults).toHaveLength(1)
+    expect(migrationResults[0]).toMatchObject({
+      projectId: 'p1',
+      ok: true,
+      packageName: 'Migration Project (p1xxxxx).writeros',
+      folderLabel: "Ben's Projects",
+    })
+    expect(migrationResults[0].migratedAt).toEqual(expect.any(String))
+  })
+
+  it('runMigration surfaces mixed per-project failures without hiding successful writes', async () => {
+    storageMocks.listProjects.mockReset()
+    const stateOne = defaultProjectState()
+    stateOne.meta.title = 'Successful Move'
+    const stateTwo = defaultProjectState()
+    stateTwo.meta.title = 'Stuck Draft'
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state: stateOne,
+    }
+    const projectTwo: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state: stateTwo,
+    }
+    const refOne = {
+      id: 'p1',
+      packageName: 'Successful Move (p1xxxxx).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'p1',
+        title: 'Successful Move',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'p1',
+        title: 'Successful Move',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    storageMocks.writeProject
+      .mockResolvedValueOnce(refOne)
+      .mockRejectedValueOnce(new Error('disk full'))
+    storageMocks.listProjects.mockResolvedValueOnce([
+      { status: 'ready', ref: refOne, warnings: [] },
+    ])
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectTwo])
+    })
+
+    expect(migrationResults).toEqual([
+      expect.objectContaining({ projectId: 'p1', ok: true }),
+      { projectId: 'p2', ok: false, error: 'disk full' },
+    ])
+    expect(result.current.status).toBe('ready')
+    expect(result.current.errorMessage).toContain('1 browser project failed to migrate')
+    expect(result.current.errorMessage).toContain('Stuck Draft: disk full')
+    expect(result.current.projects).toMatchObject([
+      { id: 'p1', packageName: 'Successful Move (p1xxxxx).writeros' },
+    ])
+  })
+
   it('writes an opened file-backed project through the existing package ref', async () => {
     const state = defaultProjectState()
     state.meta.title = 'Harbor Lights Revised'
