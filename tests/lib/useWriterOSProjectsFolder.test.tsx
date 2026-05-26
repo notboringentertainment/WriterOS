@@ -348,7 +348,7 @@ describe('useWriterOSProjectsFolder', () => {
     expect(storageMocks.writeProject).not.toHaveBeenCalled()
   })
 
-  it('runMigration surfaces post-permission adapter errors and sets status to error', async () => {
+  it('runMigration preserves successful write results when the post-migration refresh fails', async () => {
     storageMocks.listProjects.mockReset()
     const state = defaultProjectState()
     const projectOne: StoredProject = {
@@ -399,7 +399,9 @@ describe('useWriterOSProjectsFolder', () => {
     // The migration write itself succeeds.
     storageMocks.writeProject.mockResolvedValueOnce(refOne)
     // The post-migration refresh listProjects() throws (e.g., transient
-    // permission revoke after the migration write).
+    // permission revoke after the migration write). Critically, the
+    // successful write above must NOT be discarded — projects are already
+    // on disk and the caller still needs to stamp markedToFolder markers.
     storageMocks.listProjects.mockRejectedValueOnce(new Error('disk read failed during refresh'))
 
     const { result } = renderHook(() => useWriterOSProjectsFolder())
@@ -413,13 +415,22 @@ describe('useWriterOSProjectsFolder', () => {
       migrationResults = await result.current.runMigration([projectOne, projectAlreadyMigrated])
     })
 
+    // Hook surfaces the refresh failure for the UI.
     expect(result.current.status).toBe('error')
     expect(result.current.errorMessage).not.toBeNull()
     expect(result.current.errorMessage).toMatch(/disk read failed during refresh/)
     // Pre-migrated project should NOT appear in results; only the unmigrated one.
+    // AND that result must reflect the successful write — otherwise the caller
+    // skips stamping the migratedToFolder marker and the writer ends up with
+    // duplicate packages on the next session.
     expect(migrationResults).toHaveLength(1)
-    expect(migrationResults[0]).toMatchObject({ projectId: 'p1', ok: false })
-    expect(migrationResults[0].error).toMatch(/disk read failed during refresh/)
+    expect(migrationResults[0]).toMatchObject({
+      projectId: 'p1',
+      ok: true,
+      packageName: 'Migration Project (p1xxxxx).writeros',
+      folderLabel: "Ben's Projects",
+    })
+    expect(migrationResults[0].migratedAt).toEqual(expect.any(String))
   })
 
   it('writes an opened file-backed project through the existing package ref', async () => {

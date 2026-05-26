@@ -365,30 +365,16 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
         }))
     }
 
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+
+    // Coordinator catches per-project errors internally but defensively guard
+    // a top-level throw (e.g. adapter constructor surprises).
+    let results: MigrationResult[]
     try {
-      const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
-      const results = await migrateLocalStorageToFolder(adapter, unmigratedProjects, {
+      results = await migrateLocalStorageToFolder(adapter, unmigratedProjects, {
         folderLabel: adapter.label,
       })
-
-      // Refresh the project list so newly-migrated packages appear in folderProjects.
-      const nextEntries = await adapter.listProjects()
-      updateProjectRefs(nextEntries)
-      const nextProjects = projectEntriesFromList(nextEntries)
-      setLabel(adapter.label)
-      setProjects(nextProjects.projects)
-      setArchivedProjects(nextProjects.archivedProjects)
-      setCorruptProjects(nextProjects.corruptProjects)
-      setStatus('ready')
-      setErrorMessage(null)
-
-      return results
     } catch (error) {
-      // Post-permission failure (e.g., listProjects throwing on transient
-      // permission revoke or a disk read error mid-flight). Surface a
-      // per-unmigrated-project failure with the same shape as the
-      // permission-denied path, and set hook state to error so callers don't
-      // get stranded in 'loading'.
       const message = errorMessageFromUnknown(error)
       setStatus('error')
       setErrorMessage(message)
@@ -400,6 +386,29 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
           error: message,
         }))
     }
+
+    // Refresh the projects list so newly-migrated packages appear in
+    // folderProjects. CRITICAL: a refresh failure here must NOT discard the
+    // successful results above — projects are already on disk, and the caller
+    // must still stamp migratedToFolder markers for them. Otherwise the next
+    // session shows the migration modal again and re-writes duplicate packages
+    // for the same project ids.
+    try {
+      const nextEntries = await adapter.listProjects()
+      updateProjectRefs(nextEntries)
+      const nextProjects = projectEntriesFromList(nextEntries)
+      setLabel(adapter.label)
+      setProjects(nextProjects.projects)
+      setArchivedProjects(nextProjects.archivedProjects)
+      setCorruptProjects(nextProjects.corruptProjects)
+      setStatus('ready')
+      setErrorMessage(null)
+    } catch (error) {
+      setStatus('error')
+      setErrorMessage(errorMessageFromUnknown(error))
+    }
+
+    return results
   }, [requireFolderPermission, updateProjectRefs])
 
   const chooseFolder = useCallback(async () => {
