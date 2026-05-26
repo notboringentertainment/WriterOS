@@ -348,6 +348,80 @@ describe('useWriterOSProjectsFolder', () => {
     expect(storageMocks.writeProject).not.toHaveBeenCalled()
   })
 
+  it('runMigration surfaces post-permission adapter errors and sets status to error', async () => {
+    storageMocks.listProjects.mockReset()
+    const state = defaultProjectState()
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const projectAlreadyMigrated: StoredProject = {
+      id: 'p2',
+      createdAt: 1500,
+      updatedAt: 2500,
+      state,
+      migratedToFolder: {
+        folderLabel: 'Old Folder',
+        packageName: 'Old (p2xxxxx).writeros',
+        migratedAt: '2026-05-01T00:00:00.000Z',
+      },
+    }
+
+    const refOne = {
+      id: 'p1',
+      packageName: 'Migration Project (p1xxxxx).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'p1',
+        title: 'Migration Project',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'p1',
+        title: 'Migration Project',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+
+    // Initial scan after chooseFolder returns nothing on disk.
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    // The migration write itself succeeds.
+    storageMocks.writeProject.mockResolvedValueOnce(refOne)
+    // The post-migration refresh listProjects() throws (e.g., transient
+    // permission revoke after the migration write).
+    storageMocks.listProjects.mockRejectedValueOnce(new Error('disk read failed during refresh'))
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne, projectAlreadyMigrated])
+    })
+
+    expect(result.current.status).toBe('error')
+    expect(result.current.errorMessage).not.toBeNull()
+    expect(result.current.errorMessage).toMatch(/disk read failed during refresh/)
+    // Pre-migrated project should NOT appear in results; only the unmigrated one.
+    expect(migrationResults).toHaveLength(1)
+    expect(migrationResults[0]).toMatchObject({ projectId: 'p1', ok: false })
+    expect(migrationResults[0].error).toMatch(/disk read failed during refresh/)
+  })
+
   it('writes an opened file-backed project through the existing package ref', async () => {
     const state = defaultProjectState()
     state.meta.title = 'Harbor Lights Revised'

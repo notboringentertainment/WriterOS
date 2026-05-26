@@ -60,7 +60,7 @@ export interface WriterOSProjectsFolderState {
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
   restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
-  runMigration: (projects: StoredProject[]) => Promise<MigrationResult[]>
+  runMigration: (unmigratedProjects: StoredProject[]) => Promise<MigrationResult[]>
 }
 
 export interface WriterOSFolderProjectOpenResult {
@@ -349,14 +349,14 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return result
   }, [requireFolderPermission])
 
-  const runMigration = useCallback(async (projects: StoredProject[]): Promise<MigrationResult[]> => {
+  const runMigration = useCallback(async (unmigratedProjects: StoredProject[]): Promise<MigrationResult[]> => {
     let folderHandle: WriterOSFileSystemDirectoryHandle
     try {
       folderHandle = await requireFolderPermission()
     } catch (error) {
       // Match the coordinator contract: pre-migrated projects have no result
       // entry. Unmigrated projects each get a permission-denied failure.
-      return projects
+      return unmigratedProjects
         .filter(project => !project.migratedToFolder)
         .map(project => ({
           projectId: project.id,
@@ -365,23 +365,41 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
         }))
     }
 
-    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
-    const results = await migrateLocalStorageToFolder(adapter, projects, {
-      folderLabel: adapter.label,
-    })
+    try {
+      const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+      const results = await migrateLocalStorageToFolder(adapter, unmigratedProjects, {
+        folderLabel: adapter.label,
+      })
 
-    // Refresh the project list so newly-migrated packages appear in folderProjects.
-    const nextEntries = await adapter.listProjects()
-    updateProjectRefs(nextEntries)
-    const nextProjects = projectEntriesFromList(nextEntries)
-    setLabel(adapter.label)
-    setProjects(nextProjects.projects)
-    setArchivedProjects(nextProjects.archivedProjects)
-    setCorruptProjects(nextProjects.corruptProjects)
-    setStatus('ready')
-    setErrorMessage(null)
+      // Refresh the project list so newly-migrated packages appear in folderProjects.
+      const nextEntries = await adapter.listProjects()
+      updateProjectRefs(nextEntries)
+      const nextProjects = projectEntriesFromList(nextEntries)
+      setLabel(adapter.label)
+      setProjects(nextProjects.projects)
+      setArchivedProjects(nextProjects.archivedProjects)
+      setCorruptProjects(nextProjects.corruptProjects)
+      setStatus('ready')
+      setErrorMessage(null)
 
-    return results
+      return results
+    } catch (error) {
+      // Post-permission failure (e.g., listProjects throwing on transient
+      // permission revoke or a disk read error mid-flight). Surface a
+      // per-unmigrated-project failure with the same shape as the
+      // permission-denied path, and set hook state to error so callers don't
+      // get stranded in 'loading'.
+      const message = errorMessageFromUnknown(error)
+      setStatus('error')
+      setErrorMessage(message)
+      return unmigratedProjects
+        .filter(project => !project.migratedToFolder)
+        .map(project => ({
+          projectId: project.id,
+          ok: false as const,
+          error: message,
+        }))
+    }
   }, [requireFolderPermission, updateProjectRefs])
 
   const chooseFolder = useCallback(async () => {
