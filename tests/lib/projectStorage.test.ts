@@ -75,6 +75,16 @@ class FakeDirectoryHandle implements WriterOSFileSystemDirectoryHandle {
   }
 }
 
+class RemovableFakeDirectoryHandle extends FakeDirectoryHandle {
+  removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []
+
+  async removeEntry(name: string, options?: { recursive?: boolean }): Promise<void> {
+    this.removeAttempts.push({ name, recursive: options?.recursive })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(this as any).children.delete(name)
+  }
+}
+
 async function writeTextFile(root: WriterOSFileSystemDirectoryHandle, path: string, content: string) {
   const parts = path.split('/')
   let directory = root
@@ -155,26 +165,51 @@ describe('File System Access project storage adapter', () => {
     ])
   })
 
-  it('updates an opened package in place when the project title changes', async () => {
-    const root = new FakeDirectoryHandle('WriterOS Projects')
+  it('renames an opened package when the project title changes', async () => {
+    const root = new RemovableFakeDirectoryHandle('WriterOS Projects')
     const adapter = createFileSystemAccessProjectStorageAdapter(root)
     const project = makeStoredProject()
 
     const ref = await adapter.writeProject(project)
+    await writeTextFile(ref.handle, 'vault/craft-notes.md', '# keep me')
     project.state.meta.title = 'The Salt Line Revised'
     project.updatedAt = Date.parse('2026-05-03T12:00:00.000Z')
+
     const updatedRef = await adapter.writeProject(project, ref)
     const list = await adapter.listProjects()
 
-    expect(updatedRef.packageName).toBe('The Salt Line (8f4e2c9a).writeros')
+    expect(updatedRef.packageName).toBe('The Salt Line Revised (8f4e2c9a).writeros')
+    expect(updatedRef.handle).not.toBe(ref.handle)
+    expect(root.removeAttempts).toEqual([
+      { name: 'The Salt Line (8f4e2c9a).writeros', recursive: true },
+    ])
+    await expect(root.getDirectoryHandle('The Salt Line (8f4e2c9a).writeros')).rejects.toMatchObject({
+      name: 'NotFoundError',
+    })
+    const vaultFile = await (await updatedRef.handle.getDirectoryHandle('vault')).getFileHandle('craft-notes.md')
+    expect(await (await vaultFile.getFile()).text()).toBe('# keep me')
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({
       status: 'ready',
       ref: {
-        packageName: 'The Salt Line (8f4e2c9a).writeros',
+        packageName: 'The Salt Line Revised (8f4e2c9a).writeros',
         summary: { title: 'The Salt Line Revised' },
       },
     })
+  })
+
+  it('does not rename over an existing package folder', async () => {
+    const root = new RemovableFakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+    const ref = await adapter.writeProject(project)
+    await root.getDirectoryHandle('The Salt Line Revised (8f4e2c9a).writeros', { create: true })
+
+    project.state.meta.title = 'The Salt Line Revised'
+
+    await expect(adapter.writeProject(project, ref)).rejects.toThrow(
+      'A WriterOS project package with this name already exists.',
+    )
   })
 
   describe('removeProject (Slice 5a)', () => {
