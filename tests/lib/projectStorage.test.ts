@@ -101,6 +101,17 @@ function makeStoredProject(): StoredProject {
 }
 
 describe('File System Access project storage adapter', () => {
+  it('refuses to write a package without a project id', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = { ...makeStoredProject(), id: '' }
+
+    await expect(adapter.writeProject(project)).rejects.toThrow(
+      'Cannot save a WriterOS project package without a project id.',
+    )
+    await expect(adapter.listProjects()).resolves.toEqual([])
+  })
+
   it('writes, lists, and reads .writeros project packages', async () => {
     const root = new FakeDirectoryHandle('WriterOS Projects')
     const adapter = createFileSystemAccessProjectStorageAdapter(root)

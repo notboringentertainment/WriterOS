@@ -130,6 +130,16 @@ describe('saveProjectToLibrary (regression coverage for saveNow path)', () => {
     expect(next[0].id).toBe(projectId)
     expect(next[0].updatedAt).toBeGreaterThan(firstUpdatedAt)
   })
+
+  it('does not create a phantom stored project when no active project exists', () => {
+    const state = defaultProjectState()
+
+    const next = saveProjectToLibrary('', state, [])
+
+    expect(next).toEqual([])
+    expect(localStorage.getItem(LIBRARY_KEY)).toBeNull()
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
+  })
 })
 
 describe('archiveProjectInLibrary (Slice 5a-2)', () => {
@@ -253,6 +263,25 @@ describe('loadActiveProjectLibrary skips archived projects (Slice 5a-2)', () => 
 describe('migratedToFolder marker (Slice 4)', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  it('drops stored entries with blank ids', () => {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([
+      {
+        id: '',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+      },
+      {
+        id: 'p1',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]))
+
+    expect(__testReadProjectLibrary().map(project => project.id)).toEqual(['p1'])
   })
 
   it('round-trips a migrated marker through readProjectLibrary', () => {
@@ -438,6 +467,12 @@ describe('getUnmigratedProjects', () => {
         updatedAt: 6,
         state: defaultProjectState(),
         archivedAt: '2026-05-25T00:00:00.000Z',
+      },
+      {
+        id: '',
+        createdAt: 7,
+        updatedAt: 8,
+        state: defaultProjectState(),
       },
     ]
     expect(getUnmigratedProjects(projects).map(p => p.id)).toEqual(['p2'])

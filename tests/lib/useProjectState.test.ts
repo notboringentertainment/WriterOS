@@ -457,6 +457,27 @@ describe('useProjectState', () => {
     expect(result.current.state.script.rawHtml).toBe('<p data-element-type="action">Keep this page.</p>')
   })
 
+  it('createProject from an empty library does not preserve a blank placeholder project', () => {
+    localStorage.setItem('writeros_project_library', '[]')
+    localStorage.removeItem('writeros_active_project_id')
+    const { result } = renderHook(() => useProjectState())
+
+    expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects).toHaveLength(0)
+
+    let createdId = ''
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    expect(createdId).not.toBe('')
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.projects).toHaveLength(1)
+    expect(result.current.storedProjects.map(project => project.id)).toEqual([createdId])
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!)
+    expect(stored.map((project: StoredProject) => project.id)).toEqual([createdId])
+  })
+
   it('addMessage persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     const msg: TranscriptMessage = { id: 'msg3', role: 'user', content: 'persist me', speaker: 'Writer', ts: 3 }

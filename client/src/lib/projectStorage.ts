@@ -451,6 +451,10 @@ export function createFileSystemAccessProjectStorageAdapter(
       return readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle))
     },
     async writeProject(project, previousRef) {
+      if (project.id.trim().length === 0) {
+        throw new Error('Cannot save a WriterOS project package without a project id.')
+      }
+
       const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
       const packageHandle = previousRef?.handle ?? await rootHandle.getDirectoryHandle(packageName, { create: true })
       const nextPackage = serializeWriterOSProjectPackage(project, {

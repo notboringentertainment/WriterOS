@@ -74,7 +74,7 @@ function readProjectLibrary(): StoredProject[] {
       .map(item => {
         if (!item || typeof item !== 'object') return null
         const candidate = item as Partial<StoredProject>
-        if (typeof candidate.id !== 'string' || !candidate.state) return null
+        if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0 || !candidate.state) return null
         const archivedAt = typeof candidate.archivedAt === 'string' ? candidate.archivedAt : undefined
         const migratedToFolder =
           candidate.migratedToFolder &&
@@ -172,7 +172,7 @@ export function markProjectsMigrated(
 // projects are deliberately excluded in V1 so migration never converts a
 // browser Archive entry into an active root-level `.writeros` package.
 export function getUnmigratedProjects(projects: StoredProject[]): StoredProject[] {
-  return projects.filter(project => !project.migratedToFolder && !project.archivedAt)
+  return projects.filter(project => project.id.trim().length > 0 && !project.migratedToFolder && !project.archivedAt)
 }
 
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
@@ -249,6 +249,8 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
 }
 
 export function saveProjectToLibrary(projectId: string, state: ProjectState, projects: StoredProject[]) {
+  if (projectId.trim().length === 0) return projects
+
   const existing = projects.find(project => project.id === projectId)
   const nextProject: StoredProject = {
     id: projectId,
