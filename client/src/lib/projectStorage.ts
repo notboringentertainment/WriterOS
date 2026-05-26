@@ -13,7 +13,8 @@ import {
   type WriterOSProjectManifest,
 } from './projectPackage'
 import type { ProjectSummary, StoredProject } from './projectLibrary'
-import { summarizeProjects } from './projectLibrary'
+import { createProjectId, summarizeProjects } from './projectLibrary'
+import { getDisplayProjectTitle } from './projectIdentity'
 
 export const DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL = 'Selected folder'
 export const FILE_SYSTEM_ACCESS_PICKER_ID = 'writeros-projects'
@@ -89,6 +90,14 @@ export type ArchiveProjectResult<TRef extends ProjectStorageProjectRef> =
   | { ok: true; ref: TRef }
   | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
 
+export type RevealProjectResult =
+  | { ok: true }
+  | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
+
+export type DuplicateProjectResult<TRef extends ProjectStorageProjectRef> =
+  | { ok: true; ref: TRef; project: StoredProject; warnings: string[] }
+  | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access'
   label: string
@@ -99,6 +108,8 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
   restoreProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
+  revealProject(ref: TRef): Promise<RevealProjectResult>
+  duplicateProject(ref: TRef): Promise<DuplicateProjectResult<TRef>>
 }
 
 type ShowDirectoryPicker = (options?: {
@@ -380,12 +391,32 @@ function refFromProject(
   }
 }
 
+function cloneStoredProjectState(project: StoredProject): StoredProject['state'] {
+  if (typeof structuredClone === 'function') return structuredClone(project.state)
+  return JSON.parse(JSON.stringify(project.state)) as StoredProject['state']
+}
+
+function createDuplicateStoredProject(project: StoredProject): StoredProject {
+  const now = Date.now()
+  const state = cloneStoredProjectState(project)
+  state.meta.title = `${getDisplayProjectTitle(project.state.meta.title)} Copy`
+
+  return {
+    id: createProjectId(),
+    createdAt: now,
+    updatedAt: now,
+    state,
+  }
+}
+
 export function createFileSystemAccessProjectStorageAdapter(
   rootHandle: WriterOSFileSystemDirectoryHandle,
 ): ProjectStorageAdapter<FileSystemAccessProjectRef> {
+  const folderLabel = rootHandle.name || DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL
+
   return {
     kind: 'file-system-access',
-    label: rootHandle.name || DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
+    label: folderLabel,
     defaultFolderLabel: DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
     async listProjects() {
       const entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>> = []
@@ -620,6 +651,72 @@ export function createFileSystemAccessProjectStorageAdapter(
           ok: false,
           reason: 'failed',
           message: error instanceof Error ? error.message : 'Unable to restore the project folder.',
+        }
+      }
+    },
+    async revealProject(ref) {
+      return {
+        ok: false,
+        reason: 'unsupported',
+        message: `This browser build cannot reveal project packages in Finder. Open ${folderLabel} in Finder and look for ${ref.packageName}.`,
+      }
+    },
+    async duplicateProject(ref) {
+      let destinationCreated = false
+      let packageName = ''
+      try {
+        const readResult = readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle))
+        if (!readResult.ok) {
+          return {
+            ok: false,
+            reason: 'failed',
+            message: readResult.error.message,
+          }
+        }
+
+        const duplicateProject = createDuplicateStoredProject(readResult.project)
+        packageName = getWriterOSProjectPackageDirectoryName(
+          duplicateProject.state.meta.title,
+          duplicateProject.id,
+        )
+        if (await getExistingDirectoryHandle(rootHandle, packageName)) {
+          return {
+            ok: false,
+            reason: 'failed',
+            message: 'A WriterOS project package with this name already exists.',
+          }
+        }
+
+        const destinationHandle = await rootHandle.getDirectoryHandle(packageName, { create: true })
+        destinationCreated = true
+        await copyDirectoryRecursive(ref.handle, destinationHandle)
+
+        const nextPackage = serializeWriterOSProjectPackage(duplicateProject, {
+          sourceImport: duplicateProject.state.meta.sourceImport,
+        })
+        await writeProjectPackageFiles(destinationHandle, nextPackage.files)
+
+        return {
+          ok: true,
+          ref: refFromProject(packageName, destinationHandle, duplicateProject, nextPackage.manifest),
+          project: duplicateProject,
+          warnings: [],
+        }
+      } catch (error) {
+        if (destinationCreated && packageName) {
+          await removeEntryIfPresent(rootHandle, packageName)
+        }
+        if (isPermissionDeniedError(error)) {
+          return {
+            ok: false,
+            reason: 'permission-denied',
+            message: 'WriterOS could not duplicate the project package because permission was denied.',
+          }
+        }
+        return {
+          ok: false,
+          reason: 'failed',
+          message: error instanceof Error ? error.message : 'Unable to duplicate the project package.',
         }
       }
     },

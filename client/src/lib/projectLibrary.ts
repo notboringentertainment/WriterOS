@@ -48,7 +48,7 @@ function now() {
   return Date.now()
 }
 
-function createProjectId() {
+export function createProjectId() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `project-${now()}-${Math.random().toString(36).slice(2)}`

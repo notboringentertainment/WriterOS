@@ -15,6 +15,11 @@ const storageMocks = vi.hoisted(() => ({
   listProjects: vi.fn(),
   readProject: vi.fn(),
   writeProject: vi.fn(),
+  removeProject: vi.fn(),
+  archiveProject: vi.fn(),
+  restoreProject: vi.fn(),
+  revealProject: vi.fn(),
+  duplicateProject: vi.fn(),
   folderHandle: {
     kind: 'directory' as const,
     name: "Ben's Projects",
@@ -47,6 +52,11 @@ describe('useWriterOSProjectsFolder', () => {
     storageMocks.listProjects.mockRejectedValue(new Error('scan failed'))
     storageMocks.readProject.mockReset()
     storageMocks.writeProject.mockReset()
+    storageMocks.removeProject.mockReset()
+    storageMocks.archiveProject.mockReset()
+    storageMocks.restoreProject.mockReset()
+    storageMocks.revealProject.mockReset()
+    storageMocks.duplicateProject.mockReset()
     storageMocks.createFileSystemAccessProjectStorageAdapter.mockReturnValue({
       kind: 'file-system-access',
       label: "Ben's Projects",
@@ -54,6 +64,11 @@ describe('useWriterOSProjectsFolder', () => {
       listProjects: storageMocks.listProjects,
       readProject: storageMocks.readProject,
       writeProject: storageMocks.writeProject,
+      removeProject: storageMocks.removeProject,
+      archiveProject: storageMocks.archiveProject,
+      restoreProject: storageMocks.restoreProject,
+      revealProject: storageMocks.revealProject,
+      duplicateProject: storageMocks.duplicateProject,
     })
   })
 
@@ -616,5 +631,126 @@ describe('useWriterOSProjectsFolder', () => {
     expect(result.current.projects).toMatchObject([
       { id: 'folder-project-1', packageName: 'Harbor Lights Revised (folderpr).writeros' },
     ])
+  })
+
+  it('revealProject forwards the tracked package ref and surfaces unsupported browser reveal', async () => {
+    const ref = {
+      id: 'folder-project-1',
+      packageName: 'Harbor Lights (folderpr).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'folder-project-1',
+        title: 'Harbor Lights',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'folder-project-1',
+        title: 'Harbor Lights',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+    storageMocks.listProjects.mockResolvedValue([{ status: 'ready', ref, warnings: [] }])
+    storageMocks.revealProject.mockResolvedValue({
+      ok: false,
+      reason: 'unsupported',
+      message: 'This browser build cannot reveal project packages in Finder.',
+    })
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let revealResult
+    await act(async () => {
+      revealResult = await result.current.revealProject('folder-project-1')
+    })
+
+    expect(storageMocks.revealProject).toHaveBeenCalledWith(ref)
+    expect(revealResult).toMatchObject({ ok: false, reason: 'unsupported' })
+    expect(result.current.errorMessage).toBe('This browser build cannot reveal project packages in Finder.')
+  })
+
+  it('duplicateProject forwards the tracked package ref and prepends the duplicated project', async () => {
+    const ref = {
+      id: 'folder-project-1',
+      packageName: 'Harbor Lights (folderpr).writeros',
+      handle: storageMocks.folderHandle,
+      summary: {
+        id: 'folder-project-1',
+        title: 'Harbor Lights',
+        createdAt: 1000,
+        updatedAt: 2000,
+        format: 'feature' as const,
+        sceneCount: 0,
+      },
+      manifest: {
+        schemaVersion: 1 as const,
+        projectId: 'folder-project-1',
+        title: 'Harbor Lights',
+        format: 'feature' as const,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-02T00:00:00.000Z',
+        openedAt: '2026-05-02T00:00:00.000Z',
+        sourceImport: null,
+        appVersion: '0.2.0',
+      },
+    }
+    const duplicatedRef = {
+      ...ref,
+      id: 'folder-project-copy',
+      packageName: 'Harbor Lights Copy (folderco).writeros',
+      summary: {
+        ...ref.summary,
+        id: 'folder-project-copy',
+        title: 'Harbor Lights Copy',
+        createdAt: 3000,
+        updatedAt: 3000,
+      },
+      manifest: {
+        ...ref.manifest,
+        projectId: 'folder-project-copy',
+        title: 'Harbor Lights Copy',
+      },
+    }
+    storageMocks.listProjects.mockResolvedValue([{ status: 'ready', ref, warnings: [] }])
+    storageMocks.duplicateProject.mockResolvedValue({
+      ok: true,
+      ref: duplicatedRef,
+      project: {
+        id: 'folder-project-copy',
+        createdAt: 3000,
+        updatedAt: 3000,
+        state: defaultProjectState(),
+      },
+      warnings: [],
+    })
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let duplicateResult
+    await act(async () => {
+      duplicateResult = await result.current.duplicateProject('folder-project-1')
+    })
+
+    expect(storageMocks.duplicateProject).toHaveBeenCalledWith(ref)
+    expect(duplicateResult).toMatchObject({ ok: true, ref: duplicatedRef })
+    expect(result.current.projects).toMatchObject([
+      { id: 'folder-project-copy', packageName: 'Harbor Lights Copy (folderco).writeros' },
+      { id: 'folder-project-1', packageName: 'Harbor Lights (folderpr).writeros' },
+    ])
+    expect(result.current.errorMessage).toBeNull()
   })
 })

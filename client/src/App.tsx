@@ -14,7 +14,12 @@ import { OutlineTab } from './components/writing/OutlineTab'
 import { TreatmentTab } from './components/writing/TreatmentTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WritersRoom } from './components/writing/WritersRoom'
-import { HomeSurface } from './components/home/HomeSurface'
+import {
+  HomeSurface,
+  type HomeArchiveTarget,
+  type HomeDeleteTarget,
+  type HomePackageActionTarget,
+} from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
@@ -96,6 +101,8 @@ export default function App() {
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const [archivingProjectId, setArchivingProjectId] = useState<string | null>(null)
   const [restoringProjectId, setRestoringProjectId] = useState<string | null>(null)
+  const [revealingProjectId, setRevealingProjectId] = useState<string | null>(null)
+  const [duplicatingProjectId, setDuplicatingProjectId] = useState<string | null>(null)
   const [migratingLocalStorage, setMigratingLocalStorage] = useState(false)
   const unmigratedProjects = useMemo(
     () => summarizeProjects(getUnmigratedProjects(project.storedProjects)).map(p => ({ id: p.id, title: p.title })),
@@ -370,7 +377,7 @@ export default function App() {
     }
   }, [cancelPendingFolderSave, project, shellState])
 
-  const handleArchiveHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeArchiveTarget) => {
+  const handleArchiveHomeProject = useCallback(async (target: HomeArchiveTarget) => {
     if (archivingProjectId) return
     setArchivingProjectId(target.projectId)
     setFolderProjectError(null)
@@ -410,7 +417,7 @@ export default function App() {
     }
   }, [activeProjectStorage, archivingProjectId, cancelPendingFolderSave, persistFolderProject, project, projectFolder, shellState])
 
-  const handleRestoreHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeArchiveTarget) => {
+  const handleRestoreHomeProject = useCallback(async (target: HomeArchiveTarget) => {
     if (restoringProjectId) return
     setRestoringProjectId(target.projectId)
     setFolderProjectError(null)
@@ -430,7 +437,48 @@ export default function App() {
     }
   }, [project, projectFolder, restoringProjectId])
 
-  const handleDeleteHomeProject = useCallback(async (target: import('./components/home/HomeSurface').HomeDeleteTarget) => {
+  const handleRevealHomeProject = useCallback(async (target: HomePackageActionTarget) => {
+    if (revealingProjectId) return
+    setRevealingProjectId(target.projectId)
+    setFolderProjectError(null)
+
+    try {
+      const result = await projectFolder.revealProject(target.projectId)
+      if (!result.ok) {
+        setFolderProjectError(result.message)
+      }
+    } finally {
+      setRevealingProjectId(null)
+    }
+  }, [projectFolder, revealingProjectId])
+
+  const handleDuplicateHomeProject = useCallback(async (target: HomePackageActionTarget) => {
+    if (duplicatingProjectId) return
+    setDuplicatingProjectId(target.projectId)
+    setFolderProjectError(null)
+
+    try {
+      const isActiveFolderProject =
+        project.activeProjectId === target.projectId &&
+        activeProjectStorage.kind === 'folder' &&
+        activeProjectStorage.projectId === target.projectId
+
+      if (isActiveFolderProject) {
+        cancelPendingFolderSave()
+        const didFlush = await persistFolderProject(project.activeStoredProject, target.projectId)
+        if (!didFlush) return
+      }
+
+      const result = await projectFolder.duplicateProject(target.projectId)
+      if (!result.ok) {
+        setFolderProjectError(result.message)
+      }
+    } finally {
+      setDuplicatingProjectId(null)
+    }
+  }, [activeProjectStorage, cancelPendingFolderSave, duplicatingProjectId, persistFolderProject, project, projectFolder])
+
+  const handleDeleteHomeProject = useCallback(async (target: HomeDeleteTarget) => {
     if (deletingProjectId) return
     setDeletingProjectId(target.projectId)
     setFolderProjectError(null)
@@ -688,6 +736,8 @@ export default function App() {
           deletingProjectId={deletingProjectId}
           archivingProjectId={archivingProjectId}
           restoringProjectId={restoringProjectId}
+          revealingProjectId={revealingProjectId}
+          duplicatingProjectId={duplicatingProjectId}
           archivedFolderProjects={projectFolder.archivedProjects}
           onOpenProject={handleOpenBrowserProject}
           onOpenFolderProject={handleOpenFolderProject}
@@ -695,6 +745,8 @@ export default function App() {
           onDeleteProject={handleDeleteHomeProject}
           onArchiveProject={handleArchiveHomeProject}
           onRestoreProject={handleRestoreHomeProject}
+          onRevealProject={handleRevealHomeProject}
+          onDuplicateProject={handleDuplicateHomeProject}
           onImportFdx={handleImportFdxAsNewProject}
           importingFdx={importingFdx}
           importError={fdxImportError}

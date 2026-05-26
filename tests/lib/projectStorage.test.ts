@@ -235,6 +235,56 @@ describe('File System Access project storage adapter', () => {
     })
   })
 
+  it('reports that Finder reveal is unavailable in the browser adapter', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const ref = await adapter.writeProject(makeStoredProject())
+
+    const result = await adapter.revealProject(ref)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected unsupported reveal')
+    expect(result.reason).toBe('unsupported')
+    expect(result.message).toContain('Finder')
+    expect(result.message).toContain('The Salt Line (8f4e2c9a).writeros')
+  })
+
+  it('duplicates a project package with a new id/title while preserving package extras', async () => {
+    const root = new RemovableFakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+    project.state.meta.sourceImport = {
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    }
+
+    const ref = await adapter.writeProject(project)
+    await writeTextFile(ref.handle, 'vault/craft-notes.md', '# keep me')
+
+    const result = await adapter.duplicateProject(ref)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('duplicate failed')
+    expect(result.ref.id).not.toBe(ref.id)
+    expect(result.ref.summary.title).toBe('The Salt Line Copy')
+    expect(result.ref.packageName).toMatch(/^The Salt Line Copy \([a-zA-Z0-9]{8}\)\.writeros$/)
+    const vaultFile = await (await result.ref.handle.getDirectoryHandle('vault')).getFileHandle('craft-notes.md')
+    expect(await (await vaultFile.getFile()).text()).toBe('# keep me')
+
+    const read = await adapter.readProject(result.ref)
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.error.message)
+    expect(read.project.id).toBe(result.ref.id)
+    expect(read.project.state.meta.title).toBe('The Salt Line Copy')
+    expect(read.project.state.meta.sourceImport).toMatchObject({
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    })
+    const list = await adapter.listProjects()
+    expect(list.filter(entry => entry.status === 'ready')).toHaveLength(2)
+  })
+
   describe('removeProject (Slice 5a)', () => {
     class FakeDirectoryHandleWithRemove extends FakeDirectoryHandle {
       removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []
