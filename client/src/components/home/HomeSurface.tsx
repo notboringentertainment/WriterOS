@@ -112,10 +112,17 @@ export function HomeSurface({
   const [view, setView] = useState<HomeView>(initialView)
   const [migrationDismissed, setMigrationDismissed] = useState(false)
   const unmigratedCount = unmigratedProjects?.length ?? 0
-  // Reset the dismissed flag when the set of unmigrated projects changes so the
-  // modal can re-open after a Cancel if new browser projects appear later.
+  // Re-open the modal after a dismiss only when the count of unmigrated browser
+  // projects *increases* (e.g., the writer adds a new browser-backed project
+  // later). Decreases — including the count dropping after a partial migration
+  // success — must NOT auto-reset the dismissed flag; otherwise the modal pops
+  // back open on the same flow the writer just cancelled.
+  const prevUnmigratedCountRef = useRef(unmigratedCount)
   useEffect(() => {
-    setMigrationDismissed(false)
+    if (unmigratedCount > prevUnmigratedCountRef.current) {
+      setMigrationDismissed(false)
+    }
+    prevUnmigratedCountRef.current = unmigratedCount
   }, [unmigratedCount])
   const canShowMigrationModal =
     storageStatus?.status === 'ready' && unmigratedCount > 0
@@ -281,6 +288,7 @@ export function HomeSurface({
                   type="button"
                   style={styles.statusButton}
                   onClick={() => setMigrationDismissed(false)}
+                  disabled={migratingLocalStorage}
                 >
                   Migrate browser projects
                 </button>
