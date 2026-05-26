@@ -126,15 +126,44 @@ export function summarizeProjects(projects: StoredProject[]): ProjectSummary[] {
   }))
 }
 
+// Slice 4: projects that have been migrated to a folder-backed package are
+// preserved in the localStorage library (so we can restore the marker on
+// re-read) but must never be auto-activated or surfaced as a candidate for
+// active selection. They live in a parallel "moved" state; the writer
+// re-enters them via the folder-open flow.
+export function projectsForActiveLibrary(projects: StoredProject[]): StoredProject[] {
+  return projects.filter(project => !project.migratedToFolder)
+}
+
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
   const projects = readProjectLibrary()
   const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
-  // Archived projects are never auto-selected as the active project. The
-  // writer can still restore them from the Home Archive view.
-  const activeCandidates = projects.filter(project => !project.archivedAt)
+
+  // Slice 4: if the stored active id points to a project that has been
+  // migrated to a folder-backed package, refuse to activate it. The
+  // localStorage copy is constraint-only — the canonical content lives on
+  // disk and must be re-entered via the folder-open flow. We keep the
+  // migrated project in the returned `projects` array so other read paths
+  // can still see the marker.
+  const storedActive = projects.find(project => project.id === activeProjectId)
+  if (storedActive?.migratedToFolder) {
+    localStorage.removeItem(ACTIVE_PROJECT_ID_KEY)
+    return {
+      activeProjectId: '',
+      state: defaultProjectState(),
+      projects,
+    }
+  }
+
+  // Archived and migrated projects are never auto-selected as the active
+  // project. Archived: writer can restore from the Home Archive view.
+  // Migrated: writer re-opens from disk via the folder-open flow.
+  const activeCandidates = projectsForActiveLibrary(projects).filter(
+    project => !project.archivedAt,
+  )
   const requestedActive = projects.find(project => project.id === activeProjectId)
   const activeProject =
-    requestedActive && !requestedActive.archivedAt
+    requestedActive && !requestedActive.archivedAt && !requestedActive.migratedToFolder
       ? requestedActive
       : activeCandidates[0]
 
@@ -267,7 +296,9 @@ export function archiveProjectInLibrary(
   const target = projects.find(project => project.id === projectId)
   if (!target || target.archivedAt) {
     const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? projects[0]?.id ?? ''
-    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    const active = projects.find(
+      project => project.id === activeProjectId && !project.archivedAt && !project.migratedToFolder,
+    )
     return {
       activeProjectId: active?.id ?? '',
       state: active?.state ?? defaultProjectState(),
@@ -310,7 +341,9 @@ export function restoreProjectInLibrary(
   const target = projects.find(project => project.id === projectId)
   if (!target || !target.archivedAt) {
     const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY) ?? ''
-    const active = projects.find(project => project.id === activeProjectId && !project.archivedAt)
+    const active = projects.find(
+      project => project.id === activeProjectId && !project.archivedAt && !project.migratedToFolder,
+    )
     return {
       activeProjectId: active?.id ?? '',
       state: active?.state ?? defaultProjectState(),
@@ -363,7 +396,12 @@ export function deleteProjectFromLibrary(
   }
 
   const previousActiveId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)
-  const remainingActiveCandidates = remaining.filter(project => !project.archivedAt)
+  // Active fallback excludes both archived and migrated projects — a
+  // migrated project's localStorage copy is constraint-only and must not
+  // be re-activated implicitly.
+  const remainingActiveCandidates = projectsForActiveLibrary(remaining).filter(
+    project => !project.archivedAt,
+  )
   const nextActive =
     previousActiveId && previousActiveId !== projectId
       ? remainingActiveCandidates.find(project => project.id === previousActiveId)

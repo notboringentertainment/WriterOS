@@ -6,6 +6,7 @@ import {
   createBlankProject,
   saveProjectToLibrary,
   deleteProjectFromLibrary,
+  projectsForActiveLibrary,
   restoreProjectInLibrary,
   summarizeProjects,
   __testReadProjectLibrary,
@@ -325,6 +326,60 @@ describe('migratedToFolder marker (Slice 4)', () => {
       packageName: 'Project (abc12345).writeros',
       migratedAt: '2026-05-25T12:00:00.000Z',
     })
+  })
+})
+
+describe('loadActiveProjectLibrary with migrated projects (Slice 4)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('does not activate a migrated project on reload', () => {
+    const migrated = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state: defaultProjectState(),
+      migratedToFolder: {
+        folderLabel: 'F',
+        packageName: 'P.writeros',
+        migratedAt: 'now',
+      },
+    }
+    const active = {
+      id: 'p2',
+      createdAt: 3,
+      updatedAt: 4,
+      state: defaultProjectState(),
+    }
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([migrated, active]))
+    localStorage.setItem(ACTIVE_KEY, 'p1')
+
+    const result = loadActiveProjectLibrary()
+    expect(result.activeProjectId).toBe('')
+    expect(result.projects.map(p => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('projectsForActiveLibrary excludes migrated entries', () => {
+    const migrated = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state: defaultProjectState(),
+      migratedToFolder: {
+        folderLabel: 'F',
+        packageName: 'P.writeros',
+        migratedAt: 'now',
+      },
+    }
+    const active = {
+      id: 'p2',
+      createdAt: 3,
+      updatedAt: 4,
+      state: defaultProjectState(),
+    }
+    const unmigrated = projectsForActiveLibrary([migrated, active])
+    expect(unmigrated.map(p => p.id)).toEqual(['p2'])
   })
 })
 
