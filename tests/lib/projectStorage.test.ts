@@ -400,6 +400,64 @@ describe('File System Access project storage adapter', () => {
     })
   })
 
+  describe('Vault path reservation (Slice 4)', () => {
+    // Regression: per the Vault PRD, the workspace root reserves `_vault/`
+    // as a future writer-facing folder. The project storage adapter must
+    // never treat `_vault/` as a project package — neither as a ready entry,
+    // nor as a corrupt entry, nor as a delete target.
+
+    class FakeDirectoryHandleWithRemove extends FakeDirectoryHandle {
+      removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []
+
+      async removeEntry(name: string, options?: { recursive?: boolean }): Promise<void> {
+        this.removeAttempts.push({ name, recursive: options?.recursive })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(this as any).children.delete(name)
+      }
+    }
+
+    it('listProjects ignores _vault/ at the workspace root', async () => {
+      const root = new FakeDirectoryHandle('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      await adapter.writeProject(makeStoredProject())
+      // Seed a reserved Vault folder alongside the project package.
+      await writeTextFile(root, '_vault/craft-notes.md', '# notes')
+
+      const entries = await adapter.listProjects()
+
+      expect(entries).toHaveLength(1)
+      expect(entries[0].status).toBe('ready')
+      // _vault/ must NOT appear as a corrupt entry either.
+      expect(
+        entries.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          entry => entry.status === 'corrupt' && (entry as any).packageName === '_vault',
+        ),
+      ).toBeUndefined()
+    })
+
+    it('removeProject does not touch _vault/ at the workspace root', async () => {
+      const root = new FakeDirectoryHandleWithRemove('WriterOS Projects')
+      const adapter = createFileSystemAccessProjectStorageAdapter(root)
+      const ref = await adapter.writeProject(makeStoredProject())
+      // Seed a reserved Vault folder with a file the writer cares about.
+      await writeTextFile(root, '_vault/craft-notes.md', '# notes')
+
+      const result = await adapter.removeProject(ref)
+
+      expect(result).toEqual({ ok: true, folderAlreadyMissing: false })
+      // The only removeEntry call should target the project package.
+      expect(root.removeAttempts).toEqual([
+        { name: ref.packageName, recursive: true },
+      ])
+      // _vault/ and its file must still be present.
+      const vault = await root.getDirectoryHandle('_vault')
+      const note = await vault.getFileHandle('craft-notes.md')
+      expect(note).toBeTruthy()
+      expect(await (await note.getFile()).text()).toBe('# notes')
+    })
+  })
+
   it('copies imported FDX source into a file-backed project package', async () => {
     const root = new FakeDirectoryHandle('WriterOS Projects')
     const adapter = createFileSystemAccessProjectStorageAdapter(root)
