@@ -74,7 +74,9 @@ function readProjectLibrary(): StoredProject[] {
       .map(item => {
         if (!item || typeof item !== 'object') return null
         const candidate = item as Partial<StoredProject>
-        if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0 || !candidate.state) return null
+        if (typeof candidate.id !== 'string' || !candidate.state) return null
+        const id = candidate.id.trim()
+        if (id.length === 0) return null
         const archivedAt = typeof candidate.archivedAt === 'string' ? candidate.archivedAt : undefined
         const migratedToFolder =
           candidate.migratedToFolder &&
@@ -89,7 +91,7 @@ function readProjectLibrary(): StoredProject[] {
               }
             : undefined
         return {
-          id: candidate.id,
+          id,
           createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : now(),
           updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : now(),
           state: migrateState(candidate.state),
@@ -249,11 +251,12 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
 }
 
 export function saveProjectToLibrary(projectId: string, state: ProjectState, projects: StoredProject[]) {
-  if (projectId.trim().length === 0) return projects
+  const id = projectId.trim()
+  if (id.length === 0) return projects
 
-  const existing = projects.find(project => project.id === projectId)
+  const existing = projects.find(project => project.id === id)
   const nextProject: StoredProject = {
-    id: projectId,
+    id,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     state,
@@ -262,10 +265,10 @@ export function saveProjectToLibrary(projectId: string, state: ProjectState, pro
   }
   const nextProjects = [
     nextProject,
-    ...projects.filter(project => project.id !== projectId),
+    ...projects.filter(project => project.id !== id),
   ]
   writeProjectLibrary(nextProjects)
-  writeActiveProjectId(projectId)
+  writeActiveProjectId(id)
   saveProjectState(state)
   return nextProjects
 }

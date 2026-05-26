@@ -393,12 +393,12 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
         }))
     }
 
-    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
-
     // Coordinator catches per-project errors internally but defensively guard
     // a top-level throw (e.g. adapter constructor surprises).
+    let adapter: ReturnType<typeof createFileSystemAccessProjectStorageAdapter>
     let results: MigrationResult[]
     try {
+      adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
       results = await migrateLocalStorageToFolder(adapter, unmigratedProjects, {
         folderLabel: adapter.label,
       })

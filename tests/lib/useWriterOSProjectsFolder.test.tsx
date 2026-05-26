@@ -348,6 +348,51 @@ describe('useWriterOSProjectsFolder', () => {
     expect(storageMocks.writeProject).not.toHaveBeenCalled()
   })
 
+  it('runMigration maps adapter construction failures to project failure results', async () => {
+    storageMocks.listProjects.mockReset()
+    storageMocks.createFileSystemAccessProjectStorageAdapter.mockReset()
+    const state = defaultProjectState()
+    const projectOne: StoredProject = {
+      id: 'p1',
+      createdAt: 1000,
+      updatedAt: 2000,
+      state,
+    }
+    const adapter = {
+      kind: 'file-system-access',
+      label: "Ben's Projects",
+      defaultFolderLabel: 'Selected folder',
+      listProjects: storageMocks.listProjects,
+      readProject: storageMocks.readProject,
+      writeProject: storageMocks.writeProject,
+    }
+
+    storageMocks.listProjects.mockResolvedValueOnce([])
+    storageMocks.createFileSystemAccessProjectStorageAdapter
+      .mockReturnValueOnce(adapter)
+      .mockImplementationOnce(() => {
+        throw new Error('adapter unavailable')
+      })
+
+    const { result } = renderHook(() => useWriterOSProjectsFolder())
+
+    await act(async () => {
+      await result.current.chooseFolder()
+    })
+
+    let migrationResults: any[] = []
+    await act(async () => {
+      migrationResults = await result.current.runMigration([projectOne])
+    })
+
+    expect(migrationResults).toEqual([
+      { projectId: 'p1', ok: false, error: 'adapter unavailable' },
+    ])
+    expect(result.current.status).toBe('error')
+    expect(result.current.errorMessage).toBe('adapter unavailable')
+    expect(storageMocks.writeProject).not.toHaveBeenCalled()
+  })
+
   it('runMigration preserves successful write results when the post-migration refresh fails', async () => {
     storageMocks.listProjects.mockReset()
     const state = defaultProjectState()

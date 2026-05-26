@@ -19,7 +19,7 @@ import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
-import { getUnmigratedProjects, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
+import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
@@ -477,10 +477,10 @@ export default function App() {
           folderLabel: r.folderLabel,
           packageName: r.packageName,
           migratedAt: r.migratedAt,
-        }))
+      }))
 
       if (markers.length > 0) {
-        markProjectsMigrated(project.storedProjects, markers)
+        markProjectsMigrated(loadActiveProjectLibrary().projects, markers)
         const activeWasMigrated = markers.some(m => m.projectId === project.activeProjectId)
         // Reload the library so the new markers are reflected in active library
         // state and so a migrated-active project is dropped (per Decision 3).

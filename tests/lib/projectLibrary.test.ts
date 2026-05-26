@@ -140,6 +140,24 @@ describe('saveProjectToLibrary (regression coverage for saveNow path)', () => {
     expect(localStorage.getItem(LIBRARY_KEY)).toBeNull()
     expect(localStorage.getItem(ACTIVE_KEY)).toBeNull()
   })
+
+  it('normalizes project ids before matching and persisting', () => {
+    const state = defaultProjectState()
+    const existing = {
+      id: 'p1',
+      createdAt: 1,
+      updatedAt: 2,
+      state,
+    }
+
+    const next = saveProjectToLibrary(' p1 ', state, [existing])
+
+    expect(next).toHaveLength(1)
+    expect(next[0].id).toBe('p1')
+    expect(localStorage.getItem(ACTIVE_KEY)).toBe('p1')
+    const persisted = JSON.parse(localStorage.getItem(LIBRARY_KEY)!)
+    expect(persisted.map((project: { id: string }) => project.id)).toEqual(['p1'])
+  })
 })
 
 describe('archiveProjectInLibrary (Slice 5a-2)', () => {
@@ -277,6 +295,19 @@ describe('migratedToFolder marker (Slice 4)', () => {
         id: 'p1',
         createdAt: 3,
         updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]))
+
+    expect(__testReadProjectLibrary().map(project => project.id)).toEqual(['p1'])
+  })
+
+  it('trims stored project ids during localStorage reads', () => {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify([
+      {
+        id: ' p1 ',
+        createdAt: 1,
+        updatedAt: 2,
         state: defaultProjectState(),
       },
     ]))
