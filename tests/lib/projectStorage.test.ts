@@ -212,6 +212,29 @@ describe('File System Access project storage adapter', () => {
     )
   })
 
+  it('updates in place when the browser cannot remove the old package folder', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+
+    const ref = await adapter.writeProject(project)
+    project.state.meta.title = 'The Salt Line Revised'
+
+    const updatedRef = await adapter.writeProject(project, ref)
+    const list = await adapter.listProjects()
+
+    expect(updatedRef.packageName).toBe('The Salt Line (8f4e2c9a).writeros')
+    expect(updatedRef.handle).toBe(ref.handle)
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({
+      status: 'ready',
+      ref: {
+        packageName: 'The Salt Line (8f4e2c9a).writeros',
+        summary: { title: 'The Salt Line Revised' },
+      },
+    })
+  })
+
   describe('removeProject (Slice 5a)', () => {
     class FakeDirectoryHandleWithRemove extends FakeDirectoryHandle {
       removeAttempts: Array<{ name: string; recursive: boolean | undefined }> = []

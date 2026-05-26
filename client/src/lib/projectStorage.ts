@@ -463,7 +463,7 @@ export function createFileSystemAccessProjectStorageAdapter(
       let nextPackageName = packageName
 
       if (previousRef && previousRef.packageName !== packageName) {
-        const parent = await getPackageParentHandle(rootHandle, previousRef.handle).catch(() => rootHandle)
+        const parent = await getPackageParentHandle(rootHandle, previousRef.handle)
         if (typeof parent.removeEntry === 'function') {
           if (await getExistingDirectoryHandle(parent, packageName)) {
             throw new Error('A WriterOS project package with this name already exists.')
