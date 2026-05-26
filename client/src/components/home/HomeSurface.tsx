@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type {
@@ -6,6 +6,7 @@ import type {
   WriterOSFolderProject,
   WriterOSProjectsFolderStatus,
 } from '../../lib/useWriterOSProjectsFolder'
+import { MigrateLocalStorageModal } from './MigrateLocalStorageModal'
 
 export type HomeDeleteTarget =
   | { storageKind: 'browser'; projectId: string; title: string }
@@ -42,6 +43,10 @@ interface HomeSurfaceProps {
   onChooseProjectFolder?: () => void
   onRefreshProjectFolder?: () => void
   onForgetProjectFolder?: () => void
+  unmigratedProjects?: { id: string; title: string }[]
+  folderLabel?: string | null
+  onMigrateLocalStorage?: () => void
+  migratingLocalStorage?: boolean
 }
 
 type SortKey = 'updated' | 'title' | 'created'
@@ -95,12 +100,26 @@ export function HomeSurface({
   onChooseProjectFolder,
   onRefreshProjectFolder,
   onForgetProjectFolder,
+  unmigratedProjects,
+  folderLabel,
+  onMigrateLocalStorage,
+  migratingLocalStorage = false,
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<HomeArchiveTarget | null>(null)
   const [view, setView] = useState<HomeView>(initialView)
+  const [migrationDismissed, setMigrationDismissed] = useState(false)
+  const unmigratedCount = unmigratedProjects?.length ?? 0
+  // Reset the dismissed flag when the set of unmigrated projects changes so the
+  // modal can re-open after a Cancel if new browser projects appear later.
+  useEffect(() => {
+    setMigrationDismissed(false)
+  }, [unmigratedCount])
+  const canShowMigrationModal =
+    storageStatus?.status === 'ready' && unmigratedCount > 0
+  const showMigrationModal = canShowMigrationModal && !migrationDismissed
   const switchView = useCallback((next: HomeView) => {
     if (next !== view) setQuery('')
     setView(next)
@@ -255,6 +274,15 @@ export function HomeSurface({
               {storage.label && onForgetProjectFolder && (
                 <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
                   Forget
+                </button>
+              )}
+              {canShowMigrationModal && (
+                <button
+                  type="button"
+                  style={styles.statusButton}
+                  onClick={() => setMigrationDismissed(false)}
+                >
+                  Migrate browser projects
                 </button>
               )}
             </div>
@@ -603,6 +631,15 @@ export function HomeSurface({
           </div>
         </div>
       )}
+
+      <MigrateLocalStorageModal
+        open={showMigrationModal}
+        projects={unmigratedProjects ?? []}
+        folderLabel={folderLabel ?? storage.label ?? ''}
+        migrating={migratingLocalStorage}
+        onMigrate={() => onMigrateLocalStorage?.()}
+        onCancel={() => setMigrationDismissed(true)}
+      />
     </section>
   )
 }

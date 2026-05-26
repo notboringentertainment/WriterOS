@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
@@ -19,6 +19,7 @@ import { PERSONAS } from '@shared/personas'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
+import { getUnmigratedProjects, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
@@ -95,6 +96,11 @@ export default function App() {
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const [archivingProjectId, setArchivingProjectId] = useState<string | null>(null)
   const [restoringProjectId, setRestoringProjectId] = useState<string | null>(null)
+  const [migratingLocalStorage, setMigratingLocalStorage] = useState(false)
+  const unmigratedProjects = useMemo(
+    () => summarizeProjects(getUnmigratedProjects(project.storedProjects)).map(p => ({ id: p.id, title: p.title })),
+    [project.storedProjects],
+  )
   const folderSaveNonceRef = useRef(0)
   const writeProjectRef = useRef(projectFolder.writeProject)
   writeProjectRef.current = projectFolder.writeProject
@@ -440,6 +446,43 @@ export default function App() {
     }
   }, [cancelPendingFolderSave, deletingProjectId, project, projectFolder, shellState])
 
+  const handleMigrateLocalStorage = useCallback(async () => {
+    const unmigrated = getUnmigratedProjects(project.storedProjects)
+    if (unmigrated.length === 0) return
+    setMigratingLocalStorage(true)
+    setFolderProjectError(null)
+
+    try {
+      const results = await projectFolder.runMigration(unmigrated)
+      const markers = results
+        .filter((r): r is Extract<typeof r, { ok: true }> => r.ok)
+        .map(r => ({
+          projectId: r.projectId,
+          folderLabel: r.folderLabel,
+          packageName: r.packageName,
+          migratedAt: r.migratedAt,
+        }))
+
+      if (markers.length > 0) {
+        markProjectsMigrated(project.storedProjects, markers)
+        const activeWasMigrated = markers.some(m => m.projectId === project.activeProjectId)
+        // Reload the library so the new markers are reflected in active library
+        // state and so a migrated-active project is dropped (per Decision 3).
+        project.reloadLibrary()
+        if (activeWasMigrated) {
+          cancelPendingFolderSave()
+          setActiveProjectStorage({ kind: 'browser' })
+          shellState.openHome()
+        }
+      }
+      // Per-project failures are surfaced by the runMigration hook via its
+      // status / errorMessage; the storage-error notice on Home already
+      // renders projectFolder.errorMessage.
+    } finally {
+      setMigratingLocalStorage(false)
+    }
+  }, [cancelPendingFolderSave, project, projectFolder, shellState])
+
   const handleWPSend = useCallback(async (text: string) => {
     const openSwarmMessage = parseOpenSwarmCommand(text)
 
@@ -642,6 +685,10 @@ export default function App() {
           onChooseProjectFolder={handleChooseProjectFolder}
           onRefreshProjectFolder={projectFolder.refreshFolder}
           onForgetProjectFolder={handleForgetProjectFolder}
+          unmigratedProjects={unmigratedProjects}
+          folderLabel={projectFolder.label}
+          onMigrateLocalStorage={handleMigrateLocalStorage}
+          migratingLocalStorage={migratingLocalStorage}
         />
       )
     }

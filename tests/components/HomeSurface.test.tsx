@@ -768,4 +768,101 @@ describe('HomeSurface', () => {
       expect(onNewProject).toHaveBeenCalled()
     })
   })
+
+  describe('localStorage → folder migration prompt', () => {
+    const readyStorageStatus = {
+      status: 'ready' as const,
+      label: 'MyDocs',
+      defaultFolderLabel: 'Selected folder',
+      fileSystemAccessSupported: true,
+      folderPersistenceSupported: true,
+      errorMessage: null,
+    }
+
+    it('shows the migration modal when a folder is connected and unmigrated projects exist', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[
+            { id: 'p1', title: 'Romeo' },
+            { id: 'p2', title: 'Juliet' },
+          ]}
+        />
+      )
+      expect(screen.getByRole('dialog')).toHaveAccessibleName(/migrate.*projects/i)
+    })
+
+    it('does not show the modal when no folder is connected', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('does not show the modal when there are no unmigrated projects', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[]}
+        />
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('clicking migrate calls onMigrateLocalStorage', () => {
+      const onMigrateLocalStorage = vi.fn()
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+          onMigrateLocalStorage={onMigrateLocalStorage}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /Migrate 1 project/i }))
+      expect(onMigrateLocalStorage).toHaveBeenCalledTimes(1)
+    })
+
+    it('Cancel dismisses the modal and Migrate browser projects link reopens it', () => {
+      render(
+        <HomeSurface
+          activeProjectId=""
+          projects={projects}
+          onOpenProject={vi.fn()}
+          onNewProject={vi.fn()}
+          storageStatus={readyStorageStatus}
+          folderLabel="MyDocs"
+          unmigratedProjects={[{ id: 'p1', title: 'Romeo' }]}
+        />
+      )
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /Migrate browser projects/i }))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+  })
 })

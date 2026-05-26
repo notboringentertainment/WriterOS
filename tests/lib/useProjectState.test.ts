@@ -465,6 +465,45 @@ describe('useProjectState', () => {
     expect(stored.agents.writingPartner.transcript).toHaveLength(1)
     expect(stored.agents.writingPartner.transcript[0].content).toBe('persist me')
   })
+
+  it('reloadLibrary picks up out-of-band stored library mutations', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    // Stamp a migrated marker on the active project out-of-band, mirroring
+    // what markProjectsMigrated does. After reloadLibrary the active session
+    // should drop back to "no active project" per loadActiveProjectLibrary's
+    // refusal to activate migrated projects.
+    const activeId = result.current.activeProjectId
+    expect(activeId).not.toBe('')
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!) as StoredProject[]
+    const mutated = stored.map(project =>
+      project.id === activeId
+        ? {
+            ...project,
+            migratedToFolder: {
+              folderLabel: 'MyDocs',
+              packageName: 'Untitled.writeros',
+              migratedAt: '2026-05-25T00:00:00.000Z',
+            },
+          }
+        : project,
+    )
+    localStorage.setItem('writeros_project_library', JSON.stringify(mutated))
+
+    act(() => result.current.reloadLibrary())
+
+    // Per Decision 3: when the active project is migrated, reload drops the
+    // active session — writer returns to Home.
+    expect(result.current.activeProjectId).toBe('')
+    // The migrated project remains in the stored projects array so the marker
+    // survives re-reads.
+    expect(result.current.storedProjects.find(p => p.id === activeId)?.migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Untitled.writeros',
+      migratedAt: '2026-05-25T00:00:00.000Z',
+    })
+  })
 })
 
 describe('useProjectState — setSynopsisDocument', () => {

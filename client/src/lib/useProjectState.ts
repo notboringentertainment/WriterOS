@@ -743,11 +743,31 @@ export function useProjectState() {
     return deleteProjectById(activeProjectId)
   }, [activeProjectId, deleteProjectById])
 
+  // Slice 4: re-read the persisted library and re-sync hook state. Used after
+  // an out-of-band mutation to the localStorage library (e.g., stamping
+  // `migratedToFolder` markers) so the active library, the active project id,
+  // and the active session state stay in sync with what was just written.
+  //
+  // Per Decision 3 of the migration plan: if the currently-active project was
+  // migrated to a folder-backed package, `loadActiveProjectLibrary` refuses to
+  // activate it and returns activeProjectId='' + a default state — which
+  // naturally drops the writer back to Home.
+  const reloadLibrary = useCallback(() => {
+    const next = loadActiveProjectLibrary()
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [])
+
   return {
     state,
     activeProjectId,
     activeStoredProject: getStoredProject(activeProjectId, projects),
     projects: summarizeProjects(projects),
+    // Raw stored projects, including the localStorage-only `migratedToFolder`
+    // marker. App.tsx uses this for migration scans; consumers that only need
+    // display data should keep using the summarized `projects` array above.
+    storedProjects: projects,
     setMeta,
     setProjectFormat,
     clearSynopsis,
@@ -786,5 +806,6 @@ export function useProjectState() {
     deleteProjectById,
     archiveProjectById,
     restoreProjectById,
+    reloadLibrary,
   }
 }
