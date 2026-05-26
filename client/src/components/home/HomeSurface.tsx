@@ -16,6 +16,13 @@ export type HomeArchiveTarget =
   | { storageKind: 'browser'; projectId: string; title: string }
   | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
 
+export type HomePackageActionTarget = {
+  storageKind: 'folder'
+  projectId: string
+  title: string
+  packageName: string
+}
+
 export type HomeView = 'active' | 'archive'
 
 interface HomeSurfaceProps {
@@ -30,6 +37,8 @@ interface HomeSurfaceProps {
   deletingProjectId?: string | null
   archivingProjectId?: string | null
   restoringProjectId?: string | null
+  showingProjectInFolderId?: string | null
+  duplicatingProjectId?: string | null
   initialView?: HomeView
   onOpenProject: (projectId: string) => void
   onOpenFolderProject?: (projectId: string) => void
@@ -37,6 +46,8 @@ interface HomeSurfaceProps {
   onDeleteProject?: (target: HomeDeleteTarget) => void | Promise<void>
   onArchiveProject?: (target: HomeArchiveTarget) => void | Promise<void>
   onRestoreProject?: (target: HomeArchiveTarget) => void | Promise<void>
+  onShowProjectInFolder?: (target: HomePackageActionTarget) => void | Promise<void>
+  onDuplicateProject?: (target: HomePackageActionTarget) => void | Promise<void>
   onImportFdx?: (file: File) => void | Promise<void>
   importingFdx?: boolean
   importError?: string | null
@@ -87,6 +98,8 @@ export function HomeSurface({
   deletingProjectId = null,
   archivingProjectId = null,
   restoringProjectId = null,
+  showingProjectInFolderId = null,
+  duplicatingProjectId = null,
   initialView = 'active',
   onOpenProject,
   onOpenFolderProject,
@@ -94,6 +107,8 @@ export function HomeSurface({
   onDeleteProject,
   onArchiveProject,
   onRestoreProject,
+  onShowProjectInFolder,
+  onDuplicateProject,
   onImportFdx,
   importingFdx = false,
   importError = null,
@@ -455,6 +470,44 @@ export function HomeSurface({
                     }}
                   >
                     {isOpening ? 'Opening' : 'Open'}
+                  </button>
+                )}
+                {!row.archived && row.storageKind === 'folder' && onShowProjectInFolder && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Show ${projectTitle} in Folder`}
+                    disabled={showingProjectInFolderId === row.project.id}
+                    onClick={() => {
+                      const target: HomePackageActionTarget = {
+                        storageKind: 'folder',
+                        projectId: row.project.id,
+                        title: projectTitle,
+                        packageName: row.packageName,
+                      }
+                      void onShowProjectInFolder(target)
+                    }}
+                  >
+                    {showingProjectInFolderId === row.project.id ? 'Showing' : 'Show in Folder'}
+                  </button>
+                )}
+                {!row.archived && row.storageKind === 'folder' && onDuplicateProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Duplicate ${projectTitle}`}
+                    disabled={duplicatingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomePackageActionTarget = {
+                        storageKind: 'folder',
+                        projectId: row.project.id,
+                        title: projectTitle,
+                        packageName: row.packageName,
+                      }
+                      void onDuplicateProject(target)
+                    }}
+                  >
+                    {duplicatingProjectId === row.project.id ? 'Duplicating' : 'Duplicate'}
                   </button>
                 )}
                 {row.archived && onRestoreProject && (
@@ -1035,6 +1088,8 @@ const styles: Record<string, React.CSSProperties> = {
   projectActions: {
     display: 'flex',
     gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     flexShrink: 0,
     marginRight: 12,
   },

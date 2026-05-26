@@ -6,15 +6,28 @@ import {
   type WriterOSFileSystemFileHandle,
   type WriterOSFileSystemHandle,
   type WriterOSFileSystemWritable,
+  type WriterOSFileSystemWritableChunk,
 } from '../../client/src/lib/projectStorage'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 
-class FakeWritable implements WriterOSFileSystemWritable {
-  constructor(private readonly writeContent: (value: string) => void) {}
+function chunkToBytes(data: WriterOSFileSystemWritableChunk): Uint8Array {
+  if (typeof data === 'string') return new TextEncoder().encode(data)
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView
+    return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength))
+  }
+  if (typeof (data as ArrayBuffer).byteLength === 'number' && typeof (data as ArrayBuffer).slice === 'function') {
+    return new Uint8Array((data as ArrayBuffer).slice(0))
+  }
+  throw new Error(`FakeWritable does not support chunk type: ${Object.prototype.toString.call(data)}`)
+}
 
-  async write(data: string): Promise<void> {
-    this.writeContent(data)
+class FakeWritable implements WriterOSFileSystemWritable {
+  constructor(private readonly writeContent: (value: Uint8Array) => void) {}
+
+  async write(data: WriterOSFileSystemWritableChunk): Promise<void> {
+    this.writeContent(chunkToBytes(data))
   }
 
   async close(): Promise<void> {}
@@ -22,18 +35,23 @@ class FakeWritable implements WriterOSFileSystemWritable {
 
 class FakeFileHandle implements WriterOSFileSystemFileHandle {
   readonly kind = 'file' as const
+  private bytes: Uint8Array
 
-  constructor(readonly name: string, private content = '') {}
+  constructor(readonly name: string, content: string | Uint8Array = '') {
+    this.bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
+  }
 
   async getFile(): Promise<File> {
+    const bytes = this.bytes
     return {
-      text: async () => this.content,
+      text: async () => new TextDecoder().decode(bytes),
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     } as File
   }
 
   async createWritable(): Promise<WriterOSFileSystemWritable> {
     return new FakeWritable(value => {
-      this.content = value
+      this.bytes = value
     })
   }
 }
@@ -95,6 +113,29 @@ async function writeTextFile(root: WriterOSFileSystemDirectoryHandle, path: stri
   const writable = await file.createWritable()
   await writable.write(content)
   await writable.close()
+}
+
+async function writeBinaryFile(root: WriterOSFileSystemDirectoryHandle, path: string, bytes: Uint8Array) {
+  const parts = path.split('/')
+  let directory = root
+  for (const part of parts.slice(0, -1)) {
+    directory = await directory.getDirectoryHandle(part, { create: true })
+  }
+  const file = await directory.getFileHandle(parts[parts.length - 1], { create: true })
+  const writable = await file.createWritable()
+  await writable.write(bytes)
+  await writable.close()
+}
+
+async function readBinaryFile(root: WriterOSFileSystemDirectoryHandle, path: string): Promise<Uint8Array> {
+  const parts = path.split('/')
+  let directory = root
+  for (const part of parts.slice(0, -1)) {
+    directory = await directory.getDirectoryHandle(part)
+  }
+  const file = await directory.getFileHandle(parts[parts.length - 1])
+  const buffer = await (await file.getFile()).arrayBuffer()
+  return new Uint8Array(buffer)
 }
 
 function makeStoredProject(): StoredProject {
@@ -233,6 +274,73 @@ describe('File System Access project storage adapter', () => {
         summary: { title: 'The Salt Line Revised' },
       },
     })
+  })
+
+  it('reports that show-in-folder is unavailable in the browser adapter', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const ref = await adapter.writeProject(makeStoredProject())
+
+    const result = await adapter.showProjectInFolder(ref)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected unsupported show-in-folder')
+    expect(result.reason).toBe('unsupported')
+    expect(result.message).toContain('system file browser')
+    expect(result.message).toContain('The Salt Line (8f4e2c9a).writeros')
+  })
+
+  it('duplicates a project package with a new id/title while preserving package extras', async () => {
+    const root = new RemovableFakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+    project.state.meta.sourceImport = {
+      kind: 'fdx',
+      originalFilename: 'The Salt Line.fdx',
+      importedAt: '2026-05-24T00:00:00.000Z',
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    }
+
+    const ref = await adapter.writeProject(project)
+    await writeTextFile(ref.handle, 'vault/craft-notes.md', '# keep me')
+
+    const result = await adapter.duplicateProject(ref)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('duplicate failed')
+    expect(result.ref.id).not.toBe(ref.id)
+    expect(result.ref.summary.title).toBe('The Salt Line Copy')
+    expect(result.ref.packageName).toMatch(/^The Salt Line Copy \([a-zA-Z0-9]{8}\)\.writeros$/)
+    const vaultFile = await (await result.ref.handle.getDirectoryHandle('vault')).getFileHandle('craft-notes.md')
+    expect(await (await vaultFile.getFile()).text()).toBe('# keep me')
+
+    const read = await adapter.readProject(result.ref)
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.error.message)
+    expect(read.project.id).toBe(result.ref.id)
+    expect(read.project.state.meta.title).toBe('The Salt Line Copy')
+    expect(read.project.state.meta.sourceImport).toMatchObject({
+      rawSource: '<FinalDraft><Content /></FinalDraft>',
+    })
+    const list = await adapter.listProjects()
+    expect(list.filter(entry => entry.status === 'ready')).toHaveLength(2)
+  })
+
+  it('preserves binary package extras byte-for-byte when duplicating', async () => {
+    const root = new RemovableFakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+
+    const ref = await adapter.writeProject(makeStoredProject())
+    const binary = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0x80, 0x7f, 0x10, 0x20, 0x00, 0xab, 0xcd])
+    await writeBinaryFile(ref.handle, 'vault/image.bin', binary)
+
+    const result = await adapter.duplicateProject(ref)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('duplicate failed')
+
+    const copied = await readBinaryFile(result.ref.handle, 'vault/image.bin')
+    expect(copied.byteLength).toBe(binary.byteLength)
+    expect(Array.from(copied)).toEqual(Array.from(binary))
   })
 
   describe('removeProject (Slice 5a)', () => {

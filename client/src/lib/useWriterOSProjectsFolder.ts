@@ -11,8 +11,10 @@ import {
   requestWriterOSProjectsFolderPermission,
   getWriterOSProjectsFolderPermission,
   type ArchiveProjectResult,
+  type DuplicateProjectResult,
   type FileSystemAccessProjectRef,
   type ProjectStorageListEntry,
+  type ShowProjectInFolderResult,
   type RemoveProjectResult,
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
@@ -65,6 +67,8 @@ export interface WriterOSProjectsFolderState {
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
   restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
+  showProjectInFolder: (projectId: string) => Promise<ShowProjectInFolderResult>
+  duplicateProject: (projectId: string) => Promise<DuplicateProjectResult<FileSystemAccessProjectRef>>
   runMigration: (unmigratedProjects: StoredProject[]) => Promise<MigrationResult[]>
 }
 
@@ -378,6 +382,61 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return result
   }, [requireFolderPermission])
 
+  const showProjectInFolder = useCallback(async (projectId: string): Promise<ShowProjectInFolderResult> => {
+    const entry = projectRefsRef.current.get(projectId)
+    if (!entry) {
+      return { ok: false, reason: 'failed', message: 'Project folder is not currently tracked.' }
+    }
+
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      return { ok: false, reason: 'permission-denied', message: errorMessageFromUnknown(error) }
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const result = await adapter.showProjectInFolder(entry.ref)
+    setErrorMessage(result.ok ? null : result.message)
+    return result
+  }, [requireFolderPermission])
+
+  const duplicateProject = useCallback(async (projectId: string): Promise<DuplicateProjectResult<FileSystemAccessProjectRef>> => {
+    const entry = projectRefsRef.current.get(projectId)
+    if (!entry) {
+      return { ok: false, reason: 'failed', message: 'Project folder is not currently tracked.' }
+    }
+
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      return { ok: false, reason: 'permission-denied', message: errorMessageFromUnknown(error) }
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const result = await adapter.duplicateProject(entry.ref)
+
+    if (result.ok) {
+      const duplicatedEntry: ReadyFileSystemProjectEntry = {
+        status: 'ready',
+        ref: result.ref,
+        warnings: result.warnings,
+      }
+      projectRefsRef.current.set(result.ref.id, duplicatedEntry)
+      setProjects(currentProjects => [
+        folderProjectFromListEntry(duplicatedEntry),
+        ...currentProjects.filter(project => project.id !== result.ref.id),
+      ])
+      setStatus('ready')
+      setErrorMessage(null)
+    } else {
+      setErrorMessage(result.message)
+    }
+
+    return result
+  }, [requireFolderPermission])
+
   const runMigration = useCallback(async (unmigratedProjects: StoredProject[]): Promise<MigrationResult[]> => {
     let folderHandle: WriterOSFileSystemDirectoryHandle
     try {
@@ -557,6 +616,8 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     deleteProject,
     archiveProject,
     restoreProject,
+    showProjectInFolder,
+    duplicateProject,
     runMigration,
   }
 }

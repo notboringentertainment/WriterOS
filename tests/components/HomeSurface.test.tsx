@@ -251,6 +251,74 @@ describe('HomeSurface', () => {
     expect(onOpenProject).toHaveBeenCalledWith('folder-project-1')
   })
 
+  it('routes file-backed show-in-folder and duplicate actions', () => {
+    const onShowProjectInFolder = vi.fn()
+    const onDuplicateProject = vi.fn()
+    render(
+      <HomeSurface
+        activeProjectId="folder-project-1"
+        projects={projects}
+        folderProjects={[
+          {
+            id: 'folder-project-1',
+            packageName: 'Harbor Lights (abc123ef).writeros',
+            summary: {
+              id: 'folder-project-1',
+              title: 'Harbor Lights',
+              createdAt: 500,
+              updatedAt: 5000,
+              format: 'feature',
+              sceneCount: 8,
+            },
+            warnings: [],
+          },
+        ]}
+        storageStatus={{
+          status: 'ready',
+          label: "Ben's Projects",
+          defaultFolderLabel: 'Selected folder',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: true,
+          errorMessage: null,
+        }}
+        activeStorageKind="folder"
+        onOpenProject={vi.fn()}
+        onOpenFolderProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onShowProjectInFolder={onShowProjectInFolder}
+        onDuplicateProject={onDuplicateProject}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show Harbor Lights in Folder' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Harbor Lights' }))
+
+    const target = {
+      storageKind: 'folder',
+      projectId: 'folder-project-1',
+      title: 'Harbor Lights',
+      packageName: 'Harbor Lights (abc123ef).writeros',
+    }
+    expect(onShowProjectInFolder).toHaveBeenCalledWith(target)
+    expect(onDuplicateProject).toHaveBeenCalledWith(target)
+  })
+
+  it('keeps show-in-folder and duplicate off browser-local project rows', () => {
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onShowProjectInFolder={vi.fn()}
+        onDuplicateProject={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'Show The Salt Line in Folder' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Duplicate The Salt Line' })).not.toBeInTheDocument()
+  })
+
   it('routes project folder actions', () => {
     const onChooseProjectFolder = vi.fn()
     const onRefreshProjectFolder = vi.fn()
