@@ -17,6 +17,7 @@ import {
   type WriterOSFileSystemDirectoryHandle,
 } from './projectStorage'
 import type { ProjectSummary, StoredProject } from './projectLibrary'
+import { migrateLocalStorageToFolder, type MigrationResult } from './migrateLocalStorageToFolder'
 
 export type WriterOSProjectsFolderStatus =
   | 'unsupported'
@@ -59,6 +60,7 @@ export interface WriterOSProjectsFolderState {
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
   restoreProject: (projectId: string) => Promise<ArchiveProjectResult<FileSystemAccessProjectRef>>
+  runMigration: (projects: StoredProject[]) => Promise<MigrationResult[]>
 }
 
 export interface WriterOSFolderProjectOpenResult {
@@ -347,6 +349,41 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     return result
   }, [requireFolderPermission])
 
+  const runMigration = useCallback(async (projects: StoredProject[]): Promise<MigrationResult[]> => {
+    let folderHandle: WriterOSFileSystemDirectoryHandle
+    try {
+      folderHandle = await requireFolderPermission()
+    } catch (error) {
+      // Match the coordinator contract: pre-migrated projects have no result
+      // entry. Unmigrated projects each get a permission-denied failure.
+      return projects
+        .filter(project => !project.migratedToFolder)
+        .map(project => ({
+          projectId: project.id,
+          ok: false as const,
+          error: errorMessageFromUnknown(error),
+        }))
+    }
+
+    const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    const results = await migrateLocalStorageToFolder(adapter, projects, {
+      folderLabel: adapter.label,
+    })
+
+    // Refresh the project list so newly-migrated packages appear in folderProjects.
+    const nextEntries = await adapter.listProjects()
+    updateProjectRefs(nextEntries)
+    const nextProjects = projectEntriesFromList(nextEntries)
+    setLabel(adapter.label)
+    setProjects(nextProjects.projects)
+    setArchivedProjects(nextProjects.archivedProjects)
+    setCorruptProjects(nextProjects.corruptProjects)
+    setStatus('ready')
+    setErrorMessage(null)
+
+    return results
+  }, [requireFolderPermission, updateProjectRefs])
+
   const chooseFolder = useCallback(async () => {
     if (!fileSystemAccessSupported) {
       setStatus('unsupported')
@@ -459,5 +496,6 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     deleteProject,
     archiveProject,
     restoreProject,
+    runMigration,
   }
 }
