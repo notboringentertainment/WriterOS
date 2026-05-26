@@ -22,8 +22,10 @@ export const FILE_SYSTEM_ACCESS_PICKER_ID = 'writeros-projects'
 // archived `.writeros` packages. The writer can see and back this up.
 export const WRITEROS_ARCHIVE_SUBFOLDER_NAME = 'Archive'
 
+export type WriterOSFileSystemWritableChunk = string | ArrayBuffer | ArrayBufferView | Blob
+
 export interface WriterOSFileSystemWritable {
-  write(data: string): Promise<void>
+  write(data: WriterOSFileSystemWritableChunk): Promise<void>
   close(): Promise<void>
 }
 
@@ -345,11 +347,11 @@ async function copyDirectoryRecursive(
   for await (const [name, handle] of iterateProjectFolder(source)) {
     if (handle.kind === 'file') {
       const file = await handle.getFile()
-      const content = await file.text()
+      const bytes = await file.arrayBuffer()
       const destFile = await destination.getFileHandle(name, { create: true })
       const writable = await destFile.createWritable()
       try {
-        await writable.write(content)
+        await writable.write(bytes)
       } finally {
         await writable.close()
       }

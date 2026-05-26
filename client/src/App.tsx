@@ -466,7 +466,12 @@ export default function App() {
       if (isActiveFolderProject) {
         cancelPendingFolderSave()
         const didFlush = await persistFolderProject(project.activeStoredProject, target.projectId)
-        if (!didFlush) return
+        if (!didFlush) {
+          setFolderProjectError(
+            'WriterOS could not finish saving this project before duplicating. Try again.',
+          )
+          return
+        }
       }
 
       const result = await projectFolder.duplicateProject(target.projectId)
