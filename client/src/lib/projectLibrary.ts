@@ -135,6 +135,46 @@ export function projectsForActiveLibrary(projects: StoredProject[]): StoredProje
   return projects.filter(project => !project.migratedToFolder)
 }
 
+// Slice 4: descriptor passed to markProjectsMigrated when one or more projects
+// have been migrated to folder-backed packages on disk.
+export interface MigrationMarker {
+  projectId: string
+  folderLabel: string
+  packageName: string
+  migratedAt: string
+}
+
+// Slice 4: stamps `migratedToFolder` onto the matching projects and persists
+// the library. Non-matching projects are returned unchanged. This does not
+// delete any localStorage entries — the marker is the only mutation.
+export function markProjectsMigrated(
+  projects: StoredProject[],
+  markers: MigrationMarker[],
+): StoredProject[] {
+  const byId = new Map(markers.map(marker => [marker.projectId, marker]))
+  const next = projects.map(project => {
+    const marker = byId.get(project.id)
+    if (!marker) return project
+    return {
+      ...project,
+      migratedToFolder: {
+        folderLabel: marker.folderLabel,
+        packageName: marker.packageName,
+        migratedAt: marker.migratedAt,
+      },
+    }
+  })
+  writeProjectLibrary(next)
+  return next
+}
+
+// Slice 4: pure read helper for "what still needs migrating". Mirrors
+// projectsForActiveLibrary in implementation but exists as a separate name
+// to keep call-site intent explicit (active selection vs. migration scan).
+export function getUnmigratedProjects(projects: StoredProject[]): StoredProject[] {
+  return projects.filter(project => !project.migratedToFolder)
+}
+
 export function loadActiveProjectLibrary(): ActiveProjectLibrary {
   const projects = readProjectLibrary()
   const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_ID_KEY)

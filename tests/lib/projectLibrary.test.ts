@@ -6,6 +6,8 @@ import {
   createBlankProject,
   saveProjectToLibrary,
   deleteProjectFromLibrary,
+  getUnmigratedProjects,
+  markProjectsMigrated,
   projectsForActiveLibrary,
   restoreProjectInLibrary,
   summarizeProjects,
@@ -380,6 +382,58 @@ describe('loadActiveProjectLibrary with migrated projects (Slice 4)', () => {
     }
     const unmigrated = projectsForActiveLibrary([migrated, active])
     expect(unmigrated.map(p => p.id)).toEqual(['p2'])
+  })
+})
+
+describe('markProjectsMigrated', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('stamps a migrated marker and writes back', () => {
+    const projects = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+      },
+      {
+        id: 'p2',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(projects))
+
+    const result = markProjectsMigrated(projects, [
+      { projectId: 'p1', folderLabel: 'F', packageName: 'P.writeros', migratedAt: 'now' },
+    ])
+
+    expect(result.find(p => p.id === 'p1')?.migratedToFolder?.packageName).toBe('P.writeros')
+    expect(result.find(p => p.id === 'p2')?.migratedToFolder).toBeUndefined()
+    const persisted = JSON.parse(localStorage.getItem(LIBRARY_KEY)!)
+    expect(persisted.find((p: { id: string; migratedToFolder?: { packageName: string } }) => p.id === 'p1').migratedToFolder.packageName).toBe('P.writeros')
+  })
+})
+
+describe('getUnmigratedProjects', () => {
+  it('returns only entries without a migratedToFolder marker', () => {
+    const projects = [
+      {
+        id: 'p1',
+        createdAt: 1,
+        updatedAt: 2,
+        state: defaultProjectState(),
+        migratedToFolder: { folderLabel: 'F', packageName: 'P', migratedAt: 'now' },
+      },
+      {
+        id: 'p2',
+        createdAt: 3,
+        updatedAt: 4,
+        state: defaultProjectState(),
+      },
+    ]
+    expect(getUnmigratedProjects(projects).map(p => p.id)).toEqual(['p2'])
   })
 })
 
