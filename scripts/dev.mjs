@@ -18,6 +18,18 @@ const openSwarmDir = path.resolve(
 const statusOnly = process.argv.includes('--status')
 const children = []
 
+function httpUrl(host, port) {
+  return `http://${host}:${port}`
+}
+
+function hostPort(host, port) {
+  return `${host}:${port}`
+}
+
+function serviceAddress(service, host, port) {
+  return service === 'WriterOS' ? httpUrl(host, port) : hostPort(host, port)
+}
+
 function log(service, message) {
   console.log(`[${service}] ${message}`)
 }
@@ -41,7 +53,7 @@ async function waitForPort(service, host, port, timeoutMs = 90_000) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (await isPortOpen(host, port)) {
-      log(service, `ready on http://${host}:${port}`)
+      log(service, `ready on ${serviceAddress(service, host, port)}`)
       return true
     }
     await new Promise(resolve => setTimeout(resolve, 750))
@@ -91,8 +103,8 @@ function pythonForOpenSwarm() {
 async function printStatus() {
   const writerOSOpen = await isPortOpen(writerOSHost, writerOSPort)
   const openSwarmOpen = await isPortOpen(openSwarmHost, openSwarmPort)
-  log('WriterOS', writerOSOpen ? `running on http://${writerOSHost}:${writerOSPort}` : `not running on ${writerOSHost}:${writerOSPort}`)
-  log('OpenSwarm', openSwarmOpen ? `running on http://${openSwarmHost}:${openSwarmPort}` : `not running on ${openSwarmHost}:${openSwarmPort}`)
+  log('WriterOS', writerOSOpen ? `running on ${httpUrl(writerOSHost, writerOSPort)}` : `not running on ${hostPort(writerOSHost, writerOSPort)}`)
+  log('OpenSwarm', openSwarmOpen ? `running on ${hostPort(openSwarmHost, openSwarmPort)}` : `not running on ${hostPort(openSwarmHost, openSwarmPort)}`)
 }
 
 async function main() {
@@ -105,7 +117,7 @@ async function main() {
   const waiters = []
 
   if (await isPortOpen(writerOSHost, writerOSPort)) {
-    log('WriterOS', `already running on http://${writerOSHost}:${writerOSPort}`)
+    log('WriterOS', `already running on ${httpUrl(writerOSHost, writerOSPort)}`)
     waiters.push(waitForPort('WriterOS', writerOSHost, writerOSPort))
   } else {
     spawnService(
@@ -125,7 +137,7 @@ async function main() {
   }
 
   if (await isPortOpen(openSwarmHost, openSwarmPort)) {
-    log('OpenSwarm', `already running on http://${openSwarmHost}:${openSwarmPort}`)
+    log('OpenSwarm', `already running on ${hostPort(openSwarmHost, openSwarmPort)}`)
     waiters.push(waitForPort('OpenSwarm', openSwarmHost, openSwarmPort))
   } else if (!fs.existsSync(path.join(openSwarmDir, 'server.py'))) {
     log('OpenSwarm', `not started: expected server.py at ${openSwarmDir}`)
@@ -143,7 +155,7 @@ async function main() {
 
   await Promise.all(waiters)
 
-  log('dev', `open WriterOS at http://${writerOSHost}:${writerOSPort}`)
+  log('dev', `open WriterOS at ${httpUrl(writerOSHost, writerOSPort)}`)
   log('dev', 'press Ctrl+C to stop services started by this command')
 }
 
