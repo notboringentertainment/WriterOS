@@ -1,6 +1,7 @@
 # App Home, Screenplay Import, And Storage PRD
 
 **Date:** 2026-05-22
+**Last updated:** 2026-05-26 — Slice 4 merged; Slice 5 Show in Folder + Duplicate shipped; remaining storage work is export, backup/restore docs, and optional native-shell polish.
 **Status:** Canonical for WriterOS app-shell foundation work not owned by a writing-surface PRD
 **Branch context:** `main`
 **Related docs:** `docs/product/README.md`, `docs/product/writeros-future-work-prd.md`, `docs/product/project-identity-script-context-prd.md`, `docs/product/structured-writing-surfaces-prd.md`
@@ -34,17 +35,22 @@ Current `main` has:
 - Explicit Home storage status showing browser fallback, disconnected external folder, connected folder, permission-needed, and error states.
 - A TopBar project switcher and project actions.
 - Local project create/switch/save/rename/delete behavior.
-- Auto-save through browser `localStorage`.
+- Auto-save through browser `localStorage`, retained only as a preview fallback / migration source.
 - A Script editor that stores screenplay HTML in `ProjectState.script.rawHtml`.
 - Script indexing, estimated page ranges, scene context, selected/focused text context, and agent retrieval.
+- Functional Final Draft `.fdx` import via Home (new project) and Script (new project or explicit replace), with the original `.fdx` copied into the project package when file-backed storage is active.
+- External-storage migration from `localStorage` into the selected project library folder, with active-project preservation and explicit writer confirmation (Slice 4).
+- Project rename that retitles the on-disk `.writeros` package to match the new title.
+- Home project-row actions: Open, Rename, Archive, Restore, Delete, Show in Folder, and Duplicate, with confirm modals where destructive.
+- Active / Archive Home view toggle backed by an `Archive/` subfolder inside the selected library folder for file-backed projects.
+- Binary-safe project duplication that copies arbitrary package contents (including non-text assets) byte-for-byte.
 
 Current `main` does not have:
 
-- A fully primary external-storage mode after app reload without reopening/selecting the external package.
-- Functional import from Final Draft `.fdx`.
-- Import from Fountain, PDF, DOCX, or other screenplay formats.
-- Export/import of complete WriterOS projects.
-- A migration path from localStorage projects to external project folders.
+- Import from Fountain, PDF, DOCX, or other screenplay formats beyond `.fdx`.
+- Export of a complete WriterOS project package (e.g. zip/share archive).
+- Writer-facing backup/restore documentation.
+- A native shell that presents `.writeros` as a single OS-level package rather than a directory.
 
 ## Product Decisions
 
@@ -367,6 +373,8 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 
 ### Slice 4: External Storage Migration
 
+**Status:** Shipped in PR #11. localStorage projects can be migrated into the selected project folder with explicit writer confirmation; active project selection is preserved; folder-permission recovery is wired into Home storage status.
+
 - Migrate localStorage project library into project folders.
 - Preserve active project.
 - Add recovery behavior for missing folder permissions.
@@ -374,14 +382,19 @@ This sequence gives WriterOS a shippable app foundation before expanding more wr
 
 ### Slice 5: Storage Polish
 
-- Reveal project in Finder.
-- Duplicate/archive/delete project folders.
-- Export complete project package.
-- Add backup/restore documentation.
+- Reveal project in Finder. *(Shipped as "Show in Folder" in PR #13.)*
+- Duplicate project folder. *(Shipped in PR #13; uses `arrayBuffer()` round-trip so binary package contents are preserved byte-for-byte.)*
+- Rename project package on disk to match the new title. *(Shipped in PR #12.)*
+- Archive/Restore project folder. *(Shipped via Slice 5a-2; see below.)*
+- Delete project folder with full `ProjectState` cascade. *(Shipped via Slice 5a-1; see below.)*
+- Export complete project package. *(Remaining; not started.)*
+- Add backup/restore documentation. *(Remaining; not started.)*
 
-**Status:** Archive + Delete were pulled forward into Slice 5a (Project Lifecycle) ahead of Slice 4 due to acute need for whole-project cleanup. See `docs/superpowers/plans/2026-05-24-project-lifecycle-slice-5a.md`. The remaining Slice 5 items (Reveal in Finder, Duplicate, Export complete project package, backup/restore docs) remain in Slice 5.
+**Status:** Slice 5 is functionally complete for in-app package management. The only remaining storage work in this PRD is (a) an export-complete-project flow, (b) writer-facing backup/restore documentation, and (c) optional native-shell polish so `.writeros` reads as a single OS-level package rather than a directory. Archive + Delete were pulled forward into Slice 5a (Project Lifecycle) ahead of Slice 4 due to acute need for whole-project cleanup. See `docs/superpowers/plans/2026-05-24-project-lifecycle-slice-5a.md`.
 
 ### Slice 5a: Project Lifecycle (Archive + Delete cascade)
+
+**Status:** Slice 5a-1 (Delete cascade) shipped in PR #8. Slice 5a-2 (Archive + Restore with Active/Archive Home view) shipped in PR #9.
 
 - Home project cards expose project-scoped actions (Open, Rename, Archive, Delete) with confirm modals that auto-populate the project title.
 - Delete cascades the entire `ProjectState` (script + synopsis + outline + story bible + treatment + transcripts + metadata + view prefs) and removes the on-disk `.writeros` folder when file-backed.
