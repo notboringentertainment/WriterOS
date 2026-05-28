@@ -418,11 +418,38 @@ Slice 1c should use the existing screenplay constants where possible and make pa
 
 - US Letter: 8.5 x 11 inches.
 - Font: Courier 12pt.
-- Line height: 12pt / 1em.
+- Line height: 12pt / 1em = 1/6 inch.
 - Margins: left 1.5in, right 1in, top 1in, bottom 1in.
+- 54 usable 12pt lines per page = 9in body height (11in − 1in top − 1in bottom).
 - Body page starts at page 1.
-- Title page remains separate and unnumbered.
-- An empty screenplay produces one blank script page.
+- Title page remains separate from the screenplay editor, unnumbered, not page 0, and excluded from the screenplay page count.
+- An empty screenplay produces `pageCount: 1`, a single blank screenplay page, no block fragments, and `blocks: []`.
+
+#### Empty-Page Sentinel
+
+When the screenplay has no blocks, the single returned page uses these sentinel positions:
+
+```ts
+{
+  pageNumber: 1,
+  start: { blockIndex: 0, lineIndex: 0 },
+  end:   { blockIndex: 0, lineIndex: 0 },
+  blockStart: 0,
+  blockEnd:   0,
+  sceneIds:   [],
+}
+```
+
+Consumers iterating a page's block range must guard with the script-level `blocks.length === 0` check before dereferencing `blocks[page.blockStart]`. The sentinel exists so callers do not need to model "no page" as a separate state; an empty script always has exactly one renderable blank page.
+
+#### Line Math
+
+- 1 line = 12pt vertical = 1/6 inch.
+- 54 lines per page is the usable body height; page-break decisions operate against this budget.
+- Block height = `spacing-before` lines (from `getScreenplaySpacingBefore`) + wrapped text line count for the block's element type.
+- `spacing-before` is suppressed when a block starts at the top of a page; the leading blank line is not charged against the new page's line budget.
+- `pages[].blockStart` / `pages[].blockEnd` are inclusive block indices.
+- `lineStart` / `lineEnd` use an exclusive-end convention so fragments at page boundaries do not double-count.
 
 Per-element line widths should be derived from the 6in body content width and `SCREENPLAY_INDENTS` in `client/src/lib/screenplay.ts`; pagination must compute wrapping per element type, not from one uniform body width. Wrapped-line counts should be deterministic: use Courier 12pt as 10 characters per inch, calculate `charsPerLine = floor(elementWidthInches * 10)`, wrap at whitespace where possible, and hard-wrap only tokens longer than the available line width.
 
@@ -449,16 +476,21 @@ type ScriptPaginationResult = {
     pageStart: number
     pageEnd: number
     lineCount: number
-    fragments: Array<{
-      pageNumber: number
-      lineStart: number
-      lineEnd: number
-    }>
+    fragments: ScriptPaginationFragment[]
   }>
+}
+
+type ScriptPaginationFragment = {
+  blockIndex: number
+  fragmentIndex: number
+  pageNumber: number
+  lineStart: number
+  lineEnd: number
+  isContinuation: boolean
 }
 ```
 
-Line indexes and `lineEnd` should use an exclusive-end convention. This lets Slice 1c render page breaks inside long action or dialogue blocks without inventing a second measurement pass.
+`pages[].blockStart` and `pages[].blockEnd` are inclusive block indices. Line indexes (`lineStart`, `lineEnd`) use an exclusive-end convention. The first fragment of any block has `fragmentIndex: 0` and `isContinuation: false`; subsequent fragments produced by a page split have `isContinuation: true`. This lets Slice 1c render page breaks inside long action or dialogue blocks without inventing a second measurement pass.
 
 ### Minimum V1 Page-Break Conventions
 
@@ -472,18 +504,49 @@ Minimum supported convention set:
 - Allow long action or dialogue text to split by wrapped line when the block cannot fit on the current page.
 - Do not insert or simulate `(MORE)`, `(CONT'D)`, or `CONTINUED:` markers in V1.
 
-If a protected group is longer than one page, the model should degrade gracefully instead of forcing impossible layout.
+#### Deterministic Keep-With Fallback
+
+When a protected pair (scene heading + next, character + first paren/dialogue, parenthetical + first dialogue) does not fit on the current page:
+
+- The paginator pushes the entire protected pair to the top of the next page if the pair fits on a fresh page.
+- If the protected pair still cannot fit on a fresh page (degenerate case: pair exceeds 54 lines), the paginator paginates normally without keep-with protection, splitting at the natural wrapped-line boundary. It does not insert `(MORE)`, `(CONT'D)`, or `CONTINUED:` markers and does not refuse to render.
+- Keep-with is best-effort. It never causes the result to omit content, duplicate content, or produce overlapping fragments.
+
+#### Long-Block Split Rule
+
+- Action or dialogue blocks whose total height exceeds the remaining lines on the current page split at a wrapped-line boundary.
+- The split should leave at least 2 wrapped lines on the current page and start with at least 2 wrapped lines on the next page when the block is long enough to support both.
+- When the block is too short for the 2/2 rule (block length < 4 wrapped lines), the split proceeds at the natural boundary without further constraint. V1 does not enforce stricter widow/orphan logic.
+- The resulting fragments retain the block's `blockIndex` and increment `fragmentIndex` per fragment; only the first fragment has `isContinuation: false`.
 
 ### Editor Integration
 
 Slice 1c should keep the editor document canonical and render pagination as derived UI:
 
-- Recalculate pagination from editor content after document updates.
+- Recalculate pagination from editor content after document-changing transactions.
 - Use the pagination result to replace the toolbar's current page estimate.
 - Render visible page divisions and page numbers from the same result.
 - Keep page-break markers out of saved script HTML and `.writeros` package content.
 
-The visual implementation can use ProseMirror decorations, an editor overlay, or page-shell rendering, but whichever path is chosen must consume the shared pagination result rather than computing page boundaries independently.
+#### Rendering Decision
+
+Slice 1c renders the editor as a **continuous scroll** with derived page-break and page-number decorations layered over the existing screenplay surface. It does not introduce hard paginated page shells, fixed-height page containers, or off-screen page recycling. Hard page shells are deferred to a later slice (alongside PDF export and print stylesheet work).
+
+#### Decoration Plugin Lifecycle
+
+The pagination decoration plugin should:
+
+- Hold the latest `DecorationSet` in plugin state.
+- Recompute the full pagination result only for transactions that change the document (`tr.docChanged === true`).
+- Skip recompute for selection-only transactions.
+- Schedule the recompute behind `requestAnimationFrame` plus a debounce (suggested 150–250ms) so rapid keystrokes coalesce into a single recompute.
+- V1 does **not** implement incremental recompute. Each recompute runs the paginator over the full document.
+
+The plugin must assert that page-break and page-number decorations never appear in `editor.getHTML()` output.
+
+#### Page Number Widget
+
+Visible page numbers render top-right within the page's 1in top/right margin band, following Final Draft convention. The widget is positioned by the decoration plugin and is not part of the saved document.
 
 ### Validation Plan
 
@@ -493,9 +556,21 @@ Slice 1c should add an internal reference set under `tests/fixtures/fdx/paginati
 - No dual dialogue.
 - No automatic `(MORE)` / `(CONT'D)`.
 - No `CONTINUED:` page-top or page-bottom markers.
-- Known Final Draft page counts recorded beside the fixtures.
 
-Acceptance for those fixtures: WriterOS page count matches the known Final Draft count within +/- 1 page.
+#### Fixture Metadata
+
+Each fixture sits beside an `expected.json` (or equivalent) describing the recorded Final Draft truth:
+
+```json
+{
+  "finalDraftPageCount": 3,
+  "capturedFrom": "Final Draft 12, default Letter template",
+  "capturedAt": "2026-05-27",
+  "notes": "Page count read from FD page navigator with title page hidden."
+}
+```
+
+Acceptance: WriterOS page count matches `finalDraftPageCount` within +/- 1 page.
 
 Additional tests should cover:
 
@@ -505,8 +580,17 @@ Additional tests should cover:
 - Character cue keep-with-first-dialogue.
 - Parenthetical keep-with-first-dialogue.
 - First body page renders as page 1, not page 2.
-- Long action/dialogue split behavior.
+- Long action/dialogue split behavior (2/2 minimum when block supports it).
+- Per-element wrapping widths derived from `SCREENPLAY_INDENTS`.
 - Pagination does not write page-break artifacts into saved script HTML.
+
+#### Test Enumeration For 250-Word Estimate Removal
+
+Slice 1c must update every test that currently asserts behavior against the legacy 250-word page estimate. At minimum:
+
+- `tests/lib/scriptIndex.test.ts` — replace `ESTIMATED_SCRIPT_PAGE_WORDS`-based expectations with layout-derived page counts via the new paginator.
+- `tests/lib/wpRouting.test.ts` — Writing Partner routing tests that assume 250 words/page must be re-anchored to layout-derived page count.
+- Any other test that imports `ESTIMATED_SCRIPT_PAGE_WORDS` or hard-codes `250` against page math — grep before implementation and add to this list.
 
 ### Deferred
 
@@ -520,6 +604,23 @@ These remain out of scope for Slice 1c:
 - Automatic `(MORE)` / `(CONT'D)` dialogue continuation markers.
 - Automatic `CONTINUED:` scene continuation markers.
 - Final Draft parity for scripts that use deferred constructs.
+
+### Consumers Of The Shared Pagination Result
+
+`buildScriptIndex` in `client/src/lib/scriptIndex.ts` is the single integration point that replaces the legacy 250-word page estimate. It computes the layout-derived page count via the shared paginator and exposes it through the existing `estimatedPageCount` field for a transitional period; the field name remains for backward compatibility but the value becomes layout-derived.
+
+Other call sites should inherit the layout-derived page count through `buildScriptIndex` rather than recomputing pagination themselves:
+
+- `client/src/lib/fdxImport.ts` — no bespoke pagination logic in Slice 1c. The importer continues to produce normalized script content; page count is read from `buildScriptIndex` downstream.
+- `client/src/lib/projectPackage.ts` — no bespoke pagination logic in Slice 1c. The package writer/reader continues to round-trip script content; page count is read from `buildScriptIndex` downstream.
+
+If a future test or product requirement proves that one of these modules needs its own pagination pass, that decision is out of scope for Slice 1c and should be raised as a follow-up.
+
+### Branch Hygiene
+
+- Slice 1c work happens on branch `slice-1c-pagination-foundation`, created from `slice-1b-pagination-spike`.
+- PR #17 (Slice 1b architecture spike) remains the planning base; no Slice 1c implementation merges into `slice-1b-pagination-spike`.
+- If PR #17 receives review patches before Slice 1c implementation begins, rebase `slice-1c-pagination-foundation` onto the updated `slice-1b-pagination-spike` head before any implementation commits land.
 
 ### Slice 1c Planning Consequence
 
