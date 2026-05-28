@@ -656,6 +656,11 @@ export default function App() {
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
             initialScript={project.state.script.rawHtml || undefined}
+            projectTitle={project.state.meta.title}
+            projectFormat={project.state.meta.format}
+            titlePage={project.state.meta.titlePage}
+            onProjectTitleChange={title => project.setMeta({ title })}
+            onTitlePageChange={project.setTitlePageMetadata}
             onScriptChange={handleScriptChange}
             onScriptSnapshotChange={handleScriptSnapshotChange}
             onImportFdx={handleImportFdxAsNewProject}

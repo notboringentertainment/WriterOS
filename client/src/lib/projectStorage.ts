@@ -4,6 +4,7 @@ import {
   WRITEROS_PACKAGE_EXTENSION,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
+  WRITEROS_TITLE_PAGE_PATH,
   WRITEROS_TRANSCRIPT_PATHS,
   getWriterOSProjectPackageDirectoryName,
   readWriterOSProjectPackage,
@@ -318,6 +319,7 @@ async function writeTextFile(rootHandle: WriterOSFileSystemDirectoryHandle, path
 async function readProjectPackageFiles(handle: WriterOSFileSystemDirectoryHandle): Promise<Record<string, string | undefined>> {
   const paths = [
     WRITEROS_PROJECT_MANIFEST_PATH,
+    WRITEROS_TITLE_PAGE_PATH,
     WRITEROS_SCRIPT_HTML_PATH,
     WRITEROS_IMPORTED_FDX_SOURCE_PATH,
     WRITEROS_DOCUMENT_PATHS.synopsis,

@@ -27,6 +27,33 @@ describe('useProjectState', () => {
     expect(result.current.state.meta.title).toBe('My Film')
   })
 
+  it('setTitlePageMetadata updates title page fields and persists them', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setTitlePageMetadata({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story by Jonah Reed\nand Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27, 2026',
+      formatDisplay: 'Limited Series',
+    }))
+
+    expect(result.current.state.meta.titlePage).toMatchObject({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story by Jonah Reed\nand Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27, 2026',
+      formatDisplay: 'Limited Series',
+    })
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.meta.titlePage).toMatchObject({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      draftLabel: 'Second Draft',
+    })
+  })
+
   it('setProjectFormat updates the canonical project format', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setProjectFormat('series'))

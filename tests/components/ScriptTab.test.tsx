@@ -45,6 +45,45 @@ describe('ScriptTab', () => {
     ).not.toThrow()
   })
 
+  it('opens and edits title page metadata from the Script toolbar', () => {
+    const onProjectTitleChange = vi.fn()
+    const onTitlePageChange = vi.fn()
+
+    render(
+      <ScriptTab
+        projectTitle="The Salt Line"
+        projectFormat="series"
+        titlePage={{
+          writtenBy: 'Mara Vale',
+          basedOn: 'A story by Jonah Reed',
+          contactInfo: 'mara@example.com\n555-0100',
+          draftLabel: 'Second Draft',
+          draftDate: 'May 27, 2026',
+          formatDisplay: 'Limited Series',
+        }}
+        onProjectTitleChange={onProjectTitleChange}
+        onTitlePageChange={onTitlePageChange}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Title page' }))
+
+    expect(screen.getByRole('dialog', { name: 'Title page' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Title page preview')).toHaveTextContent('THE SALT LINE')
+    expect(screen.getByLabelText('Title page preview')).toHaveTextContent('Mara Vale')
+    expect(screen.getByLabelText('Title page preview')).toHaveTextContent('Limited Series')
+
+    fireEvent.change(screen.getByLabelText('Title page title'), {
+      target: { value: 'Harbor Lights' },
+    })
+    expect(onProjectTitleChange).toHaveBeenCalledWith('Harbor Lights')
+
+    fireEvent.change(screen.getByLabelText('Draft label'), {
+      target: { value: 'Polish Draft' },
+    })
+    expect(onTitlePageChange).toHaveBeenCalledWith({ draftLabel: 'Polish Draft' })
+  })
+
   it('publishes fresh script snapshots before debounced persistence', async () => {
     let editor: Editor | undefined
     const onScriptSnapshotChange = vi.fn()

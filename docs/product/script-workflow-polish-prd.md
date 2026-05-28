@@ -1,34 +1,35 @@
 # Script Workflow Polish PRD
 
 **Date:** 2026-05-23
-**Status:** Approved next PRD scope; implementation waits until app foundation path is complete
-**Branch context:** `main`
-**Depends on:** `docs/product/app-home-import-storage-prd.md`
+**Last updated:** 2026-05-27
+**Status:** Active — app foundation shipped (storage Slices 4, 5, 5a merged through PR #15); implementation begins with Slice 1: Title Page + Pagination Foundation.
+**Branch context:** `main` @ `132b854`
+**Depends on:** `docs/product/app-home-import-storage-prd.md` (complete)
 **Related docs:** `docs/product/project-identity-script-context-prd.md`, `docs/product/writeros-future-work-prd.md`
 
 ## Purpose
 
 This PRD captures the next script-editor product layer approved after reviewing StudioBinder-style workflow ideas.
 
-It is intentionally narrow. WriterOS should finish the current app foundation path first:
+It is intentionally narrow. The app foundation path is complete:
 
-1. `.writeros` project package storage.
-2. Home project folder viewer backed by real external project folders.
-3. Final Draft `.fdx` import into the script editor.
-4. localStorage migration into file-backed projects.
+1. `.writeros` project package storage. ✅
+2. Home project folder viewer backed by real external project folders. ✅
+3. Final Draft `.fdx` import into the script editor. ✅
+4. localStorage migration into file-backed projects. ✅ (Slice 4, PR #11)
+5. Show in Folder and Duplicate package actions. ✅ (Slice 5, PR #13)
 
-After that foundation is stable, the next script workflow slice should improve writer flow without turning the product into a production-management suite.
+With the foundation stable, this PRD's slices improve writer flow without turning the product into a production-management suite.
 
 ## Approved Scope
 
-This PRD owns four features:
+This PRD owns five features, listed in implementation order:
 
-1. Script scratchpad sidebar.
-2. Script locking/status flag.
-3. Title page generator.
-4. Character/location autocomplete.
-
-These features are approved for the next script workflow PRD, not for immediate implementation ahead of app foundation.
+1. **Title page + pagination foundation** (Slice 1) — establishes professional script metadata and gives writers trustworthy page breaks, page numbers, and page count.
+2. **Script Facts panel** (Slice 2) — rebuild-from-script derivation of characters, locations, times, transitions; foundational for agent grounding and later autocomplete.
+3. **Script scratchpad sidebar** (Slice 3) — persistent script-adjacent notes.
+4. **Script locking/status flag** (Slice 4) — conservative readiness state.
+5. **Character/location autocomplete** (Slice 5) — editor-flow polish; depends on Script Facts.
 
 ## Current State
 
@@ -37,18 +38,22 @@ Current `main` has:
 - A functional Script surface built on TipTap.
 - Screenplay element types: scene heading, action, character, dialogue, parenthetical, transition.
 - Basic screenplay formatting through CSS margins and Courier-style page layout.
+- Estimated page count in the Script toolbar.
 - Keyboard flow for Tab, Shift-Tab, Enter, and Backspace element transitions.
 - Scene extraction and script indexing for agent context.
-- Home V0, still backed by browser-local project storage.
+- File-backed `.writeros` project storage with Home folder viewer.
+- Functional `.fdx` import populating script content.
+- Show in Folder / Duplicate package actions.
 
 Current `main` does not have:
 
+- Title page metadata or read-only title page view.
+- Proper screenplay page divisions, page numbers, or layout-derived page count.
+- Derived Script Facts panel (characters / locations / times / transitions).
 - Character or location autocomplete.
 - Script scratchpad/sidebar notes.
 - Script lock/readiness state.
-- Title page metadata or export generation.
-- File-backed project storage.
-- Functional `.fdx` import.
+- PDF export.
 
 ## Product Principle
 
@@ -56,16 +61,111 @@ Function comes before form.
 
 The Script surface should host the necessary writing workflow cleanly. Visual design can become more editorial later, but these features should first be implemented as direct, reliable controls that keep a writer in the script.
 
-## Feature 1: Script Scratchpad Sidebar
+A second principle adopted during storage work: **rebuild from source.** Derived data (script facts, indexes, agent context) should be reconstructable from the canonical script at any time. The script is truth; derived stores are cache.
+
+A third principle for this PRD: **page count must be trustworthy.** For screenwriters, page count is not decorative metadata. It is one of the main instruments for pacing, schedule awareness, and draft readiness. The Script surface should make page boundaries and current count visible without requiring PDF export.
+
+## Feature 1: Title Page + Pagination Foundation (Slice 1)
+
+WriterOS establishes the professional script front matter and the basic page model before full PDF export exists. This gives writers a usable title page preview and, more importantly, a trustworthy sense of where script pages begin and end while drafting.
+
+Slice 1 may ship as multiple PRs:
+
+1. **Slice 1a: Title page metadata + preview** — lower-risk project metadata work.
+2. **Slice 1b: Pagination architecture spike** — choose the page model before building live pagination.
+3. **Slice 1c: Pagination foundation** — visible page divisions, page numbers, and layout-derived page count.
+
+Slice 1a can proceed independently and may ship as its own PR; the title page preview becomes usable in the Script surface before pagination work begins. Slice 1c should not be implementation-planned until Slice 1b records the chosen pagination approach and minimum supported page-break conventions.
+
+V1 metadata:
+
+- project title (mirrors project identity / `ProjectState.meta.title`)
+- writer name
+- based on / adapted from, optional
+- contact block
+- draft label
+- draft date
+- project format display, optional (derived from `ProjectState.meta.format` unless explicitly overridden later)
+
+V1 behavior:
+
+- Title page fields live with the project (persisted in `.writeros` package).
+- The Script surface exposes a simple title page settings panel or modal.
+- Metadata can be previewed as a clean read-only title page.
+- Title page is visually consistent with standard screenplay title page conventions (centered title, byline, contact bottom-left).
+- The Script editor uses a fixed US Letter 8.5 x 11 inch screenplay page model with Courier 12pt and stable standard screenplay margins.
+- Page divisions are visible while writing.
+- Script pages display page numbers.
+- Toolbar page count is derived from the actual rendered script page model, not a rough word-count estimate.
+- The title page preview is separate from screenplay page 1 and does not change script page numbering. Title page is unnumbered; screenplay body begins at page 1.
+- A new empty script renders as one blank screenplay page and the toolbar shows 1 page.
+- When PDF export exists, this metadata and page model become the foundation for exported scripts.
+
+Open spike before plan:
+
+- Decide whether V1 pagination should measure rendered DOM blocks directly or introduce an intermediate page-layout model that export can reuse later.
+- Define the minimum convention-safe page-break behavior for V1 before implementation starts.
+- Record the decision as a dated `## Slice 1b Pagination Architecture Decision` section appended to this PRD before Slice 1c planning begins.
+
+Out of scope for V1:
+
+- Full PDF export engine.
+- Watermarks.
+- Distribution tracking.
+- Multiple title page templates.
+- Revision pages or WGA color revision workflows.
+- Production pagination, locked pages, or scene numbering.
+- Dual dialogue pagination.
+- Automatic `(MORE)` / `(CONT'D)` dialogue continuation markers.
+- Automatic `CONTINUED:` scene continuation markers at page tops or bottoms.
+- Browser print stylesheet behavior; PDF export will replace it later.
+
+Reasoning:
+
+Title pages are low-complexity and high-legibility. Proper pagination is more foundational but also more complex: writers need to see real page breaks and page count while drafting, not only during export. Shipping these under one Slice 1 priority keeps page awareness at the front of the product, while sub-slicing and spiking pagination first prevents the title page work from turning into an accidental full layout engine.
+
+## Feature 2: Script Facts Panel (Slice 2)
+
+Script Facts is a read-only panel that surfaces what's actually in the current script: characters, locations, times of day, transitions.
+
+It is rebuilt from the current WriterOS script (the canonical draft), not from the original `.fdx` import. This keeps agents grounded in the current state and works equally for imported and natively-authored scripts.
+
+V1 behavior:
+
+- A "Rebuild Script Facts" action scans the current script and refreshes derived lists.
+- Panel displays four sections: Characters, Locations, Times, Transitions.
+- Each entry shows count of occurrences.
+- Near-match warnings flag likely duplicates (e.g. `MARCUS` vs `MARCOS`, `INT. KITCHEN` vs `INT. KITCHEN -- NIGHT`).
+- Derived facts persist as cache with `rebuiltAt` timestamp and a script-content hash so the panel can show "stale — script changed since last rebuild."
+- Panel is read-only. No manual editing of facts. No mutation of script content.
+- Agents may read facts as grounding context once a later integration explicitly opts in.
+
+Out of scope for V1:
+
+- Manual fact editing.
+- Autocomplete (separate Slice 5).
+- Agent write-back / agent-driven script edits.
+- Auto-rebuild on every keystroke (explicit Rebuild button only; stale indicator is enough).
+- Cross-project facts.
+
+Open spike before plan:
+
+- Identify the canonical script representation (TipTap doc JSON vs. serialized form on disk) so the parser walks the right abstraction layer.
+
+Reasoning:
+
+Script Facts is infrastructure, not a writer-facing feature in isolation. It validates the rebuild-from-source pattern for derived data, gives agents clean grounding for future work, surfaces real writing issues (name drift) immediately, and seeds Slice 5 autocomplete with deterministic local data.
+
+## Feature 3: Script Scratchpad Sidebar (Slice 3)
 
 The scratchpad is a persistent script-adjacent note surface.
 
-It should let writers keep working notes beside the screenplay without leaving the Script tab.
+It lets writers keep working notes beside the screenplay without leaving the Script tab.
 
 V1 behavior:
 
 - Opens as a right-side sidebar or docked panel from the Script surface.
-- Persists per project.
+- Persists per project (in `.writeros` package).
 - Supports plain rich text notes.
 - Supports checkboxes for beat/task tracking.
 - Supports simple bullet lists.
@@ -85,11 +185,11 @@ Reasoning:
 
 The StudioBinder-style scratchpad is useful, but WriterOS should start with a durable writing aid, not a media-heavy sidebar. Image/video references should wait until `.writeros` storage has an asset model.
 
-## Feature 2: Script Locking And Status
+## Feature 4: Script Locking And Status (Slice 4)
 
 Script locking gives the project a clear readiness state.
 
-V1 should not attempt full production draft locking. It should add a conservative status flag that can later feed breakdown, export, and version workflows.
+V1 does not attempt full production draft locking. It adds a conservative status flag that can later feed breakdown, export, and version workflows.
 
 Recommended states:
 
@@ -120,56 +220,25 @@ Reasoning:
 
 The useful near-term product idea is not production bureaucracy. It is a clear signal that the writer considers this draft stable enough for the next workflow.
 
-## Feature 3: Title Page Generator
+## Feature 5: Character And Location Autocomplete (Slice 5)
 
-WriterOS should collect title page metadata before full PDF export exists, then use it when export arrives.
-
-V1 metadata:
-
-- project title
-- writer name
-- contact block
-- draft label
-- date
-- WGA registration number, optional
-
-V1 behavior:
-
-- Title page fields live with the project.
-- The Script surface exposes a simple title page settings panel or modal.
-- Metadata can be previewed as a clean read-only title page.
-- When PDF export exists, this metadata becomes the first page of exported scripts.
-
-Out of scope for V1:
-
-- Full PDF export engine if it does not already exist.
-- Watermarks.
-- Distribution tracking.
-- Multiple title page templates.
-
-Reasoning:
-
-Title pages are low-complexity, high-legibility. They also make future PDF/export work easier because the metadata contract is decided early.
-
-## Feature 4: Character And Location Autocomplete
-
-Autocomplete should keep writers in flow while typing the script.
+Autocomplete keeps writers in flow while typing the script.
 
 V1 character sources:
 
-- Character cues already typed in the script.
+- Script Facts characters (Slice 2 derivation).
 - Story Bible character names when present.
 
 V1 location sources:
 
-- Scene headings already typed in the script.
+- Script Facts locations (Slice 2 derivation).
 - Previously used location segments from headings.
 
 V1 behavior:
 
 - Character autocomplete appears while typing character cues.
 - Location autocomplete appears while typing scene headings.
-- Suggestions are local and deterministic.
+- Suggestions are local and deterministic — sourced from Script Facts cache, not a live re-scan.
 - Writer can ignore suggestions without UI friction.
 - Selecting a suggestion preserves screenplay casing rules.
 - No network or AI call is required.
@@ -183,48 +252,69 @@ Out of scope for V1:
 
 Reasoning:
 
-This is editor-flow polish that should happen after import/storage so imported scripts can seed useful suggestions immediately.
+This is editor-flow polish that should happen after Script Facts so suggestions come from a known, refreshable source. Shipping Script Facts first means autocomplete is a thin UI layer over an already-validated derivation.
 
 ## Dependencies
 
-Do not start this implementation before the current app foundation path is complete enough to support durable project data.
-
-Minimum dependency checklist:
-
-- `.writeros` project package read/write contract exists.
-- Home reads real project folders or has an accepted file-system adapter path.
-- `.fdx` import creates script content with correct screenplay block types.
-- localStorage migration path is defined.
+App foundation dependencies are satisfied (storage Slices 4, 5, 5a complete).
 
 Feature-specific dependencies:
 
-- Scratchpad persistence depends on file-backed project storage.
-- Title page export depends on a later PDF/export pipeline.
-- Autocomplete benefits from `.fdx` import because imported character cues and scene headings become seed data.
+- Title page metadata persists in the `.writeros` package — uses existing project storage. Project title mirrors `ProjectState.meta.title`; title-page-specific fields live in title page metadata.
+- Pagination depends on a Slice 1b architecture spike before implementation begins.
+- Pagination is derived from the current screenplay content and layout; page numbers are not manually stored.
+- Script Facts depends on identifying the canonical script representation (spike before Slice 2 plan).
+- Scratchpad persistence uses file-backed project storage. ✅
+- Autocomplete (Slice 5) depends on Script Facts (Slice 2).
+- Title page and pagination export depend on a later PDF/export pipeline (deferred).
 - Locking/status should be part of project metadata, not a UI-only flag.
 
 ## Implementation Sequence
 
-After app foundation:
+1. **Slice 1: Title Page + Pagination Foundation** — 1a metadata schema/settings/preview, 1b pagination architecture spike, 1c visible page divisions/page numbers/layout-derived page count.
+2. **Slice 2: Script Facts** — canonical-script spike, parser, derived store with `rebuiltAt` + content hash, read-only panel, duplicate warnings, Rebuild button.
+3. **Slice 3: Scratchpad** — persistent sidebar, rich text, checkboxes, optional scene pin.
+4. **Slice 4: Status flag** — script status metadata, visible controls, project-metadata exposure.
+5. **Slice 5: Autocomplete** — character/location suggestions sourced from Script Facts and Story Bible.
+6. **Later:** connect title page metadata and script page model into export when export pipeline exists.
 
-1. Add script status metadata and visible status controls.
-2. Add deterministic character/location autocomplete from script index and Story Bible names.
-3. Add scratchpad sidebar persistence and scene pinning.
-4. Add title page metadata and read-only title page preview.
-5. Connect title page metadata into export when export exists.
-
-This order starts with state and editor-flow improvements before adding another persistent text surface.
+This order ships visible metadata and trustworthy page awareness first, then derived infrastructure, then writing aids, then state, then editor-flow polish.
 
 ## Acceptance Criteria
 
-- A writer can see and change script status without leaving the Script surface.
-- Locked/ready-for-breakdown status persists and appears in project metadata.
-- Character autocomplete suggests names already present in script cues and Story Bible.
-- Location autocomplete suggests locations already present in scene headings.
+**Slice 1 — Title Page + Pagination:**
+- Title page metadata persists with the project across reloads.
+- Title page preview renders without requiring PDF export.
+- All V1 metadata fields are editable from the Script surface.
+- Slice 1b pagination architecture decision is documented in this PRD before Slice 1c planning begins.
+- Screenplay pages use the specified US Letter / Courier 12pt page model.
+- Script page divisions are visible in the editor.
+- Script pages display page numbers.
+- Toolbar page count is based on the rendered screenplay page model, not a word-count estimate.
+- Title page preview is unnumbered and does not count as screenplay page 1; screenplay body begins at page 1.
+- A new empty script shows one blank screenplay page and a toolbar count of 1 page.
+- Page breaks honor the minimum convention set defined in the Slice 1b spike output, including at minimum: scene heading kept with next line, character cue kept with first dialogue line.
+- WriterOS maintains an internal reference set of 2-3 simple `.fdx` fixtures (no dual dialogue, no `(MORE)` / `(CONT'D)`, no `CONTINUED:` markers) for Slice 1c validation.
+- For those `.fdx` reference fixtures, WriterOS page count matches the known Final Draft page count within +/- 1 page.
+
+**Slice 2 — Script Facts:**
+- Script Facts panel displays characters, locations, times, transitions derived from the current script.
+- Rebuild action refreshes the derived store and updates `rebuiltAt`.
+- Panel shows a "stale" indicator when script content hash diverges from the rebuilt hash.
+- Near-match warnings appear for likely-duplicate characters or locations.
+- Native (non-imported) projects produce the same panel as imported projects.
+
+**Slice 3 — Scratchpad:**
 - Scratchpad notes persist with the project and do not modify screenplay text.
 - A scratchpad item can be pinned to the current scene.
-- Title page metadata persists with the project.
-- Title page preview renders without requiring PDF export.
+
+**Slice 4 — Status:**
+- A writer can see and change script status without leaving the Script surface.
+- Locked/ready-for-breakdown status persists and appears in project metadata.
+
+**Slice 5 — Autocomplete:**
+- Character autocomplete suggests names present in Script Facts and Story Bible.
+- Location autocomplete suggests locations present in Script Facts.
 
 ## Non-Goals
 
@@ -238,15 +328,24 @@ This order starts with state and editor-flow improvements before adding another 
 - WGA color revision system.
 - Full PDF export.
 - Watermarks.
+- Production pagination / locked pages.
+- Dual dialogue pagination.
+- Automatic `(MORE)` / `(CONT'D)` dialogue continuation markers.
+- Automatic `CONTINUED:` scene continuation markers at page tops or bottoms.
+- Browser print stylesheet behavior.
 - Call sheets or production scheduling.
+- Manual editing of Script Facts.
+- Agent-driven script edits.
 
 Those may become separate PRDs later. They are not part of this approved next script workflow slice.
 
 ## Open Questions
 
-These should be answered during implementation planning, not before app foundation work:
+These should be answered during implementation planning for each slice:
 
-1. Should scratchpad notes live under `documents.scriptScratchpad`, `script.scratchpad`, or a separate project notes file inside `.writeros`?
-2. Should locking/status live in `ProjectState.meta`, `ProjectState.script`, or a dedicated production metadata object?
-3. Should title page metadata be shared with project identity fields, or kept as export-specific metadata?
-4. Should autocomplete suggestions appear inline, in a small dropdown, or through an explicit keyboard command?
+1. **Script Facts (Slice 2):** What is the canonical script representation the parser should walk — TipTap doc JSON in memory, the serialized form on disk, or both via a shared adapter? (Spike before plan.)
+2. **Script Facts (Slice 2):** What near-match algorithm — Levenshtein threshold, normalized string prefix, or token-set comparison?
+3. **Script Facts (Slice 2):** Which script-content hash algorithm should back staleness detection?
+4. **Scratchpad (Slice 3):** Should scratchpad notes live under `documents.scriptScratchpad`, `script.scratchpad`, or a separate project notes file inside `.writeros`?
+5. **Locking (Slice 4):** Should locking/status live in `ProjectState.meta`, `ProjectState.script`, or a dedicated production metadata object?
+6. **Autocomplete (Slice 5):** Should autocomplete suggestions appear inline, in a small dropdown, or through an explicit keyboard command?

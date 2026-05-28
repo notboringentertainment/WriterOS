@@ -37,6 +37,17 @@ describe('defaultProjectState', () => {
     expect(defaultProjectState().meta.format).toBe('feature')
   })
 
+  it('defaults title page metadata to empty fields', () => {
+    expect(defaultProjectState().meta.titlePage).toEqual({
+      writtenBy: '',
+      basedOn: '',
+      contactInfo: '',
+      draftLabel: '',
+      draftDate: '',
+      formatDisplay: '',
+    })
+  })
+
   it('default agents include alex', () => {
     expect(defaultProjectState().agents).toHaveProperty('alex')
   })
@@ -110,6 +121,45 @@ describe('migrateState', () => {
 
     expect(result.meta.format).toBe('feature')
     expect(result.documents.synopsis.content.header.format).toBe('feature')
+  })
+
+  it('hydrates missing title page metadata during migration', () => {
+    const state = defaultProjectState() as any
+    delete state.meta.titlePage
+
+    const result = migrateState(state)
+
+    expect(result.meta.titlePage).toEqual({
+      writtenBy: '',
+      basedOn: '',
+      contactInfo: '',
+      draftLabel: '',
+      draftDate: '',
+      formatDisplay: '',
+    })
+  })
+
+  it('normalizes title page metadata during migration', () => {
+    const state = defaultProjectState() as any
+    state.meta.titlePage = {
+      writtenBy: '  Mara   Vale \r\n&\r\n Jonah   Reed ',
+      basedOn: ' A   story \r\n by  Mira  Stone ',
+      contactInfo: 'mara@example.com\r\n555-0100  ',
+      draftLabel: ' Second   Draft ',
+      draftDate: ' May   27 ',
+      formatDisplay: ' Limited   Series ',
+    }
+
+    const result = migrateState(state)
+
+    expect(result.meta.titlePage).toEqual({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story\nby Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27',
+      formatDisplay: 'Limited Series',
+    })
   })
 
   it('preserves explicit series project format', () => {
