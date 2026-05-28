@@ -1,7 +1,7 @@
 # Script Workflow Polish PRD
 
 **Date:** 2026-05-23
-**Last updated:** 2026-05-27
+**Last updated:** 2026-05-28
 **Status:** Active — app foundation shipped (storage Slices 4, 5, 5a merged through PR #15); implementation begins with Slice 1: Title Page + Pagination Foundation.
 **Branch context:** `main` @ `132b854`
 **Depends on:** `docs/product/app-home-import-storage-prd.md` (complete)
@@ -349,3 +349,178 @@ These should be answered during implementation planning for each slice:
 4. **Scratchpad (Slice 3):** Should scratchpad notes live under `documents.scriptScratchpad`, `script.scratchpad`, or a separate project notes file inside `.writeros`?
 5. **Locking (Slice 4):** Should locking/status live in `ProjectState.meta`, `ProjectState.script`, or a dedicated production metadata object?
 6. **Autocomplete (Slice 5):** Should autocomplete suggestions appear inline, in a small dropdown, or through an explicit keyboard command?
+
+## Slice 1b Pagination Architecture Decision
+
+**Date:** 2026-05-28
+
+Slice 1c should introduce a deterministic screenplay pagination model as the source of truth for page count, page numbers, page divisions, and later export. The editor may use rendered DOM measurements to calibrate and smoke-test the browser view, but DOM measurement should not be the canonical pagination engine.
+
+### Context
+
+WriterOS already has the pieces of a script layout system:
+
+- Screenplay element types live on TipTap paragraphs as `data-element-type`.
+- Spacing and indents are centralized in `client/src/lib/screenplay.ts`.
+- The editor CSS mirrors those spacing and indent constants.
+- `.fdx` import normalizes screenplay content into WriterOS script HTML.
+
+The missing piece is trustworthy page awareness. Current page counts are split between a word-count estimate in the script index and a rendered scroll-height estimate in the editor. Neither is strong enough for a writer-facing page count or for future PDF export.
+
+### Options Considered
+
+1. **DOM measurement as source of truth.**
+   - Pros: closest to what the browser currently displays.
+   - Cons: browser/layout timing dependent, harder to test headlessly, less reusable for package-level indexing and future PDF export.
+
+2. **Pure deterministic layout model as source of truth.**
+   - Pros: testable, portable, export-friendly, can run from saved project content.
+   - Cons: must carefully match browser wrapping and screenplay CSS constants.
+
+3. **Hybrid model.**
+   - Pros: deterministic model remains canonical while DOM checks catch drift between model and editor rendering.
+   - Cons: requires discipline so DOM checks do not become a second competing pagination system.
+
+### Decision
+
+Use option 3 with the deterministic model as canonical.
+
+Slice 1c should add a pagination module, likely `client/src/lib/scriptPagination.ts`, that reads the current WriterOS script representation and returns a page model. The same result should drive:
+
+- Script toolbar page count.
+- Visible page divisions in the editor.
+- Page number display.
+- Script index page ranges once the old word-count estimate is replaced.
+- Later PDF/export pagination.
+
+The editor should not persist page breaks into screenplay content. Page breaks and page numbers are derived presentation state.
+
+### Input Representation
+
+Slice 1c should paginate from current WriterOS script content, not the original `.fdx` file.
+
+The first adapter should accept the same serialized screenplay HTML shape used by `buildScriptIndex`: paragraphs with `data-element-type` and text content. If TipTap doc JSON becomes the better live-editor input later, it should feed the same normalized block shape instead of creating a separate pagination path.
+
+Minimum normalized block shape:
+
+```ts
+type ScriptPaginationBlock = {
+  index: number
+  type: ElementType
+  text: string
+  sceneId?: string
+}
+```
+
+### Page Model
+
+Slice 1c should use the existing screenplay constants where possible and make page geometry explicit:
+
+- US Letter: 8.5 x 11 inches.
+- Font: Courier 12pt.
+- Line height: 12pt / 1em.
+- Margins: left 1.5in, right 1in, top 1in, bottom 1in.
+- Body page starts at page 1.
+- Title page remains separate and unnumbered.
+- An empty screenplay produces one blank script page.
+
+Per-element line widths should be derived from the 6in body content width and `SCREENPLAY_INDENTS` in `client/src/lib/screenplay.ts`; pagination must compute wrapping per element type, not from one uniform body width. Wrapped-line counts should be deterministic: use Courier 12pt as 10 characters per inch, calculate `charsPerLine = floor(elementWidthInches * 10)`, wrap at whitespace where possible, and hard-wrap only tokens longer than the available line width.
+
+The pagination result should be enough to answer both page count and page-boundary rendering without re-measuring:
+
+```ts
+type ScriptPaginationPosition = {
+  blockIndex: number
+  lineIndex: number
+}
+
+type ScriptPaginationResult = {
+  pageCount: number
+  pages: Array<{
+    pageNumber: number
+    start: ScriptPaginationPosition
+    end: ScriptPaginationPosition
+    blockStart: number
+    blockEnd: number
+    sceneIds: string[]
+  }>
+  blocks: Array<{
+    blockIndex: number
+    pageStart: number
+    pageEnd: number
+    lineCount: number
+    fragments: Array<{
+      pageNumber: number
+      lineStart: number
+      lineEnd: number
+    }>
+  }>
+}
+```
+
+Line indexes and `lineEnd` should use an exclusive-end convention. This lets Slice 1c render page breaks inside long action or dialogue blocks without inventing a second measurement pass.
+
+### Minimum V1 Page-Break Conventions
+
+Slice 1c is a pagination foundation, not full production pagination. It should still avoid the most visibly wrong breaks.
+
+Minimum supported convention set:
+
+- Keep a scene heading with the first following content line when both can fit on the same page.
+- Keep a character cue with its first following parenthetical or dialogue line when both can fit on the same page.
+- Keep a parenthetical with its first following dialogue line when both can fit on the same page.
+- Allow long action or dialogue text to split by wrapped line when the block cannot fit on the current page.
+- Do not insert or simulate `(MORE)`, `(CONT'D)`, or `CONTINUED:` markers in V1.
+
+If a protected group is longer than one page, the model should degrade gracefully instead of forcing impossible layout.
+
+### Editor Integration
+
+Slice 1c should keep the editor document canonical and render pagination as derived UI:
+
+- Recalculate pagination from editor content after document updates.
+- Use the pagination result to replace the toolbar's current page estimate.
+- Render visible page divisions and page numbers from the same result.
+- Keep page-break markers out of saved script HTML and `.writeros` package content.
+
+The visual implementation can use ProseMirror decorations, an editor overlay, or page-shell rendering, but whichever path is chosen must consume the shared pagination result rather than computing page boundaries independently.
+
+### Validation Plan
+
+Slice 1c should add an internal reference set under `tests/fixtures/fdx/pagination/`:
+
+- 2-3 simple `.fdx` files.
+- No dual dialogue.
+- No automatic `(MORE)` / `(CONT'D)`.
+- No `CONTINUED:` page-top or page-bottom markers.
+- Known Final Draft page counts recorded beside the fixtures.
+
+Acceptance for those fixtures: WriterOS page count matches the known Final Draft count within +/- 1 page.
+
+Additional tests should cover:
+
+- Empty script returns 1 page.
+- Title page metadata does not affect screenplay page count.
+- Scene heading keep-with-next.
+- Character cue keep-with-first-dialogue.
+- Parenthetical keep-with-first-dialogue.
+- First body page renders as page 1, not page 2.
+- Long action/dialogue split behavior.
+- Pagination does not write page-break artifacts into saved script HTML.
+
+### Deferred
+
+These remain out of scope for Slice 1c:
+
+- PDF export.
+- Browser print stylesheet support.
+- Production locked pages.
+- Revision pages or color revisions.
+- Dual dialogue pagination.
+- Automatic `(MORE)` / `(CONT'D)` dialogue continuation markers.
+- Automatic `CONTINUED:` scene continuation markers.
+- Final Draft parity for scripts that use deferred constructs.
+
+### Slice 1c Planning Consequence
+
+The Slice 1c plan should start with the shared pagination module and tests, then wire the editor toolbar and page-division UI to that model. It should not begin with browser DOM measurement as the primary engine, and it should not attempt PDF export in the same slice.
