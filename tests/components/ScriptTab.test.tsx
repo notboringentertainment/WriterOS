@@ -45,7 +45,7 @@ describe('ScriptTab', () => {
     ).not.toThrow()
   })
 
-  it('opens and edits title page metadata from the Script toolbar', () => {
+  it('opens and edits title page metadata from the Script toolbar', async () => {
     const onProjectTitleChange = vi.fn()
     const onTitlePageChange = vi.fn()
 
@@ -69,6 +69,7 @@ describe('ScriptTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Title page' }))
 
     expect(screen.getByRole('dialog', { name: 'Title page' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Title page title')).toHaveFocus())
     expect(screen.getByLabelText('Title page preview')).toHaveTextContent('THE SALT LINE')
     expect(screen.getByLabelText('Title page preview')).toHaveTextContent('Mara Vale')
     expect(screen.getByLabelText('Title page preview')).toHaveTextContent('Limited Series')
@@ -82,6 +83,11 @@ describe('ScriptTab', () => {
       target: { value: 'Polish Draft' },
     })
     expect(onTitlePageChange).toHaveBeenCalledWith({ draftLabel: 'Polish Draft' })
+
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Title page' }), {
+      key: 'Escape',
+    })
+    expect(screen.queryByRole('dialog', { name: 'Title page' })).not.toBeInTheDocument()
   })
 
   it('publishes fresh script snapshots before debounced persistence', async () => {

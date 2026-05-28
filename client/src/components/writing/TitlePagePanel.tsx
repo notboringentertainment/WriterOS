@@ -20,14 +20,28 @@ export function TitlePagePanel({
   onTitlePageChange,
   onClose,
 }: TitlePagePanelProps) {
+  const titleInputRef = React.useRef<HTMLInputElement>(null)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const formatDisplay = titlePage.formatDisplay.trim() || defaultFormatDisplay(projectFormat)
+
+  React.useEffect(() => {
+    titleInputRef.current?.focus()
+  }, [])
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }
+  }
 
   return (
     <div style={styles.overlay} role="presentation">
       <section
         aria-label="Title page"
         aria-modal="true"
+        onKeyDown={handleDialogKeyDown}
         role="dialog"
         style={styles.dialog}
       >
@@ -46,6 +60,7 @@ export function TitlePagePanel({
             <Field label="Title">
               <input
                 aria-label="Title page title"
+                ref={titleInputRef}
                 value={projectTitle}
                 onChange={event => onProjectTitleChange(event.target.value)}
                 style={styles.input}

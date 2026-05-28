@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { defaultProjectState, normalizeTitlePageMetadata } from './projectState'
+import { defaultProjectState } from './projectState'
 import {
   activateStoredProject,
   archiveProjectInLibrary,
@@ -143,10 +143,10 @@ export function useProjectState() {
       ...s,
       meta: {
         ...s.meta,
-        titlePage: normalizeTitlePageMetadata({
+        titlePage: {
           ...s.meta.titlePage,
           ...patch,
-        }),
+        },
       },
     }))
   }, [update])
