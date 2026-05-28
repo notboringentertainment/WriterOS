@@ -440,7 +440,7 @@ When the screenplay has no blocks, the single returned page uses these sentinel 
 }
 ```
 
-Consumers iterating a page's block range must guard with the script-level `blocks.length === 0` check before dereferencing `blocks[page.blockStart]`. The sentinel exists so callers do not need to model "no page" as a separate state; an empty script always has exactly one renderable blank page.
+Consumers iterating a page's block range must guard with the script-level `blocks.length === 0` check before dereferencing `blocks[page.blockStart]`. For the empty-script result, `blockStart` and `blockEnd` are placeholders only and are not valid indexes into `blocks`. The sentinel exists so callers do not need to model "no page" as a separate state; an empty script always has exactly one renderable blank page.
 
 #### Line Math
 
@@ -448,8 +448,10 @@ Consumers iterating a page's block range must guard with the script-level `block
 - 54 lines per page is the usable body height; page-break decisions operate against this budget.
 - Block height = `spacing-before` lines (from `getScreenplaySpacingBefore`) + wrapped text line count for the block's element type.
 - `spacing-before` is suppressed when a block starts at the top of a page; the leading blank line is not charged against the new page's line budget.
-- `pages[].blockStart` / `pages[].blockEnd` are inclusive block indices.
-- `lineStart` / `lineEnd` use an exclusive-end convention so fragments at page boundaries do not double-count.
+- `pages[].blockStart` / `pages[].blockEnd` are inclusive block indices for non-empty scripts; they must match `pages[].start.blockIndex` / `pages[].end.blockIndex`.
+- `blocks[].lineCount` counts only the wrapped text lines for that block. It excludes `spacing-before`, which is applied only during page-placement height calculations.
+- Fragment `lineStart` / `lineEnd` values are zero-based offsets into the block's wrapped text lines, not page-relative or document-absolute coordinates. They use an exclusive-end convention so fragments at page boundaries do not double-count.
+- Page `start.lineIndex` / `end.lineIndex` values use the same block-relative coordinate space as fragments; `end.lineIndex` may point one past the final content line represented on that page.
 
 Per-element line widths should be derived from the 6in body content width and `SCREENPLAY_INDENTS` in `client/src/lib/screenplay.ts`; pagination must compute wrapping per element type, not from one uniform body width. Wrapped-line counts should be deterministic: use Courier 12pt as 10 characters per inch, calculate `charsPerLine = floor(elementWidthInches * 10)`, wrap at whitespace where possible, and hard-wrap only tokens longer than the available line width.
 
@@ -490,7 +492,7 @@ type ScriptPaginationFragment = {
 }
 ```
 
-`pages[].blockStart` and `pages[].blockEnd` are inclusive block indices. Line indexes (`lineStart`, `lineEnd`) use an exclusive-end convention. The first fragment of any block has `fragmentIndex: 0` and `isContinuation: false`; subsequent fragments produced by a page split have `isContinuation: true`. This lets Slice 1c render page breaks inside long action or dialogue blocks without inventing a second measurement pass.
+`pages[].blockStart` and `pages[].blockEnd` are inclusive block indices for non-empty scripts. They are intentionally duplicated from `start.blockIndex` and `end.blockIndex` as a convenience for consumers that need block-range iteration without unpacking positions. Fragment line indexes (`lineStart`, `lineEnd`) use the block-relative, exclusive-end convention above; a fragment with `lineStart: 2` and `lineEnd: 5` renders wrapped lines 2, 3, and 4 from that block. The first fragment of any block has `fragmentIndex: 0` and `isContinuation: false`; subsequent fragments produced by a page split have `isContinuation: true`. This lets Slice 1c render page breaks inside long action or dialogue blocks without inventing a second measurement pass.
 
 ### Minimum V1 Page-Break Conventions
 
