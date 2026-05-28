@@ -37,6 +37,13 @@ describe('ScreenplayToolbar', () => {
     expect(onToggleFocusMode).toHaveBeenCalled()
   })
 
+  it('opens the title page panel from the toolbar', () => {
+    const onOpenTitlePage = vi.fn()
+    render(<ScreenplayToolbar {...defaultProps} onOpenTitlePage={onOpenTitlePage} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Title page' }))
+    expect(onOpenTitlePage).toHaveBeenCalledTimes(1)
+  })
+
   it('routes Final Draft import and replace actions separately', () => {
     const onImportFdx = vi.fn()
     const onReplaceFdx = vi.fn()

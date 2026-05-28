@@ -3,9 +3,15 @@ import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import { documentsToLegacy } from './documentMigration'
 import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
-import { CURRENT_SCHEMA_VERSION, defaultProjectState, migrateState } from './projectState'
+import {
+  CURRENT_SCHEMA_VERSION,
+  defaultProjectState,
+  defaultTitlePageMetadata,
+  migrateState,
+  normalizeTitlePageMetadata,
+} from './projectState'
 import { buildScriptIndex } from './scriptIndex'
-import type { AgentId, ProjectSourceImportMetadata, ProjectState, ScriptScene, TranscriptMessage } from './projectState'
+import type { AgentId, ProjectSourceImportMetadata, ProjectState, ScriptScene, TitlePageMetadata, TranscriptMessage } from './projectState'
 import type { StoredProject } from './projectLibrary'
 
 export const WRITEROS_PACKAGE_EXTENSION = '.writeros'
@@ -15,6 +21,7 @@ export const WRITEROS_APP_VERSION = '0.2.0'
 export const WRITEROS_PROJECT_MANIFEST_PATH = 'project.json'
 export const WRITEROS_SCRIPT_HTML_PATH = 'script/script.writeros.html'
 export const WRITEROS_IMPORTED_FDX_SOURCE_PATH = 'script/imported-source.fdx'
+export const WRITEROS_TITLE_PAGE_PATH = 'metadata/title-page.json'
 export const WRITEROS_DOCUMENT_PATHS = {
   synopsis: 'documents/synopsis.json',
   outline: 'documents/outline.json',
@@ -72,6 +79,7 @@ export type ProjectPackageErrorCode =
   | 'invalid-json'
   | 'invalid-manifest'
   | 'invalid-document'
+  | 'invalid-title-page'
   | 'invalid-transcript'
 
 export interface ProjectPackageReadError {
@@ -222,6 +230,7 @@ export function serializeWriterOSProjectPackage(
 
   const files: Record<string, string> = {
     [WRITEROS_PROJECT_MANIFEST_PATH]: stringifyPackageJson(manifest),
+    [WRITEROS_TITLE_PAGE_PATH]: stringifyPackageJson(state.meta.titlePage),
     [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
     [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
     [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
@@ -273,6 +282,15 @@ const SpecialistAgentsSchema: z.ZodType<Partial<Record<SpecialistAgentId, Projec
   alex: SpecialistAgentSchema.optional(),
 })
 
+const TitlePageMetadataFileSchema: z.ZodType<Partial<TitlePageMetadata>> = z.object({
+  writtenBy: z.string().optional(),
+  basedOn: z.string().optional(),
+  contactInfo: z.string().optional(),
+  draftLabel: z.string().optional(),
+  draftDate: z.string().optional(),
+  formatDisplay: z.string().optional(),
+}).passthrough()
+
 function parseManifest(files: Record<string, string | undefined>): { ok: true; manifest: WriterOSProjectManifest } | { ok: false; error: ProjectPackageReadError } {
   const rawManifest = requiredFile(files, WRITEROS_PROJECT_MANIFEST_PATH)
   if (typeof rawManifest !== 'string') return { ok: false, error: rawManifest }
@@ -322,6 +340,36 @@ function parseDocuments(files: Record<string, string | undefined>): { ok: true; 
   return { ok: true, documents: parsedDocuments.data }
 }
 
+function parseTitlePageMetadata(files: Record<string, string | undefined>): { ok: true; titlePage: TitlePageMetadata } | { ok: false; error: ProjectPackageReadError } {
+  const rawTitlePage = files[WRITEROS_TITLE_PAGE_PATH]
+  if (typeof rawTitlePage !== 'string') return { ok: true, titlePage: defaultTitlePageMetadata() }
+
+  const parsedJson = parseJsonFile(WRITEROS_TITLE_PAGE_PATH, rawTitlePage)
+  if (!parsedJson.ok) {
+    return {
+      ok: false,
+      error: {
+        ...parsedJson.error,
+        code: 'invalid-title-page',
+      },
+    }
+  }
+
+  const parsedTitlePage = TitlePageMetadataFileSchema.safeParse(parsedJson.value)
+  if (!parsedTitlePage.success) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid-title-page',
+        path: WRITEROS_TITLE_PAGE_PATH,
+        message: zodMessage(parsedTitlePage.error),
+      },
+    }
+  }
+
+  return { ok: true, titlePage: normalizeTitlePageMetadata(parsedTitlePage.data) }
+}
+
 function parseOptionalJson<T>(
   files: Record<string, string | undefined>,
   path: string,
@@ -365,6 +413,9 @@ export function readWriterOSProjectPackage(
   const documentResult = parseDocuments(files)
   if (!documentResult.ok) return { ok: false, error: documentResult.error, warnings }
 
+  const titlePageResult = parseTitlePageMetadata(files)
+  if (!titlePageResult.ok) return { ok: false, error: titlePageResult.error, warnings }
+
   const defaults = defaultProjectState()
   const writingPartnerResult = parseOptionalJson(
     files,
@@ -403,6 +454,7 @@ export function readWriterOSProjectPackage(
         manifestResult.manifest.sourceImport,
         files[WRITEROS_IMPORTED_FDX_SOURCE_PATH],
       ),
+      titlePage: titlePageResult.titlePage,
       ...scriptMeta,
     },
     script: {

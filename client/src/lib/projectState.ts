@@ -60,6 +60,15 @@ export interface Character {
   arc: string
 }
 
+export interface TitlePageMetadata {
+  writtenBy: string
+  basedOn: string
+  contactInfo: string
+  draftLabel: string
+  draftDate: string
+  formatDisplay: string
+}
+
 export interface ProjectState {
   schemaVersion: number
   meta: {
@@ -69,6 +78,7 @@ export interface ProjectState {
     wordCount: number
     pageCount: number
     sourceImport: ProjectSourceImportMetadata | null
+    titlePage: TitlePageMetadata
   }
   script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
   outline: { beatType: string; beats: Beat[] }
@@ -85,6 +95,46 @@ export interface ProjectState {
     alex:   { transcript: TranscriptMessage[]; lastTouched: number | null }
   }
   memory: { decisions: unknown[]; flags: unknown[]; handoffs: unknown[] }
+}
+
+export function defaultTitlePageMetadata(): TitlePageMetadata {
+  return {
+    writtenBy: '',
+    basedOn: '',
+    contactInfo: '',
+    draftLabel: '',
+    draftDate: '',
+    formatDisplay: '',
+  }
+}
+
+function normalizeTitlePageLine(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+}
+
+function normalizeTitlePageBlock(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim()
+}
+
+export function normalizeTitlePageMetadata(value: unknown): TitlePageMetadata {
+  const raw = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {}
+
+  return {
+    writtenBy: normalizeTitlePageBlock(raw.writtenBy),
+    basedOn: normalizeTitlePageBlock(raw.basedOn),
+    contactInfo: normalizeTitlePageBlock(raw.contactInfo),
+    draftLabel: normalizeTitlePageLine(raw.draftLabel),
+    draftDate: normalizeTitlePageLine(raw.draftDate),
+    formatDisplay: normalizeTitlePageLine(raw.formatDisplay),
+  }
 }
 
 export function stripProjectRawSource(state: ProjectState): ProjectState {
@@ -121,7 +171,15 @@ const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
 export function defaultProjectState(): ProjectState {
   const base = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0, sourceImport: null },
+    meta: {
+      title: '',
+      genre: '',
+      format: 'feature',
+      wordCount: 0,
+      pageCount: 0,
+      sourceImport: null,
+      titlePage: defaultTitlePageMetadata(),
+    },
     script: { rawHtml: '', scenes: [], revisionHistory: [] },
     outline: {
       beatType: 'save-the-cat',
@@ -278,6 +336,7 @@ export function migrateState(raw: unknown): ProjectState {
     wordCount: typeof rawMeta.wordCount === 'number' ? rawMeta.wordCount : defaults.meta.wordCount,
     pageCount: typeof rawMeta.pageCount === 'number' ? rawMeta.pageCount : defaults.meta.pageCount,
     sourceImport: normalizeSourceImport(rawMeta.sourceImport),
+    titlePage: normalizeTitlePageMetadata(rawMeta.titlePage),
   }
 
   const rawAgents = state.agents && typeof state.agents === 'object'
@@ -366,6 +425,7 @@ export function saveProjectState(state: ProjectState): void {
     meta: {
       ...state.meta,
       format: projectFormat,
+      titlePage: normalizeTitlePageMetadata(state.meta.titlePage),
     },
     documents: {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),

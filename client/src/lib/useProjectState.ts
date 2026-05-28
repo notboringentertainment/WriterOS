@@ -15,7 +15,7 @@ import {
   summarizeProjects,
 } from './projectLibrary'
 import type { MigrationMarker, StoredProject } from './projectLibrary'
-import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
+import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene, TitlePageMetadata } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
@@ -136,6 +136,19 @@ export function useProjectState() {
 
   const setProjectFormat = useCallback((format: ProjectFormat) => {
     update(s => withProjectFormat(s, format))
+  }, [update])
+
+  const setTitlePageMetadata = useCallback((patch: Partial<TitlePageMetadata>) => {
+    update(s => ({
+      ...s,
+      meta: {
+        ...s.meta,
+        titlePage: {
+          ...s.meta.titlePage,
+          ...patch,
+        },
+      },
+    }))
   }, [update])
 
   const clearSynopsis = useCallback(() => {
@@ -782,6 +795,7 @@ export function useProjectState() {
     storedProjects: projects,
     setMeta,
     setProjectFormat,
+    setTitlePageMetadata,
     clearSynopsis,
     setSynopsisDocument,
     setSynopsisViewPreferences,
