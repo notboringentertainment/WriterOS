@@ -154,15 +154,23 @@ type PageBuilder = {
   sceneSeen: Set<string>
 }
 
-/** Does this block's leading line need to stay with the first following line? */
-function keepWithNext(blocks: ScriptPaginationBlock[], pos: number): boolean {
-  const block = blocks[pos]
-  const next = blocks[pos + 1]
-  if (!next) return false
-  if (block.type === 'scene-heading') return true
-  if (block.type === 'character') return next.type === 'dialogue' || next.type === 'parenthetical'
-  if (block.type === 'parenthetical') return next.type === 'dialogue'
+function keepsAdjacent(current: ElementType, next: ElementType): boolean {
+  if (current === 'scene-heading') return true
+  if (current === 'character') return next === 'dialogue' || next === 'parenthetical'
+  if (current === 'parenthetical') return next === 'dialogue'
   return false
+}
+
+function keepWithRunEnd(blocks: ScriptPaginationBlock[], pos: number): number {
+  let end = pos
+  while (end + 1 < blocks.length && keepsAdjacent(blocks[end].type, blocks[end + 1].type)) {
+    end += 1
+  }
+  return end
+}
+
+function leadingFragmentLineCount(lineCount: number): number {
+  return lineCount >= 4 ? 2 : Math.max(1, lineCount)
 }
 
 export function paginateScript(blocks: ScriptPaginationBlock[]): ScriptPaginationResult {
@@ -247,13 +255,18 @@ export function paginateScript(blocks: ScriptPaginationBlock[]): ScriptPaginatio
     const prevType = pos > 0 ? blocks[pos - 1].type : null
     let spacing = linesUsed > 0 ? getScreenplaySpacingBefore(prevType, block.type) : 0
 
-    // Keep-with: push the protected block to a fresh page if it cannot host its
-    // own height plus the first line of the following block on the current page.
-    if (keepWithNext(blocks, pos)) {
-      const nextType = blocks[pos + 1].type
-      const together = lineCount + getScreenplaySpacingBefore(block.type, nextType) + 1
-      const availForPair = SCREENPLAY_LINES_PER_PAGE - linesUsed - spacing
-      if (together > availForPair && together <= SCREENPLAY_LINES_PER_PAGE) {
+    const keepEnd = keepWithRunEnd(blocks, pos)
+    // Keep-with: push a protected run to a fresh page if the current page cannot
+    // host it. Intermediate blocks are kept in full; the terminal block reserves
+    // the leading fragment required by the same 2/2 split rule used below.
+    if (keepEnd > pos) {
+      let together = lineCount
+      for (let runPos = pos + 1; runPos <= keepEnd; runPos++) {
+        together += getScreenplaySpacingBefore(blocks[runPos - 1].type, blocks[runPos].type)
+        together += runPos === keepEnd ? leadingFragmentLineCount(lineCounts[runPos]) : lineCounts[runPos]
+      }
+      const availForRun = SCREENPLAY_LINES_PER_PAGE - linesUsed - spacing
+      if (together > availForRun && together <= SCREENPLAY_LINES_PER_PAGE) {
         startNewPage()
         // Spacing-before is suppressed at the top of a page: the protected
         // block now opens the fresh page, so its leading gap collapses.

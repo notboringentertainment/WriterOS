@@ -130,6 +130,22 @@ describe('paginateScript', () => {
     expect(lineBlock.pageStart).toBe(2)
   })
 
+  it('keeps a character, parenthetical, and dialogue chain together at a page boundary', () => {
+    reset()
+    const filler = Array.from({ length: 51 }, () => actionLines(1))
+    const cue = block('character', 'ISAIAH')
+    const paren = block('parenthetical', '(quietly)')
+    const line = block('dialogue', 'And it knows my name.')
+    const result = paginateScript([...filler, cue, paren, line])
+
+    const cueBlock = result.blocks.find(b => b.blockIndex === 51)!
+    const parenBlock = result.blocks.find(b => b.blockIndex === 52)!
+    const lineBlock = result.blocks.find(b => b.blockIndex === 53)!
+    expect(cueBlock.pageStart).toBe(2)
+    expect(parenBlock.pageStart).toBe(2)
+    expect(lineBlock.pageStart).toBe(2)
+  })
+
   it('splits a long action block by wrapped line with a 2/2 minimum', () => {
     reset()
     // 55-line block starting at the top of page 1: cannot fit (54 budget), so it

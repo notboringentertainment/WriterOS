@@ -11,7 +11,7 @@ const MULTI_PAGE_CONTENT = Array.from({ length: 55 }, () =>
 
 describe('ScreenplayEditor pagination decorations', () => {
   it('renders a layout-derived page break and page number without persisting them', async () => {
-    let savedHtml = ''
+    let getHtml = () => ''
     let reportedPageCount = 0
     const { container } = render(
       <ScreenplayEditor
@@ -20,7 +20,7 @@ describe('ScreenplayEditor pagination decorations', () => {
           reportedPageCount = count
         }}
         onEditorReady={editor => {
-          savedHtml = editor.getHTML()
+          getHtml = () => editor.getHTML()
         }}
       />,
     )
@@ -28,6 +28,7 @@ describe('ScreenplayEditor pagination decorations', () => {
     await waitFor(() => {
       expect(container.querySelector('.screenplay-page-break')).not.toBeNull()
     })
+    const savedHtml = getHtml()
 
     // Page count is layout-derived (54 lines/page), not a scroll-height guess.
     expect(reportedPageCount).toBe(2)
@@ -44,7 +45,7 @@ describe('ScreenplayEditor pagination decorations', () => {
   })
 
   it('renders a page break inside a long block that spans a page boundary', async () => {
-    let savedHtml = ''
+    let getHtml = () => ''
     let reportedPageCount = 0
     // A single action paragraph that wraps to 60 lines spans onto page 2.
     const longAction = Array.from({ length: 60 }, () => ACTION_LINE).join(' ')
@@ -55,7 +56,7 @@ describe('ScreenplayEditor pagination decorations', () => {
           reportedPageCount = count
         }}
         onEditorReady={editor => {
-          savedHtml = editor.getHTML()
+          getHtml = () => editor.getHTML()
         }}
       />,
     )
@@ -63,6 +64,7 @@ describe('ScreenplayEditor pagination decorations', () => {
     await waitFor(() => {
       expect(container.querySelector('.screenplay-page-break')).not.toBeNull()
     })
+    const savedHtml = getHtml()
 
     expect(reportedPageCount).toBe(2)
 
