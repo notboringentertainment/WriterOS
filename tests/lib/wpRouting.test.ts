@@ -228,7 +228,7 @@ describe('buildProjectContext', () => {
     expect(ctx.script.sceneHeadings).toEqual([])
     expect(ctx.script.excerptWordLimit).toBe(SCRIPT_EXCERPT_WORD_LIMIT)
     expect(ctx.script.totalWordCount).toBe(0)
-    expect(ctx.script.estimatedPageCount).toBe(0)
+    expect(ctx.script.estimatedPageCount).toBe(1)
     expect(ctx.script.sceneCount).toBe(0)
     expect(ctx.world.setting).toBe('')
     expect(ctx.storyBible.themes).toBe('')
@@ -555,7 +555,9 @@ describe('extractScriptContext', () => {
 
   it('keeps explicit page requests ahead of scene requests', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     state.script.rawHtml = [
@@ -757,7 +759,9 @@ describe('extractScriptContext', () => {
 
   it('uses page range context when user requests a specific page number', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     const page2Html = [
@@ -779,7 +783,9 @@ describe('extractScriptContext', () => {
 
   it('uses page range context when user requests a page range', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     const page2Html = [

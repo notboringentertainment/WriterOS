@@ -37,6 +37,7 @@
 }
 
 .ProseMirror p[data-screenplay-space-before="1"] {
+  margin-top: 16px; /* fallback for browsers without `lh`: 12pt × line-height 1 */
   margin-top: 1lh;
 }
 
@@ -106,4 +107,28 @@
 /* Selection highlight */
 .ProseMirror ::selection {
   background: hsla(220, 60%, 70%, 0.25);
+}
+
+/* ---- Pagination decorations (continuous scroll) ----
+   Derived presentation only: page breaks and numbers are widget decorations
+   produced by PaginationExtension from the layout paginator. They are never
+   part of the document or editor.getHTML() output. No hard page shells. */
+.ProseMirror .screenplay-page-break {
+  display: block;
+  position: relative;
+  height: 0;
+  margin: 1lh 0;
+  border-top: 1px dashed var(--script-page-rule, hsla(38, 30%, 50%, 0.35));
+  user-select: none;
+  pointer-events: none;
+}
+
+.ProseMirror .screenplay-page-number {
+  position: absolute;
+  top: -1.5lh;
+  right: 0;
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-size: 12pt;
+  line-height: 1;
+  color: var(--script-page-number, hsl(38 12% 45%));
 }

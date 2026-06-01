@@ -1,6 +1,5 @@
 import type { ElementType } from './screenplay'
-
-export const ESTIMATED_SCRIPT_PAGE_WORDS = 250
+import { paginateScript, type ScriptPaginationBlock } from './scriptPagination'
 
 const ELEMENT_TYPES = new Set<ElementType>([
   'scene-heading',
@@ -20,6 +19,7 @@ export interface ScriptBlockIndex {
   sceneId?: string
   sceneHeading?: string
   pageNumber: number
+  pageEnd: number
   wordStart: number
   wordEnd: number
 }
@@ -159,21 +159,6 @@ function normalizeElementType(value: string | null): ElementType {
   return ELEMENT_TYPES.has(value as ElementType) ? value as ElementType : 'action'
 }
 
-function estimatedPageForWord(wordOffset: number): number {
-  return Math.floor(wordOffset / ESTIMATED_SCRIPT_PAGE_WORDS) + 1
-}
-
-function pageRangeForWords(wordStart: number, wordEnd: number): { start: number; end: number } {
-  if (wordEnd <= wordStart) {
-    const page = estimatedPageForWord(wordStart)
-    return { start: page, end: page }
-  }
-  return {
-    start: estimatedPageForWord(wordStart),
-    end: estimatedPageForWord(Math.max(wordStart, wordEnd - 1)),
-  }
-}
-
 export function pageRangeLabel(pageRange: { start: number; end: number }): string {
   return pageRange.start === pageRange.end
     ? `Page ${pageRange.start}`
@@ -195,26 +180,31 @@ function parseElements(rawHtml: string): Array<{ sourceIndex: number; type: Elem
     .filter(block => block.text.length > 0)
 }
 
-function buildPages(blocks: ScriptBlockIndex[], totalWordCount: number): ScriptPageIndex[] {
-  if (!blocks.length) return []
-
-  const pageCount = Math.max(1, Math.ceil(totalWordCount / ESTIMATED_SCRIPT_PAGE_WORDS))
-  return Array.from({ length: pageCount }, (_, index) => {
-    const pageNumber = index + 1
-    const wordStart = index * ESTIMATED_SCRIPT_PAGE_WORDS
-    const wordEnd = Math.min(totalWordCount, wordStart + ESTIMATED_SCRIPT_PAGE_WORDS)
-    const pageBlocks = blocks.filter(block => block.wordStart < wordEnd && block.wordEnd > wordStart)
-    const sceneIds = Array.from(new Set(pageBlocks.map(block => block.sceneId).filter(Boolean))) as string[]
-    const firstBlock = pageBlocks[0] ?? blocks[0]
-    const lastBlock = pageBlocks[pageBlocks.length - 1] ?? firstBlock
-
+// Map the shared layout pagination result onto the script index page shape.
+// Page count, page numbers, and block/scene page ranges are all layout-derived;
+// the word offsets are retained per page for backward compatibility.
+function buildPages(
+  pages: ReturnType<typeof paginateScript>['pages'],
+  blocksByIndex: Map<number, ScriptBlockIndex>,
+): ScriptPageIndex[] {
+  return pages.map((page) => {
+    const pageBlocks: ScriptBlockIndex[] = []
+    // Block indices are monotonic source-order indices, not dense: empty
+    // filtered elements can leave gaps in [blockStart, blockEnd]. The Map
+    // lookup intentionally skips those non-content gaps.
+    for (let index = page.blockStart; index <= page.blockEnd; index++) {
+      const block = blocksByIndex.get(index)
+      if (block) pageBlocks.push(block)
+    }
+    const wordStart = pageBlocks[0]?.wordStart ?? 0
+    const wordEnd = pageBlocks[pageBlocks.length - 1]?.wordEnd ?? wordStart
     return {
-      pageNumber,
-      blockStart: firstBlock.index,
-      blockEnd: lastBlock.index,
+      pageNumber: page.pageNumber,
+      blockStart: page.blockStart,
+      blockEnd: page.blockEnd,
       wordStart,
       wordEnd,
-      sceneIds,
+      sceneIds: page.sceneIds,
     }
   })
 }
@@ -224,14 +214,18 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
   if (!parsed.length) {
     const plainText = stripScriptHtmlFallback(rawHtml)
     const totalWordCount = countWords(plainText)
+    // An empty screenplay is one blank screenplay page, not zero pages. Expose
+    // the paginator's empty-screenplay result so page count and the single
+    // sentinel page stay consistent with paginateScript.
+    const pagination = paginateScript([])
     return {
       blocks: [],
       scenes: [],
-      pages: [],
+      pages: buildPages(pagination.pages, new Map()),
       speakers: [],
       plainText,
       totalWordCount,
-      estimatedPageCount: totalWordCount > 0 ? Math.ceil(totalWordCount / ESTIMATED_SCRIPT_PAGE_WORDS) : 0,
+      estimatedPageCount: pagination.pageCount,
     }
   }
 
@@ -246,7 +240,6 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
     const wordStart = totalWordCount
     const blockWordCount = countWords(block.text)
     const wordEnd = wordStart + blockWordCount
-    const pageNumber = estimatedPageForWord(wordStart)
     const sourceIndex = block.sourceIndex
 
     if (block.type === 'scene-heading') {
@@ -255,8 +248,8 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
         id: `scene-${scenes.length + 1}-${slug(block.text)}`,
         heading: block.text,
         index: scenes.length + 1,
-        pageStart: pageNumber,
-        pageEnd: pageNumber,
+        pageStart: 1,
+        pageEnd: 1,
         blockStart: sourceIndex,
         blockEnd: sourceIndex,
         wordStart,
@@ -282,31 +275,60 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
       speaker,
       sceneId: activeScene?.id,
       sceneHeading: activeScene?.heading,
-      pageNumber,
+      pageNumber: 1,
+      pageEnd: 1,
       wordStart,
       wordEnd,
     }
     blocks.push(indexedBlock)
 
     if (activeScene) {
-      const scenePages = pageRangeForWords(activeScene.wordStart, wordEnd)
       activeScene.blockEnd = sourceIndex
       activeScene.wordEnd = wordEnd
-      activeScene.pageStart = scenePages.start
-      activeScene.pageEnd = scenePages.end
     }
 
     totalWordCount = wordEnd
   })
 
+  // Layout-derived pagination is the single source of truth for page count,
+  // page numbers, and page ranges (replaces the legacy 250-word estimate).
+  const paginationInput: ScriptPaginationBlock[] = blocks.map(block => ({
+    index: block.index,
+    type: block.type,
+    text: block.text,
+    sceneId: block.sceneId,
+  }))
+  const pagination = paginateScript(paginationInput)
+  const blocksByIndex = new Map(blocks.map(block => [block.index, block]))
+
+  pagination.blocks.forEach((result) => {
+    const block = blocksByIndex.get(result.blockIndex)
+    if (!block) return
+    block.pageNumber = result.pageStart
+    block.pageEnd = result.pageEnd
+  })
+
+  scenes.forEach((scene) => {
+    let pageStart = Infinity
+    let pageEnd = 1
+    for (let index = scene.blockStart; index <= scene.blockEnd; index++) {
+      const block = blocksByIndex.get(index)
+      if (!block) continue
+      pageStart = Math.min(pageStart, block.pageNumber)
+      pageEnd = Math.max(pageEnd, block.pageEnd)
+    }
+    scene.pageStart = Number.isFinite(pageStart) ? pageStart : 1
+    scene.pageEnd = pageEnd
+  })
+
   return {
     blocks,
     scenes,
-    pages: buildPages(blocks, totalWordCount),
+    pages: buildPages(pagination.pages, blocksByIndex),
     speakers,
     plainText: blocks.map(block => block.text).join('\n'),
     totalWordCount,
-    estimatedPageCount: Math.max(1, Math.ceil(totalWordCount / ESTIMATED_SCRIPT_PAGE_WORDS)),
+    estimatedPageCount: pagination.pageCount,
   }
 }
 
@@ -325,10 +347,9 @@ function dialogueSnippet(block: ScriptBlockIndex): string {
 
 function pageRangeForBlocks(blocks: ScriptBlockIndex[]): { start: number; end: number } | undefined {
   if (!blocks.length) return undefined
-  const pageNumbers = blocks.map(block => block.pageNumber)
   return {
-    start: Math.min(...pageNumbers),
-    end: Math.max(...pageNumbers),
+    start: Math.min(...blocks.map(block => block.pageNumber)),
+    end: Math.max(...blocks.map(block => block.pageEnd)),
   }
 }
 
@@ -535,9 +556,7 @@ export function getPageRangeContext(
 ): ScriptContextWindow | null {
   if (!index.blocks.length) return null
   const end = endPage ?? startPage
-  const wordStart = (startPage - 1) * ESTIMATED_SCRIPT_PAGE_WORDS
-  const wordEnd = end * ESTIMATED_SCRIPT_PAGE_WORDS
-  const pageBlocks = index.blocks.filter(block => block.wordStart < wordEnd && block.wordEnd > wordStart)
+  const pageBlocks = index.blocks.filter(block => block.pageNumber <= end && block.pageEnd >= startPage)
   if (!pageBlocks.length) return null
   const requestedRange = { start: startPage, end }
   const window = contextWindowFromBlocks(pageBlocks, 'requested-page-range', pageRangeLabel(requestedRange))
