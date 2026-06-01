@@ -21,7 +21,8 @@ export function TitlePagePanel({
   onClose,
 }: TitlePagePanelProps) {
   const titleInputRef = React.useRef<HTMLInputElement>(null)
-  const displayTitle = getDisplayProjectTitle(projectTitle)
+  const [draftProjectTitle, setDraftProjectTitle] = React.useState(projectTitle)
+  const displayTitle = getDisplayProjectTitle(draftProjectTitle)
   const formatDisplay = titlePage.formatDisplay.trim() || defaultFormatDisplay(projectFormat)
 
   React.useEffect(() => {
@@ -61,8 +62,11 @@ export function TitlePagePanel({
               <input
                 aria-label="Title page title"
                 ref={titleInputRef}
-                value={projectTitle}
-                onChange={event => onProjectTitleChange(event.target.value)}
+                value={draftProjectTitle}
+                onChange={event => {
+                  setDraftProjectTitle(event.target.value)
+                  onProjectTitleChange(event.target.value)
+                }}
                 style={styles.input}
               />
             </Field>
