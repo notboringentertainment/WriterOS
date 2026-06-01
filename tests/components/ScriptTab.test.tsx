@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
+import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ScriptTab } from '../../client/src/components/writing/ScriptTab'
+import { normalizeProjectTitle } from '../../client/src/lib/projectIdentity'
+import { defaultTitlePageMetadata } from '../../client/src/lib/projectState'
 import type { Editor } from '@tiptap/core'
 
 describe('ScriptTab', () => {
@@ -88,6 +91,38 @@ describe('ScriptTab', () => {
       key: 'Escape',
     })
     expect(screen.queryByRole('dialog', { name: 'Title page' })).not.toBeInTheDocument()
+  })
+
+  it('keeps spaces while editing the title page title', async () => {
+    function Harness() {
+      const [projectTitle, setProjectTitle] = useState('')
+
+      return (
+        <ScriptTab
+          projectTitle={projectTitle}
+          titlePage={defaultTitlePageMetadata()}
+          onProjectTitleChange={title => setProjectTitle(normalizeProjectTitle(title))}
+          onTitlePageChange={vi.fn()}
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Title page' }))
+
+    const titleInput = screen.getByLabelText('Title page title')
+    await waitFor(() => expect(titleInput).toHaveFocus())
+
+    fireEvent.change(titleInput, { target: { value: 'THE' } })
+    expect(titleInput).toHaveValue('THE')
+
+    fireEvent.change(titleInput, { target: { value: 'THE ' } })
+    expect(titleInput).toHaveValue('THE ')
+
+    fireEvent.change(titleInput, { target: { value: 'THE FISHERMAN' } })
+    expect(titleInput).toHaveValue('THE FISHERMAN')
+    expect(screen.getByLabelText('Title page preview')).toHaveTextContent('THE FISHERMAN')
   })
 
   it('publishes fresh script snapshots before debounced persistence', async () => {
