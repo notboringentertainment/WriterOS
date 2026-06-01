@@ -4,6 +4,7 @@ import {
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
+  WRITEROS_TITLE_PAGE_PATH,
   WRITEROS_TRANSCRIPT_PATHS,
   getWriterOSProjectPackageDirectoryName,
   readWriterOSProjectPackage,
@@ -16,6 +17,14 @@ function makeStoredProject(): StoredProject {
   const state = defaultProjectState()
   state.meta.title = 'The Salt Line'
   state.meta.format = 'series'
+  state.meta.titlePage = {
+    writtenBy: 'Mara Vale',
+    basedOn: 'A story by Jonah Reed',
+    contactInfo: 'mara@example.com\n555-0100',
+    draftLabel: 'Second Draft',
+    draftDate: 'May 27, 2026',
+    formatDisplay: 'Limited Series',
+  }
   state.script.rawHtml = [
     '<p data-element-type="scene-heading">INT. LIGHTHOUSE - NIGHT</p>',
     '<p data-element-type="action">Rain needles the windows.</p>',
@@ -54,6 +63,7 @@ describe('WriterOS project packages', () => {
       WRITEROS_DOCUMENT_PATHS.treatment,
       WRITEROS_PROJECT_MANIFEST_PATH,
       WRITEROS_SCRIPT_HTML_PATH,
+      WRITEROS_TITLE_PAGE_PATH,
       WRITEROS_TRANSCRIPT_PATHS.specialists,
       WRITEROS_TRANSCRIPT_PATHS.writingPartner,
     ].sort())
@@ -67,6 +77,10 @@ describe('WriterOS project packages', () => {
       openedAt: '2026-05-03T12:00:00.000Z',
     })
     expect(projectPackage.files[WRITEROS_SCRIPT_HTML_PATH]).toContain('INT. LIGHTHOUSE - NIGHT')
+    expect(JSON.parse(projectPackage.files[WRITEROS_TITLE_PAGE_PATH])).toMatchObject({
+      writtenBy: 'Mara Vale',
+      draftLabel: 'Second Draft',
+    })
     expect(projectPackage.files[WRITEROS_DOCUMENT_PATHS.synopsis]).toContain('lighthouse keeper')
   })
 
@@ -83,6 +97,14 @@ describe('WriterOS project packages', () => {
     expect(result.project.updatedAt).toBe(storedProject.updatedAt)
     expect(result.project.state.meta.title).toBe('The Salt Line')
     expect(result.project.state.meta.format).toBe('series')
+    expect(result.project.state.meta.titlePage).toMatchObject({
+      writtenBy: 'Mara Vale',
+      basedOn: 'A story by Jonah Reed',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27, 2026',
+      formatDisplay: 'Limited Series',
+    })
     expect(result.project.state.script.rawHtml).toContain('We keep the signal alive.')
     expect(result.project.state.script.scenes).toEqual([
       expect.objectContaining({ heading: 'INT. LIGHTHOUSE - NIGHT', index: 1 }),
@@ -163,6 +185,7 @@ describe('WriterOS project packages', () => {
   it('falls back safely when optional script and transcript files are absent', () => {
     const projectPackage = serializeWriterOSProjectPackage(makeStoredProject())
     const files = { ...projectPackage.files }
+    delete files[WRITEROS_TITLE_PAGE_PATH]
     delete files[WRITEROS_SCRIPT_HTML_PATH]
     delete files[WRITEROS_TRANSCRIPT_PATHS.writingPartner]
     delete files[WRITEROS_TRANSCRIPT_PATHS.specialists]
@@ -172,12 +195,37 @@ describe('WriterOS project packages', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error(result.error.message)
     expect(result.project.state.script.rawHtml).toBe('')
+    expect(result.project.state.meta.titlePage).toEqual({
+      writtenBy: '',
+      basedOn: '',
+      contactInfo: '',
+      draftLabel: '',
+      draftDate: '',
+      formatDisplay: '',
+    })
     expect(result.project.state.agents.writingPartner.transcript).toEqual([])
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.stringContaining(WRITEROS_SCRIPT_HTML_PATH),
       expect.stringContaining(WRITEROS_TRANSCRIPT_PATHS.writingPartner),
       expect.stringContaining(WRITEROS_TRANSCRIPT_PATHS.specialists),
     ]))
+  })
+
+  it('reports malformed title page metadata without returning a partial project', () => {
+    const projectPackage = serializeWriterOSProjectPackage(makeStoredProject())
+    const files = {
+      ...projectPackage.files,
+      [WRITEROS_TITLE_PAGE_PATH]: '{not json',
+    }
+
+    const result = readWriterOSProjectPackage(files)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('Expected package read to fail')
+    expect(result.error).toMatchObject({
+      code: 'invalid-title-page',
+      path: WRITEROS_TITLE_PAGE_PATH,
+    })
   })
 
   it('creates filesystem-safe package directory names', () => {

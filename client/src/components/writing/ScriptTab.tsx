@@ -3,10 +3,12 @@ import type { Editor } from '@tiptap/core'
 import { ScreenplayEditor } from './screenplay/ScreenplayEditor'
 import { ScreenplayToolbar } from './screenplay/ScreenplayToolbar'
 import { SceneGutter } from './screenplay/SceneGutter'
+import { TitlePagePanel } from './TitlePagePanel'
 import { ElementType } from '../../lib/screenplay'
-import type { ScriptScene } from '../../lib/projectState'
+import type { ScriptScene, TitlePageMetadata } from '../../lib/projectState'
 import type { ScriptFocusState } from '../../lib/scriptIndex'
 import { stripScriptHtmlFallback } from '../../lib/scriptIndex'
+import type { ProjectFormat } from '@shared/projectFormat'
 
 interface SceneHeading {
   index: number
@@ -18,6 +20,11 @@ interface ScriptTabProps {
   focusMode?: boolean
   onToggleFocusMode?: () => void
   initialScript?: string
+  projectTitle?: string
+  projectFormat?: ProjectFormat
+  titlePage?: TitlePageMetadata
+  onProjectTitleChange?: (title: string) => void
+  onTitlePageChange?: (patch: Partial<TitlePageMetadata>) => void
   onScriptChange?: (html: string, scenes: ScriptScene[]) => void
   onScriptSnapshotChange?: (snapshot: { rawHtml: string; scenes: ScriptScene[]; focus?: ScriptFocusState }) => void
   onEditorReady?: (editor: Editor) => void
@@ -32,6 +39,11 @@ export function ScriptTab({
   focusMode = false,
   onToggleFocusMode = () => {},
   initialScript,
+  projectTitle = '',
+  projectFormat = 'feature',
+  titlePage,
+  onProjectTitleChange,
+  onTitlePageChange,
   onScriptChange,
   onScriptSnapshotChange,
   onEditorReady,
@@ -45,6 +57,7 @@ export function ScriptTab({
   const [wordCount, setWordCount] = useState(0)
   const [pageCount, setPageCount] = useState(1)
   const [scenes, setScenes] = useState<SceneHeading[]>([])
+  const [titlePageOpen, setTitlePageOpen] = useState(false)
 
   const editorRef = useRef<Editor | null>(null)
   const scenesRef = useRef<SceneHeading[]>([])
@@ -129,6 +142,8 @@ export function ScriptTab({
     void onReplaceFdx(file)
   }, [initialScript, onReplaceFdx])
 
+  const canEditTitlePage = Boolean(titlePage && onProjectTitleChange && onTitlePageChange)
+
   return (
     <div data-testid="script-tab-surface" style={styles.wrapper}>
       <div style={styles.pageWrapper}>
@@ -144,6 +159,7 @@ export function ScriptTab({
           focusMode={focusMode}
           onElementTypeChange={handleToolbarElementTypeChange}
           onToggleFocusMode={onToggleFocusMode}
+          onOpenTitlePage={canEditTitlePage ? () => setTitlePageOpen(true) : undefined}
           onImportFdx={onImportFdx ? () => importFdxInputRef.current?.click() : undefined}
           onReplaceFdx={onReplaceFdx ? () => replaceFdxInputRef.current?.click() : undefined}
           importingFdx={importingFdx}
@@ -195,6 +211,17 @@ export function ScriptTab({
           />
         </div>
       </div>
+
+      {titlePageOpen && titlePage && onProjectTitleChange && onTitlePageChange && (
+        <TitlePagePanel
+          projectTitle={projectTitle}
+          projectFormat={projectFormat}
+          titlePage={titlePage}
+          onProjectTitleChange={onProjectTitleChange}
+          onTitlePageChange={onTitlePageChange}
+          onClose={() => setTitlePageOpen(false)}
+        />
+      )}
     </div>
   )
 }
