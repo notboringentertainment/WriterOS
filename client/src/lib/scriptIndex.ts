@@ -189,6 +189,9 @@ function buildPages(
 ): ScriptPageIndex[] {
   return pages.map((page) => {
     const pageBlocks: ScriptBlockIndex[] = []
+    // Block indices are monotonic source-order indices, not dense: empty
+    // filtered elements can leave gaps in [blockStart, blockEnd]. The Map
+    // lookup intentionally skips those non-content gaps.
     for (let index = page.blockStart; index <= page.blockEnd; index++) {
       const block = blocksByIndex.get(index)
       if (block) pageBlocks.push(block)

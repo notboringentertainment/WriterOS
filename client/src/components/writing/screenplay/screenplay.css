@@ -37,6 +37,7 @@
 }
 
 .ProseMirror p[data-screenplay-space-before="1"] {
+  margin-top: 16px; /* fallback for browsers without `lh`: 12pt × line-height 1 */
   margin-top: 1lh;
 }
 

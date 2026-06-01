@@ -111,9 +111,9 @@ function wrapLineStarts(text: string, maxChars: number): number[] {
     } else if (lineLength + 1 + word.length <= maxChars) {
       lineLength += 1 + word.length
     } else {
+      // lineOpen is already true here (we are in the else of `!lineOpen`).
       lineStarts.push(wordStart)
       lineLength = word.length
-      lineOpen = true
     }
   }
 
@@ -255,6 +255,8 @@ export function paginateScript(blocks: ScriptPaginationBlock[]): ScriptPaginatio
       const availForPair = SCREENPLAY_LINES_PER_PAGE - linesUsed - spacing
       if (together > availForPair && together <= SCREENPLAY_LINES_PER_PAGE) {
         startNewPage()
+        // Spacing-before is suppressed at the top of a page: the protected
+        // block now opens the fresh page, so its leading gap collapses.
         spacing = 0
       }
     }
@@ -359,6 +361,7 @@ export function computePageBreaks(items: PageBreakInput[]): {
     text: item.text,
   }))
   const result = paginateScript(blocks)
+  const blockResultsByIndex = new Map(result.blocks.map(block => [block.blockIndex, block]))
 
   const breaks: PageBreakMarker[] = []
   let previousBlockEnd = -1
@@ -371,7 +374,7 @@ export function computePageBreaks(items: PageBreakInput[]): {
       } else if (node) {
         // Mid-block continuation: locate the wrapped line where this page begins
         // and translate it to a character offset inside the paragraph text.
-        const fragment = result.blocks[page.blockStart]?.fragments.find(
+        const fragment = blockResultsByIndex.get(page.blockStart)?.fragments.find(
           frag => frag.pageNumber === page.pageNumber,
         )
         if (fragment) {
