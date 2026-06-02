@@ -1,14 +1,6 @@
 import type { ElementType } from './screenplay'
+import { parseScriptBlocks } from './scriptBlocks'
 import { paginateScript, type ScriptPaginationBlock } from './scriptPagination'
-
-const ELEMENT_TYPES = new Set<ElementType>([
-  'scene-heading',
-  'action',
-  'character',
-  'dialogue',
-  'parenthetical',
-  'transition',
-])
 
 export interface ScriptBlockIndex {
   id: string
@@ -155,29 +147,10 @@ function slug(value: string): string {
   return normalizeName(value).replace(/\s+/g, '-').slice(0, 48) || 'empty'
 }
 
-function normalizeElementType(value: string | null): ElementType {
-  return ELEMENT_TYPES.has(value as ElementType) ? value as ElementType : 'action'
-}
-
 export function pageRangeLabel(pageRange: { start: number; end: number }): string {
   return pageRange.start === pageRange.end
     ? `Page ${pageRange.start}`
     : `Pages ${pageRange.start}–${pageRange.end}`
-}
-
-function parseElements(rawHtml: string): Array<{ sourceIndex: number; type: ElementType; text: string }> {
-  if (!rawHtml.trim() || typeof DOMParser === 'undefined') return []
-
-  const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
-  const elements = Array.from(doc.body.querySelectorAll<HTMLElement>('[data-element-type], p'))
-
-  return elements
-    .map((el, sourceIndex) => ({
-      sourceIndex,
-      type: normalizeElementType(el.getAttribute('data-element-type')),
-      text: normalizeWhitespace(el.textContent ?? ''),
-    }))
-    .filter(block => block.text.length > 0)
 }
 
 // Map the shared layout pagination result onto the script index page shape.
@@ -210,7 +183,7 @@ function buildPages(
 }
 
 export function buildScriptIndex(rawHtml: string): ScriptIndex {
-  const parsed = parseElements(rawHtml)
+  const parsed = parseScriptBlocks(rawHtml)
   if (!parsed.length) {
     const plainText = stripScriptHtmlFallback(rawHtml)
     const totalWordCount = countWords(plainText)
@@ -240,7 +213,7 @@ export function buildScriptIndex(rawHtml: string): ScriptIndex {
     const wordStart = totalWordCount
     const blockWordCount = countWords(block.text)
     const wordEnd = wordStart + blockWordCount
-    const sourceIndex = block.sourceIndex
+    const sourceIndex = block.index
 
     if (block.type === 'scene-heading') {
       activeSpeaker = ''
