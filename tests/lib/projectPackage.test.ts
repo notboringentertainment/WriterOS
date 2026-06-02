@@ -232,7 +232,7 @@ describe('WriterOS project packages', () => {
     ]))
   })
 
-  it('reports malformed script facts cache without returning a partial project', () => {
+  it('falls back safely when script facts cache is malformed', () => {
     const projectPackage = serializeWriterOSProjectPackage(makeStoredProject())
     const files = {
       ...projectPackage.files,
@@ -241,12 +241,17 @@ describe('WriterOS project packages', () => {
 
     const result = readWriterOSProjectPackage(files)
 
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('Expected package read to fail')
-    expect(result.error).toMatchObject({
-      code: 'invalid-script-facts',
-      path: WRITEROS_SCRIPT_FACTS_PATH,
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.error.message)
+    expect(result.project.state.script.rawHtml).toContain('We keep the signal alive.')
+    expect(result.project.state.script.facts).toMatchObject({
+      rebuiltAt: null,
+      characters: [],
+      locations: [],
     })
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      `${WRITEROS_SCRIPT_FACTS_PATH} is invalid; using an empty Script Facts cache.`,
+    ]))
   })
 
   it('reports malformed title page metadata without returning a partial project', () => {

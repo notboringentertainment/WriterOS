@@ -485,7 +485,12 @@ export function readWriterOSProjectPackage(
     defaultScriptFactsCache(),
     { errorCode: 'invalid-script-facts' },
   )
-  if (!scriptFactsResult.ok) return { ok: false, error: scriptFactsResult.error, warnings }
+  const scriptFactsCache = scriptFactsResult.ok
+    ? scriptFactsResult.value
+    : defaultScriptFactsCache()
+  if (!scriptFactsResult.ok) {
+    warnings.push(`${WRITEROS_SCRIPT_FACTS_PATH} is invalid; using an empty Script Facts cache.`)
+  }
   const legacy = documentsToLegacy(documentResult.documents, { outlineFormat: manifestResult.manifest.format })
 
   const state = migrateState({
@@ -506,7 +511,7 @@ export function readWriterOSProjectPackage(
       rawHtml,
       scenes: scriptScenesFromHtml(rawHtml),
       revisionHistory: [],
-      facts: normalizeScriptFactsCache(scriptFactsResult.value),
+      facts: normalizeScriptFactsCache(scriptFactsCache),
     },
     documents: documentResult.documents,
     synopsis: legacy.synopsis,
