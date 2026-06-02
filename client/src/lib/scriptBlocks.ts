@@ -37,7 +37,7 @@ export function hashScriptHtml(rawHtml: string): string {
   return hashScriptBlocks(parseScriptBlocks(rawHtml))
 }
 
-export function fnv1a32Hex(value: string): string {
+function fnv1a32Hex(value: string): string {
   let hash = 0x811c9dc5
   for (let i = 0; i < value.length; i++) {
     hash ^= value.charCodeAt(i)

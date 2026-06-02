@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  fnv1a32Hex,
   hashScriptBlocks,
   hashScriptHtml,
   parseScriptBlocks,
@@ -38,8 +37,8 @@ describe('parseScriptBlocks', () => {
 })
 
 describe('script block hashing', () => {
-  it('uses stable FNV-1a 32-bit hex output', () => {
-    expect(fnv1a32Hex('script-facts:v1:[]')).toBe('7b05e753')
+  it('uses stable versioned FNV-1a 32-bit hex output', () => {
+    expect(hashScriptBlocks([])).toBe('7b05e753')
   })
 
   it('ignores sparse indices and equivalent empty-paragraph churn', () => {
