@@ -367,6 +367,12 @@ function sceneBlocks(index: ScriptIndex, scene: ScriptSceneIndex): ScriptBlockIn
   return index.blocks.filter(block => block.index >= scene.blockStart && block.index <= scene.blockEnd)
 }
 
+function blocksAroundSourceIndex(index: ScriptIndex, sourceIndex: number, radius = 3): ScriptBlockIndex[] {
+  const densePosition = index.blocks.findIndex(block => block.index === sourceIndex)
+  if (densePosition < 0) return []
+  return index.blocks.slice(Math.max(0, densePosition - radius), densePosition + radius + 1)
+}
+
 function contextWindowFromScene(
   index: ScriptIndex,
   scene: ScriptSceneIndex,
@@ -546,7 +552,7 @@ export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): S
   if (selectedText) {
     const selectionBlocks = focusedBlock.sceneId
       ? index.blocks.filter(block => block.sceneId === focusedBlock.sceneId)
-      : index.blocks.slice(Math.max(0, focusedBlock.index - 3), focusedBlock.index + 4)
+      : blocksAroundSourceIndex(index, focusedBlock.index)
     const focusedScene = focusedBlock.sceneId
       ? index.scenes.find(scene => scene.id === focusedBlock.sceneId)
       : undefined
@@ -566,7 +572,6 @@ export function getFocusContext(index: ScriptIndex, focus?: ScriptFocusState): S
     if (focusedScene) return contextWindowFromScene(index, focusedScene, 'current-scene')
   }
 
-  const focusedBlockPosition = index.blocks.findIndex(block => block.index === focusedBlock.index)
-  const nearbyBlocks = index.blocks.slice(Math.max(0, focusedBlockPosition - 3), focusedBlockPosition + 4)
+  const nearbyBlocks = blocksAroundSourceIndex(index, focusedBlock.index)
   return contextWindowFromBlocks(nearbyBlocks, 'current-block', 'Current script position')
 }

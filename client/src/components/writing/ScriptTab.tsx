@@ -126,11 +126,11 @@ export function ScriptTab({
       scheduleCurrentScriptHash(snapshot.html)
       onScriptSnapshotChange?.({
         rawHtml: snapshot.html,
-        scenes: scriptScenesFromHeadings(scenesRef.current),
+        scenes: currentScriptScenes(),
         focus: snapshot.focus,
       })
     },
-    [onScriptSnapshotChange, scheduleCurrentScriptHash]
+    [currentScriptScenes, onScriptSnapshotChange, scheduleCurrentScriptHash]
   )
 
   const handleRebuildScriptFacts = useCallback(() => {

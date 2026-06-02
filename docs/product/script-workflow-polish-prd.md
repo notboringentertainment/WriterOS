@@ -169,7 +169,7 @@ TipTap doc JSON is the live editor implementation detail, not the Slice 2 storag
 
 Adapter contract for implementation:
 
-- Extract/expose the existing `parseElements(rawHtml)` path from `buildScriptIndex` as the shared screenplay-block adapter; do not create a second HTML walk.
+- Extract/expose the existing `parseScriptBlocks(rawHtml)` path from `buildScriptIndex` as the shared screenplay-block adapter; do not create a second HTML walk.
 - Block shape: `{ index: number; type: ElementType; text: string }`.
 - `index` preserves source paragraph order, including gaps if empty paragraphs are filtered out.
 - `type` is normalized with `normalizeElementType`; unknown or missing element types become `action`.

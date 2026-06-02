@@ -152,6 +152,9 @@ describe('ScriptTab', () => {
     await waitFor(() => {
       const latestSnapshot = onScriptSnapshotChange.mock.calls.at(-1)?.[0]
       expect(latestSnapshot.rawHtml).toContain('Fresh visible line')
+      expect(latestSnapshot.scenes).toEqual([
+        { id: 'scene-0', heading: 'Fresh visible line', index: 1 },
+      ])
     })
     expect(onScriptChange).toHaveBeenCalledTimes(persistedCallsBeforeEdit)
   })

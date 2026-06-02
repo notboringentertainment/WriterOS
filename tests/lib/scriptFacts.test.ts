@@ -92,6 +92,19 @@ describe('deriveScriptFactsFromHtml', () => {
     ])
   })
 
+  it('preserves non-ASCII character names while normalizing fact keys', () => {
+    const facts = deriveScriptFactsFromHtml([
+      '<p data-element-type="character">Маркус</p>',
+      '<p data-element-type="character">МАРКУС</p>',
+      '<p data-element-type="character">李雷</p>',
+    ].join(''))
+
+    expect(facts.characters).toEqual([
+      { label: 'Маркус', count: 2, blockIndices: [0, 1] },
+      { label: '李雷', count: 1, blockIndices: [2] },
+    ])
+  })
+
   it('flags location token containment for one extra qualifier or time token', () => {
     const facts = deriveScriptFactsFromHtml([
       '<p data-element-type="scene-heading">INT. KITCHEN</p>',

@@ -62,7 +62,7 @@ function normalizeAsciiLabel(value: string): string {
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
   )
 }
 
