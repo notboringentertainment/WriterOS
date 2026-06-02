@@ -28,12 +28,12 @@ describe('deriveScriptFactsFromHtml', () => {
       { label: 'MARCOS', count: 1, blockIndices: [8] },
     ])
     expect(facts.locations).toEqual([
-      { label: 'INT. KITCHEN -- NIGHT', count: 1, blockIndices: [0] },
       { label: 'EXT. DOCK - DAWN', count: 1, blockIndices: [7] },
+      { label: 'INT. KITCHEN -- NIGHT', count: 1, blockIndices: [0] },
     ])
     expect(facts.times).toEqual([
-      { label: 'NIGHT', count: 1, blockIndices: [0] },
       { label: 'DAWN', count: 1, blockIndices: [7] },
+      { label: 'NIGHT', count: 1, blockIndices: [0] },
     ])
     expect(facts.transitions).toEqual([
       { label: 'CUT TO:', count: 1, blockIndices: [6] },
@@ -54,8 +54,38 @@ describe('deriveScriptFactsFromHtml', () => {
       '<p data-element-type="character">JOAN</p>',
     ].join(''))
 
-    expect(facts.characters.map(entry => entry.label)).toEqual(['JOHN', 'JOAN'])
+    expect(facts.characters.map(entry => entry.label)).toEqual(['JOAN', 'JOHN'])
     expect(facts.warnings).toEqual([])
+  })
+
+  it('orders facts by count descending, then label', () => {
+    const facts = deriveScriptFactsFromHtml([
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="character">MAYA</p>',
+      '<p data-element-type="character">ALEX</p>',
+      '<p data-element-type="character">MAYA</p>',
+      '<p data-element-type="character">ALEX</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join(''))
+
+    expect(facts.characters).toEqual([
+      { label: 'MAYA', count: 3, blockIndices: [1, 3, 5] },
+      { label: 'ALEX', count: 2, blockIndices: [2, 4] },
+      { label: 'DANTE', count: 1, blockIndices: [0] },
+    ])
+  })
+
+  it('preserves character cue display text while deduping with normalized keys', () => {
+    const facts = deriveScriptFactsFromHtml([
+      '<p data-element-type="character">MRS. SMITH (V.O.)</p>',
+      '<p data-element-type="character">MRS SMITH</p>',
+      '<p data-element-type="character">JEAN-LUC (O.S.)</p>',
+    ].join(''))
+
+    expect(facts.characters).toEqual([
+      { label: 'MRS. SMITH', count: 2, blockIndices: [0, 1] },
+      { label: 'JEAN-LUC', count: 1, blockIndices: [2] },
+    ])
   })
 
   it('flags location token containment for one extra qualifier or time token', () => {
@@ -78,6 +108,16 @@ describe('deriveScriptFactsFromHtml', () => {
         labels: ['INT. KITCHEN', 'INT. KITCHEN -- NIGHT'],
         reason: 'token-containment',
       },
+    ])
+  })
+
+  it('extracts scene times from compact double-dash headings', () => {
+    const facts = deriveScriptFactsFromHtml(
+      '<p data-element-type="scene-heading">INT. KITCHEN--NIGHT</p>'
+    )
+
+    expect(facts.times).toEqual([
+      { label: 'NIGHT', count: 1, blockIndices: [0] },
     ])
   })
 })

@@ -62,7 +62,7 @@ function normalizeAsciiLabel(value: string): string {
   )
 }
 
-function normalizeCharacterCue(value: string): string {
+function stripCharacterCueDecorations(value: string): string {
   let normalized = normalizeWhitespace(value)
   let previous = ''
   while (normalized !== previous) {
@@ -72,7 +72,11 @@ function normalizeCharacterCue(value: string): string {
       ''
     ).trim()
   }
-  return normalizeAsciiLabel(normalized)
+  return normalized
+}
+
+function normalizeCharacterCue(value: string): string {
+  return normalizeAsciiLabel(stripCharacterCueDecorations(value))
 }
 
 function normalizeFactKey(value: string): string {
@@ -83,11 +87,12 @@ function addFact(
   facts: Map<string, ScriptFactEntry>,
   label: string,
   blockIndex: number,
+  keyLabel = label,
 ): void {
   const normalizedLabel = normalizeWhitespace(label)
   if (!normalizedLabel) return
 
-  const key = normalizeFactKey(normalizedLabel)
+  const key = normalizeFactKey(keyLabel)
   if (!key) return
 
   const existing = facts.get(key)
@@ -104,8 +109,16 @@ function addFact(
   })
 }
 
-function sortedFacts(facts: Map<string, ScriptFactEntry>): ScriptFactEntry[] {
-  return Array.from(facts.values())
+function compareFactLabels(a: ScriptFactEntry, b: ScriptFactEntry): number {
+  return a.label.localeCompare(b.label, 'en', { sensitivity: 'base' })
+}
+
+function orderedFacts(facts: Map<string, ScriptFactEntry>): ScriptFactEntry[] {
+  return Array.from(facts.values()).sort((a, b) => (
+    b.count - a.count ||
+    compareFactLabels(a, b) ||
+    a.blockIndices[0] - b.blockIndices[0]
+  ))
 }
 
 function extractSceneTimes(sceneHeading: string): string[] {
@@ -113,7 +126,7 @@ function extractSceneTimes(sceneHeading: string): string[] {
   if (!normalizedHeading) return []
 
   const segments = normalizedHeading
-    .split(/\s+(?:-{1,2}|[–—])\s+/)
+    .split(/\s*(?:--|[–—])\s*|\s+-\s+/)
     .map(segment => normalizeAsciiLabel(segment))
     .filter(Boolean)
   const candidates = segments.length > 1 ? segments.slice(1) : segments
@@ -210,7 +223,12 @@ export function deriveScriptFactsFromBlocks(blocks: readonly ScriptBlock[]): Der
 
   blocks.forEach((block) => {
     if (block.type === 'character') {
-      addFact(characters, normalizeCharacterCue(block.text), block.index)
+      addFact(
+        characters,
+        stripCharacterCueDecorations(block.text),
+        block.index,
+        normalizeCharacterCue(block.text),
+      )
       return
     }
 
@@ -225,15 +243,15 @@ export function deriveScriptFactsFromBlocks(blocks: readonly ScriptBlock[]): Der
     }
   })
 
-  const characterFacts = sortedFacts(characters)
-  const locationFacts = sortedFacts(locations)
+  const characterFacts = orderedFacts(characters)
+  const locationFacts = orderedFacts(locations)
 
   return {
     contentHash: hashScriptBlocks(blocks),
     characters: characterFacts,
     locations: locationFacts,
-    times: sortedFacts(times),
-    transitions: sortedFacts(transitions),
+    times: orderedFacts(times),
+    transitions: orderedFacts(transitions),
     warnings: [
       ...nearMatchWarnings('characters', characterFacts),
       ...nearMatchWarnings('locations', locationFacts),
