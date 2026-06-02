@@ -8,6 +8,27 @@ import {
 } from '../../shared/personaCapability'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
+import type { StoryBibleCharacter } from '../../shared/documents'
+
+function makeStoryBibleCharacter(overrides: Partial<StoryBibleCharacter> = {}): StoryBibleCharacter {
+  return {
+    id: '',
+    name: '',
+    role: '',
+    want: '',
+    need: '',
+    flaw: '',
+    secret: '',
+    contradiction: '',
+    arc: '',
+    relationshipPressure: '',
+    behavioralAnchors: '',
+    speechPatterns: '',
+    neverWriteThemAs: '',
+    continuityFacts: '',
+    ...overrides,
+  }
+}
 
 describe('persona capability contracts', () => {
   it('allowlists only Zoe research/world-context in Phase 2', () => {
@@ -94,9 +115,9 @@ describe('persona capability contracts', () => {
   it('summarizes present and missing project surfaces for receipts', () => {
     const state = defaultProjectState()
     state.synopsis.logline = 'A medic exposes a corrupt rescue network.'
-    state.storyBible.world.setting = 'Old City streets under layered occupation.'
-    state.storyBible.characters = [
-      { id: 'c1', name: 'Isaiah', role: 'Guide', wound: '', want: '', need: '', arc: '' },
+    state.documents.storyBible.content.premiseAndWorld.premise = 'Old City streets under layered occupation.'
+    state.documents.storyBible.content.characters = [
+      makeStoryBibleCharacter({ id: 'c1', name: 'Isaiah', role: 'Guide' }),
     ]
 
     const context = buildProjectContext(state)

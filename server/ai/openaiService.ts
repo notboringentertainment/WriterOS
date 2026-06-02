@@ -445,9 +445,9 @@ const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   writingPartner: DEFAULT_CONTEXT_ORDER,
   sam: ['brief', 'synopsis', 'treatment', 'outline', 'characters'],
   casey: ['brief', 'characters', 'treatment', 'outline', 'storyBible', 'scenes', 'synopsis'],
-  oliver: ['brief', 'outline', 'scenes', 'synopsis'],
-  maya: ['brief', 'scenes', 'characters', 'storyBible'],
-  zoe: ['brief', 'storyBible', 'scenes', 'characters'],
+  oliver: ['brief', 'outline', 'treatment', 'scenes', 'synopsis'],
+  maya: ['brief', 'scenes', 'treatment', 'characters', 'storyBible'],
+  zoe: ['brief', 'storyBible', 'treatment', 'scenes', 'outline', 'characters'],
   alex: ['brief', 'treatment', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
 };
 
