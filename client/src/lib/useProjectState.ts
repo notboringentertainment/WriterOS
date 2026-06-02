@@ -659,6 +659,18 @@ export function useProjectState() {
     }))
   }, [update])
 
+  const rebuildScriptFactsFromSnapshot = useCallback((rawHtml: string, scenes: ScriptScene[], rebuiltAt?: number | string | Date) => {
+    update(s => ({
+      ...s,
+      script: {
+        ...s.script,
+        rawHtml,
+        scenes,
+        facts: rebuildScriptFactsCache(rawHtml, rebuiltAt ?? Date.now()),
+      },
+    }))
+  }, [update])
+
   const stateFromImportedScript = useCallback((importedScript: ImportedScriptPayload): ProjectState => {
     const importedState = defaultProjectState()
     return {
@@ -835,6 +847,7 @@ export function useProjectState() {
     clearTranscript,
     updateScript,
     rebuildScriptFacts,
+    rebuildScriptFactsFromSnapshot,
     createProject,
     createProjectFromImportedScript,
     replaceScriptFromImport,

@@ -1,13 +1,16 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import type { Editor } from '@tiptap/core'
 import { ScreenplayEditor } from './screenplay/ScreenplayEditor'
 import { ScreenplayToolbar } from './screenplay/ScreenplayToolbar'
 import { SceneGutter } from './screenplay/SceneGutter'
 import { TitlePagePanel } from './TitlePagePanel'
+import { ScriptFactsPanel } from './ScriptFactsPanel'
 import { ElementType } from '../../lib/screenplay'
 import type { ScriptScene, TitlePageMetadata } from '../../lib/projectState'
 import type { ScriptFocusState } from '../../lib/scriptIndex'
 import { stripScriptHtmlFallback } from '../../lib/scriptIndex'
+import { hashScriptHtml } from '../../lib/scriptBlocks'
+import type { ScriptFactsCache } from '../../lib/scriptFacts'
 import type { ProjectFormat } from '@shared/projectFormat'
 
 interface SceneHeading {
@@ -27,6 +30,8 @@ interface ScriptTabProps {
   onTitlePageChange?: (patch: Partial<TitlePageMetadata>) => void
   onScriptChange?: (html: string, scenes: ScriptScene[]) => void
   onScriptSnapshotChange?: (snapshot: { rawHtml: string; scenes: ScriptScene[]; focus?: ScriptFocusState }) => void
+  scriptFacts?: ScriptFactsCache
+  onRebuildScriptFacts?: (snapshot: { rawHtml: string; scenes: ScriptScene[] }) => void
   onEditorReady?: (editor: Editor) => void
   onImportFdx?: (file: File) => void | Promise<void>
   onReplaceFdx?: (file: File) => void | Promise<void>
@@ -46,6 +51,8 @@ export function ScriptTab({
   onTitlePageChange,
   onScriptChange,
   onScriptSnapshotChange,
+  scriptFacts,
+  onRebuildScriptFacts,
   onEditorReady,
   onImportFdx,
   onReplaceFdx,
@@ -58,9 +65,11 @@ export function ScriptTab({
   const [pageCount, setPageCount] = useState(1)
   const [scenes, setScenes] = useState<SceneHeading[]>([])
   const [titlePageOpen, setTitlePageOpen] = useState(false)
+  const [currentScriptHash, setCurrentScriptHash] = useState(() => hashScriptHtml(initialScript ?? ''))
 
   const editorRef = useRef<Editor | null>(null)
   const scenesRef = useRef<SceneHeading[]>([])
+  const scriptHashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const importFdxInputRef = useRef<HTMLInputElement>(null)
   const replaceFdxInputRef = useRef<HTMLInputElement>(null)
 
@@ -71,6 +80,22 @@ export function ScriptTab({
     },
     [onEditorReady]
   )
+
+  useEffect(() => {
+    return () => {
+      if (scriptHashTimerRef.current) clearTimeout(scriptHashTimerRef.current)
+    }
+  }, [])
+
+  const scheduleCurrentScriptHash = useCallback((html: string) => {
+    if (!scriptFacts || !onRebuildScriptFacts) return
+    if (scriptHashTimerRef.current) clearTimeout(scriptHashTimerRef.current)
+
+    scriptHashTimerRef.current = setTimeout(() => {
+      setCurrentScriptHash(hashScriptHtml(html))
+      scriptHashTimerRef.current = null
+    }, 500)
+  }, [onRebuildScriptFacts, scriptFacts])
 
   // Toolbar dropdown → update React display state AND the TipTap block type
   const handleToolbarElementTypeChange = useCallback((type: ElementType) => {
@@ -83,34 +108,39 @@ export function ScriptTab({
     setScenes(headings)
   }, [])
 
+  const currentScriptScenes = useCallback((): ScriptScene[] => {
+    return editorRef.current
+      ? scriptScenesFromEditor(editorRef.current)
+      : scriptScenesFromHeadings(scenesRef.current)
+  }, [])
+
   const handleContentChange = useCallback(
     (html: string) => {
-      onScriptChange?.(
-        html,
-        scenesRef.current.map((h, i) => ({
-          id: `scene-${i}`,
-          heading: h.text,
-          index: h.index,
-        }))
-      )
+      onScriptChange?.(html, currentScriptScenes())
     },
-    [onScriptChange]
+    [currentScriptScenes, onScriptChange]
   )
 
   const handleContentSnapshotChange = useCallback(
     (snapshot: { html: string; focus?: ScriptFocusState }) => {
+      scheduleCurrentScriptHash(snapshot.html)
       onScriptSnapshotChange?.({
         rawHtml: snapshot.html,
-        scenes: scenesRef.current.map((h, i) => ({
-          id: `scene-${i}`,
-          heading: h.text,
-          index: h.index,
-        })),
+        scenes: scriptScenesFromHeadings(scenesRef.current),
         focus: snapshot.focus,
       })
     },
-    [onScriptSnapshotChange]
+    [onScriptSnapshotChange, scheduleCurrentScriptHash]
   )
+
+  const handleRebuildScriptFacts = useCallback(() => {
+    const rawHtml = editorRef.current?.getHTML() ?? initialScript ?? ''
+    setCurrentScriptHash(hashScriptHtml(rawHtml))
+    onRebuildScriptFacts?.({
+      rawHtml,
+      scenes: currentScriptScenes(),
+    })
+  }, [currentScriptScenes, initialScript, onRebuildScriptFacts])
 
   const handleSceneClick = useCallback((nodePos: number) => {
     const el = document.querySelector(`[data-node-pos="${nodePos}"]`) as HTMLElement | null
@@ -209,6 +239,13 @@ export function ScriptTab({
             onSceneHeadingsChange={handleSceneHeadingsChange}
             onContentSnapshotChange={handleContentSnapshotChange}
           />
+          {scriptFacts && onRebuildScriptFacts && !focusMode && (
+            <ScriptFactsPanel
+              facts={scriptFacts}
+              currentContentHash={currentScriptHash}
+              onRebuild={handleRebuildScriptFacts}
+            />
+          )}
         </div>
       </div>
 
@@ -228,6 +265,30 @@ export function ScriptTab({
 
 function formatImportWarningCount(count: number) {
   return count === 1 ? '1 import warning' : `${count} import warnings`
+}
+
+function scriptScenesFromEditor(editor: Editor): ScriptScene[] {
+  const scenes: ScriptScene[] = []
+
+  editor.state.doc.forEach((node) => {
+    if (node.type.name !== 'paragraph' || node.attrs.elementType !== 'scene-heading') return
+
+    scenes.push({
+      id: `scene-${scenes.length}`,
+      heading: node.textContent,
+      index: scenes.length + 1,
+    })
+  })
+
+  return scenes
+}
+
+function scriptScenesFromHeadings(headings: SceneHeading[]): ScriptScene[] {
+  return headings.map((h, i) => ({
+    id: `scene-${i}`,
+    heading: h.text,
+    index: i + 1,
+  }))
 }
 
 const styles: Record<string, React.CSSProperties> = {

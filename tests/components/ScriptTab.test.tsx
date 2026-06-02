@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { useState } from 'react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ScriptTab } from '../../client/src/components/writing/ScriptTab'
 import { normalizeProjectTitle } from '../../client/src/lib/projectIdentity'
 import { defaultTitlePageMetadata } from '../../client/src/lib/projectState'
+import { defaultScriptFactsCache, rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { Editor } from '@tiptap/core'
 
 describe('ScriptTab', () => {
@@ -151,6 +152,124 @@ describe('ScriptTab', () => {
     await waitFor(() => {
       const latestSnapshot = onScriptSnapshotChange.mock.calls.at(-1)?.[0]
       expect(latestSnapshot.rawHtml).toContain('Fresh visible line')
+    })
+    expect(onScriptChange).toHaveBeenCalledTimes(persistedCallsBeforeEdit)
+  })
+
+  it('shows current script facts when the cache matches the editor content', () => {
+    const rawHtml = [
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join('')
+    const facts = rebuildScriptFactsCache(rawHtml, '2026-06-02T10:00:00.000Z')
+
+    render(
+      <ScriptTab
+        initialScript={rawHtml}
+        scriptFacts={facts}
+        onRebuildScriptFacts={vi.fn()}
+      />
+    )
+
+    const panel = screen.getByRole('complementary', { name: 'Script Facts' })
+    expect(within(panel).getByText('Current')).toBeInTheDocument()
+    expect(within(panel).getByText('MAYA')).toBeInTheDocument()
+    expect(within(panel).getByText('INT. ROOM - NIGHT')).toBeInTheDocument()
+    expect(within(panel).getByText('NIGHT')).toBeInTheDocument()
+  })
+
+  it('marks script facts stale when the editor content no longer matches the cache', () => {
+    const facts = rebuildScriptFactsCache(
+      '<p data-element-type="character">MAYA</p>',
+      '2026-06-02T10:00:00.000Z'
+    )
+
+    render(
+      <ScriptTab
+        initialScript="<p data-element-type='character'>MARCUS</p>"
+        scriptFacts={facts}
+        onRebuildScriptFacts={vi.fn()}
+      />
+    )
+
+    const panel = screen.getByRole('complementary', { name: 'Script Facts' })
+    expect(within(panel).getByText('Stale')).toBeInTheDocument()
+  })
+
+  it('debounces stale hash updates after editor changes', async () => {
+    let editor: Editor | undefined
+    const rawHtml = '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>'
+    const facts = rebuildScriptFactsCache(rawHtml, '2026-06-02T10:00:00.000Z')
+    const onEditorReady = vi.fn((readyEditor: Editor) => {
+      editor = readyEditor
+    })
+
+    render(
+      <ScriptTab
+        initialScript={rawHtml}
+        scriptFacts={facts}
+        onRebuildScriptFacts={vi.fn()}
+        onEditorReady={onEditorReady}
+      />
+    )
+
+    await waitFor(() => expect(onEditorReady).toHaveBeenCalledOnce())
+    const panel = screen.getByRole('complementary', { name: 'Script Facts' })
+    expect(within(panel).getByText('Current')).toBeInTheDocument()
+
+    act(() => {
+      editor!.commands.insertContent(' CHANGED')
+    })
+
+    expect(within(panel).getByText('Current')).toBeInTheDocument()
+    await waitFor(() => expect(within(panel).getByText('Stale')).toBeInTheDocument(), {
+      timeout: 1500,
+    })
+  })
+
+  it('hides script facts in focus mode', () => {
+    render(
+      <ScriptTab
+        focusMode
+        scriptFacts={defaultScriptFactsCache()}
+        onRebuildScriptFacts={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('complementary', { name: 'Script Facts' })).not.toBeInTheDocument()
+  })
+
+  it('rebuilds script facts from the live editor snapshot before debounced persistence', async () => {
+    let editor: Editor | undefined
+    const onRebuildScriptFacts = vi.fn()
+    const onScriptChange = vi.fn()
+    const onEditorReady = vi.fn((readyEditor: Editor) => {
+      editor = readyEditor
+    })
+
+    render(
+      <ScriptTab
+        scriptFacts={defaultScriptFactsCache()}
+        onRebuildScriptFacts={onRebuildScriptFacts}
+        onScriptChange={onScriptChange}
+        onEditorReady={onEditorReady}
+      />
+    )
+
+    await waitFor(() => expect(onEditorReady).toHaveBeenCalledOnce())
+    const persistedCallsBeforeEdit = onScriptChange.mock.calls.length
+
+    act(() => {
+      editor!.commands.insertContent('Fresh visible line')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild Script Facts' }))
+
+    await waitFor(() => {
+      const latestRebuild = onRebuildScriptFacts.mock.calls.at(-1)?.[0]
+      expect(latestRebuild.rawHtml).toContain('Fresh visible line')
+      expect(latestRebuild.scenes).toEqual([
+        { id: 'scene-0', heading: 'Fresh visible line', index: 1 },
+      ])
     })
     expect(onScriptChange).toHaveBeenCalledTimes(persistedCallsBeforeEdit)
   })

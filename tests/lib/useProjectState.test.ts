@@ -491,6 +491,35 @@ describe('useProjectState', () => {
     ])
   })
 
+  it('rebuildScriptFactsFromSnapshot stores live script content and facts together', () => {
+    const { result } = renderHook(() => useProjectState())
+    const scenes: ScriptScene[] = [{ id: 'scene-1', heading: 'INT. ROOM - NIGHT', index: 1 }]
+    const liveRawHtml = [
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join('')
+
+    act(() => result.current.updateScript('<p data-element-type="character">OLD CACHE</p>', []))
+    act(() => result.current.rebuildScriptFactsFromSnapshot(
+      liveRawHtml,
+      scenes,
+      '2026-06-02T10:00:00.000Z'
+    ))
+
+    expect(result.current.state.script.rawHtml).toBe(liveRawHtml)
+    expect(result.current.state.script.scenes).toEqual(scenes)
+    expect(result.current.state.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.script.rawHtml).toBe(liveRawHtml)
+    expect(stored.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+  })
+
   it('updateScript does not auto-rebuild an existing script facts cache', () => {
     const { result } = renderHook(() => useProjectState())
 
