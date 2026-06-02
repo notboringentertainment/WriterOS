@@ -422,4 +422,35 @@ describe('script focus windows', () => {
     expect(window!.reason).toBe('current-scene')
     expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
   })
+
+  it('uses dense block position for selected-text fallback when source indices have gaps', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="action">First beat.</p>',
+      '<p data-element-type="action"></p>',
+      '<p data-element-type="action">Second beat.</p>',
+      '<p data-element-type="action"></p>',
+      '<p data-element-type="action">Third beat.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Keep moving.</p>',
+    ].join(''))
+
+    expect(index.blocks.map(block => block.index)).toEqual([0, 2, 4, 5, 6])
+
+    const window = getFocusContext(index, {
+      blockIndex: 6,
+      selectedText: 'moving',
+      updatedAt: 1,
+    })
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('current-selection')
+    expect(window!.selectedText).toBe('moving')
+    expect(window!.blocks.map(block => block.text)).toEqual([
+      'Second beat.',
+      'Third beat.',
+      'DANTE',
+      'Keep moving.',
+    ])
+    expect(window!.dialogueSnippets).toEqual(['DANTE: Keep moving.'])
+  })
 })

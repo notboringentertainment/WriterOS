@@ -11,6 +11,7 @@ import {
 import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
 
 export const CURRENT_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'writeros_project_state'
@@ -80,7 +81,7 @@ export interface ProjectState {
     sourceImport: ProjectSourceImportMetadata | null
     titlePage: TitlePageMetadata
   }
-  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
+  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[]; facts: ScriptFactsCache }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
@@ -180,7 +181,7 @@ export function defaultProjectState(): ProjectState {
       sourceImport: null,
       titlePage: defaultTitlePageMetadata(),
     },
-    script: { rawHtml: '', scenes: [], revisionHistory: [] },
+    script: { rawHtml: '', scenes: [], revisionHistory: [], facts: defaultScriptFactsCache() },
     outline: {
       beatType: 'save-the-cat',
       beats: SAVE_THE_CAT_BEATS.map(b => ({ ...b, notes: '', linkedSceneIds: [] })),
@@ -364,6 +365,7 @@ export function migrateState(raw: unknown): ProjectState {
     rawHtml: typeof rawScript.rawHtml === 'string' ? rawScript.rawHtml : '',
     scenes: Array.isArray(rawScript.scenes) ? (rawScript.scenes as ScriptScene[]) : [],
     revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
+    facts: normalizeScriptFactsCache(rawScript.facts),
   }
 
   if (version < 3 || !rawDocuments || typeof rawDocuments !== 'object') {
@@ -426,6 +428,10 @@ export function saveProjectState(state: ProjectState): void {
       ...state.meta,
       format: projectFormat,
       titlePage: normalizeTitlePageMetadata(state.meta.titlePage),
+    },
+    script: {
+      ...state.script,
+      facts: normalizeScriptFactsCache(state.script.facts),
     },
     documents: {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),

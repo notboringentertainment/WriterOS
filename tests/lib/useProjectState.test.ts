@@ -473,6 +473,68 @@ describe('useProjectState', () => {
     expect(result.current.state.script.scenes).toEqual(scenes)
   })
 
+  it('rebuildScriptFacts stores a timestamped cache from the current script', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript([
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join(''), []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+
+    expect(result.current.state.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+    expect(result.current.state.script.facts.times).toEqual([
+      { label: 'NIGHT', count: 1, blockIndices: [0] },
+    ])
+  })
+
+  it('rebuildScriptFactsFromSnapshot stores live script content and facts together', () => {
+    const { result } = renderHook(() => useProjectState())
+    const scenes: ScriptScene[] = [{ id: 'scene-1', heading: 'INT. ROOM - NIGHT', index: 1 }]
+    const liveRawHtml = [
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join('')
+
+    act(() => result.current.updateScript('<p data-element-type="character">OLD CACHE</p>', []))
+    act(() => result.current.rebuildScriptFactsFromSnapshot(
+      liveRawHtml,
+      scenes,
+      '2026-06-02T10:00:00.000Z'
+    ))
+
+    expect(result.current.state.script.rawHtml).toBe(liveRawHtml)
+    expect(result.current.state.script.scenes).toEqual(scenes)
+    expect(result.current.state.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.script.rawHtml).toBe(liveRawHtml)
+    expect(stored.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+  })
+
+  it('updateScript does not auto-rebuild an existing script facts cache', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript('<p data-element-type="character">MAYA</p>', []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+    const originalHash = result.current.state.script.facts.contentHash
+
+    act(() => result.current.updateScript('<p data-element-type="character">MARCUS</p>', []))
+
+    expect(result.current.state.script.facts.contentHash).toBe(originalHash)
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [0] },
+    ])
+  })
+
   it('updateScript persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.updateScript('<p>persisted</p>', []))
@@ -498,6 +560,36 @@ describe('useProjectState', () => {
 
     expect(result.current.state.meta.title).toBe('First Script')
     expect(result.current.state.script.rawHtml).toBe('<p data-element-type="action">Keep this page.</p>')
+  })
+
+  it('replaceScriptFromImport clears existing script facts cache', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript('<p data-element-type="character">MAYA</p>', []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+    act(() => {
+      result.current.replaceScriptFromImport({
+        title: 'Imported Title',
+        rawHtml: '<p data-element-type="scene-heading">EXT. DOCK - DAWN</p>',
+        scenes: [{ id: 'scene-1', heading: 'EXT. DOCK - DAWN', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Title.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+        },
+      })
+    })
+
+    expect(result.current.state.script.facts).toMatchObject({
+      rebuiltAt: null,
+      characters: [],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [],
+    })
   })
 
   it('createProject from an empty library does not preserve a blank placeholder project', () => {

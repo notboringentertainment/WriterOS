@@ -36,6 +36,7 @@ import {
 import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { createOutlineEpisode } from './outlineDeck'
+import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
 
 export interface ImportedScriptPayload {
   rawHtml: string
@@ -648,6 +649,28 @@ export function useProjectState() {
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
   }, [update])
 
+  const rebuildScriptFacts = useCallback((rebuiltAt?: number | string | Date) => {
+    update(s => ({
+      ...s,
+      script: {
+        ...s.script,
+        facts: rebuildScriptFactsCache(s.script.rawHtml, rebuiltAt ?? Date.now()),
+      },
+    }))
+  }, [update])
+
+  const rebuildScriptFactsFromSnapshot = useCallback((rawHtml: string, scenes: ScriptScene[], rebuiltAt?: number | string | Date) => {
+    update(s => ({
+      ...s,
+      script: {
+        ...s.script,
+        rawHtml,
+        scenes,
+        facts: rebuildScriptFactsCache(rawHtml, rebuiltAt ?? Date.now()),
+      },
+    }))
+  }, [update])
+
   const stateFromImportedScript = useCallback((importedScript: ImportedScriptPayload): ProjectState => {
     const importedState = defaultProjectState()
     return {
@@ -699,6 +722,7 @@ export function useProjectState() {
         ...s.script,
         rawHtml: importedScript.rawHtml,
         scenes: importedScript.scenes,
+        facts: defaultScriptFactsCache(),
       },
     }))
   }, [update])
@@ -822,6 +846,8 @@ export function useProjectState() {
     addMessage,
     clearTranscript,
     updateScript,
+    rebuildScriptFacts,
+    rebuildScriptFactsFromSnapshot,
     createProject,
     createProjectFromImportedScript,
     replaceScriptFromImport,

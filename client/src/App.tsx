@@ -156,6 +156,14 @@ export default function App() {
     [project]
   )
 
+  const handleRebuildScriptFacts = useCallback((snapshot: { rawHtml: string; scenes: ScriptScene[] }) => {
+    latestScriptSnapshotRef.current = {
+      ...latestScriptSnapshotRef.current,
+      ...snapshot,
+    }
+    project.rebuildScriptFactsFromSnapshot(snapshot.rawHtml, snapshot.scenes)
+  }, [project])
+
   const formatFolderProjectError = useCallback((error: unknown) => {
     return error instanceof Error ? error.message : 'Unable to open or save the WriterOS project package.'
   }, [])
@@ -663,6 +671,8 @@ export default function App() {
             onTitlePageChange={project.setTitlePageMetadata}
             onScriptChange={handleScriptChange}
             onScriptSnapshotChange={handleScriptSnapshotChange}
+            scriptFacts={project.state.script.facts}
+            onRebuildScriptFacts={handleRebuildScriptFacts}
             onImportFdx={handleImportFdxAsNewProject}
             onReplaceFdx={handleReplaceScriptFromFdx}
             importingFdx={importingFdx}

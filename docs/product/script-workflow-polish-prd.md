@@ -1,9 +1,9 @@
 # Script Workflow Polish PRD
 
 **Date:** 2026-05-23
-**Last updated:** 2026-05-28
-**Status:** Active — app foundation shipped (storage Slices 4, 5, 5a merged through PR #15); implementation begins with Slice 1: Title Page + Pagination Foundation.
-**Branch context:** `main` @ `132b854`
+**Last updated:** 2026-06-02
+**Status:** Active — Slice 1 title page + pagination foundation merged; Slice 2 begins with the canonical script representation spike.
+**Branch context:** `main` @ `37e1b07`
 **Depends on:** `docs/product/app-home-import-storage-prd.md` (complete)
 **Related docs:** `docs/product/project-identity-script-context-prd.md`, `docs/product/writeros-future-work-prd.md`
 
@@ -38,7 +38,9 @@ Current `main` has:
 - A functional Script surface built on TipTap.
 - Screenplay element types: scene heading, action, character, dialogue, parenthetical, transition.
 - Basic screenplay formatting through CSS margins and Courier-style page layout.
-- Estimated page count in the Script toolbar.
+- Layout-derived page count in the Script toolbar.
+- Title page metadata and read-only title page preview.
+- Visible screenplay page divisions and page numbers.
 - Keyboard flow for Tab, Shift-Tab, Enter, and Backspace element transitions.
 - Scene extraction and script indexing for agent context.
 - File-backed `.writeros` project storage with Home folder viewer.
@@ -47,8 +49,6 @@ Current `main` has:
 
 Current `main` does not have:
 
-- Title page metadata or read-only title page view.
-- Proper screenplay page divisions, page numbers, or layout-derived page count.
 - Derived Script Facts panel (characters / locations / times / transitions).
 - Character or location autocomplete.
 - Script scratchpad/sidebar notes.
@@ -151,6 +151,52 @@ Out of scope for V1:
 Open spike before plan:
 
 - Identify the canonical script representation (TipTap doc JSON vs. serialized form on disk) so the parser walks the right abstraction layer.
+
+### Slice 2a Spike: Canonical Script Representation
+
+Decision date: 2026-06-02
+
+Script Facts should walk a normalized screenplay-block adapter derived from `ProjectState.script.rawHtml`.
+
+`ProjectState.script.rawHtml` is the canonical persisted script draft for Slice 2:
+
+- Native editor edits flow through TipTap, then publish `editor.getHTML()` into `ProjectState.script.rawHtml`.
+- Final Draft import converts `.fdx` paragraphs into the same WriterOS screenplay HTML before project state is created or replaced.
+- File-backed packages write and read `script/script.writeros.html`, then rebuild script scenes and script metadata from that HTML.
+- Existing agent context and pagination already rebuild from the same HTML via `buildScriptIndex` / `paginateScript`.
+
+TipTap doc JSON is the live editor implementation detail, not the Slice 2 storage or parser target. The UI may pass the current editor snapshot HTML into the same adapter before the debounced persisted save lands, but the parser should not grow a separate TipTap JSON path. The original `.fdx` source is also not a parser target; after import, WriterOS script HTML is truth.
+
+Adapter contract for implementation:
+
+- Extract/expose the existing `parseScriptBlocks(rawHtml)` path from `buildScriptIndex` as the shared screenplay-block adapter; do not create a second HTML walk.
+- Block shape: `{ index: number; type: ElementType; text: string }`.
+- `index` preserves source paragraph order, including gaps if empty paragraphs are filtered out.
+- `type` is normalized with `normalizeElementType`; unknown or missing element types become `action`.
+- `text` collapses whitespace and trims, matching current `buildScriptIndex` behavior.
+- Facts, script index, and future autocomplete should consume this adapter instead of each parsing HTML differently.
+
+Staleness hash decision:
+
+- Use a deterministic, local, non-cryptographic content hash over a versioned serialization of normalized screenplay blocks.
+- Recommended implementation: FNV-1a 32-bit rendered as hex, seeded by a prefix such as `script-facts:v1`.
+- The hash is only for stale-cache detection, not security. It should serialize the ordered `{ type, text }` sequence only, not sparse source indices, ids, scenes, or raw HTML. It should change when normalized visible block order, type, or text changes, while ignoring equivalent HTML serialization noise and empty-paragraph churn.
+
+Near-match decision for V1:
+
+- Use deterministic local matching only.
+- Normalize labels to uppercase ASCII-ish text, strip punctuation, collapse whitespace, and compare token strings.
+- Exact normalized equality is a single fact, not a warning.
+- Flag likely duplicates when Levenshtein distance is `<= 2` for normalized strings whose longer label is at least 5 characters, with short labels below 5 characters excluded from edit-distance warnings.
+- For locations, also flag token-set containment where the shorter label's tokens all appear in the longer label with one extra qualifier/time token, so `INT. KITCHEN` vs. `INT. KITCHEN -- NIGHT` is caught even though edit distance is large.
+- Apply near-match warnings only to Characters and Locations in Slice 2 V1.
+
+Implementation staging:
+
+1. Extract/shared-test the screenplay-block adapter and content hash.
+2. Build Script Facts derivation and cache shape from the adapter.
+3. Add project-state persistence/migration for the derived cache.
+4. Add the read-only panel, Rebuild action, stale indicator, and near-match warnings.
 
 Reasoning:
 
