@@ -3,6 +3,7 @@ import {
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_PROJECT_MANIFEST_PATH,
+  WRITEROS_SCRIPT_FACTS_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
   WRITEROS_TITLE_PAGE_PATH,
   WRITEROS_TRANSCRIPT_PATHS,
@@ -11,6 +12,7 @@ import {
   serializeWriterOSProjectPackage,
 } from '../../client/src/lib/projectPackage'
 import { defaultProjectState } from '../../client/src/lib/projectState'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 
 function makeStoredProject(): StoredProject {
@@ -31,6 +33,7 @@ function makeStoredProject(): StoredProject {
     '<p data-element-type="character">MARA</p>',
     '<p data-element-type="dialogue">We keep the signal alive.</p>',
   ].join('')
+  state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
   state.documents.synopsis.content.logline.text = 'A lighthouse keeper finds a message inside the storm.'
   state.agents.writingPartner.transcript = [{
     id: 'message-1',
@@ -62,6 +65,7 @@ describe('WriterOS project packages', () => {
       WRITEROS_DOCUMENT_PATHS.synopsis,
       WRITEROS_DOCUMENT_PATHS.treatment,
       WRITEROS_PROJECT_MANIFEST_PATH,
+      WRITEROS_SCRIPT_FACTS_PATH,
       WRITEROS_SCRIPT_HTML_PATH,
       WRITEROS_TITLE_PAGE_PATH,
       WRITEROS_TRANSCRIPT_PATHS.specialists,
@@ -77,6 +81,10 @@ describe('WriterOS project packages', () => {
       openedAt: '2026-05-03T12:00:00.000Z',
     })
     expect(projectPackage.files[WRITEROS_SCRIPT_HTML_PATH]).toContain('INT. LIGHTHOUSE - NIGHT')
+    expect(JSON.parse(projectPackage.files[WRITEROS_SCRIPT_FACTS_PATH])).toMatchObject({
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      characters: [{ label: 'MARA', count: 1, blockIndices: [2] }],
+    })
     expect(JSON.parse(projectPackage.files[WRITEROS_TITLE_PAGE_PATH])).toMatchObject({
       writtenBy: 'Mara Vale',
       draftLabel: 'Second Draft',
@@ -109,6 +117,10 @@ describe('WriterOS project packages', () => {
     expect(result.project.state.script.scenes).toEqual([
       expect.objectContaining({ heading: 'INT. LIGHTHOUSE - NIGHT', index: 1 }),
     ])
+    expect(result.project.state.script.facts).toMatchObject({
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      characters: [{ label: 'MARA', count: 1, blockIndices: [2] }],
+    })
     expect(result.project.state.documents.synopsis.content.logline.text).toBe(
       'A lighthouse keeper finds a message inside the storm.',
     )
@@ -187,6 +199,7 @@ describe('WriterOS project packages', () => {
     const files = { ...projectPackage.files }
     delete files[WRITEROS_TITLE_PAGE_PATH]
     delete files[WRITEROS_SCRIPT_HTML_PATH]
+    delete files[WRITEROS_SCRIPT_FACTS_PATH]
     delete files[WRITEROS_TRANSCRIPT_PATHS.writingPartner]
     delete files[WRITEROS_TRANSCRIPT_PATHS.specialists]
 
@@ -195,6 +208,11 @@ describe('WriterOS project packages', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error(result.error.message)
     expect(result.project.state.script.rawHtml).toBe('')
+    expect(result.project.state.script.facts).toMatchObject({
+      rebuiltAt: null,
+      characters: [],
+      locations: [],
+    })
     expect(result.project.state.meta.titlePage).toEqual({
       writtenBy: '',
       basedOn: '',
@@ -209,6 +227,26 @@ describe('WriterOS project packages', () => {
       expect.stringContaining(WRITEROS_TRANSCRIPT_PATHS.writingPartner),
       expect.stringContaining(WRITEROS_TRANSCRIPT_PATHS.specialists),
     ]))
+    expect(result.warnings).not.toEqual(expect.arrayContaining([
+      expect.stringContaining(WRITEROS_SCRIPT_FACTS_PATH),
+    ]))
+  })
+
+  it('reports malformed script facts cache without returning a partial project', () => {
+    const projectPackage = serializeWriterOSProjectPackage(makeStoredProject())
+    const files = {
+      ...projectPackage.files,
+      [WRITEROS_SCRIPT_FACTS_PATH]: '{not json',
+    }
+
+    const result = readWriterOSProjectPackage(files)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('Expected package read to fail')
+    expect(result.error).toMatchObject({
+      code: 'invalid-script-facts',
+      path: WRITEROS_SCRIPT_FACTS_PATH,
+    })
   })
 
   it('reports malformed title page metadata without returning a partial project', () => {

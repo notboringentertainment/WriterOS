@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { hashScriptHtml } from '../../client/src/lib/scriptBlocks'
 import {
+  defaultScriptFactsCache,
   deriveScriptFactsFromBlocks,
   deriveScriptFactsFromHtml,
+  isScriptFactsCacheStale,
+  normalizeScriptFactsCache,
+  rebuildScriptFactsCache,
 } from '../../client/src/lib/scriptFacts'
 
 describe('deriveScriptFactsFromHtml', () => {
@@ -135,5 +139,71 @@ describe('deriveScriptFactsFromBlocks', () => {
     expect(facts.transitions).toEqual([
       { label: 'SMASH CUT TO:', count: 1, blockIndices: [9] },
     ])
+  })
+})
+
+describe('script facts cache', () => {
+  it('creates an empty never-rebuilt cache by default', () => {
+    expect(defaultScriptFactsCache()).toEqual({
+      rebuiltAt: null,
+      contentHash: '',
+      characters: [],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [],
+    })
+  })
+
+  it('rebuilds cache with timestamped derived facts', () => {
+    const cache = rebuildScriptFactsCache(
+      '<p data-element-type="character">MAYA</p>',
+      '2026-06-02T10:00:00.000Z',
+    )
+
+    expect(cache.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(cache.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [0] },
+    ])
+    expect(isScriptFactsCacheStale(cache, '<p data-element-type="character">MAYA</p>')).toBe(false)
+    expect(isScriptFactsCacheStale(cache, '<p data-element-type="character">MARCUS</p>')).toBe(true)
+  })
+
+  it('normalizes malformed cache fields safely', () => {
+    const cache = normalizeScriptFactsCache({
+      rebuiltAt: 'not a date',
+      contentHash: 42,
+      characters: [
+        { label: ' MAYA ', count: 1.8, blockIndices: [0, -1, 'bad'] },
+        { label: '', count: 1, blockIndices: [] },
+      ],
+      locations: 'bad',
+      times: [],
+      transitions: [],
+      warnings: [
+        {
+          kind: 'near-match',
+          section: 'characters',
+          labels: ['MAYA', 'MAYO'],
+          reason: 'edit-distance',
+        },
+        { kind: 'near-match', section: 'bad', labels: ['A', 'B'], reason: 'edit-distance' },
+      ],
+    })
+
+    expect(cache).toEqual({
+      rebuiltAt: null,
+      contentHash: '',
+      characters: [{ label: 'MAYA', count: 1, blockIndices: [0] }],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [{
+        kind: 'near-match',
+        section: 'characters',
+        labels: ['MAYA', 'MAYO'],
+        reason: 'edit-distance',
+      }],
+    })
   })
 })

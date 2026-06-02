@@ -1,5 +1,5 @@
 import type { ScriptBlock } from './scriptBlocks'
-import { hashScriptBlocks, parseScriptBlocks } from './scriptBlocks'
+import { hashScriptBlocks, hashScriptHtml, parseScriptBlocks } from './scriptBlocks'
 
 export type ScriptFactSection = 'characters' | 'locations' | 'times' | 'transitions'
 export type NearMatchFactSection = 'characters' | 'locations'
@@ -25,6 +25,10 @@ export interface DerivedScriptFacts {
   times: ScriptFactEntry[]
   transitions: ScriptFactEntry[]
   warnings: ScriptFactWarning[]
+}
+
+export interface ScriptFactsCache extends DerivedScriptFacts {
+  rebuiltAt: string | null
 }
 
 const SCENE_TIME_LABELS = new Set([
@@ -81,6 +85,68 @@ function normalizeCharacterCue(value: string): string {
 
 function normalizeFactKey(value: string): string {
   return normalizeAsciiLabel(value)
+}
+
+function validTimestamp(value: unknown): string | null {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null
+}
+
+function normalizedNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : null
+}
+
+function normalizeFactEntry(value: unknown): ScriptFactEntry | null {
+  if (!value || typeof value !== 'object') return null
+
+  const raw = value as Record<string, unknown>
+  const label = typeof raw.label === 'string' ? normalizeWhitespace(raw.label) : ''
+  const count = normalizedNumber(raw.count)
+  const blockIndices = Array.isArray(raw.blockIndices)
+    ? raw.blockIndices
+      .map(normalizedNumber)
+      .filter((index): index is number => index !== null)
+    : []
+
+  if (!label || count === null) return null
+
+  return {
+    label,
+    count,
+    blockIndices,
+  }
+}
+
+function normalizeFactEntries(value: unknown): ScriptFactEntry[] {
+  return Array.isArray(value)
+    ? value.map(normalizeFactEntry).filter((entry): entry is ScriptFactEntry => entry !== null)
+    : []
+}
+
+function normalizeWarning(value: unknown): ScriptFactWarning | null {
+  if (!value || typeof value !== 'object') return null
+
+  const raw = value as Record<string, unknown>
+  if (raw.kind !== 'near-match') return null
+  if (raw.section !== 'characters' && raw.section !== 'locations') return null
+  if (raw.reason !== 'edit-distance' && raw.reason !== 'token-containment') return null
+  if (!Array.isArray(raw.labels) || raw.labels.length !== 2) return null
+  const labels = raw.labels.map(label => typeof label === 'string' ? normalizeWhitespace(label) : '')
+  if (!labels[0] || !labels[1]) return null
+
+  return {
+    kind: 'near-match',
+    section: raw.section,
+    labels: [labels[0], labels[1]],
+    reason: raw.reason,
+  }
+}
+
+function normalizeWarnings(value: unknown): ScriptFactWarning[] {
+  return Array.isArray(value)
+    ? value.map(normalizeWarning).filter((warning): warning is ScriptFactWarning => warning !== null)
+    : []
 }
 
 function addFact(
@@ -261,4 +327,46 @@ export function deriveScriptFactsFromBlocks(blocks: readonly ScriptBlock[]): Der
 
 export function deriveScriptFactsFromHtml(rawHtml: string): DerivedScriptFacts {
   return deriveScriptFactsFromBlocks(parseScriptBlocks(rawHtml))
+}
+
+export function defaultScriptFactsCache(): ScriptFactsCache {
+  return {
+    rebuiltAt: null,
+    contentHash: '',
+    characters: [],
+    locations: [],
+    times: [],
+    transitions: [],
+    warnings: [],
+  }
+}
+
+export function rebuildScriptFactsCache(rawHtml: string, rebuiltAt: number | string | Date = Date.now()): ScriptFactsCache {
+  const derivedFacts = deriveScriptFactsFromHtml(rawHtml)
+  const rebuiltAtDate = rebuiltAt instanceof Date ? rebuiltAt : new Date(rebuiltAt)
+  const rebuiltAtTime = rebuiltAtDate.getTime()
+
+  return {
+    rebuiltAt: new Date(Number.isFinite(rebuiltAtTime) ? rebuiltAtTime : Date.now()).toISOString(),
+    ...derivedFacts,
+  }
+}
+
+export function normalizeScriptFactsCache(value: unknown): ScriptFactsCache {
+  if (!value || typeof value !== 'object') return defaultScriptFactsCache()
+
+  const raw = value as Record<string, unknown>
+  return {
+    rebuiltAt: validTimestamp(raw.rebuiltAt),
+    contentHash: typeof raw.contentHash === 'string' ? raw.contentHash : '',
+    characters: normalizeFactEntries(raw.characters),
+    locations: normalizeFactEntries(raw.locations),
+    times: normalizeFactEntries(raw.times),
+    transitions: normalizeFactEntries(raw.transitions),
+    warnings: normalizeWarnings(raw.warnings),
+  }
+}
+
+export function isScriptFactsCacheStale(cache: ScriptFactsCache, rawHtml: string): boolean {
+  return Boolean(cache.rebuiltAt) && cache.contentHash !== hashScriptHtml(rawHtml)
 }

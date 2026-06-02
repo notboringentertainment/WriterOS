@@ -13,6 +13,7 @@ import {
 import { buildScriptIndex } from './scriptIndex'
 import type { AgentId, ProjectSourceImportMetadata, ProjectState, ScriptScene, TitlePageMetadata, TranscriptMessage } from './projectState'
 import type { StoredProject } from './projectLibrary'
+import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
 
 export const WRITEROS_PACKAGE_EXTENSION = '.writeros'
 export const WRITEROS_PACKAGE_SCHEMA_VERSION = 1
@@ -20,6 +21,7 @@ export const WRITEROS_APP_VERSION = '0.2.0'
 
 export const WRITEROS_PROJECT_MANIFEST_PATH = 'project.json'
 export const WRITEROS_SCRIPT_HTML_PATH = 'script/script.writeros.html'
+export const WRITEROS_SCRIPT_FACTS_PATH = 'script/script-facts.json'
 export const WRITEROS_IMPORTED_FDX_SOURCE_PATH = 'script/imported-source.fdx'
 export const WRITEROS_TITLE_PAGE_PATH = 'metadata/title-page.json'
 export const WRITEROS_DOCUMENT_PATHS = {
@@ -63,6 +65,29 @@ export const WriterOSProjectManifestSchema = z.object({
 
 export type WriterOSProjectManifest = z.infer<typeof WriterOSProjectManifestSchema>
 
+const ScriptFactEntrySchema = z.object({
+  label: z.string(),
+  count: z.number(),
+  blockIndices: z.array(z.number()),
+})
+
+const ScriptFactWarningSchema = z.object({
+  kind: z.literal('near-match'),
+  section: z.enum(['characters', 'locations']),
+  labels: z.tuple([z.string(), z.string()]),
+  reason: z.enum(['edit-distance', 'token-containment']),
+})
+
+const ScriptFactsCacheSchema: z.ZodType<ScriptFactsCache> = z.object({
+  rebuiltAt: TimestampStringSchema.nullable(),
+  contentHash: z.string(),
+  characters: z.array(ScriptFactEntrySchema),
+  locations: z.array(ScriptFactEntrySchema),
+  times: z.array(ScriptFactEntrySchema),
+  transitions: z.array(ScriptFactEntrySchema),
+  warnings: z.array(ScriptFactWarningSchema),
+})
+
 export interface WriterOSProjectPackage {
   manifest: WriterOSProjectManifest
   files: Record<string, string>
@@ -80,6 +105,7 @@ export type ProjectPackageErrorCode =
   | 'invalid-manifest'
   | 'invalid-document'
   | 'invalid-title-page'
+  | 'invalid-script-facts'
   | 'invalid-transcript'
 
 export interface ProjectPackageReadError {
@@ -232,6 +258,7 @@ export function serializeWriterOSProjectPackage(
     [WRITEROS_PROJECT_MANIFEST_PATH]: stringifyPackageJson(manifest),
     [WRITEROS_TITLE_PAGE_PATH]: stringifyPackageJson(state.meta.titlePage),
     [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
+    [WRITEROS_SCRIPT_FACTS_PATH]: stringifyPackageJson(normalizeScriptFactsCache(state.script.facts)),
     [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
     [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
     [WRITEROS_DOCUMENT_PATHS.treatment]: stringifyPackageJson(state.documents.treatment),
@@ -375,25 +402,27 @@ function parseOptionalJson<T>(
   path: string,
   schema: z.ZodType<T>,
   fallback: T,
+  options: { errorCode?: ProjectPackageErrorCode; missingWarning?: string } = {},
 ): { ok: true; value: T; warning?: string } | { ok: false; error: ProjectPackageReadError } {
   const raw = files[path]
   if (typeof raw !== 'string') {
     return {
       ok: true,
       value: fallback,
-      warning: `${path} is missing; using an empty transcript.`,
+      ...(options.missingWarning ? { warning: options.missingWarning } : {}),
     }
   }
 
   const parsedJson = parseJsonFile(path, raw)
-  if (!parsedJson.ok) return { ok: false, error: { ...parsedJson.error, code: 'invalid-transcript' } }
+  const errorCode = options.errorCode ?? 'invalid-transcript'
+  if (!parsedJson.ok) return { ok: false, error: { ...parsedJson.error, code: errorCode } }
 
   const parsed = schema.safeParse(parsedJson.value)
   if (!parsed.success) {
     return {
       ok: false,
       error: {
-        code: 'invalid-transcript',
+        code: errorCode,
         path,
         message: zodMessage(parsed.error),
       },
@@ -422,6 +451,10 @@ export function readWriterOSProjectPackage(
     WRITEROS_TRANSCRIPT_PATHS.writingPartner,
     WritingPartnerAgentSchema,
     defaults.agents.writingPartner,
+    {
+      errorCode: 'invalid-transcript',
+      missingWarning: `${WRITEROS_TRANSCRIPT_PATHS.writingPartner} is missing; using an empty transcript.`,
+    },
   )
   if (!writingPartnerResult.ok) return { ok: false, error: writingPartnerResult.error, warnings }
   if (writingPartnerResult.warning) warnings.push(writingPartnerResult.warning)
@@ -431,6 +464,10 @@ export function readWriterOSProjectPackage(
     WRITEROS_TRANSCRIPT_PATHS.specialists,
     SpecialistAgentsSchema,
     specialistAgentsFromState(defaults),
+    {
+      errorCode: 'invalid-transcript',
+      missingWarning: `${WRITEROS_TRANSCRIPT_PATHS.specialists} is missing; using an empty transcript.`,
+    },
   )
   if (!specialistResult.ok) return { ok: false, error: specialistResult.error, warnings }
   if (specialistResult.warning) warnings.push(specialistResult.warning)
@@ -441,6 +478,14 @@ export function readWriterOSProjectPackage(
   }
   const rawHtml = scriptHtml ?? ''
   const scriptMeta = scriptMetaFromHtml(rawHtml)
+  const scriptFactsResult = parseOptionalJson(
+    files,
+    WRITEROS_SCRIPT_FACTS_PATH,
+    ScriptFactsCacheSchema,
+    defaultScriptFactsCache(),
+    { errorCode: 'invalid-script-facts' },
+  )
+  if (!scriptFactsResult.ok) return { ok: false, error: scriptFactsResult.error, warnings }
   const legacy = documentsToLegacy(documentResult.documents, { outlineFormat: manifestResult.manifest.format })
 
   const state = migrateState({
@@ -461,6 +506,7 @@ export function readWriterOSProjectPackage(
       rawHtml,
       scenes: scriptScenesFromHtml(rawHtml),
       revisionHistory: [],
+      facts: normalizeScriptFactsCache(scriptFactsResult.value),
     },
     documents: documentResult.documents,
     synopsis: legacy.synopsis,
