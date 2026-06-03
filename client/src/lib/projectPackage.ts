@@ -14,6 +14,7 @@ import { buildScriptIndex } from './scriptIndex'
 import type { AgentId, ProjectSourceImportMetadata, ProjectState, ScriptScene, TitlePageMetadata, TranscriptMessage } from './projectState'
 import type { StoredProject } from './projectLibrary'
 import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
+import { defaultScratchpadState, normalizeScratchpadState, type ScratchpadState } from './scriptScratchpad'
 
 export const WRITEROS_PACKAGE_EXTENSION = '.writeros'
 export const WRITEROS_PACKAGE_SCHEMA_VERSION = 1
@@ -22,6 +23,7 @@ export const WRITEROS_APP_VERSION = '0.2.0'
 export const WRITEROS_PROJECT_MANIFEST_PATH = 'project.json'
 export const WRITEROS_SCRIPT_HTML_PATH = 'script/script.writeros.html'
 export const WRITEROS_SCRIPT_FACTS_PATH = 'script/script-facts.json'
+export const WRITEROS_SCRIPT_SCRATCHPAD_PATH = 'script/scratchpad.json'
 export const WRITEROS_IMPORTED_FDX_SOURCE_PATH = 'script/imported-source.fdx'
 export const WRITEROS_TITLE_PAGE_PATH = 'metadata/title-page.json'
 export const WRITEROS_DOCUMENT_PATHS = {
@@ -88,6 +90,23 @@ const ScriptFactsCacheSchema: z.ZodType<ScriptFactsCache> = z.object({
   warnings: z.array(ScriptFactWarningSchema),
 })
 
+const ScratchpadPinnedSceneSchema = z.object({
+  heading: z.string(),
+  index: z.number(),
+})
+
+const ScratchpadItemSchema = z.object({
+  id: z.string(),
+  type: z.enum(['text', 'bullet', 'task']),
+  text: z.string(),
+  checked: z.boolean(),
+  pinnedScene: ScratchpadPinnedSceneSchema.nullable(),
+})
+
+const ScratchpadStateSchema: z.ZodType<ScratchpadState> = z.object({
+  items: z.array(ScratchpadItemSchema),
+})
+
 export interface WriterOSProjectPackage {
   manifest: WriterOSProjectManifest
   files: Record<string, string>
@@ -106,6 +125,7 @@ export type ProjectPackageErrorCode =
   | 'invalid-document'
   | 'invalid-title-page'
   | 'invalid-script-facts'
+  | 'invalid-script-scratchpad'
   | 'invalid-transcript'
 
 export interface ProjectPackageReadError {
@@ -259,6 +279,7 @@ export function serializeWriterOSProjectPackage(
     [WRITEROS_TITLE_PAGE_PATH]: stringifyPackageJson(state.meta.titlePage),
     [WRITEROS_SCRIPT_HTML_PATH]: state.script.rawHtml,
     [WRITEROS_SCRIPT_FACTS_PATH]: stringifyPackageJson(normalizeScriptFactsCache(state.script.facts)),
+    [WRITEROS_SCRIPT_SCRATCHPAD_PATH]: stringifyPackageJson(normalizeScratchpadState(state.script.scratchpad)),
     [WRITEROS_DOCUMENT_PATHS.synopsis]: stringifyPackageJson(state.documents.synopsis),
     [WRITEROS_DOCUMENT_PATHS.outline]: stringifyPackageJson(state.documents.outline),
     [WRITEROS_DOCUMENT_PATHS.treatment]: stringifyPackageJson(state.documents.treatment),
@@ -491,6 +512,19 @@ export function readWriterOSProjectPackage(
   if (!scriptFactsResult.ok) {
     warnings.push(`${WRITEROS_SCRIPT_FACTS_PATH} is invalid; using an empty Script Facts cache.`)
   }
+  const scratchpadResult = parseOptionalJson(
+    files,
+    WRITEROS_SCRIPT_SCRATCHPAD_PATH,
+    ScratchpadStateSchema,
+    defaultScratchpadState(),
+    { errorCode: 'invalid-script-scratchpad' },
+  )
+  const scratchpadState = scratchpadResult.ok
+    ? scratchpadResult.value
+    : defaultScratchpadState()
+  if (!scratchpadResult.ok) {
+    warnings.push(`${WRITEROS_SCRIPT_SCRATCHPAD_PATH} is invalid; using an empty scratchpad.`)
+  }
   const legacy = documentsToLegacy(documentResult.documents, { outlineFormat: manifestResult.manifest.format })
 
   const state = migrateState({
@@ -512,6 +546,7 @@ export function readWriterOSProjectPackage(
       scenes: scriptScenesFromHtml(rawHtml),
       revisionHistory: [],
       facts: normalizeScriptFactsCache(scriptFactsCache),
+      scratchpad: normalizeScratchpadState(scratchpadState),
     },
     documents: documentResult.documents,
     synopsis: legacy.synopsis,

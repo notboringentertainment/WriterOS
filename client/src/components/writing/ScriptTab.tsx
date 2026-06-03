@@ -5,6 +5,7 @@ import { ScreenplayToolbar } from './screenplay/ScreenplayToolbar'
 import { SceneGutter } from './screenplay/SceneGutter'
 import { TitlePagePanel } from './TitlePagePanel'
 import { ScriptFactsPanel } from './ScriptFactsPanel'
+import { ScriptScratchpadPanel } from './ScriptScratchpadPanel'
 import { ElementType } from '../../lib/screenplay'
 import type { ScriptScene, TitlePageMetadata } from '../../lib/projectState'
 import type { ScriptFocusState } from '../../lib/scriptIndex'
@@ -12,6 +13,19 @@ import { stripScriptHtmlFallback } from '../../lib/scriptIndex'
 import { hashScriptHtml } from '../../lib/scriptBlocks'
 import type { ScriptFactsCache, ScriptFactSection, ScriptFactWarning } from '../../lib/scriptFacts'
 import { liveScriptBlocksFromDoc, resolveFactOccurrences } from '../../lib/scriptFactNavigation'
+import {
+  addScratchpadItem,
+  currentSceneFromHeadings,
+  pinScratchpadItem,
+  removeScratchpadItem,
+  setScratchpadItemType,
+  toggleScratchpadItem,
+  unpinScratchpadItem,
+  updateScratchpadItemText,
+  type ScratchpadItemType,
+  type ScratchpadPinnedScene,
+  type ScratchpadState,
+} from '../../lib/scriptScratchpad'
 import type { ProjectFormat } from '@shared/projectFormat'
 
 interface SceneHeading {
@@ -33,6 +47,8 @@ interface ScriptTabProps {
   onScriptSnapshotChange?: (snapshot: { rawHtml: string; scenes: ScriptScene[]; focus?: ScriptFocusState }) => void
   scriptFacts?: ScriptFactsCache
   onRebuildScriptFacts?: (snapshot: { rawHtml: string; scenes: ScriptScene[] }) => void
+  scratchpad?: ScratchpadState
+  onScratchpadChange?: (updater: (scratchpad: ScratchpadState) => ScratchpadState) => void
   onEditorReady?: (editor: Editor) => void
   onImportFdx?: (file: File) => void | Promise<void>
   onReplaceFdx?: (file: File) => void | Promise<void>
@@ -54,6 +70,8 @@ export function ScriptTab({
   onScriptSnapshotChange,
   scriptFacts,
   onRebuildScriptFacts,
+  scratchpad,
+  onScratchpadChange,
   onEditorReady,
   onImportFdx,
   onReplaceFdx,
@@ -192,6 +210,65 @@ export function ScriptTab({
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  const resolveCurrentScene = useCallback((): ScratchpadPinnedScene | null => {
+    const headings = scenesRef.current
+    if (headings.length === 0) return null
+    const cursorPos = editorRef.current?.state.selection.from ?? 0
+    return (
+      currentSceneFromHeadings(headings, cursorPos) ??
+      { heading: headings[0].text, index: headings[0].index }
+    )
+  }, [])
+
+  const handleAddScratchpadItem = useCallback(
+    (type: ScratchpadItemType) => onScratchpadChange?.(s => addScratchpadItem(s, type)),
+    [onScratchpadChange]
+  )
+
+  const handleChangeScratchpadItemText = useCallback(
+    (id: string, text: string) => onScratchpadChange?.(s => updateScratchpadItemText(s, id, text)),
+    [onScratchpadChange]
+  )
+
+  const handleChangeScratchpadItemType = useCallback(
+    (id: string, type: ScratchpadItemType) => onScratchpadChange?.(s => setScratchpadItemType(s, id, type)),
+    [onScratchpadChange]
+  )
+
+  const handleToggleScratchpadItem = useCallback(
+    (id: string) => onScratchpadChange?.(s => toggleScratchpadItem(s, id)),
+    [onScratchpadChange]
+  )
+
+  const handleRemoveScratchpadItem = useCallback(
+    (id: string) => onScratchpadChange?.(s => removeScratchpadItem(s, id)),
+    [onScratchpadChange]
+  )
+
+  const handlePinScratchpadItem = useCallback(
+    (id: string) => {
+      const scene = resolveCurrentScene()
+      if (!scene) return
+      onScratchpadChange?.(s => pinScratchpadItem(s, id, scene))
+    },
+    [onScratchpadChange, resolveCurrentScene]
+  )
+
+  const handleUnpinScratchpadItem = useCallback(
+    (id: string) => onScratchpadChange?.(s => unpinScratchpadItem(s, id)),
+    [onScratchpadChange]
+  )
+
+  const handleGoToPinnedScene = useCallback(
+    (scene: ScratchpadPinnedScene) => {
+      const heading =
+        scenesRef.current.find(h => h.index === scene.index) ??
+        scenesRef.current.find(h => h.text === scene.heading)
+      if (heading) handleSceneClick(heading.nodePos)
+    },
+    [handleSceneClick]
+  )
+
   const handleImportFdxFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -291,6 +368,20 @@ export function ScriptTab({
               onRebuild={handleRebuildScriptFacts}
               onNavigateFact={handleNavigateFact}
               onStepWarning={handleStepWarning}
+            />
+          )}
+          {scratchpad && onScratchpadChange && !focusMode && (
+            <ScriptScratchpadPanel
+              scratchpad={scratchpad}
+              canPin={scenes.length > 0}
+              onAddItem={handleAddScratchpadItem}
+              onChangeItemText={handleChangeScratchpadItemText}
+              onChangeItemType={handleChangeScratchpadItemType}
+              onToggleItem={handleToggleScratchpadItem}
+              onRemoveItem={handleRemoveScratchpadItem}
+              onPinItem={handlePinScratchpadItem}
+              onUnpinItem={handleUnpinScratchpadItem}
+              onGoToPinnedScene={handleGoToPinnedScene}
             />
           )}
         </div>

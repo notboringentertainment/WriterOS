@@ -37,6 +37,7 @@ import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacy
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { createOutlineEpisode } from './outlineDeck'
 import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
+import type { ScratchpadState } from './scriptScratchpad'
 
 export interface ImportedScriptPayload {
   rawHtml: string
@@ -671,6 +672,13 @@ export function useProjectState() {
     }))
   }, [update])
 
+  const setScriptScratchpad = useCallback((updater: (scratchpad: ScratchpadState) => ScratchpadState) => {
+    update(s => ({
+      ...s,
+      script: { ...s.script, scratchpad: updater(s.script.scratchpad) },
+    }))
+  }, [update])
+
   const stateFromImportedScript = useCallback((importedScript: ImportedScriptPayload): ProjectState => {
     const importedState = defaultProjectState()
     return {
@@ -848,6 +856,7 @@ export function useProjectState() {
     updateScript,
     rebuildScriptFacts,
     rebuildScriptFactsFromSnapshot,
+    setScriptScratchpad,
     createProject,
     createProjectFromImportedScript,
     replaceScriptFromImport,

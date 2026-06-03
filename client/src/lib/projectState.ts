@@ -12,6 +12,7 @@ import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documen
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
+import { defaultScratchpadState, normalizeScratchpadState, type ScratchpadState } from './scriptScratchpad'
 
 export const CURRENT_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'writeros_project_state'
@@ -81,7 +82,7 @@ export interface ProjectState {
     sourceImport: ProjectSourceImportMetadata | null
     titlePage: TitlePageMetadata
   }
-  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[]; facts: ScriptFactsCache }
+  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[]; facts: ScriptFactsCache; scratchpad: ScratchpadState }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
@@ -181,7 +182,7 @@ export function defaultProjectState(): ProjectState {
       sourceImport: null,
       titlePage: defaultTitlePageMetadata(),
     },
-    script: { rawHtml: '', scenes: [], revisionHistory: [], facts: defaultScriptFactsCache() },
+    script: { rawHtml: '', scenes: [], revisionHistory: [], facts: defaultScriptFactsCache(), scratchpad: defaultScratchpadState() },
     outline: {
       beatType: 'save-the-cat',
       beats: SAVE_THE_CAT_BEATS.map(b => ({ ...b, notes: '', linkedSceneIds: [] })),
@@ -366,6 +367,7 @@ export function migrateState(raw: unknown): ProjectState {
     scenes: Array.isArray(rawScript.scenes) ? (rawScript.scenes as ScriptScene[]) : [],
     revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
     facts: normalizeScriptFactsCache(rawScript.facts),
+    scratchpad: normalizeScratchpadState(rawScript.scratchpad),
   }
 
   if (version < 3 || !rawDocuments || typeof rawDocuments !== 'object') {
@@ -432,6 +434,7 @@ export function saveProjectState(state: ProjectState): void {
     script: {
       ...state.script,
       facts: normalizeScriptFactsCache(state.script.facts),
+      scratchpad: normalizeScratchpadState(state.script.scratchpad),
     },
     documents: {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),

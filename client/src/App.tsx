@@ -673,6 +673,8 @@ export default function App() {
             onScriptSnapshotChange={handleScriptSnapshotChange}
             scriptFacts={project.state.script.facts}
             onRebuildScriptFacts={handleRebuildScriptFacts}
+            scratchpad={project.state.script.scratchpad}
+            onScratchpadChange={project.setScriptScratchpad}
             onImportFdx={handleImportFdxAsNewProject}
             onReplaceFdx={handleReplaceScriptFromFdx}
             importingFdx={importingFdx}
