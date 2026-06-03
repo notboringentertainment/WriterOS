@@ -43,7 +43,7 @@ Current `main` has:
 - Visible screenplay page divisions and page numbers.
 - Keyboard flow for Tab, Shift-Tab, Enter, and Backspace element transitions.
 - Scene extraction and script indexing for agent context.
-- Script Facts derivation, persistence, stale indicator, near-match warnings, and Rebuild action.
+- Script Facts derivation, persistence, stale indicator, near-match warnings, and Scan action.
 - Current Script Facts routing into Writer's Room / Writing Partner context.
 - Script Facts editor utility: click-to-navigate, repeated-click cycling, and assisted-manual warning step-through from the live editor document.
 - File-backed `.writeros` project storage with Home folder viewer.
@@ -134,11 +134,11 @@ It is rebuilt from the current WriterOS script (the canonical draft), not from t
 
 V1 behavior:
 
-- A "Rebuild Script Facts" action scans the current script and refreshes derived lists.
+- A "Scan Script Facts" action scans the current script and refreshes derived lists.
 - Panel displays four sections: Characters, Locations, Times, Transitions.
 - Each entry shows count of occurrences.
 - Near-match warnings flag likely duplicates (e.g. `MARCUS` vs `MARCOS`, `INT. KITCHEN` vs `INT. KITCHEN -- NIGHT`).
-- Derived facts persist as cache with `rebuiltAt` timestamp and a script-content hash so the panel can show "stale — script changed since last rebuild."
+- Derived facts persist as cache with `rebuiltAt` timestamp and a script-content hash so the panel can show "stale — script changed since last scan."
 - Panel is read-only. No manual editing of facts. No mutation of script content.
 - Agents may read facts as grounding context once a later integration explicitly opts in.
 
@@ -147,7 +147,7 @@ Out of scope for V1:
 - Manual fact editing.
 - Autocomplete (separate Slice 5).
 - Agent write-back / agent-driven script edits.
-- Auto-rebuild on every keystroke (explicit Rebuild button only; stale indicator is enough).
+- Auto-scan on every keystroke (explicit Scan button only; stale indicator is enough).
 - Cross-project facts.
 
 Open spike before plan:
@@ -198,13 +198,13 @@ Implementation staging:
 1. Extract/shared-test the screenplay-block adapter and content hash.
 2. Build Script Facts derivation and cache shape from the adapter.
 3. Add project-state persistence/migration for the derived cache.
-4. Add the read-only panel, Rebuild action, stale indicator, and near-match warnings.
+4. Add the read-only panel, Scan action, stale indicator, and near-match warnings.
 
 Shipped follow-ons:
 
 - Script Facts now feed Writer's Room / Writing Partner context only when current.
 - The panel now supports live-document click-to-navigate, repeated-click cycling, clearer warning reasons, and assisted-manual warning step-through.
-- Explicit Rebuild remains intentional; "stale" means the derived facts cache no longer matches the current script and should not drive navigation or AI context until refreshed.
+- Explicit Scan remains intentional; "stale" means the derived facts cache no longer matches the current script and should not drive navigation or AI context until refreshed.
 
 Reasoning:
 
@@ -355,8 +355,8 @@ This order ships visible metadata and trustworthy page awareness first, then der
 
 **Slice 2 — Script Facts:**
 - Script Facts panel displays characters, locations, times, transitions derived from the current script.
-- Rebuild action refreshes the derived store and updates `rebuiltAt`.
-- Panel shows a "stale" indicator when script content hash diverges from the rebuilt hash.
+- Scan action refreshes the derived store and updates `rebuiltAt`.
+- Panel shows a "stale" indicator when script content hash diverges from the cached scan hash.
 - Near-match warnings appear for likely-duplicate characters or locations.
 - Native (non-imported) projects produce the same panel as imported projects.
 

@@ -50,7 +50,7 @@ describe('ScriptFactsPanel interactivity', () => {
     expect(onStepWarning).toHaveBeenCalledTimes(1)
   })
 
-  it('disables interactivity and shows a rebuild hint when stale', () => {
+  it('disables interactivity and shows a scan hint when stale', () => {
     const facts = currentFacts()
     render(
       <ScriptFactsPanel
@@ -62,6 +62,6 @@ describe('ScriptFactsPanel interactivity', () => {
       />,
     )
     expect(screen.queryByRole('button', { name: /^SARA$/ })).toBeNull()
-    expect(screen.getByText(/rebuild to navigate/i)).toBeInTheDocument()
+    expect(screen.getByText(/scan to navigate/i)).toBeInTheDocument()
   })
 })

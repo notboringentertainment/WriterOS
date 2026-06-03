@@ -28,11 +28,11 @@ export function ScriptFactsPanel({
         </div>
         <button
           type="button"
-          aria-label="Rebuild Script Facts"
+          aria-label="Scan current script for Script Facts"
           style={styles.rebuildButton}
           onClick={onRebuild}
         >
-          Rebuild
+          Scan
         </button>
       </div>
 
@@ -41,7 +41,7 @@ export function ScriptFactsPanel({
       )}
 
       {!interactive && (
-        <div style={styles.navHint}>Rebuild to navigate</div>
+        <div style={styles.navHint}>Scan to navigate</div>
       )}
 
       {facts.warnings.length > 0 && (
@@ -126,9 +126,11 @@ function FactSection({
                 <button
                   type="button"
                   style={styles.factButton}
+                  title={`Find ${entry.label} in script`}
                   onClick={() => onNavigate(section, entry.label)}
                 >
                   {entry.label}
+                  <span aria-hidden="true" style={styles.factButtonIcon}>&gt;</span>
                 </button>
               ) : (
                 <span style={styles.factLabel}>{entry.label}</span>
@@ -160,11 +162,6 @@ function formatTimestamp(value: string): string {
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 252,
-    flexShrink: 0,
-    alignSelf: 'flex-start',
-    borderLeft: '1px solid var(--border)',
-    padding: '4px 0 24px 16px',
     color: 'var(--fg-muted)',
     fontFamily: 'var(--font-body)',
   },
@@ -274,18 +271,29 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--fg-subtle)',
   },
   factButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
     minWidth: 0,
     overflowWrap: 'anywhere',
     textAlign: 'left',
-    background: 'none',
-    border: 'none',
-    padding: 0,
+    background: 'var(--surface-2)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '3px 6px',
     margin: 0,
     cursor: 'pointer',
-    color: 'var(--fg-muted)',
+    color: 'var(--fg)',
     fontFamily: 'var(--font-body)',
     fontSize: 12,
     lineHeight: 1.35,
+  },
+  factButtonIcon: {
+    flexShrink: 0,
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
   },
   stepButton: {
     marginTop: 4,

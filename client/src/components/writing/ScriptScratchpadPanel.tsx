@@ -195,11 +195,6 @@ function ScratchpadItemRow({
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 252,
-    flexShrink: 0,
-    alignSelf: 'flex-start',
-    borderLeft: '1px solid var(--border)',
-    padding: '4px 0 24px 16px',
     color: 'var(--fg-muted)',
     fontFamily: 'var(--font-body)',
   },

@@ -367,28 +367,32 @@ export function ScriptTab({
             onSceneHeadingsChange={handleSceneHeadingsChange}
             onContentSnapshotChange={handleContentSnapshotChange}
           />
-          {scriptFacts && onRebuildScriptFacts && !focusMode && (
-            <ScriptFactsPanel
-              facts={scriptFacts}
-              currentContentHash={currentScriptHash}
-              onRebuild={handleRebuildScriptFacts}
-              onNavigateFact={handleNavigateFact}
-              onStepWarning={handleStepWarning}
-            />
-          )}
-          {scratchpad && onScratchpadChange && !focusMode && (
-            <ScriptScratchpadPanel
-              scratchpad={scratchpad}
-              canPin={scenes.length > 0}
-              onAddItem={handleAddScratchpadItem}
-              onChangeItemText={handleChangeScratchpadItemText}
-              onChangeItemType={handleChangeScratchpadItemType}
-              onToggleItem={handleToggleScratchpadItem}
-              onRemoveItem={handleRemoveScratchpadItem}
-              onPinItem={handlePinScratchpadItem}
-              onUnpinItem={handleUnpinScratchpadItem}
-              onGoToPinnedScene={handleGoToPinnedScene}
-            />
+          {!focusMode && (
+            <div style={styles.rightRail} aria-label="Script side panels">
+              {scriptFacts && onRebuildScriptFacts && (
+                <ScriptFactsPanel
+                  facts={scriptFacts}
+                  currentContentHash={currentScriptHash}
+                  onRebuild={handleRebuildScriptFacts}
+                  onNavigateFact={handleNavigateFact}
+                  onStepWarning={handleStepWarning}
+                />
+              )}
+              {scratchpad && onScratchpadChange && (
+                <ScriptScratchpadPanel
+                  scratchpad={scratchpad}
+                  canPin={scenes.length > 0}
+                  onAddItem={handleAddScratchpadItem}
+                  onChangeItemText={handleChangeScratchpadItemText}
+                  onChangeItemType={handleChangeScratchpadItemType}
+                  onToggleItem={handleToggleScratchpadItem}
+                  onRemoveItem={handleRemoveScratchpadItem}
+                  onPinItem={handlePinScratchpadItem}
+                  onUnpinItem={handleUnpinScratchpadItem}
+                  onGoToPinnedScene={handleGoToPinnedScene}
+                />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -467,6 +471,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'flex-start',
     gap: 8,
+  },
+  rightRail: {
+    width: 276,
+    maxHeight: 'calc(100vh - 32px)',
+    overflowY: 'auto',
+    flexShrink: 0,
+    position: 'sticky',
+    top: 16,
+    alignSelf: 'flex-start',
+    display: 'grid',
+    gap: 18,
+    borderLeft: '1px solid var(--border)',
+    padding: '4px 0 24px 16px',
+    scrollbarGutter: 'stable',
   },
   importNotice: {
     width: 816,

@@ -265,7 +265,7 @@ describe('ScriptTab', () => {
     act(() => {
       editor!.commands.insertContent('Fresh visible line')
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Rebuild Script Facts' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Scan current script for Script Facts' }))
 
     await waitFor(() => {
       const latestRebuild = onRebuildScriptFacts.mock.calls.at(-1)?.[0]
