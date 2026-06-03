@@ -1,5 +1,7 @@
 # Slice 4 — Script Facts Editor Utility Implementation Plan
 
+> **Status:** Implemented and merged via PR #22 on 2026-06-03. Remaining unchecked boxes are historical plan steps, not pending product work.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Script Facts panel useful in the editor — clearer near-match warnings, click-to-navigate to a fact's occurrences, and an assisted-manual merge stepper — without mutating the script or persisting aliases.

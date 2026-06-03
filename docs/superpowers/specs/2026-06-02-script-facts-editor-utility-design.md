@@ -1,8 +1,8 @@
 # Slice 4 — Make Script Facts Useful in the Editor (Design)
 
-> **Status:** Design approved 2026-06-02. Next step: writing-plans → implementation.
+> **Status:** Implemented and merged via PR #22 on 2026-06-03.
 > **Predecessors:** Slice 2 (Script Facts Panel, PR #20), Slice 3 (Script Facts → AI context routing, PR #21).
-> **Branch (planned):** `slice-4-script-facts-editor-utility`.
+> **Branch:** `slice-4-script-facts-editor-utility` (merged and deleted).
 
 ## Goal
 

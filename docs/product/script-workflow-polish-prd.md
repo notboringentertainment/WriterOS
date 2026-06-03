@@ -1,9 +1,9 @@
 # Script Workflow Polish PRD
 
 **Date:** 2026-05-23
-**Last updated:** 2026-06-02
-**Status:** Active — Slice 1 title page + pagination foundation merged; Slice 2 begins with the canonical script representation spike.
-**Branch context:** `main` @ `37e1b07`
+**Last updated:** 2026-06-03
+**Status:** Active — Slice 1 and Script Facts shipped; next open product slices are Scratchpad, Script Status/Locking, and Autocomplete.
+**Branch context:** `main` @ `d83f7a3`
 **Depends on:** `docs/product/app-home-import-storage-prd.md` (complete)
 **Related docs:** `docs/product/project-identity-script-context-prd.md`, `docs/product/writeros-future-work-prd.md`
 
@@ -25,11 +25,11 @@ With the foundation stable, this PRD's slices improve writer flow without turnin
 
 This PRD owns five features, listed in implementation order:
 
-1. **Title page + pagination foundation** (Slice 1) — establishes professional script metadata and gives writers trustworthy page breaks, page numbers, and page count.
-2. **Script Facts panel** (Slice 2) — rebuild-from-script derivation of characters, locations, times, transitions; foundational for agent grounding and later autocomplete.
-3. **Script scratchpad sidebar** (Slice 3) — persistent script-adjacent notes.
-4. **Script locking/status flag** (Slice 4) — conservative readiness state.
-5. **Character/location autocomplete** (Slice 5) — editor-flow polish; depends on Script Facts.
+1. **Title page + pagination foundation** (Slice 1, shipped) — establishes professional script metadata and gives writers trustworthy page breaks, page numbers, and page count.
+2. **Script Facts panel** (Slice 2, shipped) — rebuild-from-script derivation of characters, locations, times, transitions; foundational for agent grounding and later autocomplete.
+3. **Script scratchpad sidebar** (Slice 3, open) — persistent script-adjacent notes.
+4. **Script locking/status flag** (Slice 4, open) — conservative readiness state.
+5. **Character/location autocomplete** (Slice 5, open) — editor-flow polish; depends on Script Facts.
 
 ## Current State
 
@@ -43,13 +43,15 @@ Current `main` has:
 - Visible screenplay page divisions and page numbers.
 - Keyboard flow for Tab, Shift-Tab, Enter, and Backspace element transitions.
 - Scene extraction and script indexing for agent context.
+- Script Facts derivation, persistence, stale indicator, near-match warnings, and Rebuild action.
+- Current Script Facts routing into Writer's Room / Writing Partner context.
+- Script Facts editor utility: click-to-navigate, repeated-click cycling, and assisted-manual warning step-through from the live editor document.
 - File-backed `.writeros` project storage with Home folder viewer.
 - Functional `.fdx` import populating script content.
 - Show in Folder / Duplicate package actions.
 
 Current `main` does not have:
 
-- Derived Script Facts panel (characters / locations / times / transitions).
 - Character or location autocomplete.
 - Script scratchpad/sidebar notes.
 - Script lock/readiness state.
@@ -198,6 +200,12 @@ Implementation staging:
 3. Add project-state persistence/migration for the derived cache.
 4. Add the read-only panel, Rebuild action, stale indicator, and near-match warnings.
 
+Shipped follow-ons:
+
+- Script Facts now feed Writer's Room / Writing Partner context only when current.
+- The panel now supports live-document click-to-navigate, repeated-click cycling, clearer warning reasons, and assisted-manual warning step-through.
+- Explicit Rebuild remains intentional; "stale" means the derived facts cache no longer matches the current script and should not drive navigation or AI context until refreshed.
+
 Reasoning:
 
 Script Facts is infrastructure, not a writer-facing feature in isolation. It validates the rebuild-from-source pattern for derived data, gives agents clean grounding for future work, surfaces real writing issues (name drift) immediately, and seeds Slice 5 autocomplete with deterministic local data.
@@ -317,12 +325,14 @@ Feature-specific dependencies:
 
 ## Implementation Sequence
 
-1. **Slice 1: Title Page + Pagination Foundation** — 1a metadata schema/settings/preview, 1b pagination architecture spike, 1c visible page divisions/page numbers/layout-derived page count.
-2. **Slice 2: Script Facts** — canonical-script spike, parser, derived store with `rebuiltAt` + content hash, read-only panel, duplicate warnings, Rebuild button.
-3. **Slice 3: Scratchpad** — persistent sidebar, rich text, checkboxes, optional scene pin.
-4. **Slice 4: Status flag** — script status metadata, visible controls, project-metadata exposure.
-5. **Slice 5: Autocomplete** — character/location suggestions sourced from Script Facts and Story Bible.
+1. **Slice 1: Title Page + Pagination Foundation** — shipped: 1a metadata schema/settings/preview, 1b pagination architecture spike, 1c visible page divisions/page numbers/layout-derived page count.
+2. **Slice 2: Script Facts** — shipped: canonical-script spike, parser, derived store with `rebuiltAt` + content hash, read-only panel, duplicate warnings, Rebuild button, current-facts AI context, and editor navigation utility.
+3. **Slice 3: Scratchpad** — open: persistent sidebar, rich text, checkboxes, optional scene pin.
+4. **Slice 4: Status flag** — open: script status metadata, visible controls, project-metadata exposure.
+5. **Slice 5: Autocomplete** — open: character/location suggestions sourced from Script Facts and Story Bible.
 6. **Later:** connect title page metadata and script page model into export when export pipeline exists.
+
+Numbering note: the Script Facts editor utility plan/PR used "Slice 4" locally, but it is part of the shipped Script Facts workstream in this PRD. The open PRD Slice 4 remains the Script Status flag.
 
 This order ships visible metadata and trustworthy page awareness first, then derived infrastructure, then writing aids, then state, then editor-flow polish.
 
