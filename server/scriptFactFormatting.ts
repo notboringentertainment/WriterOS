@@ -34,9 +34,13 @@ export function compactFactEntries(entries: ScriptFactFormattingEntry[], limit =
 export function scriptFactLines(script: ScriptFactsForFormatting): string[] {
   if (!script.facts) return []
 
+  const characters = compactFactEntries(script.facts.characters)
+  const locations = compactFactEntries(script.facts.locations)
+  const times = compactFactEntries(script.facts.times)
+
   return [
-    compactFactEntries(script.facts.characters) && `Script Fact characters: ${compactFactEntries(script.facts.characters)}`,
-    compactFactEntries(script.facts.locations) && `Script Fact locations: ${compactFactEntries(script.facts.locations)}`,
-    compactFactEntries(script.facts.times) && `Script Fact times: ${compactFactEntries(script.facts.times)}`,
+    characters && `Script Fact characters: ${characters}`,
+    locations && `Script Fact locations: ${locations}`,
+    times && `Script Fact times: ${times}`,
   ].filter(filled)
 }
