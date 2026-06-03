@@ -1,14 +1,23 @@
 import React from 'react'
-import type { ScriptFactEntry, ScriptFactsCache, ScriptFactWarning } from '../../lib/scriptFacts'
+import type { ScriptFactEntry, ScriptFactSection, ScriptFactsCache, ScriptFactWarning } from '../../lib/scriptFacts'
 
 interface ScriptFactsPanelProps {
   facts: ScriptFactsCache
   currentContentHash: string
   onRebuild: () => void
+  onNavigateFact?: (section: ScriptFactSection, label: string) => void
+  onStepWarning?: (warning: ScriptFactWarning) => void
 }
 
-export function ScriptFactsPanel({ facts, currentContentHash, onRebuild }: ScriptFactsPanelProps) {
+export function ScriptFactsPanel({
+  facts,
+  currentContentHash,
+  onRebuild,
+  onNavigateFact,
+  onStepWarning,
+}: ScriptFactsPanelProps) {
   const status = statusForFacts(facts, currentContentHash)
+  const interactive = status.label === 'Current'
 
   return (
     <aside aria-label="Script Facts" style={styles.panel}>
@@ -31,25 +40,44 @@ export function ScriptFactsPanel({ facts, currentContentHash, onRebuild }: Scrip
         <div style={styles.rebuiltAt}>Rebuilt {formatTimestamp(facts.rebuiltAt)}</div>
       )}
 
+      {!interactive && (
+        <div style={styles.navHint}>Rebuild to navigate</div>
+      )}
+
       {facts.warnings.length > 0 && (
         <section style={styles.section} aria-label="Script Facts warnings">
           <h3 style={styles.sectionTitle}>Warnings</h3>
           <ul style={styles.warningList}>
             {facts.warnings.map(warning => (
               <li key={warningKey(warning)} style={styles.warningItem}>
-                {warning.labels[0]} / {warning.labels[1]}
+                <span>
+                  {warning.labels[0]} / {warning.labels[1]} — {warningReason(warning)}
+                </span>
+                {interactive && onStepWarning && (
+                  <button
+                    type="button"
+                    style={styles.stepButton}
+                    onClick={() => onStepWarning(warning)}
+                  >
+                    Step through
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <FactSection title="Characters" entries={facts.characters} />
-      <FactSection title="Locations" entries={facts.locations} />
-      <FactSection title="Times" entries={facts.times} />
-      <FactSection title="Transitions" entries={facts.transitions} />
+      <FactSection title="Characters" section="characters" entries={facts.characters} interactive={interactive} onNavigate={onNavigateFact} />
+      <FactSection title="Locations" section="locations" entries={facts.locations} interactive={interactive} onNavigate={onNavigateFact} />
+      <FactSection title="Times" section="times" entries={facts.times} interactive={interactive} onNavigate={onNavigateFact} />
+      <FactSection title="Transitions" section="transitions" entries={facts.transitions} interactive={interactive} onNavigate={onNavigateFact} />
     </aside>
   )
+}
+
+function warningReason(warning: ScriptFactWarning): string {
+  return warning.reason === 'edit-distance' ? 'possible typo' : 'one name contains the other'
 }
 
 function statusForFacts(facts: ScriptFactsCache, currentContentHash: string) {
@@ -62,7 +90,19 @@ function statusForFacts(facts: ScriptFactsCache, currentContentHash: string) {
     : { label: 'Stale', color: 'var(--danger, #b45309)' }
 }
 
-function FactSection({ title, entries }: { title: string; entries: ScriptFactEntry[] }) {
+function FactSection({
+  title,
+  section,
+  entries,
+  interactive,
+  onNavigate,
+}: {
+  title: string
+  section: ScriptFactSection
+  entries: ScriptFactEntry[]
+  interactive: boolean
+  onNavigate?: (section: ScriptFactSection, label: string) => void
+}) {
   return (
     <section style={styles.section} aria-label={`Script Facts ${title}`}>
       <h3 style={styles.sectionTitle}>{title}</h3>
@@ -72,7 +112,17 @@ function FactSection({ title, entries }: { title: string; entries: ScriptFactEnt
         <ul style={styles.factList}>
           {entries.map(entry => (
             <li key={entry.label} style={styles.factItem}>
-              <span style={styles.factLabel}>{entry.label}</span>
+              {interactive && onNavigate ? (
+                <button
+                  type="button"
+                  style={styles.factButton}
+                  onClick={() => onNavigate(section, entry.label)}
+                >
+                  {entry.label}
+                </button>
+              ) : (
+                <span style={styles.factLabel}>{entry.label}</span>
+              )}
               <span style={styles.count}>{entry.count}</span>
             </li>
           ))}
@@ -196,6 +246,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4,
   },
   warningItem: {
+    display: 'flex',
+    flexDirection: 'column',
     color: 'var(--fg)',
     fontSize: 12,
     lineHeight: 1.35,
@@ -204,5 +256,37 @@ const styles: Record<string, React.CSSProperties> = {
   empty: {
     color: 'var(--fg-subtle)',
     fontSize: 12,
+  },
+  navHint: {
+    marginBottom: 8,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    color: 'var(--fg-subtle)',
+  },
+  factButton: {
+    minWidth: 0,
+    overflowWrap: 'anywhere',
+    textAlign: 'left',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    margin: 0,
+    cursor: 'pointer',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-body)',
+    fontSize: 12,
+    lineHeight: 1.35,
+  },
+  stepButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    background: 'none',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    padding: '2px 6px',
+    cursor: 'pointer',
   },
 }
