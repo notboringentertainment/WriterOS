@@ -75,9 +75,6 @@ Expected: FAIL — `normalizeCharacterCue is not exported` (or `is not a functio
 In `client/src/lib/scriptFacts.ts`, change these three function declarations from `function` to `export function` (leave bodies untouched):
 
 ```ts
-export function stripCharacterCueDecorations(value: string): string {
-```
-```ts
 export function normalizeCharacterCue(value: string): string {
 ```
 ```ts
@@ -86,8 +83,6 @@ export function normalizeFactKey(value: string): string {
 ```ts
 export function extractSceneTimes(sceneHeading: string): string[] {
 ```
-
-(`stripCharacterCueDecorations` is exported too because `normalizeCharacterCue` is the only consumer we need, but exporting it costs nothing and documents intent; if a lint rule forbids unused exports, drop it.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
