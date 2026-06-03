@@ -10,7 +10,8 @@ import type { ScriptScene, TitlePageMetadata } from '../../lib/projectState'
 import type { ScriptFocusState } from '../../lib/scriptIndex'
 import { stripScriptHtmlFallback } from '../../lib/scriptIndex'
 import { hashScriptHtml } from '../../lib/scriptBlocks'
-import type { ScriptFactsCache } from '../../lib/scriptFacts'
+import type { ScriptFactsCache, ScriptFactSection, ScriptFactWarning } from '../../lib/scriptFacts'
+import { liveScriptBlocksFromDoc, resolveFactOccurrences } from '../../lib/scriptFactNavigation'
 import type { ProjectFormat } from '@shared/projectFormat'
 
 interface SceneHeading {
@@ -70,6 +71,7 @@ export function ScriptTab({
   const editorRef = useRef<Editor | null>(null)
   const scenesRef = useRef<SceneHeading[]>([])
   const scriptHashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navCursorRef = useRef<{ key: string; index: number } | null>(null)
   const importFdxInputRef = useRef<HTMLInputElement>(null)
   const replaceFdxInputRef = useRef<HTMLInputElement>(null)
 
@@ -141,6 +143,49 @@ export function ScriptTab({
       scenes: currentScriptScenes(),
     })
   }, [currentScriptScenes, initialScript, onRebuildScriptFacts])
+
+  const focusEditorPosition = useCallback((editor: Editor, pos: number) => {
+    editor.chain().setTextSelection(pos + 1).scrollIntoView().focus().run()
+    highlightEditorPosition(editor, pos)
+  }, [])
+
+  const cycleToPositions = useCallback(
+    (key: string, positions: number[]) => {
+      const editor = editorRef.current
+      if (!editor || positions.length === 0) return
+
+      const cursor = navCursorRef.current
+      const index = cursor && cursor.key === key ? (cursor.index + 1) % positions.length : 0
+      navCursorRef.current = { key, index }
+      focusEditorPosition(editor, positions[index])
+    },
+    [focusEditorPosition]
+  )
+
+  const handleNavigateFact = useCallback(
+    (section: ScriptFactSection, label: string) => {
+      const editor = editorRef.current
+      if (!editor) return
+      const blocks = liveScriptBlocksFromDoc(editor.state.doc)
+      const positions = resolveFactOccurrences(blocks, { section, label })
+      cycleToPositions(`fact:${section}:${label}`, positions)
+    },
+    [cycleToPositions]
+  )
+
+  const handleStepWarning = useCallback(
+    (warning: ScriptFactWarning) => {
+      const editor = editorRef.current
+      if (!editor) return
+      const blocks = liveScriptBlocksFromDoc(editor.state.doc)
+      const positions = [
+        ...resolveFactOccurrences(blocks, { section: warning.section, label: warning.labels[0] }),
+        ...resolveFactOccurrences(blocks, { section: warning.section, label: warning.labels[1] }),
+      ].sort((a, b) => a - b)
+      cycleToPositions(`warning:${warning.section}:${warning.labels.join('|')}`, positions)
+    },
+    [cycleToPositions]
+  )
 
   const handleSceneClick = useCallback((nodePos: number) => {
     const el = document.querySelector(`[data-node-pos="${nodePos}"]`) as HTMLElement | null
@@ -244,6 +289,8 @@ export function ScriptTab({
               facts={scriptFacts}
               currentContentHash={currentScriptHash}
               onRebuild={handleRebuildScriptFacts}
+              onNavigateFact={handleNavigateFact}
+              onStepWarning={handleStepWarning}
             />
           )}
         </div>
@@ -289,6 +336,16 @@ function scriptScenesFromHeadings(headings: SceneHeading[]): ScriptScene[] {
     heading: h.text,
     index: i + 1,
   }))
+}
+
+function highlightEditorPosition(editor: Editor, pos: number): void {
+  const dom = editor.view.nodeDOM(pos)
+  if (!(dom instanceof HTMLElement)) return
+  dom.style.transition = 'background-color 0.6s ease'
+  dom.style.backgroundColor = 'var(--accent-soft, rgba(47, 143, 91, 0.18))'
+  window.setTimeout(() => {
+    dom.style.backgroundColor = ''
+  }, 1200)
 }
 
 const styles: Record<string, React.CSSProperties> = {
