@@ -4,7 +4,10 @@ import {
   defaultScriptFactsCache,
   deriveScriptFactsFromBlocks,
   deriveScriptFactsFromHtml,
+  extractSceneTimes,
   isScriptFactsCacheStale,
+  normalizeCharacterCue,
+  normalizeFactKey,
   normalizeScriptFactsCache,
   rebuildScriptFactsCache,
 } from '../../client/src/lib/scriptFacts'
@@ -218,5 +221,21 @@ describe('script facts cache', () => {
         reason: 'edit-distance',
       }],
     })
+  })
+})
+
+describe('scriptFacts keying normalizers (exported for navigation reuse)', () => {
+  it('normalizeCharacterCue strips cue decorations and uppercases', () => {
+    expect(normalizeCharacterCue("ISAIAH (CONT'D)")).toBe('ISAIAH')
+    expect(normalizeCharacterCue('  isaiah  ')).toBe('ISAIAH')
+  })
+
+  it('normalizeFactKey folds punctuation/case to a stable key', () => {
+    expect(normalizeFactKey('Int. Safehouse - Night')).toBe('INT SAFEHOUSE NIGHT')
+  })
+
+  it('extractSceneTimes returns recognized trailing time labels', () => {
+    expect(extractSceneTimes('INT. SAFEHOUSE - NIGHT')).toEqual(['NIGHT'])
+    expect(extractSceneTimes('EXT. FREEWAY - DAWN')).toEqual(['DAWN'])
   })
 })

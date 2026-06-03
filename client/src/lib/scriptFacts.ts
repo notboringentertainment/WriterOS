@@ -79,11 +79,11 @@ function stripCharacterCueDecorations(value: string): string {
   return normalized
 }
 
-function normalizeCharacterCue(value: string): string {
+export function normalizeCharacterCue(value: string): string {
   return normalizeAsciiLabel(stripCharacterCueDecorations(value))
 }
 
-function normalizeFactKey(value: string): string {
+export function normalizeFactKey(value: string): string {
   return normalizeAsciiLabel(value)
 }
 
@@ -187,7 +187,7 @@ function orderedFacts(facts: Map<string, ScriptFactEntry>): ScriptFactEntry[] {
   ))
 }
 
-function extractSceneTimes(sceneHeading: string): string[] {
+export function extractSceneTimes(sceneHeading: string): string[] {
   const normalizedHeading = normalizeWhitespace(sceneHeading)
   if (!normalizedHeading) return []
 
