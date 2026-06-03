@@ -207,8 +207,15 @@ export function ScriptTab({
   )
 
   const handleSceneClick = useCallback((nodePos: number) => {
-    const el = document.querySelector(`[data-node-pos="${nodePos}"]`) as HTMLElement | null
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const editor = editorRef.current
+    if (!editor) return
+    // Resolve the live DOM node from the ProseMirror position rather than a
+    // `data-node-pos` attribute (which nothing emits). Mirrors the Script Facts
+    // navigation path's use of `editor.view.nodeDOM`.
+    const dom = editor.view.nodeDOM(nodePos)
+    if (dom instanceof HTMLElement) {
+      dom.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }, [])
 
   const resolveCurrentScene = useCallback((): ScratchpadPinnedScene | null => {

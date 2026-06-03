@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ScriptTab } from '../../client/src/components/writing/ScriptTab'
@@ -9,6 +9,22 @@ const TWO_SCENES =
   "<p data-element-type='action'>She enters.</p>" +
   "<p data-element-type='scene-heading'>EXT. PARK - NIGHT</p>" +
   "<p data-element-type='action'>Later.</p>"
+
+// jsdom does not implement scrollIntoView, so install a recording stub that
+// captures the text of the element each call scrolls to.
+function captureScrollTargets(): { targets: string[]; restore: () => void } {
+  const targets: string[] = []
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+    targets.push((this.textContent ?? '').trim())
+  }
+  return {
+    targets,
+    restore: () => {
+      HTMLElement.prototype.scrollIntoView = original
+    },
+  }
+}
 
 function ScriptTabScratchpadHarness() {
   const [scratchpad, setScratchpad] = useState<ScratchpadState>(defaultScratchpadState)
@@ -81,37 +97,38 @@ describe('ScriptTab scratchpad integration', () => {
     render(<PinnedHarness />)
 
     // The scene gutter populates from the editor once it mounts.
-    const kitchenGutter = await screen.findByTitle('INT. KITCHEN - DAY')
-    const parkGutter = screen.getByTitle('EXT. PARK - NIGHT')
+    await screen.findByTitle('INT. KITCHEN - DAY')
 
-    const qs = vi.spyOn(document, 'querySelector')
-    const lastNodePosSelector = () => {
-      const calls = qs.mock.calls.filter(
-        c => typeof c[0] === 'string' && (c[0] as string).startsWith('[data-node-pos='),
-      )
-      return calls.at(-1)?.[0]
+    // Capture the live element each scroll targets (jsdom stubs scrollIntoView).
+    const scroll = captureScrollTargets()
+
+    try {
+      // Following the pin: stored index is 2 (now PARK's slot), but resolution
+      // must follow the heading text back to KITCHEN and scroll there.
+      fireEvent.click(screen.getByRole('button', { name: 'Go to INT. KITCHEN - DAY' }))
+
+      expect(scroll.targets).toHaveLength(1)
+      expect(scroll.targets[0]).toContain('INT. KITCHEN - DAY')
+      expect(scroll.targets[0]).not.toContain('EXT. PARK - NIGHT')
+    } finally {
+      scroll.restore()
     }
+  })
 
-    // Capture the selector each scene scrolls to, by clicking its gutter marker.
-    qs.mockClear()
-    fireEvent.click(kitchenGutter)
-    const kitchenSelector = lastNodePosSelector()
+  it('scrolls the live scene element when a scene gutter marker is clicked', async () => {
+    render(<ScriptTabScratchpadHarness />)
 
-    qs.mockClear()
-    fireEvent.click(parkGutter)
-    const parkSelector = lastNodePosSelector()
+    const sceneMarker = await screen.findByTitle('INT. KITCHEN - DAY')
 
-    // Now follow the pin. Stored index is 2 (now PARK's slot), but resolution
-    // must follow the heading text back to KITCHEN.
-    qs.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: 'Go to INT. KITCHEN - DAY' }))
-    const pinSelector = lastNodePosSelector()
+    const scroll = captureScrollTargets()
 
-    qs.mockRestore()
-
-    expect(kitchenSelector).toBeDefined()
-    expect(parkSelector).not.toBe(kitchenSelector)
-    expect(pinSelector).toBe(kitchenSelector)
+    try {
+      fireEvent.click(sceneMarker)
+      expect(scroll.targets).toHaveLength(1)
+      expect(scroll.targets[0]).toContain('INT. KITCHEN - DAY')
+    } finally {
+      scroll.restore()
+    }
   })
 
   it('hides the scratchpad panel in focus mode', () => {
