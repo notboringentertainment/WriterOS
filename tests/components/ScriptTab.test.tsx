@@ -352,3 +352,67 @@ describe('ScriptTab', () => {
     expect(screen.getByText('Unknown Final Draft paragraph type "New Act" imported as Action.')).toBeInTheDocument()
   })
 })
+
+describe('ScriptTab script facts navigation', () => {
+  const noop = () => {}
+
+  async function mountWithFacts(html: string) {
+    const facts = rebuildScriptFactsCache(html, '2026-06-02T10:00:00.000Z')
+    let editor: Editor | null = null
+    render(
+      <ScriptTab
+        initialScript={html}
+        scriptFacts={facts}
+        onRebuildScriptFacts={noop}
+        onEditorReady={(e) => { editor = e }}
+      />,
+    )
+    await waitFor(() => expect(editor).toBeTruthy())
+    return { editor: editor as unknown as Editor }
+  }
+
+  it('navigates the editor selection to a clicked fact occurrence', async () => {
+    const { editor } = await mountWithFacts(
+      '<p data-element-type="character">ISAIAH</p><p data-element-type="dialogue">Hi.</p>',
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /^ISAIAH$/ }))
+    expect(editor.state.selection.$from.parent.textContent).toBe('ISAIAH')
+  })
+
+  // REQUIRED (design spec): empty paragraph before a fact, cache still current,
+  // navigation must land on the real occurrence — not the empty paragraph.
+  it('lands on the correct occurrence when an empty paragraph precedes it', async () => {
+    const { editor } = await mountWithFacts(
+      '<p data-element-type="action"></p><p data-element-type="character">ISAIAH</p>',
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /^ISAIAH$/ }))
+    expect(editor.state.selection.$from.parent.textContent).toBe('ISAIAH')
+  })
+
+  it('cycles through repeated occurrences on repeated clicks', async () => {
+    const { editor } = await mountWithFacts(
+      '<p data-element-type="scene-heading">INT. ROOM - DAY</p>' +
+      '<p data-element-type="action">Beat.</p>' +
+      '<p data-element-type="scene-heading">INT. ROOM - DAY</p>',
+    )
+    const button = await screen.findByRole('button', { name: /^INT\. ROOM - DAY$/ })
+    fireEvent.click(button)
+    const first = editor.state.selection.from
+    fireEvent.click(button)
+    const second = editor.state.selection.from
+    expect(second).not.toBe(first)
+  })
+
+  it('steps through both labels of a near-match warning in document order', async () => {
+    const { editor } = await mountWithFacts(
+      '<p data-element-type="character">SARA</p>' +
+      '<p data-element-type="dialogue">One.</p>' +
+      '<p data-element-type="character">SARAH</p>',
+    )
+    const stepButton = await screen.findByRole('button', { name: /step through/i })
+    fireEvent.click(stepButton)
+    expect(editor.state.selection.$from.parent.textContent).toBe('SARA')
+    fireEvent.click(stepButton)
+    expect(editor.state.selection.$from.parent.textContent).toBe('SARAH')
+  })
+})
