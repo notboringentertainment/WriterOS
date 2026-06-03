@@ -56,6 +56,7 @@ export function ScriptFactsPanel({
                 {interactive && onStepWarning && (
                   <button
                     type="button"
+                    aria-label={`Step through ${warning.labels[0]} and ${warning.labels[1]}`}
                     style={styles.stepButton}
                     onClick={() => onStepWarning(warning)}
                   >
@@ -77,7 +78,16 @@ export function ScriptFactsPanel({
 }
 
 function warningReason(warning: ScriptFactWarning): string {
-  return warning.reason === 'edit-distance' ? 'possible typo' : 'one name contains the other'
+  switch (warning.reason) {
+    case 'edit-distance':
+      return 'possible typo'
+    case 'token-containment':
+      return 'one name contains the other'
+    default: {
+      const _exhaustive: never = warning.reason
+      return _exhaustive
+    }
+  }
 }
 
 function statusForFacts(facts: ScriptFactsCache, currentContentHash: string) {
