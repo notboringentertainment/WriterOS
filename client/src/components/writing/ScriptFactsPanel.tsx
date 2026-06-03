@@ -17,31 +17,37 @@ export function ScriptFactsPanel({
   onStepWarning,
 }: ScriptFactsPanelProps) {
   const status = statusForFacts(facts, currentContentHash)
-  const interactive = status.label === 'Current'
+  const interactive = status.kind === 'scanned'
 
   return (
     <aside aria-label="Script Facts" style={styles.panel}>
       <div style={styles.header}>
         <div>
           <h2 style={styles.title}>Script Facts</h2>
-          <span style={{ ...styles.status, color: status.color }}>{status.label}</span>
         </div>
         <button
           type="button"
-          aria-label="Scan current script for Script Facts"
-          style={styles.rebuildButton}
+          aria-label={status.actionLabel}
+          aria-pressed={interactive}
+          title={status.actionLabel}
+          style={{
+            ...styles.scanToggle,
+            ...(status.kind === 'scanned' ? styles.scanToggleScanned : {}),
+            ...(status.kind === 'needs-scan' ? styles.scanToggleNeeded : {}),
+          }}
           onClick={onRebuild}
         >
-          Scan
+          <span aria-hidden="true" style={styles.scanToggleDot} />
+          {status.buttonLabel}
         </button>
       </div>
 
       {facts.rebuiltAt && (
-        <div style={styles.rebuiltAt}>Rebuilt {formatTimestamp(facts.rebuiltAt)}</div>
+        <div style={styles.rebuiltAt}>Scanned {formatTimestamp(facts.rebuiltAt)}</div>
       )}
 
       {!interactive && (
-        <div style={styles.navHint}>Scan to navigate</div>
+        <div style={styles.navHint}>{status.hint}</div>
       )}
 
       {facts.warnings.length > 0 && (
@@ -92,12 +98,27 @@ function warningReason(warning: ScriptFactWarning): string {
 
 function statusForFacts(facts: ScriptFactsCache, currentContentHash: string) {
   if (!facts.rebuiltAt) {
-    return { label: 'Not rebuilt', color: 'var(--fg-subtle)' }
+    return {
+      kind: 'not-scanned' as const,
+      buttonLabel: 'Not scanned',
+      actionLabel: 'Scan current script for Script Facts',
+      hint: 'Scan to navigate',
+    }
   }
 
   return facts.contentHash === currentContentHash
-    ? { label: 'Current', color: 'var(--accent, #2f8f5b)' }
-    : { label: 'Stale', color: 'var(--danger, #b45309)' }
+    ? {
+        kind: 'scanned' as const,
+        buttonLabel: 'Scanned',
+        actionLabel: 'Script Facts scanned; scan again',
+        hint: '',
+      }
+    : {
+        kind: 'needs-scan' as const,
+        buttonLabel: 'Needs scan',
+        actionLabel: 'Script changed; scan Script Facts again',
+        hint: 'Script changed. Scan again to navigate',
+      }
 }
 
 function FactSection({
@@ -180,23 +201,33 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     lineHeight: 1.2,
   },
-  status: {
-    display: 'block',
-    marginTop: 3,
-    fontFamily: 'var(--font-mono)',
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0,
-  },
-  rebuildButton: {
-    background: 'none',
+  scanToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'var(--surface-2)',
     border: '1px solid var(--border)',
     borderRadius: 6,
     color: 'var(--fg-muted)',
     fontFamily: 'var(--font-mono)',
     fontSize: 11,
-    padding: '3px 8px',
+    padding: '3px 8px 3px 7px',
     cursor: 'pointer',
+  },
+  scanToggleScanned: {
+    borderColor: 'var(--accent, #2f8f5b)',
+    color: 'var(--accent, #2f8f5b)',
+  },
+  scanToggleNeeded: {
+    borderColor: 'var(--danger, #b45309)',
+    color: 'var(--danger, #b45309)',
+  },
+  scanToggleDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    background: 'currentColor',
+    flexShrink: 0,
   },
   rebuiltAt: {
     marginBottom: 8,

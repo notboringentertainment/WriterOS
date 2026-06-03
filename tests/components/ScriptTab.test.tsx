@@ -175,7 +175,7 @@ describe('ScriptTab', () => {
     )
 
     const panel = screen.getByRole('complementary', { name: 'Script Facts' })
-    expect(within(panel).getByText('Current')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Script Facts scanned; scan again' })).toHaveTextContent('Scanned')
     expect(within(panel).getByText('MAYA')).toBeInTheDocument()
     expect(within(panel).getByText('INT. ROOM - NIGHT')).toBeInTheDocument()
     expect(within(panel).getByText('NIGHT')).toBeInTheDocument()
@@ -196,7 +196,7 @@ describe('ScriptTab', () => {
     )
 
     const panel = screen.getByRole('complementary', { name: 'Script Facts' })
-    expect(within(panel).getByText('Stale')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Script changed; scan Script Facts again' })).toHaveTextContent('Needs scan')
   })
 
   it('debounces stale hash updates after editor changes', async () => {
@@ -218,14 +218,14 @@ describe('ScriptTab', () => {
 
     await waitFor(() => expect(onEditorReady).toHaveBeenCalledOnce())
     const panel = screen.getByRole('complementary', { name: 'Script Facts' })
-    expect(within(panel).getByText('Current')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Script Facts scanned; scan again' })).toHaveTextContent('Scanned')
 
     act(() => {
       editor!.commands.insertContent(' CHANGED')
     })
 
-    expect(within(panel).getByText('Current')).toBeInTheDocument()
-    await waitFor(() => expect(within(panel).getByText('Stale')).toBeInTheDocument(), {
+    expect(within(panel).getByRole('button', { name: 'Script Facts scanned; scan again' })).toHaveTextContent('Scanned')
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Script changed; scan Script Facts again' })).toHaveTextContent('Needs scan'), {
       timeout: 1500,
     })
   })

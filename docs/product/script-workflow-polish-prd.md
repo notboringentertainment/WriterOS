@@ -134,7 +134,7 @@ It is rebuilt from the current WriterOS script (the canonical draft), not from t
 
 V1 behavior:
 
-- A "Scan Script Facts" action scans the current script and refreshes derived lists.
+- A stateful "Scan Script Facts" control moves from "Not scanned" / "Needs scan" to "Scanned" and refreshes derived lists.
 - Panel displays four sections: Characters, Locations, Times, Transitions.
 - Each entry shows count of occurrences.
 - Near-match warnings flag likely duplicates (e.g. `MARCUS` vs `MARCOS`, `INT. KITCHEN` vs `INT. KITCHEN -- NIGHT`).
@@ -326,7 +326,7 @@ Feature-specific dependencies:
 ## Implementation Sequence
 
 1. **Slice 1: Title Page + Pagination Foundation** — shipped: 1a metadata schema/settings/preview, 1b pagination architecture spike, 1c visible page divisions/page numbers/layout-derived page count.
-2. **Slice 2: Script Facts** — shipped: canonical-script spike, parser, derived store with `rebuiltAt` + content hash, read-only panel, duplicate warnings, Rebuild button, current-facts AI context, and editor navigation utility.
+2. **Slice 2: Script Facts** — shipped: canonical-script spike, parser, derived store with `rebuiltAt` + content hash, read-only panel, duplicate warnings, stateful Scan control, current-facts AI context, and editor navigation utility.
 3. **Slice 3: Scratchpad** — open: persistent sidebar, rich text, checkboxes, optional scene pin.
 4. **Slice 4: Status flag** — open: script status metadata, visible controls, project-metadata exposure.
 5. **Slice 5: Autocomplete** — open: character/location suggestions sourced from Script Facts and Story Bible.
@@ -356,7 +356,7 @@ This order ships visible metadata and trustworthy page awareness first, then der
 **Slice 2 — Script Facts:**
 - Script Facts panel displays characters, locations, times, transitions derived from the current script.
 - Scan action refreshes the derived store and updates `rebuiltAt`.
-- Panel shows a "stale" indicator when script content hash diverges from the cached scan hash.
+- Panel shows a "Needs scan" state when script content hash diverges from the cached scan hash.
 - Near-match warnings appear for likely-duplicate characters or locations.
 - Native (non-imported) projects produce the same panel as imported projects.
 

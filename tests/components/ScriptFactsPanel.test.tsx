@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ScriptFactsPanel } from '../../client/src/components/writing/ScriptFactsPanel'
-import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
+import { defaultScriptFactsCache, rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 
 // Two near-matched characters → produces an edit-distance warning.
 const HTML = [
@@ -16,6 +16,24 @@ function currentFacts() {
 }
 
 describe('ScriptFactsPanel interactivity', () => {
+  it('shows the scan state as a toggle-style control before scanning', () => {
+    const onRebuild = vi.fn()
+    render(
+      <ScriptFactsPanel
+        facts={defaultScriptFactsCache()}
+        currentContentHash="empty"
+        onRebuild={onRebuild}
+      />,
+    )
+
+    const scanToggle = screen.getByRole('button', { name: 'Scan current script for Script Facts' })
+    expect(scanToggle).toHaveTextContent('Not scanned')
+    expect(scanToggle).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(scanToggle)
+    expect(onRebuild).toHaveBeenCalledTimes(1)
+  })
+
   it('renders fact rows as buttons when current and calls onNavigateFact', () => {
     const facts = currentFacts()
     const onNavigateFact = vi.fn()
@@ -28,6 +46,10 @@ describe('ScriptFactsPanel interactivity', () => {
         onStepWarning={() => {}}
       />,
     )
+    const scanToggle = screen.getByRole('button', { name: 'Script Facts scanned; scan again' })
+    expect(scanToggle).toHaveTextContent('Scanned')
+    expect(scanToggle).toHaveAttribute('aria-pressed', 'true')
+
     const saraButton = screen.getByRole('button', { name: /^SARA$/ })
     fireEvent.click(saraButton)
     expect(onNavigateFact).toHaveBeenCalledWith('characters', 'SARA')
@@ -61,7 +83,8 @@ describe('ScriptFactsPanel interactivity', () => {
         onStepWarning={() => {}}
       />,
     )
+    expect(screen.getByRole('button', { name: 'Script changed; scan Script Facts again' })).toHaveTextContent('Needs scan')
     expect(screen.queryByRole('button', { name: /^SARA$/ })).toBeNull()
-    expect(screen.getByText(/scan to navigate/i)).toBeInTheDocument()
+    expect(screen.getByText(/scan again to navigate/i)).toBeInTheDocument()
   })
 })
