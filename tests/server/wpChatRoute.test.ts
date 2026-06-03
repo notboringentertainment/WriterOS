@@ -7,6 +7,7 @@ import { OpenAIService } from '../../server/ai/openaiService'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { StoryMemory } from '../../shared/schema'
 
 afterEach(() => {
@@ -232,6 +233,41 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       expect(storyMemory.project.treatment).toContain('Opening: Isaiah stays after his shift')
       expect(storyMemory.outline.beats[0].description).toContain('Isaiah answers a rescue call')
       expect(storyMemory.outline.beats[0].description).toContain('The voice knows his private grief')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('sends current Script Facts through Writer Room specialist context', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Maya response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it.</p>',
+    ].join('')
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'maya',
+        message: 'Help with this dialogue.',
+        projectContext: buildProjectContext(state, 'Help with this dialogue.'),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.script?.facts).toEqual({
+        rebuiltAt: '2026-06-02T10:00:00.000Z',
+        characters: [{ label: 'ISAIAH', count: 1 }],
+        locations: [{ label: 'INT. SAFEHOUSE - NIGHT', count: 1 }],
+        times: [{ label: 'NIGHT', count: 1 }],
+      })
     } finally {
       server.close()
     }

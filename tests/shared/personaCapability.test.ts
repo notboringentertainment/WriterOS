@@ -8,6 +8,7 @@ import {
 } from '../../shared/personaCapability'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 
 describe('persona capability contracts', () => {
   it('allowlists only Zoe research/world-context in Phase 2', () => {
@@ -103,5 +104,17 @@ describe('persona capability contracts', () => {
 
     expect(getCapabilityContextChips(context)).toEqual(['logline', 'characters', 'storyBible'])
     expect(getMissingCapabilitySurfaces(context)).toEqual(['synopsis'])
+  })
+
+  it('counts current Script Facts characters as character context for receipts', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = '<p data-element-type="character">ISAIAH</p>'
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const context = buildProjectContext(state)
+
+    expect(context.script.facts?.characters).toEqual([{ label: 'ISAIAH', count: 1 }])
+    expect(getCapabilityContextChips(context)).toContain('characters')
+    expect(getMissingCapabilitySurfaces(context)).not.toContain('characters')
   })
 })

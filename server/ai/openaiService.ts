@@ -403,6 +403,15 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
   } else if (sceneCount) {
     lines.push(`- Script: ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'} available; no page excerpt packaged.`);
   }
+  const scriptFacts = storyMemory.script?.facts;
+  if (scriptFacts) {
+    const factCounts = [
+      scriptFacts.characters.length && `${scriptFacts.characters.length} character${scriptFacts.characters.length === 1 ? '' : 's'}`,
+      scriptFacts.locations.length && `${scriptFacts.locations.length} location${scriptFacts.locations.length === 1 ? '' : 's'}`,
+      scriptFacts.times.length && `${scriptFacts.times.length} time marker${scriptFacts.times.length === 1 ? '' : 's'}`,
+    ].filter(Boolean);
+    if (factCounts.length) lines.push(`- Script Facts: ${factCounts.join(', ')} available.`);
+  }
 
   if (storyMemory.outline.beats.length) {
     lines.push(`- Outline: ${storyMemory.outline.beats.length} beat${storyMemory.outline.beats.length === 1 ? '' : 's'} available.`);
@@ -451,6 +460,28 @@ const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   alex: ['brief', 'treatment', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
 };
 
+function formatScriptFactEntries(entries: Array<{ label: string; count: number }>, limit = 12): string {
+  const compacted = entries
+    .filter(entry => filled(entry.label) && entry.count > 0)
+    .map(entry => `${entry.label}${entry.count > 1 ? ` (${entry.count})` : ''}`)
+  if (!compacted.length) return '';
+
+  const visible = compacted.slice(0, limit).join('; ');
+  const extra = compacted.length > limit ? `; +${compacted.length - limit} more` : '';
+  return `${visible}${extra}`;
+}
+
+function formatScriptFactLines(script: StoryMemory['script']): string[] {
+  const facts = script?.facts;
+  if (!facts) return [];
+
+  return [
+    formatScriptFactEntries(facts.characters) && `- Characters: ${formatScriptFactEntries(facts.characters)}`,
+    formatScriptFactEntries(facts.locations) && `- Locations: ${formatScriptFactEntries(facts.locations)}`,
+    formatScriptFactEntries(facts.times) && `- Times: ${formatScriptFactEntries(facts.times)}`,
+  ].filter(filled);
+}
+
 export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
   const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
   const writingPartnerBrief = createWritingPartnerBrief(storyMemory);
@@ -488,6 +519,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     .slice(0, 8)
     .map(sample => `- ${truncate(sample, 220)}`);
   const scriptCharacterNames = compactList(script?.characterNames ?? []);
+  const scriptFactLines = formatScriptFactLines(script);
   const rawScriptExcerpt = script?.excerpt;
   const scriptExcerpt = filled(rawScriptExcerpt)
     ? `SCRIPT EXCERPT (${script?.excerptWordCount ?? wordCount(rawScriptExcerpt)} words${script?.excerptTruncated ? `, first ${script?.excerptWordLimit ?? 500} words` : ''}):\n${rawScriptExcerpt}`
@@ -505,6 +537,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     scriptContextLine,
     selectedText ? `SELECTED TEXT:\n${truncate(selectedText, 600)}` : '',
     sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
+    scriptFactLines.length ? `SCRIPT FACTS:\n${scriptFactLines.join('\n')}` : '',
     scriptCharacterNames ? `SCRIPT CHARACTER NAMES:\n- ${scriptCharacterNames}` : '',
     scriptExcerpt,
     dialogueSamples.length ? `DIALOGUE SAMPLES:\n${dialogueSamples.join('\n')}` : '',

@@ -11,6 +11,7 @@ import {
 } from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 
 describe('parseMention', () => {
   it('returns null when no mention', () => {
@@ -347,6 +348,44 @@ describe('buildProjectContext', () => {
     expect(ctx.script.totalWordCount).toBe(16)
     expect(ctx.script.estimatedPageCount).toBe(1)
     expect(ctx.script.sceneCount).toBe(1)
+  })
+
+  it('maps current Script Facts into script context for agent grounding', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear the line breathing.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - DAWN</p>',
+    ].join('')
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.script.facts).toEqual({
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      characters: [{ label: 'ISAIAH', count: 1 }],
+      locations: [
+        { label: 'EXT. FREEWAY - DAWN', count: 1 },
+        { label: 'INT. SAFEHOUSE - NIGHT', count: 1 },
+      ],
+      times: [
+        { label: 'DAWN', count: 1 },
+        { label: 'NIGHT', count: 1 },
+      ],
+    })
+  })
+
+  it('omits stale Script Facts from script context after script changes', () => {
+    const state = defaultProjectState()
+    const originalHtml = '<p data-element-type="character">ISAIAH</p>'
+    state.script.rawHtml = '<p data-element-type="character">DANTE</p>'
+    state.script.facts = rebuildScriptFactsCache(originalHtml, '2026-06-02T10:00:00.000Z')
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.script.facts).toBeUndefined()
+    expect(ctx.script.characterNames).toEqual(['DANTE'])
   })
 
   it('defaults sparse legacy story bible fields to empty strings', () => {

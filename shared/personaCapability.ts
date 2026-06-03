@@ -81,6 +81,12 @@ export interface PersonaCapabilityProjectContext {
     dialogueSnippets: string[]
     actionSnippets: string[]
     characterNames: string[]
+    facts?: {
+      rebuiltAt: string
+      characters: Array<{ label: string; count: number }>
+      locations: Array<{ label: string; count: number }>
+      times: Array<{ label: string; count: number }>
+    }
     excerptWordCount: number
     excerptWordLimit: number
     excerptTruncated: boolean
@@ -227,6 +233,21 @@ const scriptContextSchema = z.object({
   dialogueSnippets: stringArraySchema,
   actionSnippets: stringArraySchema,
   characterNames: stringArraySchema,
+  facts: z.object({
+    rebuiltAt: z.string(),
+    characters: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    locations: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    times: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+  }).optional(),
   excerptWordCount: z.number().default(0),
   excerptWordLimit: z.number().default(500),
   excerptTruncated: z.boolean().default(false),
@@ -384,7 +405,10 @@ export function getCapabilityContextChips(
     chips.push('synopsis')
   }
 
-  if (projectContext.characters.some(character => filled(character.name))) {
+  if (
+    projectContext.characters.some(character => filled(character.name)) ||
+    projectContext.script?.facts?.characters.some(character => filled(character.label))
+  ) {
     chips.push('characters')
   }
 

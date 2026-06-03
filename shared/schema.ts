@@ -59,6 +59,12 @@ export interface StoryMemory {
     dialogueSnippets?: string[]
     actionSnippets?: string[]
     characterNames?: string[]
+    facts?: {
+      rebuiltAt: string
+      characters: Array<{ label: string; count: number }>
+      locations: Array<{ label: string; count: number }>
+      times: Array<{ label: string; count: number }>
+    }
     excerptWordCount?: number
     excerptWordLimit?: number
     excerptTruncated?: boolean

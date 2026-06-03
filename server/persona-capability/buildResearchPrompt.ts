@@ -3,6 +3,7 @@ import type {
   PersonaCapabilityRequest,
   WorldContextVoiceProfileSlice,
 } from '@shared/personaCapability'
+import { scriptFactLines } from '../scriptFactFormatting'
 
 function filled(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -80,6 +81,7 @@ function formatProjectContext(projectContext: PersonaCapabilityProjectContext): 
     script?.selectedText && `Selected text: ${truncate(script.selectedText, 600)}`,
     script?.excerpt && `Excerpt: ${truncate(script.excerpt, 900)}`,
     script?.sceneHeadings?.length ? `Scene headings: ${script.sceneHeadings.slice(0, 10).join('; ')}` : '',
+    ...(script ? scriptFactLines(script) : []),
   ].filter(filled)
 
   return [
