@@ -7,6 +7,7 @@ import {
   normalizeScratchpadState,
   pinScratchpadItem,
   removeScratchpadItem,
+  resolvePinnedSceneHeading,
   setScratchpadItemType,
   toggleScratchpadItem,
   unpinScratchpadItem,
@@ -153,5 +154,37 @@ describe('currentSceneFromHeadings', () => {
 
   it('returns null when the cursor precedes the first heading', () => {
     expect(currentSceneFromHeadings([{ index: 1, text: 'INT. X', nodePos: 5 }], 2)).toBeNull()
+  })
+})
+
+describe('resolvePinnedSceneHeading', () => {
+  const headings = [
+    { index: 1, text: 'INT. KITCHEN - DAY', nodePos: 0 },
+    { index: 2, text: 'EXT. PARK - NIGHT', nodePos: 40 },
+  ]
+
+  it('prefers an exact index + heading match', () => {
+    const scene = { heading: 'EXT. PARK - NIGHT', index: 2 }
+    expect(resolvePinnedSceneHeading(headings, scene)).toBe(headings[1])
+  })
+
+  it('follows the heading when the stored index has drifted', () => {
+    // Pin was made when KITCHEN was scene 2; KITCHEN is now scene 1.
+    const scene = { heading: 'INT. KITCHEN - DAY', index: 2 }
+    const resolved = resolvePinnedSceneHeading(headings, scene)
+    expect(resolved).toBe(headings[0])
+    expect(resolved?.index).toBe(1)
+    // Must NOT return whatever currently sits at the stale index 2.
+    expect(resolved?.text).not.toBe('EXT. PARK - NIGHT')
+  })
+
+  it('falls back to the stored index when the heading text changed', () => {
+    const scene = { heading: 'INT. KITCHEN - MORNING (renamed)', index: 2 }
+    expect(resolvePinnedSceneHeading(headings, scene)).toBe(headings[1])
+  })
+
+  it('returns null when nothing matches', () => {
+    expect(resolvePinnedSceneHeading([], { heading: 'INT. X', index: 9 })).toBeNull()
+    expect(resolvePinnedSceneHeading(headings, { heading: 'INT. VOID', index: 9 })).toBeNull()
   })
 })

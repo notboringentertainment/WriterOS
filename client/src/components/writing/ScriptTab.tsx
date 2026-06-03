@@ -18,6 +18,7 @@ import {
   currentSceneFromHeadings,
   pinScratchpadItem,
   removeScratchpadItem,
+  resolvePinnedSceneHeading,
   setScratchpadItemType,
   toggleScratchpadItem,
   unpinScratchpadItem,
@@ -261,9 +262,7 @@ export function ScriptTab({
 
   const handleGoToPinnedScene = useCallback(
     (scene: ScratchpadPinnedScene) => {
-      const heading =
-        scenesRef.current.find(h => h.index === scene.index) ??
-        scenesRef.current.find(h => h.text === scene.heading)
+      const heading = resolvePinnedSceneHeading(scenesRef.current, scene)
       if (heading) handleSceneClick(heading.nodePos)
     },
     [handleSceneClick]

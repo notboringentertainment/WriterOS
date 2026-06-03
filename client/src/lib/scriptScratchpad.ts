@@ -170,6 +170,24 @@ export interface SceneHeadingPosition {
 }
 
 /**
+ * Resolve a stored pin to a live scene heading. Index is positional and drifts
+ * as the script changes, so prefer an exact (index + heading) match, then fall
+ * back to the heading text if scenes have renumbered, and only use the stored
+ * index when the heading text itself changed. Returns null when nothing matches.
+ */
+export function resolvePinnedSceneHeading<H extends { index: number; text: string }>(
+  headings: H[],
+  scene: ScratchpadPinnedScene,
+): H | null {
+  return (
+    headings.find(h => h.index === scene.index && h.text === scene.heading) ??
+    headings.find(h => h.text === scene.heading) ??
+    headings.find(h => h.index === scene.index) ??
+    null
+  )
+}
+
+/**
  * Resolve the scene the editor cursor currently sits in. The current scene is
  * the last heading whose document position is at or before the cursor. Returns
  * null when the script has no scene headings or the cursor precedes the first.
