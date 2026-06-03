@@ -386,6 +386,53 @@ describe('createContextSummary', () => {
     expect(summary).toContain('DANTE: Your war is over, brotha.')
   })
 
+  it('includes current Script Facts in persona script context', () => {
+    const summary = createContextSummary(storyMemory({
+      script: {
+        excerpt: 'INT. SAFEHOUSE - NIGHT\nISAIAH\nI can hear it.',
+        sceneHeadings: ['INT. SAFEHOUSE - NIGHT'],
+        dialogueSnippets: ['ISAIAH: I can hear it.'],
+        actionSnippets: [],
+        characterNames: ['ISAIAH'],
+        facts: {
+          rebuiltAt: '2026-06-02T10:00:00.000Z',
+          characters: [{ label: 'ISAIAH', count: 3 }],
+          locations: [{ label: 'INT. SAFEHOUSE - NIGHT', count: 2 }],
+          times: [{ label: 'NIGHT', count: 2 }],
+        },
+        excerptWordCount: 8,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+    }), 'maya')
+
+    expect(summary).toContain('SCRIPT FACTS:')
+    expect(summary).toContain('- Characters: ISAIAH (3)')
+    expect(summary).toContain('- Locations: INT. SAFEHOUSE - NIGHT (2)')
+    expect(summary).toContain('- Times: NIGHT (2)')
+    expect(summary.indexOf('SCRIPT FACTS:')).toBeLessThan(summary.indexOf('SCRIPT CHARACTER NAMES:'))
+  })
+
+  it('marks truncated Script Facts lists with a remaining count', () => {
+    const summary = createContextSummary(storyMemory({
+      script: {
+        facts: {
+          rebuiltAt: '2026-06-02T10:00:00.000Z',
+          characters: Array.from({ length: 14 }, (_, index) => ({
+            label: `CHARACTER ${index + 1}`,
+            count: 1,
+          })),
+          locations: [],
+          times: [],
+        },
+      },
+    }), 'maya')
+
+    expect(summary).toContain('- Characters: CHARACTER 1; CHARACTER 2')
+    expect(summary).toContain('CHARACTER 12; +2 more')
+    expect(summary).not.toContain('CHARACTER 13')
+  })
+
   it('builds a compact Writing Partner brief from script-derived scene headings', () => {
     const brief = createWritingPartnerBrief(storyMemory({
       project: {
@@ -448,6 +495,21 @@ describe('createContextSummary', () => {
 
     expect(brief).toContain('Project: "Lifeline" | Thriller')
     expect(brief).toContain('Format: series')
+  })
+
+  it('summarizes Script Facts availability in the Writing Partner brief', () => {
+    const brief = createWritingPartnerBrief(storyMemory({
+      script: {
+        facts: {
+          rebuiltAt: '2026-06-02T10:00:00.000Z',
+          characters: [{ label: 'ISAIAH', count: 1 }, { label: 'DANTE', count: 1 }],
+          locations: [{ label: 'INT. SAFEHOUSE - NIGHT', count: 1 }],
+          times: [{ label: 'NIGHT', count: 1 }],
+        },
+      },
+    }))
+
+    expect(brief).toContain('Script Facts: 2 characters, 1 location, 1 time marker available.')
   })
 })
 

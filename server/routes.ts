@@ -81,6 +81,21 @@ const scriptContextSchema = z.object({
   dialogueSnippets: z.array(z.string()).default([]),
   actionSnippets: z.array(z.string()).default([]),
   characterNames: z.array(z.string()).default([]),
+  facts: z.object({
+    rebuiltAt: z.string(),
+    characters: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    locations: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    times: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+  }).optional(),
   excerptWordCount: z.number().default(0),
   excerptWordLimit: z.number().default(500),
   excerptTruncated: z.boolean().default(false),
@@ -388,6 +403,26 @@ function compactList(values: string[], limit = 5): string {
   const visible = compacted.slice(0, limit).join('; ');
   const extra = compacted.length > limit ? `; +${compacted.length - limit} more` : '';
   return `${visible}${extra}`;
+}
+
+function compactFactEntries(entries: Array<{ label: string; count: number }>, limit = 8): string {
+  const compacted = entries
+    .filter(entry => filled(entry.label) && entry.count > 0)
+    .map(entry => `${truncate(entry.label, 120)}${entry.count > 1 ? ` (${entry.count})` : ''}`);
+  if (!compacted.length) return '';
+  const visible = compacted.slice(0, limit).join('; ');
+  const extra = compacted.length > limit ? `; +${compacted.length - limit} more` : '';
+  return `${visible}${extra}`;
+}
+
+function scriptFactLines(script: NonNullable<ProjectContextForOpenSwarm['script']>): string[] {
+  if (!script.facts) return [];
+
+  return [
+    compactFactEntries(script.facts.characters) && `Script Fact characters: ${compactFactEntries(script.facts.characters)}`,
+    compactFactEntries(script.facts.locations) && `Script Fact locations: ${compactFactEntries(script.facts.locations)}`,
+    compactFactEntries(script.facts.times) && `Script Fact times: ${compactFactEntries(script.facts.times)}`,
+  ].filter(filled);
 }
 
 function labeledLine(label: string, value: string): string | null {
@@ -698,6 +733,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     script?.selectedText && `Selected text: ${truncate(script.selectedText, 900)}`,
     script?.excerpt && `Excerpt: ${truncate(script.excerpt, 900)}`,
     script?.sceneHeadings?.length ? `Scene headings: ${script.sceneHeadings.slice(0, 10).join('; ')}` : '',
+    ...(script ? scriptFactLines(script) : []),
   ].filter(filled);
 
   const storyBibleLines = [
@@ -743,6 +779,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     `Treatment: ${treatmentContextLines.length} filled field${treatmentContextLines.length === 1 ? '' : 's'}`,
     `Story Bible: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
     `Script: ${script?.excerptWordCount || 0} excerpt word${script?.excerptWordCount === 1 ? '' : 's'}, ${script?.sceneCount || 0} scene${script?.sceneCount === 1 ? '' : 's'}${script?.contextLabel ? ` (${script.contextLabel})` : ''}`,
+    `Script Facts: ${script?.facts ? `${script.facts.characters.length} character${script.facts.characters.length === 1 ? '' : 's'}, ${script.facts.locations.length} location${script.facts.locations.length === 1 ? '' : 's'}, ${script.facts.times.length} time marker${script.facts.times.length === 1 ? '' : 's'}` : 'not supplied'}`,
   ];
 
   return `You are OpenSwarm Writing Partner. Review only this bounded WriterOS handoff packet.
@@ -902,6 +939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dialogueSnippets: scriptContext.dialogueSnippets,
           actionSnippets: scriptContext.actionSnippets,
           characterNames: scriptContext.characterNames,
+          facts: scriptContext.facts,
           excerptWordCount: scriptContext.excerptWordCount,
           excerptWordLimit: scriptContext.excerptWordLimit,
           excerptTruncated: scriptContext.excerptTruncated,
