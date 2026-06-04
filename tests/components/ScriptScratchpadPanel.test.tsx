@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ScriptScratchpadPanel } from '../../client/src/components/writing/ScriptScratchpadPanel'
-import type { ScratchpadState } from '../../client/src/lib/scriptScratchpad'
+import { addScratchpadItem, type ScratchpadState } from '../../client/src/lib/scriptScratchpad'
 
 function renderPanel(scratchpad: ScratchpadState, overrides: Record<string, unknown> = {}) {
   const handlers = {
@@ -41,6 +42,47 @@ describe('ScriptScratchpadPanel', () => {
     expect(handlers.onAddItem).toHaveBeenNthCalledWith(1, 'text')
     expect(handlers.onAddItem).toHaveBeenNthCalledWith(2, 'bullet')
     expect(handlers.onAddItem).toHaveBeenNthCalledWith(3, 'task')
+  })
+
+  it('scrolls and focuses a newly added item after it renders', async () => {
+    const scrolledElements: HTMLElement[] = []
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      scrolledElements.push(this)
+    }
+
+    function StatefulPanel() {
+      const [scratchpad, setScratchpad] = useState<ScratchpadState>({
+        items: [{ id: 'existing', type: 'text', text: 'existing note', checked: false, pinnedScene: null }],
+      })
+      return (
+        <ScriptScratchpadPanel
+          scratchpad={scratchpad}
+          canPin
+          onAddItem={type => setScratchpad(s => addScratchpadItem(s, type))}
+          onChangeItemText={() => {}}
+          onChangeItemType={() => {}}
+          onToggleItem={() => {}}
+          onRemoveItem={() => {}}
+          onPinItem={() => {}}
+          onUnpinItem={() => {}}
+        />
+      )
+    }
+
+    try {
+      render(<StatefulPanel />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
+
+      const addedTextbox = await screen.findByRole('textbox', { name: 'Scratchpad note 2' })
+      await waitFor(() => expect(addedTextbox).toHaveFocus())
+
+      expect(scrolledElements).toHaveLength(1)
+      expect(scrolledElements[0]).toContainElement(addedTextbox)
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    }
   })
 
   it('edits note text', () => {

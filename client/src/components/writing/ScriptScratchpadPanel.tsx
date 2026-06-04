@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import type {
   ScratchpadItem,
   ScratchpadItemType,
@@ -43,6 +43,48 @@ export function ScriptScratchpadPanel({
   onUnpinItem,
   onGoToPinnedScene,
 }: ScriptScratchpadPanelProps) {
+  const pendingAddScrollRef = useRef(false)
+  const previousItemIdsRef = useRef(new Set(scratchpad.items.map(item => item.id)))
+  const itemRefs = useRef(new Map<string, HTMLLIElement>())
+  const textareaRefs = useRef(new Map<string, HTMLTextAreaElement>())
+
+  const handleAddItem = useCallback((type: ScratchpadItemType) => {
+    pendingAddScrollRef.current = true
+    onAddItem(type)
+  }, [onAddItem])
+
+  const setItemRef = useCallback((id: string, node: HTMLLIElement | null) => {
+    if (node) itemRefs.current.set(id, node)
+    else itemRefs.current.delete(id)
+  }, [])
+
+  const setTextareaRef = useCallback((id: string, node: HTMLTextAreaElement | null) => {
+    if (node) textareaRefs.current.set(id, node)
+    else textareaRefs.current.delete(id)
+  }, [])
+
+  useEffect(() => {
+    const previousItemIds = previousItemIdsRef.current
+    const addedItem = scratchpad.items.find(item => !previousItemIds.has(item.id))
+    previousItemIdsRef.current = new Set(scratchpad.items.map(item => item.id))
+
+    if (!pendingAddScrollRef.current || !addedItem) return
+    pendingAddScrollRef.current = false
+
+    const schedule = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0)
+
+    schedule(() => {
+      const row = itemRefs.current.get(addedItem.id)
+      const textarea = textareaRefs.current.get(addedItem.id)
+      if (typeof row?.scrollIntoView === 'function') {
+        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+      textarea?.focus()
+    })
+  }, [scratchpad.items])
+
   return (
     <aside aria-label="Script Scratchpad" style={styles.panel}>
       <div style={styles.header}>
@@ -51,13 +93,13 @@ export function ScriptScratchpadPanel({
       <p style={styles.hint}>Working notes. Never sent to the script or agents.</p>
 
       <div style={styles.addRow}>
-        <button type="button" aria-label="Add note" style={styles.addButton} onClick={() => onAddItem('text')}>
+        <button type="button" aria-label="Add note" style={styles.addButton} onClick={() => handleAddItem('text')}>
           + Note
         </button>
-        <button type="button" aria-label="Add bullet" style={styles.addButton} onClick={() => onAddItem('bullet')}>
+        <button type="button" aria-label="Add bullet" style={styles.addButton} onClick={() => handleAddItem('bullet')}>
           + Bullet
         </button>
-        <button type="button" aria-label="Add task" style={styles.addButton} onClick={() => onAddItem('task')}>
+        <button type="button" aria-label="Add task" style={styles.addButton} onClick={() => handleAddItem('task')}>
           + Task
         </button>
       </div>
@@ -71,6 +113,8 @@ export function ScriptScratchpadPanel({
               key={item.id}
               item={item}
               index={index}
+              itemRef={node => setItemRef(item.id, node)}
+              textareaRef={node => setTextareaRef(item.id, node)}
               canPin={canPin}
               onChangeItemText={onChangeItemText}
               onChangeItemType={onChangeItemType}
@@ -90,6 +134,8 @@ export function ScriptScratchpadPanel({
 function ScratchpadItemRow({
   item,
   index,
+  itemRef,
+  textareaRef,
   canPin,
   onChangeItemText,
   onChangeItemType,
@@ -101,6 +147,8 @@ function ScratchpadItemRow({
 }: {
   item: ScratchpadItem
   index: number
+  itemRef: (node: HTMLLIElement | null) => void
+  textareaRef: (node: HTMLTextAreaElement | null) => void
   canPin: boolean
   onChangeItemText: (id: string, text: string) => void
   onChangeItemType: (id: string, type: ScratchpadItemType) => void
@@ -113,7 +161,7 @@ function ScratchpadItemRow({
   const label = item.text.trim() || `item ${index + 1}`
 
   return (
-    <li style={styles.item}>
+    <li ref={itemRef} style={styles.item}>
       <div style={styles.itemBody}>
         {item.type === 'task' && (
           <input
@@ -126,6 +174,7 @@ function ScratchpadItemRow({
         )}
         {item.type === 'bullet' && <span aria-hidden="true" style={styles.bullet}>•</span>}
         <textarea
+          ref={textareaRef}
           aria-label={`Scratchpad note ${index + 1}`}
           rows={1}
           value={item.text}
