@@ -25,6 +25,7 @@ import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
 import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
+import { preferNewerMigratedBackup } from './lib/folderProjectRecovery'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
@@ -243,10 +244,11 @@ export default function App() {
     setFdxImportWarnings([])
     try {
       const openedProject = await projectFolder.openProject(projectId)
-      project.openStoredProject(openedProject.project)
+      const projectToOpen = preferNewerMigratedBackup(openedProject.project, project.storedProjects)
+      project.openStoredProject(projectToOpen)
       setActiveProjectStorage({
         kind: 'folder',
-        projectId: openedProject.project.id,
+        projectId: projectToOpen.id,
         packageName: openedProject.packageName,
       })
       shellState.openProjectWorkspace()
