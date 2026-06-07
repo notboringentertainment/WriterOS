@@ -108,9 +108,16 @@ export function OutlineDocumentView(props: OutlineDocumentViewProps) {
     )
   }
 
+  const errorBanner = error ? (
+    <p style={{ ...metaStyle, color: 'var(--error, #b91c1c)' }}>
+      {error} <button type="button" onClick={onCompose}>Retry</button>
+    </p>
+  ) : null
+
   if (state.kind === 'ready_uncomposed') {
     return (
       <div style={pageStyle}>
+        {errorBanner}
         {state.omittedSectionHeadings.length > 0 && (
           <p style={metaStyle}>Some sections will be omitted until you add more: {state.omittedSectionHeadings.join(', ')}.</p>
         )}
@@ -119,20 +126,20 @@ export function OutlineDocumentView(props: OutlineDocumentViewProps) {
     )
   }
 
+  const missingContextCopy = state.omittedSectionHeadings.length > 0
+    ? `Composed from what you’ve answered so far — add ${state.omittedSectionHeadings.join(', ')} for a fuller document.`
+    : 'Composed from what you’ve answered so far.'
+
   const banner =
     state.kind === 'answer_stale' ? <p style={{ ...metaStyle, color: 'var(--warn, #b45309)' }}>Your answers changed — Recompose.</p>
     : state.kind === 'recipe_stale' ? <p style={metaStyle}>A newer document format is available — Recompose.</p>
-    : state.kind === 'missing_context' ? <p style={metaStyle}>Composed from what you’ve answered so far — add {state.omittedSectionHeadings.join(', ')} for a fuller document.</p>
+    : state.kind === 'missing_context' ? <p style={metaStyle}>{missingContextCopy}</p>
     : state.kind === 'flagged' ? <p style={metaStyle}>Review: some lines may not match your answers. Structure-checked, not meaning-verified.</p>
     : null
 
   return (
     <div style={pageStyle}>
-      {error && (
-        <p style={{ ...metaStyle, color: 'var(--error, #b91c1c)' }}>
-          {error} <button type="button" onClick={onCompose}>Retry</button>
-        </p>
-      )}
+      {errorBanner}
       {banner}
       <article style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {state.composed!.blocks.map((b, i) => <Block key={i} block={b} />)}

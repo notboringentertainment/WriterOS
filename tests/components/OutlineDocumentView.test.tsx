@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/react'
 import { OutlineDocumentView } from '../../client/src/components/writing/outline/OutlineDocumentView'
 import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
+import { createEmptyOutlineContent } from '../../shared/documents'
+import { setOutlinePath } from '../../client/src/lib/outlineDeck'
 import type { ComposedDocument } from '../../shared/compose/types'
 
 const identity = { title: 'T', genre: 'Drama' }
@@ -45,5 +47,31 @@ describe('OutlineDocumentView', () => {
   it('shows an answer-stale banner when answers changed', () => {
     render(<OutlineDocumentView {...baseProps} composed={{ ...composed, sourceHash: 'stale' }} />)
     expect(screen.getByText(/answers changed/i)).toBeInTheDocument()
+  })
+
+  it('shows error/retry UI when ready_uncomposed and a compose error is present', () => {
+    render(<OutlineDocumentView {...baseProps} composed={undefined} error="WriterOS could not compose this document right now." />)
+    expect(screen.getByText(/could not compose/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    // Compose CTA still available alongside the error.
+    expect(screen.getByRole('button', { name: /compose this outline/i })).toBeEnabled()
+  })
+
+  it('omits the "add ... for a fuller document" clause when nothing is omitted', () => {
+    // Partial tier with no omitted sections: core met, every omittable section has
+    // a field present, but a non-omittable section important field is unanswered.
+    let partial = createEmptyOutlineContent()
+    partial = setOutlinePath(partial, 'spine.protagonist', 'Vera Solano')
+    partial = setOutlinePath(partial, 'spine.internalNeed', 'to trust people again')
+    partial = setOutlinePath(partial, 'spine.centralOpposition', 'The Meridian Group')
+    partial = setOutlinePath(partial, 'spine.coreStakes', 'her freedom')
+    partial = setOutlinePath(partial, 'units[id=feature.incitingIncident].whatHappens', 'A ledger entry surfaces.')
+    const h = computeOutlineSourceHash(partial, 'feature', identity)
+    const partialComposed: ComposedDocument = { ...composed, sourceHash: h }
+    const { container } = render(
+      <OutlineDocumentView {...baseProps} content={partial} composed={partialComposed} />,
+    )
+    expect(container.textContent).toContain('Composed from what you’ve answered so far.')
+    expect(container.textContent).not.toMatch(/add\s+for a fuller document/i)
   })
 })
