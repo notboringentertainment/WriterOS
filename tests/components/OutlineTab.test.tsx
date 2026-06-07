@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { OutlineTab } from '../../client/src/components/writing/OutlineTab'
 import { defaultProjectState } from '../../client/src/lib/projectState'
+import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
+import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
+import { getOutlineRecipe } from '../../shared/compose/recipe'
+import type { AuthoredDocumentState, OutlineDocumentContent } from '../../shared/documents'
+import type { ComposedDocument } from '../../shared/compose/types'
 
 describe('OutlineTab', () => {
   const defaultDocument = defaultProjectState().documents.outline
@@ -11,10 +16,13 @@ describe('OutlineTab', () => {
     const props: ComponentProps<typeof OutlineTab> = {
       document: defaultDocument,
       projectFormat: 'feature',
+      identity: { title: 'T', genre: 'Drama' },
       onProjectFormatChange: vi.fn(),
       onContentChange: vi.fn(),
       onAddEpisode: vi.fn(),
       onEpisodeFieldChange: vi.fn(),
+      onViewPreferencesPatch: vi.fn(),
+      onComposed: vi.fn(),
       onClear: vi.fn(),
       ...overrides,
     }
@@ -115,5 +123,82 @@ describe('OutlineTab', () => {
       'Episode 102',
       'Episode 103',
     ])
+  })
+})
+
+describe('OutlineTab Document View', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const identity = { title: 'T', genre: 'Drama' }
+  const cleanComposed = (): ComposedDocument => ({
+    schemaVersion: 1,
+    generatedAt: '2026-06-06T00:00:00.000Z',
+    model: 'm',
+    recipeVersion: getOutlineRecipe('feature').recipeVersion,
+    composerVersion: 1,
+    sourceHash: computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity),
+    format: 'feature',
+    blocks: [
+      { type: 'heading', text: 'Who We Follow' },
+      {
+        type: 'paragraph',
+        text: 'Vera Solano fights The Meridian Group.',
+        sourceFieldIds: ['spine.protagonist', 'spine.centralOpposition'],
+      },
+    ],
+    fidelity: { status: 'clean', warnings: [] },
+  })
+
+  // Stateful harness mirroring App.tsx: persists composed + view toggle back
+  // into the controlled document prop so the Document View reflects the result.
+  function DocumentHarness() {
+    const base = defaultProjectState().documents.outline
+    const [doc, setDoc] = useState<AuthoredDocumentState<OutlineDocumentContent>>({
+      ...base,
+      content: syntheticOutlineFeature,
+      viewPreferences: { activeView: 'document' },
+      composed: undefined,
+    })
+    return (
+      <OutlineTab
+        document={doc}
+        projectFormat="feature"
+        identity={identity}
+        onProjectFormatChange={vi.fn()}
+        onContentChange={vi.fn()}
+        onAddEpisode={vi.fn()}
+        onEpisodeFieldChange={vi.fn()}
+        onClear={vi.fn()}
+        onViewPreferencesPatch={(patch) =>
+          setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))
+        }
+        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+      />
+    )
+  }
+
+  it('shows the Compose CTA in Document View for a ready outline and composes on click', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ composed: cleanComposed() }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+
+    // Document View, ready + uncomposed: edit-mode card questions are gone.
+    expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
+    const cta = screen.getByRole('button', { name: /compose this outline/i })
+    expect(cta).toBeEnabled()
+
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText('Who We Follow')).toBeInTheDocument())
+    expect(screen.getByText(/Vera Solano fights The Meridian Group/)).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/compose-document', expect.objectContaining({ method: 'POST' }))
+    // Renderer purity: no labeled answer rows leak into the composed body.
+    expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
   })
 })

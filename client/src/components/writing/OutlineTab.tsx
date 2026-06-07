@@ -1,6 +1,13 @@
-import React, { useEffect, useState } from 'react'
-import type { AuthoredDocumentState, OutlineDocumentContent, OutlineEpisode } from '@shared/documents'
+import React, { useCallback, useEffect, useState } from 'react'
+import type {
+  AuthoredDocumentState,
+  DocumentViewPreferences,
+  OutlineDocumentContent,
+  OutlineEpisode,
+} from '@shared/documents'
+import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import {
   hasFeatureOutlineAnswers,
@@ -8,7 +15,9 @@ import {
   hasSeriesOutlineAnswers,
   seedEpisodes101To103,
 } from '../../lib/outlineDeck'
+import { requestOutlineCompose } from '../../lib/composeClient'
 import { OutlineEditView } from './outline/OutlineEditView'
+import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 
 type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
@@ -16,25 +25,50 @@ type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 interface OutlineTabProps {
   document: AuthoredDocumentState<OutlineDocumentContent>
   projectFormat?: ProjectFormat
+  identity: ComposeIdentity
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentChange: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
   onAddEpisode: () => void
   onEpisodeFieldChange: (episodeId: string, field: EpisodeTextField, value: string) => void
+  onViewPreferencesPatch: (patch: Partial<DocumentViewPreferences>) => void
+  onComposed: (composed: ComposedDocument) => void
   onClear?: (options?: { keep?: 'all' | 'foundations' }) => void
 }
 
 export function OutlineTab({
   document,
   projectFormat = 'feature',
+  identity,
   onProjectFormatChange,
   onContentChange,
   onAddEpisode,
   onEpisodeFieldChange,
+  onViewPreferencesPatch,
+  onComposed,
   onClear,
 }: OutlineTabProps) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const [isComposing, setIsComposing] = useState(false)
+  const [composeError, setComposeError] = useState<string | null>(null)
   const activeFormat = normalizeProjectFormat(projectFormat)
+  const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
+
+  const handleCompose = useCallback(async () => {
+    setIsComposing(true)
+    setComposeError(null)
+    const result = await requestOutlineCompose({
+      content: document.content,
+      format: activeFormat,
+      identity,
+    })
+    setIsComposing(false)
+    if (result.ok) {
+      onComposed(result.composed)
+    } else {
+      setComposeError('WriterOS could not compose this document right now.')
+    }
+  }, [document.content, activeFormat, identity, onComposed])
 
   useEffect(() => {
     if (activeFormat === 'series' && document.content.episodes.length === 0) {
@@ -85,6 +119,10 @@ export function OutlineTab({
               onChange={handleFormatChange}
               variant="standalone"
             />
+            <DocumentViewToggle
+              value={activeView}
+              onChange={(next) => onViewPreferencesPatch({ activeView: next })}
+            />
             {onClear && (
               <button
                 type="button"
@@ -103,13 +141,25 @@ export function OutlineTab({
         </div>
       </div>
 
-      <OutlineEditView
-        format={activeFormat}
-        content={document.content}
-        onContentChange={onContentChange}
-        onAddEpisode={onAddEpisode}
-        onEpisodeFieldChange={onEpisodeFieldChange}
-      />
+      {activeView === 'edit' ? (
+        <OutlineEditView
+          format={activeFormat}
+          content={document.content}
+          onContentChange={onContentChange}
+          onAddEpisode={onAddEpisode}
+          onEpisodeFieldChange={onEpisodeFieldChange}
+        />
+      ) : (
+        <OutlineDocumentView
+          content={document.content}
+          format={activeFormat}
+          identity={identity}
+          composed={document.composed}
+          isComposing={isComposing}
+          error={composeError}
+          onCompose={handleCompose}
+        />
+      )}
 
       <ClearOutlineDialog
         open={clearDialogOpen}
