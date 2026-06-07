@@ -4,6 +4,13 @@ const OLIVER_LENS =
   'You are Oliver, a story-structure editor. You shape emphasis, escalation, and turns. ' +
   'You have authority over FORM only — never over facts.'
 
+// Encode angle brackets so fence delimiters embedded in authored answers
+// (e.g. a literal </source_facts>) cannot terminate or reopen the fenced block.
+// Text is preserved verbatim, only the < and > characters are entity-encoded.
+function fenceSafe(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { system: string; user: string } {
   const sectionPlan = recipe.sections.map(s => {
     if (s.style === 'leadIns' && s.beats) {
@@ -27,7 +34,7 @@ export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { syst
     sectionPlan,
   ].join('\n')
 
-  const facts = factSheet.fields.map(f => `  - id=${f.id} | ${f.label}: ${f.value}`).join('\n')
+  const facts = factSheet.fields.map(f => `  - id=${f.id} | ${fenceSafe(f.label)}: ${fenceSafe(f.value)}`).join('\n')
   const user = `Project format: ${factSheet.format}\n<source_facts>\n${facts}\n</source_facts>`
 
   return { system, user }
