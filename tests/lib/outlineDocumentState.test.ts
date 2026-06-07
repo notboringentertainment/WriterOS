@@ -3,6 +3,7 @@ import { deriveOutlineDocumentState } from '../../client/src/lib/outlineDocument
 import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
 import { createEmptyOutlineContent } from '../../shared/documents'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
+import { setOutlinePath } from '../../client/src/lib/outlineDeck'
 import type { ComposedDocument } from '../../shared/compose/types'
 
 const identity = { title: 'T', genre: 'Drama' }
@@ -34,5 +35,22 @@ describe('deriveOutlineDocumentState', () => {
     const h = computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity)
     const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: composedFor(h, 1) })
     expect(s.kind).toBe('fresh')
+  })
+  it('flagged when hash/recipeVersion match but fidelity is flagged', () => {
+    const h = computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity)
+    const composed: ComposedDocument = { ...composedFor(h, 1), fidelity: { status: 'flagged', warnings: [] } }
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed })
+    expect(s.kind).toBe('flagged')
+  })
+  it('missing-context when content is partial, hash/version match, fidelity clean', () => {
+    // Core gate satisfied (protagonist + centralOpposition + one beat) but not all
+    // important fields answered -> partial tier.
+    let partial = createEmptyOutlineContent()
+    partial = setOutlinePath(partial, 'spine.protagonist', 'Vera Solano')
+    partial = setOutlinePath(partial, 'spine.centralOpposition', 'The Meridian Group')
+    partial = setOutlinePath(partial, 'units[id=feature.incitingIncident].whatHappens', 'A ledger entry surfaces.')
+    const h = computeOutlineSourceHash(partial, 'feature', identity)
+    const s = deriveOutlineDocumentState({ content: partial, format: 'feature', identity, composed: composedFor(h, 1) })
+    expect(s.kind).toBe('missing_context')
   })
 })
