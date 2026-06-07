@@ -508,6 +508,7 @@ Kinds: `spine.protagonist` → `name`; episode/spine narrative + unit fields →
 import { describe, expect, it } from 'vitest'
 import { buildOutlineFactSheet } from '../../../shared/compose/factSheet'
 import { createEmptyOutlineContent } from '../../../shared/documents'
+import { setOutlinePath } from '../../../client/src/lib/outlineDeck'
 
 describe('buildOutlineFactSheet', () => {
   it('drops empty fields and sorts by id', () => {
@@ -521,9 +522,8 @@ describe('buildOutlineFactSheet', () => {
     expect(fs.fields.some(f => f.id === 'spine.theme')).toBe(false) // empty dropped
   })
   it('emits unit fields with composite ids', () => {
-    const content = createEmptyOutlineContent()
-    const unit = content.units.find(u => u.id === 'feature.midpoint')!
-    unit.whatHappens = 'The plan collapses.'
+    // createEmptyOutlineContent() seeds units: []; setOutlinePath auto-creates the unit.
+    const content = setOutlinePath(createEmptyOutlineContent(), 'units[id=feature.midpoint].whatHappens', 'The plan collapses.')
     const fs = buildOutlineFactSheet(content, 'feature')
     expect(fs.fields.find(f => f.id === 'feature.midpoint.whatHappens')?.value).toBe('The plan collapses.')
   })

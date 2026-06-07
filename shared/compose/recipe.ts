@@ -37,6 +37,10 @@ function featureRecipe(): Recipe {
 function seriesRecipe(): Recipe {
   return {
     surface: 'outline', format: 'series', recipeVersion: OUTLINE_RECIPE_VERSION,
+    // Design says "showPitch", but no outline card writes seriesEngine.showPitch — the
+    // "Show pitch" card writes repeatableConflict/episodeEngine/serialQuestion. Using
+    // repeatableConflict (the card's primary "repeatable pressure" field) keeps the gate
+    // satisfiable through the UI. Product-approved 2026-06-06. (>=1 episode gate lives in readiness.)
     coreRequiredFieldIds: ['seriesEngine.repeatableConflict', 'seasonArc.seasonQuestion'],
     sections: [
       {
