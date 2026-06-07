@@ -201,4 +201,17 @@ describe('OutlineTab Document View', () => {
     // Renderer purity: no labeled answer rows leak into the composed body.
     expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
   })
+
+  it('clears composing and shows error/retry when the compose request throws', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+
+    // Does not get stuck on the composing placeholder; error + retry return.
+    await waitFor(() => expect(screen.getByText(/could not compose/i)).toBeInTheDocument())
+    expect(screen.queryByText('Composing…')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
 })

@@ -57,16 +57,21 @@ export function OutlineTab({
   const handleCompose = useCallback(async () => {
     setIsComposing(true)
     setComposeError(null)
-    const result = await requestOutlineCompose({
-      content: document.content,
-      format: activeFormat,
-      identity,
-    })
-    setIsComposing(false)
-    if (result.ok) {
-      onComposed(result.composed)
-    } else {
+    try {
+      const result = await requestOutlineCompose({
+        content: document.content,
+        format: activeFormat,
+        identity,
+      })
+      if (result.ok) {
+        onComposed(result.composed)
+      } else {
+        setComposeError('WriterOS could not compose this document right now.')
+      }
+    } catch {
       setComposeError('WriterOS could not compose this document right now.')
+    } finally {
+      setIsComposing(false)
     }
   }, [document.content, activeFormat, identity, onComposed])
 
