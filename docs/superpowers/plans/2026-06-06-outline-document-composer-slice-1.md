@@ -769,35 +769,47 @@ import { getOutlineReadiness } from '../../../shared/compose/readiness'
 import { buildOutlineFactSheet } from '../../../shared/compose/factSheet'
 import { getOutlineRecipe } from '../../../shared/compose/recipe'
 import { createEmptyOutlineContent } from '../../../shared/documents'
+import { setOutlinePath } from '../../../client/src/lib/outlineDeck'
 
-function fsFor(mut: (c: ReturnType<typeof createEmptyOutlineContent>) => void) {
-  const c = createEmptyOutlineContent(); mut(c)
+const recipe = getOutlineRecipe('feature')
+
+function build(paths: Record<string, string>) {
+  let c = createEmptyOutlineContent()
+  for (const [path, value] of Object.entries(paths)) c = setOutlinePath(c, path, value)
   return buildOutlineFactSheet(c, 'feature')
 }
-const recipe = getOutlineRecipe('feature')
 
 describe('getOutlineReadiness (feature)', () => {
   it('sparse when core missing', () => {
-    const r = getOutlineReadiness(fsFor(c => { c.spine.protagonist = 'Mara' }), recipe)
+    const r = getOutlineReadiness(build({ 'spine.protagonist': 'Mara' }), recipe)
     expect(r.tier).toBe('sparse')
     expect(r.missingCoreLabels.length).toBeGreaterThan(0)
   })
-  it('partial when core present but omittable section empty', () => {
-    const r = getOutlineReadiness(fsFor(c => {
-      c.spine.protagonist = 'Mara'; c.spine.centralOpposition = 'The Syndicate'
-      c.units.find(u => u.id === 'feature.midpoint')!.whatHappens = 'Plan collapses.'
+  it('partial when core present but not all important fields answered', () => {
+    const r = getOutlineReadiness(build({
+      'spine.protagonist': 'Mara',
+      'spine.centralOpposition': 'The Syndicate',
+      'units[id=feature.midpoint].whatHappens': 'Plan collapses.',
     }), recipe)
     expect(r.tier).toBe('partial')
   })
-  it('rich when all required satisfied', () => {
-    const r = getOutlineReadiness(fsFor(c => {
-      c.spine.protagonist = 'Mara'; c.spine.centralOpposition = 'The Syndicate'
-      c.units.forEach(u => { u.whatHappens = 'x' })
+  it('rich when all important fields answered', () => {
+    const r = getOutlineReadiness(build({
+      'spine.protagonist': 'Mara',
+      'spine.externalGoal': 'clear her name',
+      'spine.internalNeed': 'trust again',
+      'spine.centralOpposition': 'The Syndicate',
+      'spine.coreStakes': 'her freedom',
+      'units[id=feature.incitingIncident].whatHappens': 'A file surfaces.',
+      'units[id=feature.midpoint].whatHappens': 'Plan collapses.',
+      'units[id=feature.climax].whatHappens': 'She testifies.',
     }), recipe)
     expect(r.tier).toBe('rich')
   })
 })
 ```
+
+> Tiering: `sparse` = core gate fails (missing `coreRequiredFieldIds` or no beat/episode). `rich` = passed the sparse gate AND every section's `importantFieldIds` are all answered AND no omittable section is fully empty. `partial` = passed the gate but not rich. This makes all three tiers reachable (the earlier "every required field" phrasing was degenerate for this recipe because the only omittable feature section shares its sources with the core-beat gate). `setOutlinePath` auto-creates units via `createOutlineUnit`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -837,22 +849,20 @@ export function getOutlineReadiness(fs: FactSheet, recipe: Recipe): Readiness {
 
   // Determine omitted omittable sections (no source fields present).
   const omittedSectionHeadings: string[] = []
-  let allRequiredAnswered = true
   for (const section of recipe.sections) {
-    const required = section.requiredFieldIds.every(id => has(fs, id))
-    if (!required) allRequiredAnswered = false
-    if (section.omittable) {
-      const sourceIds = section.style === 'leadIns'
-        ? (section.beats ?? []).flatMap(b => b.fieldIds)
-        : section.importantFieldIds
-      const anyPresent = section.key === 'episodeMap'
-        ? fs.fields.some(f => f.id.startsWith('episodes.'))
-        : sourceIds.some(id => has(fs, id))
-      if (!anyPresent) omittedSectionHeadings.push(section.heading)
-    }
+    if (!section.omittable) continue
+    const sourceIds = section.style === 'leadIns'
+      ? (section.beats ?? []).flatMap(b => b.fieldIds)
+      : section.importantFieldIds
+    const anyPresent = section.key === 'episodeMap'
+      ? fs.fields.some(f => f.id.startsWith('episodes.'))
+      : sourceIds.some(id => has(fs, id))
+    if (!anyPresent) omittedSectionHeadings.push(section.heading)
   }
 
-  const tier = allRequiredAnswered && omittedSectionHeadings.length === 0 ? 'rich' : 'partial'
+  // Rich = every section's important fields all answered AND nothing omitted.
+  const allImportantAnswered = recipe.sections.every(s => s.importantFieldIds.every(id => has(fs, id)))
+  const tier = allImportantAnswered && omittedSectionHeadings.length === 0 ? 'rich' : 'partial'
   return { tier, missingCoreLabels: [], omittedSectionHeadings }
 }
 ```
@@ -1263,32 +1273,39 @@ Expected: FAIL — module not found.
 // tests/fixtures/outline/syntheticOutline.ts
 import { createEmptyOutlineContent } from '../../../shared/documents'
 import type { OutlineDocumentContent } from '../../../shared/documents'
+import { setOutlinePath } from '../../../client/src/lib/outlineDeck'
 
-const c = createEmptyOutlineContent()
-c.spine.protagonist = 'Vera Solano, a disgraced forensic auditor'
-c.spine.externalGoal = 'clear her name by exposing the shell-company fraud'
-c.spine.internalNeed = 'to stop hiding behind ledgers and trust people again'
-c.spine.centralOpposition = 'The Meridian Group, who buried the evidence'
-c.spine.coreStakes = 'her freedom and her sister’s safety'
-c.spine.theme = 'truth costs more than silence'
-c.spine.ending = 'Vera testifies, losing everything but her integrity'
-const set = (id: string, what: string, extra?: Partial<Record<'whyNext' | 'consequence', string>>) => {
-  const u = c.units.find(x => x.id === id)!; u.whatHappens = what
-  if (extra?.whyNext) u.whyNext = extra.whyNext
-  if (extra?.consequence) u.consequence = extra.consequence
+// createEmptyOutlineContent() seeds units: [] — build via setOutlinePath, which
+// auto-creates feature units (createOutlineUnit) when writing units[id=...] paths.
+const PATHS: Record<string, string> = {
+  'spine.protagonist': 'Vera Solano, a disgraced forensic auditor',
+  'spine.externalGoal': 'clear her name by exposing the shell-company fraud',
+  'spine.internalNeed': 'to stop hiding behind ledgers and trust people again',
+  'spine.centralOpposition': 'The Meridian Group, who buried the evidence',
+  'spine.coreStakes': 'her freedom and her sister’s safety',
+  'spine.theme': 'truth costs more than silence',
+  'spine.ending': 'Vera testifies, losing everything but her integrity',
+  'units[id=feature.openingNormalWorld].whatHappens': 'Vera reconciles audits alone in a basement office.',
+  'units[id=feature.openingNormalWorld].whyNext': 'A flagged transaction lands on her desk.',
+  'units[id=feature.incitingIncident].whatHappens': 'She finds a deleted ledger entry tying Meridian to a death.',
+  'units[id=feature.incitingIncident].consequence': 'She copies the file before it vanishes.',
+  'units[id=feature.actOneBreak].whatHappens': 'Meridian frees her contact and frames her for the leak.',
+  'units[id=feature.actOneBreak].whyNext': 'She goes underground to prove it.',
+  'units[id=feature.midpoint].whatHappens': 'Vera turns a Meridian insider, then learns her sister was the source.',
+  'units[id=feature.midpoint].consequence': 'Trust and danger both spike.',
+  'units[id=feature.allIsLostWithSubplot].whatHappens': 'The insider is killed and the evidence is seized.',
+  'units[id=feature.allIsLostWithSubplot].consequence': 'Vera nearly runs.',
+  'units[id=feature.climax].whatHappens': 'Vera walks into the hearing with the one copy they missed.',
+  'units[id=feature.finalImage].whatHappens': 'Empty office, lights off, a subpoena on the desk.',
 }
-set('feature.openingNormalWorld', 'Vera reconciles audits alone in a basement office.', { whyNext: 'A flagged transaction lands on her desk.' })
-set('feature.incitingIncident', 'She finds a deleted ledger entry tying Meridian to a death.', { consequence: 'She copies the file before it vanishes.' })
-set('feature.actOneBreak', 'Meridian frees her contact and frames her for the leak.', { whyNext: 'She goes underground to prove it.' })
-set('feature.midpoint', 'Vera turns a Meridian insider, then learns her sister was the source.', { consequence: 'Trust and danger both spike.' })
-set('feature.allIsLostWithSubplot', 'The insider is killed and the evidence is seized.', { consequence: 'Vera nearly runs.' })
-set('feature.climax', 'Vera walks into the hearing with the one copy they missed.')
-set('feature.finalImage', 'Empty office, lights off, a subpoena on the desk.')
 
-export const syntheticOutlineFeature: OutlineDocumentContent = c
+let content = createEmptyOutlineContent()
+for (const [path, value] of Object.entries(PATHS)) content = setOutlinePath(content, path, value)
+
+export const syntheticOutlineFeature: OutlineDocumentContent = content
 ```
 
-> Confirm `createEmptyOutlineContent()` seeds the feature units array with the expected ids. If it does not, push the units explicitly using the `OutlineUnit` shape from `shared/documents.ts`.
+> `setOutlinePath` (from `client/src/lib/outlineDeck.ts`) parses `units[id=<id>].<field>` and auto-creates the unit via `createOutlineUnit`. The fixture sets all spine important fields + the inciting/midpoint/climax beats, so it lands at `rich` tier under the importantFieldIds-based readiness.
 
 - [ ] **Step 4: Run test to verify it passes**
 
