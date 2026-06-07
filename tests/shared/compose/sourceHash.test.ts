@@ -23,4 +23,16 @@ describe('computeOutlineSourceHash', () => {
     const c = createEmptyOutlineContent(); c.spine.protagonist = 'Mara'
     expect(computeOutlineSourceHash(c, 'feature', id)).not.toBe(computeOutlineSourceHash(c, 'series', id))
   })
+  it('changes on identity.title change', () => {
+    const c = createEmptyOutlineContent(); c.spine.protagonist = 'Mara'
+    expect(computeOutlineSourceHash(c, 'feature', id)).not.toBe(
+      computeOutlineSourceHash(c, 'feature', { ...id, title: 'Other' }),
+    )
+  })
+  it('changes on identity.genre change', () => {
+    const c = createEmptyOutlineContent(); c.spine.protagonist = 'Mara'
+    expect(computeOutlineSourceHash(c, 'feature', id)).not.toBe(
+      computeOutlineSourceHash(c, 'feature', { ...id, genre: 'Comedy' }),
+    )
+  })
 })
