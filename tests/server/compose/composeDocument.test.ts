@@ -2,9 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { composeOutline } from '../../../server/compose'
 import { syntheticOutlineFeature } from '../../fixtures/outline/syntheticOutline'
 
+// Cite every answered important field so the fidelity coverage check is clean.
+// Text uses only entities present in the source answers (Vera Solano, The Meridian Group).
+const cleanSourceIds = [
+  'spine.protagonist',
+  'spine.externalGoal',
+  'spine.internalNeed',
+  'spine.centralOpposition',
+  'spine.coreStakes',
+  'feature.incitingIncident.whatHappens',
+  'feature.midpoint.whatHappens',
+  'feature.climax.whatHappens',
+]
 const goodBlocks = JSON.stringify({ blocks: [
   { type: 'heading', text: 'Who We Follow' },
-  { type: 'paragraph', text: 'Vera Solano fights The Meridian Group.', sourceFieldIds: ['spine.protagonist', 'spine.centralOpposition'] },
+  { type: 'paragraph', text: 'Vera Solano fights The Meridian Group.', sourceFieldIds: cleanSourceIds },
 ]})
 
 function fakeProvider(responses: string[]) {
@@ -22,6 +34,7 @@ describe('composeOutline', () => {
       expect(result.composed.recipeVersion).toBe(1)
       expect(result.composed.blocks.length).toBeGreaterThan(0)
       expect(result.composed.sourceHash).toMatch(/^[0-9a-f]{64}$/)
+      expect(result.composed.fidelity.status).toBe('clean')
     }
   })
   it('retries once on invalid JSON then soft-fails', async () => {
