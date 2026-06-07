@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildEntityInventory, traceEntity } from '../../../server/compose/entityInventory'
+import { buildEntityInventory, traceEntity, traceNumber } from '../../../server/compose/entityInventory'
 import type { FactSheet } from '../../../shared/compose/types'
 
 const fs: FactSheet = {
@@ -20,5 +20,11 @@ describe('entityInventory', () => {
     const inv = buildEntityInventory(fs)
     expect(traceEntity('Vera Solano', inv)).toBe(true)
     expect(traceEntity('Kane Yoshida', inv)).toBe(false)
+  })
+  it('collects and traces numbers, missing invented ones', () => {
+    const inv = buildEntityInventory(fs)
+    expect(inv.numbers).toContain('3')
+    expect(traceNumber('3', inv)).toBe(true)
+    expect(traceNumber('4', inv)).toBe(false)
   })
 })
