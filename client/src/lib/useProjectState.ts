@@ -35,6 +35,9 @@ import {
 } from '@shared/documents'
 import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import type { ComposedDocument } from '@shared/compose/types'
+import { computeOutlineSourceHash } from '@shared/compose/sourceHash'
+import { pickIdentity } from '@shared/compose/identity'
 import { createOutlineEpisode } from './outlineDeck'
 import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
 
@@ -344,6 +347,32 @@ export function useProjectState() {
     },
     [update],
   )
+
+  const setComposedDocument = useCallback(
+    (surface: 'outline', composed: ComposedDocument) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          [surface]: {
+            ...s.documents[surface],
+            updatedAt: nextTimestampAfter(s.documents[surface].updatedAt),
+            composed,
+          },
+        },
+      }))
+    },
+    [update],
+  )
+
+  const currentOutlineSourceHash = useCallback((): string => {
+    const format = normalizeProjectFormat(state.meta.format)
+    return computeOutlineSourceHash(
+      normalizeOutlineContent(state.documents.outline.content),
+      format,
+      pickIdentity(state.meta),
+    )
+  }, [state])
 
   const setOutlineViewPreferences = useCallback(
     (patch: Partial<DocumentViewPreferences>) => {
@@ -828,6 +857,8 @@ export function useProjectState() {
     migrateStoryBibleLegacyToDocument,
     setBeat,
     setOutlineDocument,
+    setComposedDocument,
+    currentOutlineSourceHash,
     setOutlineViewPreferences,
     setTreatmentDocument,
     setTreatmentViewPreferences,
