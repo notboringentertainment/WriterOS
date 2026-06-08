@@ -20,6 +20,8 @@ export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { syst
     return `- ${s.heading} [flowing prose] (draw from: ${s.importantFieldIds.join(', ') || 'relevant facts'})`
   }).join('\n')
 
+  const firstHeading = recipe.sections[0]?.heading ?? ''
+
   const system = [
     OLIVER_LENS,
     'Compose a professional, readable outline document from the writer’s answers.',
@@ -29,6 +31,7 @@ export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { syst
     '3. Use a neutral-professional house voice. Do not imitate the writer’s personal voice.',
     '4. Every prose block (logline, paragraph, leadInParagraph) MUST include sourceFieldIds: the ids of the facts it draws from. Use only ids that appear in <source_facts>.',
     '5. Return ONLY JSON of shape { "blocks": ComposedBlock[] }. No prose outside JSON.',
+    `6. Output ONLY the sections in the plan below, in order. The first block MUST be the heading "${firstHeading}". Do not add a document title, byline, format label, metadata/meta block, preamble, or a source/fact inventory. Do not add any section not listed in the plan.`,
     'Block types: heading{text}, subheading{text}, divider{}, meta{text}, logline{text,sourceFieldIds}, paragraph{text,sourceFieldIds}, leadInParagraph{lead,text,sourceFieldIds}.',
     'Follow this section plan exactly; omit a section only if it has no source facts:',
     sectionPlan,

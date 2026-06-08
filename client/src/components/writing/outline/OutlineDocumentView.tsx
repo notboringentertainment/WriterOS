@@ -68,6 +68,14 @@ const footerStyle: React.CSSProperties = {
   color: 'var(--fg-muted)',
 }
 
+// A lead gets a trailing period for the run-in, unless it already ends with
+// terminal punctuation — avoids "Where We Begin.." when the model returns a
+// lead that already carries its own punctuation.
+function formatLead(lead: string): string {
+  const trimmed = lead.trim()
+  return /[.!?:]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `
+}
+
 // Renderer purity: the body emits ONLY composed text. It never reads
 // sourceFieldIds, recipe labels, fidelity warnings, or answer ids.
 function Block({ block }: { block: ComposedBlock }) {
@@ -78,7 +86,7 @@ function Block({ block }: { block: ComposedBlock }) {
     case 'meta': return <p style={metaStyle}>{block.text}</p>
     case 'logline': return <p style={{ ...bodyStyle, fontStyle: 'italic' }}>{block.text}</p>
     case 'paragraph': return <p style={bodyStyle}>{block.text}</p>
-    case 'leadInParagraph': return <p style={bodyStyle}><strong>{block.lead}. </strong>{block.text}</p>
+    case 'leadInParagraph': return <p style={bodyStyle}><strong>{formatLead(block.lead)}</strong>{block.text}</p>
     default: return null
   }
 }

@@ -57,6 +57,18 @@ describe('OutlineDocumentView', () => {
     expect(screen.getByRole('button', { name: /compose this outline/i })).toBeEnabled()
   })
 
+  it('does not double punctuation when a leadInParagraph lead ends with punctuation', () => {
+    const withLead: ComposedDocument = {
+      ...composed,
+      blocks: [
+        { type: 'leadInParagraph', lead: 'Where We Begin.', text: 'A ledger entry surfaces.', sourceFieldIds: ['spine.protagonist'] },
+      ],
+    }
+    const { container } = render(<OutlineDocumentView {...baseProps} composed={withLead} />)
+    expect(container.textContent).toContain('Where We Begin.')
+    expect(container.textContent).not.toContain('Where We Begin..')
+  })
+
   it('omits the "add ... for a fuller document" clause when nothing is omitted', () => {
     // Partial tier with no omitted sections: core met, every omittable section has
     // a field present, but a non-omittable section important field is unanswered.

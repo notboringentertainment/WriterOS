@@ -23,6 +23,20 @@ describe('buildComposePrompt', () => {
     expect(system).toMatch(/sourceFieldIds/)
   })
 
+  it('forbids titles, meta preamble, inventories, and off-plan sections', () => {
+    expect(system).toMatch(/do not add a (document )?title/i)
+    expect(system).toMatch(/preamble|metadata|format label/i)
+    expect(system).toMatch(/inventory/i)
+    expect(system).toMatch(/section not (in|listed)/i)
+  })
+
+  it('instructs the first heading to be the first recipe heading', () => {
+    const firstHeading = getOutlineRecipe('feature').sections[0].heading
+    expect(firstHeading).toBe('Who We Follow')
+    expect(system).toMatch(/first .*heading/i)
+    expect(system).toContain(`"${firstHeading}"`)
+  })
+
   it('does not let authored answers terminate the fenced block', () => {
     const malicious: FactSheet = {
       surface: 'outline',
