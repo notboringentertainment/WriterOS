@@ -9,8 +9,19 @@ const INJECTION_PATTERNS = [
   /you are now/i,
 ]
 
-function proseText(b: ComposedBlock): string {
+// Includes the structural lead label — used for injection scanning, where a
+// prompt-control phrase hidden in a lead must still be caught.
+function injectionText(b: ComposedBlock): string {
   if (b.type === 'leadInParagraph') return `${b.lead} ${b.text}`
+  if (b.type === 'logline' || b.type === 'paragraph') return b.text
+  return ''
+}
+
+// Story-body text only. For leadInParagraph the `lead` is a fixed recipe label
+// (e.g. "Point of No Return."), not authored story material, so it must NOT be
+// entity/number-diffed against the source facts.
+function entityText(b: ComposedBlock): string {
+  if (b.type === 'leadInParagraph') return b.text
   if (b.type === 'logline' || b.type === 'paragraph') return b.text
   return ''
 }
@@ -33,10 +44,10 @@ export function runFidelityCheck(
       citedIds.add(id)
       if (!validIds.has(id)) warnings.push({ kind: 'dangling_source_id', message: `Unknown sourceFieldId: ${id}`, blockIndex: i, fieldId: id })
     }
-    const text = proseText(b)
     for (const p of INJECTION_PATTERNS) {
-      if (p.test(text)) warnings.push({ kind: 'injection_echo', message: 'Block echoes prompt-control phrasing.', blockIndex: i })
+      if (p.test(injectionText(b))) warnings.push({ kind: 'injection_echo', message: 'Block echoes prompt-control phrasing.', blockIndex: i })
     }
+    const text = entityText(b)
     for (const m of text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g)) {
       if (!traceEntity(m[1], inventory)) warnings.push({ kind: 'entity_diff', message: `Entity not in answers: ${m[1]}`, blockIndex: i, entity: m[1] })
     }

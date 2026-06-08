@@ -13,7 +13,9 @@ const blocks = JSON.stringify({ blocks: [
   { type: 'paragraph', text: 'The Meridian Group buried the evidence, and her freedom is on the line.', sourceFieldIds: ['spine.centralOpposition', 'spine.coreStakes'] },
   { type: 'heading', text: 'The Shape of the Story' },
   { type: 'leadInParagraph', lead: 'Disruption', text: 'She finds a deleted ledger entry.', sourceFieldIds: ['feature.incitingIncident.whatHappens'] },
-  { type: 'leadInParagraph', lead: 'Turn', text: 'The audit becomes a hunt.', sourceFieldIds: ['feature.midpoint.whatHappens'] },
+  // Recipe lead with multi-word structural label + trailing punctuation: must
+  // not be entity-diffed as a story fact.
+  { type: 'leadInParagraph', lead: 'Point of No Return.', text: 'The audit becomes a hunt.', sourceFieldIds: ['feature.midpoint.whatHappens'] },
   { type: 'leadInParagraph', lead: 'Where It Lands', text: 'She confronts the board.', sourceFieldIds: ['feature.climax.whatHappens'] },
 ]})
 
