@@ -1,6 +1,6 @@
 # Outline Document Composer — Slice 1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Compose authored Outline answers into a professional, editorial read-only artifact rendered in Document View, with deterministic fidelity checks, staleness detection, and tiered readiness — Outline surface only. (The local Bloodless PDF is the manual calibration benchmark only; it is never committed.)
 
@@ -11,6 +11,8 @@
 **Spec:** `docs/superpowers/specs/2026-06-06-outline-document-composer-slice-1-design.md`
 **PRD:** `docs/product/document-composer-prd.md`
 **Branch:** `feature/outline-document-composer` (already cut from `056dfed`; naive code in `stash@{0}`)
+
+> **Status: ✅ Complete (2026-06-07).** All tasks 1–23 implemented TDD on `feature/outline-document-composer`. Final gate green: `npm run check` clean, `npm run test:run` 1123 pass, `npm run build` succeeds. Post-implementation Bloodless visual calibration applied two prompt/render fixes (`bace1c9`) and one fidelity lead-label fix (`8dc7e0e`). Manual Bloodless PDF comparison is local-only and never committed.
 
 **Verification after every task:** the listed test command must pass. Full-suite gate at the end: `npm run check && npm run test:run && npm run build`.
 
@@ -113,7 +115,7 @@ Prose block types = `logline | paragraph | leadInParagraph` (require `sourceFiel
 - Create: `shared/compose/sha256.ts`
 - Test: `tests/shared/compose/sha256.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -131,12 +133,12 @@ describe('sha256Hex', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/sha256.test.ts`
 Expected: FAIL — cannot find module `sha256`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // shared/compose/sha256.ts
@@ -212,12 +214,12 @@ export function sha256Hex(input: string): string {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/sha256.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/sha256.ts tests/shared/compose/sha256.test.ts
@@ -233,7 +235,7 @@ git commit -m "feat(compose): sync SHA-256 for shared content hashing"
 - Create: `shared/compose/schemas.ts` (zod for `ComposedDocument`)
 - Test: `tests/shared/compose/schemas.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -264,12 +266,12 @@ describe('ComposedDocumentSchema', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/schemas.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `shared/compose/types.ts` with the **Type reference block** verbatim from the top of this plan.
 
@@ -317,12 +319,12 @@ export const ComposedDocumentSchema = z.object({
 export const ModelComposeOutputSchema = z.object({ blocks: z.array(ComposedBlockSchema) })
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/schemas.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/types.ts shared/compose/schemas.ts tests/shared/compose/schemas.test.ts
@@ -340,7 +342,7 @@ git commit -m "feat(compose): composed-document types and zod schemas"
 
 Normalization rules (spec §4): trim leading/trailing whitespace; treat absent and `''` identically (drop empty); canonical object-key ordering; preserve array order as authored EXCEPT where the caller pre-sorts (FactSheet fields are pre-sorted by id in Task 5); normalize line endings CRLF/CR → LF. Do NOT alter punctuation, casing, or internal wording.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -365,12 +367,12 @@ describe('stableHash', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/stableHash.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/normalize.ts
@@ -417,12 +419,12 @@ export function stableHash(value: unknown): string {
 
 > Note: object keys are sorted by `normalizeValue`. Arrays keep caller order — FactSheet pre-sorts its `fields` by id in Task 5, so the hash input is order-stable.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/stableHash.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/normalize.ts shared/compose/stableHash.ts tests/shared/compose/stableHash.test.ts
@@ -437,7 +439,7 @@ git commit -m "feat(compose): conservative normalize + SHA-256 stableHash"
 - Create: `shared/compose/identity.ts`
 - Test: `tests/shared/compose/identity.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -455,12 +457,12 @@ describe('pickIdentity', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/identity.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/identity.ts
@@ -473,12 +475,12 @@ export function pickIdentity(meta: { title?: string; genre?: string }): ComposeI
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/identity.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/identity.ts tests/shared/compose/identity.test.ts
@@ -502,7 +504,7 @@ Field id scheme (verbatim from `shared/documents.ts` + `client/src/lib/outlineDe
 
 Kinds: `spine.protagonist` → `name`; episode/spine narrative + unit fields → `prose`; everything else default `prose`. (No numeric outline fields in V1 → no `number` kind emitted; `list`/`number` kept in the type for future surfaces.)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -536,12 +538,12 @@ describe('buildOutlineFactSheet', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/factSheet.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/factSheet.ts
@@ -608,12 +610,12 @@ export function buildOutlineFactSheet(content: OutlineDocumentContent, format: '
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/factSheet.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/factSheet.ts tests/shared/compose/factSheet.test.ts
@@ -634,7 +636,7 @@ git commit -m "feat(compose): buildOutlineFactSheet (feature + series)"
 
 To keep readiness logic simple, the recipe exposes `coreRequiredFieldIds` (hard ids) and `coreBeatFieldIds` (the OR-group; readiness needs ≥1 present).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -656,12 +658,12 @@ describe('getOutlineRecipe', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/recipe.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/recipe.ts
@@ -741,12 +743,12 @@ export const FEATURE_CORE_BEAT_FIELD_IDS = [
 export function seriesCoreEpisodePrefix(): string { return 'episodes.' }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/recipe.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/recipe.ts tests/shared/compose/recipe.test.ts
@@ -761,7 +763,7 @@ git commit -m "feat(compose): editorial outline recipe (feature + series)"
 - Create: `shared/compose/readiness.ts`
 - Test: `tests/shared/compose/readiness.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -811,12 +813,12 @@ describe('getOutlineReadiness (feature)', () => {
 
 > Tiering: `sparse` = core gate fails (missing `coreRequiredFieldIds` or no beat/episode). `rich` = passed the sparse gate AND every section's `importantFieldIds` are all answered AND no omittable section is fully empty. `partial` = passed the gate but not rich. This makes all three tiers reachable (the earlier "every required field" phrasing was degenerate for this recipe because the only omittable feature section shares its sources with the core-beat gate). `setOutlinePath` auto-creates units via `createOutlineUnit`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/readiness.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/readiness.ts
@@ -867,12 +869,12 @@ export function getOutlineReadiness(fs: FactSheet, recipe: Recipe): Readiness {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/readiness.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/readiness.ts tests/shared/compose/readiness.test.ts
@@ -889,7 +891,7 @@ git commit -m "feat(compose): tiered outline readiness (sparse/partial/rich)"
 
 This is the single hash definition both tiers use (spec Approach A).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -920,12 +922,12 @@ describe('computeOutlineSourceHash', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/compose/sourceHash.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // shared/compose/sourceHash.ts
@@ -944,12 +946,12 @@ export function computeOutlineSourceHash(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/compose/sourceHash.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/compose/sourceHash.ts tests/shared/compose/sourceHash.test.ts
@@ -966,7 +968,7 @@ git commit -m "feat(compose): shared outline sourceHash (FactSheet + format + id
 - Modify: `shared/documents.ts` (AuthoredDocumentState type ~129–155, schema factory, `DOCUMENT_SCHEMA_VERSION` at ~556)
 - Test: `tests/shared/documents.composed.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -987,12 +989,12 @@ describe('AuthoredDocumentState.composed', () => {
 
 > If `OutlineDocumentContentSchema.parse(undefined)` throws (no default), replace with `createEmptyOutlineContent()` imported from the same module.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/shared/documents.composed.test.ts`
 Expected: FAIL — `DOCUMENT_SCHEMA_VERSION` is 1.
 
-- [ ] **Step 3: Edit `shared/documents.ts`**
+- [x] **Step 3: Edit `shared/documents.ts`**
 
 1. At top of file, add import of the composed schema:
 ```ts
@@ -1011,12 +1013,12 @@ import { ComposedDocumentSchema } from './compose/schemas'
 export const DOCUMENT_SCHEMA_VERSION = 2
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shared/documents.composed.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add shared/documents.ts tests/shared/documents.composed.test.ts
@@ -1033,7 +1035,7 @@ git commit -m "feat(compose): add composed? to AuthoredDocumentState; bump DOCUM
 
 Because `composed` is optional, a missing field already validates. The migration only needs to ensure pre-v2 documents do not carry a stale `composed`, and that the schema-version bump does not break load. Verify behavior with a test; add explicit normalization only if needed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1048,12 +1050,12 @@ describe('migrateState composed handling', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails or passes**
+- [x] **Step 2: Run test to verify it fails or passes**
 
 Run: `npx vitest run tests/lib/projectState.composedMigration.test.ts`
 Expected: PASS already (optional field). If it FAILS due to schema-version mismatch, proceed to Step 3.
 
-- [ ] **Step 3: Edit `client/src/lib/projectState.ts` (only if Step 2 failed)**
+- [x] **Step 3: Edit `client/src/lib/projectState.ts` (only if Step 2 failed)**
 
 In `migrateState`, where document defaults are filled, ensure outline document spreads existing `composed`:
 ```ts
@@ -1061,12 +1063,12 @@ In `migrateState`, where document defaults are filled, ensure outline document s
 ```
 Bump `CURRENT_SCHEMA_VERSION` only if a structural project-level migration is required; the document-level bump in Task 9 is independent. Leave `CURRENT_SCHEMA_VERSION` at 5 unless a test forces otherwise.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/lib/projectState.composedMigration.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/src/lib/projectState.ts tests/lib/projectState.composedMigration.test.ts
@@ -1081,7 +1083,7 @@ git commit -m "test(compose): verify legacy projects migrate with composed undef
 - Modify: `client/src/lib/useProjectState.ts` (`setOutlineDocument` ~327–346; `clearOutline` ~469–500; return object ~808–863)
 - Test: `tests/lib/useProjectState.composed.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { describe, expect, it } from 'vitest'
@@ -1114,12 +1116,12 @@ describe('useProjectState composed', () => {
 
 > Match the existing test harness: check `tests/lib/` for how `useProjectState` is rendered (it may need a provider). If an existing `useProjectState` test exists, copy its setup verbatim.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/lib/useProjectState.composed.test.tsx`
 Expected: FAIL — `setComposedDocument`/`currentOutlineSourceHash` not defined.
 
-- [ ] **Step 3: Edit `client/src/lib/useProjectState.ts`**
+- [x] **Step 3: Edit `client/src/lib/useProjectState.ts`**
 
 Add imports:
 ```ts
@@ -1161,12 +1163,12 @@ In `clearOutline`, ensure the returned outline document omits `composed` (the re
 
 Add both to the hook's return object alongside `setOutlineDocument`/`clearOutline`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/lib/useProjectState.composed.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/src/lib/useProjectState.ts tests/lib/useProjectState.composed.test.tsx
@@ -1181,7 +1183,7 @@ git commit -m "feat(compose): setComposedDocument, clearOutline drops composed, 
 - Modify: none expected (composed rides inside `documents/outline.json`)
 - Test: `tests/lib/projectPackage.composed.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1213,21 +1215,21 @@ describe('projectPackage composed round-trip', () => {
 
 > Copy the exact `StoredProject` construction from an existing `tests/lib/projectPackage*.test.ts`. Do not guess the wrapper shape.
 
-- [ ] **Step 2: Run test to verify it fails or passes**
+- [x] **Step 2: Run test to verify it fails or passes**
 
 Run: `npx vitest run tests/lib/projectPackage.composed.test.ts`
 Expected: PASS if serialization is transparent; FAIL if the document schema strips unknown fields.
 
-- [ ] **Step 3: Fix only if it fails**
+- [x] **Step 3: Fix only if it fails**
 
 If `readWriterOSProjectPackage` validates each document against a schema that omits `composed`, ensure that schema is the Task-9-updated `AuthoredDocumentStateSchema(OutlineDocumentContentSchema)`. Update the import/usage in `projectPackage.ts` to the schema that includes `composed`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/lib/projectPackage.composed.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/lib/projectPackage.composed.test.ts client/src/lib/projectPackage.ts
@@ -1244,7 +1246,7 @@ git commit -m "test(compose): composed outline artifact round-trips through .wri
 
 > Naming: the committed fixture is neutral (`syntheticOutlineFeature`). The local Bloodless PDF is referenced only as manual calibration (Task 23), never as a committed fixture name.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1262,12 +1264,12 @@ describe('syntheticOutlineFeature', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/fixtures/outline/syntheticOutline.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the fixture**
+- [x] **Step 3: Write the fixture**
 
 ```ts
 // tests/fixtures/outline/syntheticOutline.ts
@@ -1307,12 +1309,12 @@ export const syntheticOutlineFeature: OutlineDocumentContent = content
 
 > `setOutlinePath` (from `client/src/lib/outlineDeck.ts`) parses `units[id=<id>].<field>` and auto-creates the unit via `createOutlineUnit`. The fixture sets all spine important fields + the inciting/midpoint/climax beats, so it lands at `rich` tier under the importantFieldIds-based readiness.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/fixtures/outline/syntheticOutline.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/fixtures/outline/syntheticOutline.ts tests/fixtures/outline/syntheticOutline.test.ts
@@ -1329,7 +1331,7 @@ git commit -m "test(compose): synthetic professional outline fixture"
 - Create: `server/compose/entityInventory.ts`
 - Test: `tests/server/compose/entityInventory.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1358,12 +1360,12 @@ describe('entityInventory', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/server/compose/entityInventory.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // server/compose/entityInventory.ts
@@ -1401,12 +1403,12 @@ export function traceNumber(candidate: string, inv: EntityInventory): boolean {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/compose/entityInventory.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/compose/entityInventory.ts tests/server/compose/entityInventory.test.ts
@@ -1421,7 +1423,7 @@ git commit -m "feat(compose): authoritative server-side entity inventory + traci
 - Create: `server/compose/buildComposePrompt.ts`
 - Test: `tests/server/compose/buildComposePrompt.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1450,12 +1452,12 @@ describe('buildComposePrompt', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/server/compose/buildComposePrompt.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // server/compose/buildComposePrompt.ts
@@ -1495,12 +1497,12 @@ export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { syst
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/compose/buildComposePrompt.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/compose/buildComposePrompt.ts tests/server/compose/buildComposePrompt.test.ts
@@ -1515,7 +1517,7 @@ git commit -m "feat(compose): compose prompt builder with fenced untrusted answe
 - Create: `server/compose/runFidelityCheck.ts`
 - Test: `tests/server/compose/runFidelityCheck.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1573,12 +1575,12 @@ describe('runFidelityCheck', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/server/compose/runFidelityCheck.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // server/compose/runFidelityCheck.ts
@@ -1650,12 +1652,12 @@ export function hasSevereInjection(blocks: ComposedBlock[]): boolean {
 
 > Entity-diff conservative tuning: single-word capitalized tokens are NOT entity-diffed (only multi-word names + numbers), so ordinary sentence-initial capitals and common words don't overblock. The inventory still records single proper nouns so multi-word fuzzy tracing can match them.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/compose/runFidelityCheck.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/compose/runFidelityCheck.ts tests/server/compose/runFidelityCheck.test.ts
@@ -1671,7 +1673,7 @@ git commit -m "feat(compose): deterministic fidelity check (provenance/coverage/
 - Create: `server/compose/index.ts`
 - Test: `tests/server/compose/composeDocument.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it, vi } from 'vitest'
@@ -1715,12 +1717,12 @@ describe('composeOutline', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/server/compose/composeDocument.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // server/compose/composeDocument.ts
@@ -1815,12 +1817,12 @@ export async function composeOutline(args: ComposeOutlineArgs): Promise<ComposeO
 
 > `new Date().toISOString()` is acceptable here (server runtime, not a workflow script).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/compose/composeDocument.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/compose/composeDocument.ts server/compose/index.ts tests/server/compose/composeDocument.test.ts
@@ -1838,7 +1840,7 @@ git commit -m "feat(compose): composeOutline orchestrator with retry/soft-fail a
 - Create: `shared/compose/requestSchema.ts` (request zod)
 - Test: `tests/server/composeDocumentRoute.test.ts`
 
-- [ ] **Step 1: Write the request schema**
+- [x] **Step 1: Write the request schema**
 
 ```ts
 // shared/compose/requestSchema.ts
@@ -1854,7 +1856,7 @@ export const ComposeDocumentRequestSchema = z.object({
 export type ComposeDocumentRequest = z.infer<typeof ComposeDocumentRequestSchema>
 ```
 
-- [ ] **Step 2: Write the failing route test**
+- [x] **Step 2: Write the failing route test**
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -1924,12 +1926,12 @@ describe('POST /api/compose-document', () => {
 })
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `npx vitest run tests/server/composeDocumentRoute.test.ts`
 Expected: FAIL — route 404 / not registered.
 
-- [ ] **Step 4: Register the route in `server/routes.ts`**
+- [x] **Step 4: Register the route in `server/routes.ts`**
 
 Add imports near the top:
 ```ts
@@ -1959,12 +1961,12 @@ app.post('/api/compose-document', async (req, res) => {
 ```
 > Confirm `z` is already imported in `server/routes.ts` (the persona route uses `z.ZodError`). If not, add `import { z } from 'zod'`.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/composeDocumentRoute.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/routes.ts shared/compose/requestSchema.ts tests/server/composeDocumentRoute.test.ts
@@ -1982,7 +1984,7 @@ git commit -m "feat(compose): POST /api/compose-document route (outline only)"
 - Create: `client/src/lib/outlineDocumentState.ts` (pure state-deriving function)
 - Test: `tests/lib/outlineDocumentState.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -2026,12 +2028,12 @@ describe('deriveOutlineDocumentState', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/lib/outlineDocumentState.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the implementations**
+- [x] **Step 3: Write the implementations**
 
 ```ts
 // client/src/lib/outlineDocumentState.ts
@@ -2111,12 +2113,12 @@ export async function requestOutlineCompose(input: {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/lib/outlineDocumentState.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/src/lib/outlineDocumentState.ts client/src/lib/composeClient.ts tests/lib/outlineDocumentState.test.ts
@@ -2135,7 +2137,7 @@ Before writing, read for pattern parity (legitimate step, not a placeholder):
 - `client/src/components/writing/OutlineTab.tsx` — how Edit|Document toggle + `activeView` is wired, how the tab gets `state`, setters, and `meta.format`.
 - The existing Synopsis Document View component (search `client/src/components/writing/synopsis*`) for styling conventions, heading components, and class names.
 
-- [ ] **Step 1: Write the failing test (renderer purity + states)**
+- [x] **Step 1: Write the failing test (renderer purity + states)**
 
 ```tsx
 import { describe, expect, it, vi } from 'vitest'
@@ -2189,12 +2191,12 @@ describe('OutlineDocumentView', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/components/OutlineDocumentView.test.tsx`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```tsx
 // client/src/components/writing/outline/OutlineDocumentView.tsx
@@ -2281,12 +2283,12 @@ export function OutlineDocumentView(props: OutlineDocumentViewProps) {
 
 > Match class-name conventions and any shared typography component from the Synopsis Document View you read in the pre-step. The structure above is the contract the tests assert; restyle freely as long as the body renders only composed text (no ids/labels).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/components/OutlineDocumentView.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/src/components/writing/outline/OutlineDocumentView.tsx tests/components/OutlineDocumentView.test.tsx
@@ -2303,7 +2305,7 @@ git commit -m "feat(compose): OutlineDocumentView with 9 states and renderer pur
 
 Pre-step: read `OutlineTab.tsx` to find the current `activeView === 'document'` branch (the naive render) and the available `state`/setters from `useProjectState`.
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
 
 ```tsx
 import { describe, expect, it, vi } from 'vitest'
@@ -2322,12 +2324,12 @@ describe('OutlineTab Document View', () => {
 
 > This test must be filled in using the existing `OutlineTab.test.tsx` harness (provider, render helper, how `activeView` is set). Copy that setup verbatim; do not invent a new harness. Replace the comment scaffold with concrete arrange/act/assert mirroring the existing tests in that file.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/components/OutlineTab.test.tsx`
 Expected: FAIL — Compose CTA not present (naive render still active).
 
-- [ ] **Step 3: Edit `OutlineTab.tsx`**
+- [x] **Step 3: Edit `OutlineTab.tsx`**
 
 Replace the `activeView === 'document'` naive branch with:
 ```tsx
@@ -2361,12 +2363,12 @@ Add imports: `requestOutlineCompose` from `../../lib/composeClient`, `pickIdenti
 
 Remove the naive field-render branch and any now-unused imports.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/components/OutlineTab.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/src/components/writing/OutlineTab.tsx tests/components/OutlineTab.test.tsx
@@ -2380,7 +2382,7 @@ git commit -m "feat(compose): wire OutlineDocumentView into OutlineTab; retire n
 **Files:**
 - Test: `tests/server/compose/outlineGolden.test.ts`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```ts
 import { describe, expect, it, vi } from 'vitest'
@@ -2415,12 +2417,12 @@ describe('outline golden (synthetic)', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it passes**
+- [x] **Step 2: Run test to verify it passes**
 
 Run: `npx vitest run tests/server/compose/outlineGolden.test.ts`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/server/compose/outlineGolden.test.ts
@@ -2431,31 +2433,31 @@ git commit -m "test(compose): synthetic outline golden invariants"
 
 ### Task 23: Full-suite verification + manual Bloodless comparison
 
-- [ ] **Step 1: Typecheck**
+- [x] **Step 1: Typecheck**
 
 Run: `npm run check`
 Expected: no errors. Fix any cross-file type mismatches (most likely import path depth from `client`/`server`/`tests` into `shared/compose`).
 
-- [ ] **Step 2: Full test suite**
+- [x] **Step 2: Full test suite**
 
 Run: `npm run test:run`
 Expected: all pass.
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run: `npm run build`
 Expected: succeeds.
 
-- [ ] **Step 4: Whitespace check**
+- [x] **Step 4: Whitespace check**
 
 Run: `git diff --check`
 Expected: no output.
 
-- [ ] **Step 5: Manual visual comparison (local only)**
+- [x] **Step 5: Manual visual comparison (local only)**
 
 Run the app, open an Outline with rich answers, switch to Document View, click Compose. Visually compare the rendered artifact against the local **Bloodless** PDF (NOT committed): editorial headings, woven prose, bold beat lead-ins — not labeled rows. Note discrepancies for recipe iteration (out of scope to fix here unless trivial).
 
-- [ ] **Step 6: Final commit (if any fixups)**
+- [x] **Step 6: Final commit (if any fixups)**
 
 ```bash
 git add -A
