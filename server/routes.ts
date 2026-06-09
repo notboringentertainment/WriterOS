@@ -9,6 +9,8 @@ import { personaCapabilityRequestSchema } from "@shared/personaCapability";
 import { runPersonaTask } from "./persona-capability/runPersonaTask";
 import { normalizeProjectFormat } from "@shared/projectFormat";
 import { scriptFactLines } from "./scriptFactFormatting";
+import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
+import { composeOutline } from "./compose";
 
 const openaiService = new OpenAIService();
 
@@ -1067,6 +1069,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to run persona capability",
         message: "Zoe could not complete that research pass right now.",
       });
+    }
+  });
+
+  app.post("/api/compose-document", async (req, res) => {
+    try {
+      const data = ComposeDocumentRequestSchema.parse(req.body);
+      const result = await composeOutline({ content: data.content, format: data.format, identity: data.identity });
+      if (!result.ok) {
+        console.error("compose-document soft-fail:", result.reason);
+        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
+      }
+      res.json({ composed: result.composed });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error("compose-document validation error:", error.flatten());
+        return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });
+      }
+      console.error("compose-document route error:", error instanceof Error ? error.message : error);
+      res.status(502).json({ error: "compose_error", message: "WriterOS could not compose this document right now." });
     }
   });
 

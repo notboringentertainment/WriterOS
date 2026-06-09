@@ -21,6 +21,7 @@ import {
   type HomePackageActionTarget,
 } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
+import { pickIdentity } from '@shared/compose/identity'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
@@ -698,10 +699,13 @@ export default function App() {
           <OutlineTab
             document={project.state.documents.outline}
             projectFormat={project.state.meta.format}
+            identity={pickIdentity(project.state.meta)}
             onProjectFormatChange={project.setProjectFormat}
             onContentChange={project.setOutlineDocument}
             onAddEpisode={project.addEpisode}
             onEpisodeFieldChange={project.setEpisodeField}
+            onViewPreferencesPatch={(patch) => project.setOutlineViewPreferences(patch)}
+            onComposed={(composed) => project.setComposedDocument('outline', composed)}
             onClear={project.clearOutline}
           />
         )

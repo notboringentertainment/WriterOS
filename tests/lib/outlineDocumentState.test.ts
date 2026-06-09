@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest'
+import { deriveOutlineDocumentState } from '../../client/src/lib/outlineDocumentState'
+import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
+import { createEmptyOutlineContent } from '../../shared/documents'
+import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
+import { setOutlinePath } from '../../client/src/lib/outlineDeck'
+import type { ComposedDocument } from '../../shared/compose/types'
+
+const identity = { title: 'T', genre: 'Drama' }
+const composedFor = (sourceHash: string, recipeVersion = 1): ComposedDocument => ({
+  schemaVersion: 1, generatedAt: '2026-06-06T00:00:00.000Z', model: 'm', recipeVersion,
+  composerVersion: 1, sourceHash, format: 'feature', blocks: [{ type: 'heading', text: 'X' }],
+  fidelity: { status: 'clean', warnings: [] },
+})
+
+describe('deriveOutlineDocumentState', () => {
+  it('below-readiness when sparse and never composed', () => {
+    const s = deriveOutlineDocumentState({ content: createEmptyOutlineContent(), format: 'feature', identity, composed: undefined })
+    expect(s.kind).toBe('below_readiness')
+  })
+  it('ready-uncomposed when rich and never composed', () => {
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: undefined })
+    expect(s.kind).toBe('ready_uncomposed')
+  })
+  it('answer-stale when hash differs', () => {
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: composedFor('stale-hash') })
+    expect(s.kind).toBe('answer_stale')
+  })
+  it('recipe-stale when hash matches but recipeVersion differs', () => {
+    const h = computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity)
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: composedFor(h, 0) })
+    expect(s.kind).toBe('recipe_stale')
+  })
+  it('fresh when hash and recipeVersion match and fidelity clean', () => {
+    const h = computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity)
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: composedFor(h, 1) })
+    expect(s.kind).toBe('fresh')
+  })
+  it('flagged when hash/recipeVersion match but fidelity is flagged', () => {
+    const h = computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity)
+    const composed: ComposedDocument = { ...composedFor(h, 1), fidelity: { status: 'flagged', warnings: [] } }
+    const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed })
+    expect(s.kind).toBe('flagged')
+  })
+  it('missing-context when content is partial, hash/version match, fidelity clean', () => {
+    // Core gate satisfied (protagonist + centralOpposition + one beat) but not all
+    // important fields answered -> partial tier.
+    let partial = createEmptyOutlineContent()
+    partial = setOutlinePath(partial, 'spine.protagonist', 'Vera Solano')
+    partial = setOutlinePath(partial, 'spine.centralOpposition', 'The Meridian Group')
+    partial = setOutlinePath(partial, 'units[id=feature.incitingIncident].whatHappens', 'A ledger entry surfaces.')
+    const h = computeOutlineSourceHash(partial, 'feature', identity)
+    const s = deriveOutlineDocumentState({ content: partial, format: 'feature', identity, composed: composedFor(h, 1) })
+    expect(s.kind).toBe('missing_context')
+  })
+})
