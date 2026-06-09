@@ -95,6 +95,15 @@ describe('OutlineTab', () => {
     expect(screen.getByRole('button', { name: 'Clear outline' })).toBeDisabled()
   })
 
+  it('hides clear outline while Document view is selected', () => {
+    const document = {
+      ...defaultDocument,
+      viewPreferences: { activeView: 'document' as const },
+    }
+    renderOutline({ document, onClear: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Clear outline' })).not.toBeInTheDocument()
+  })
+
   it('renders project format selector when format props are supplied', () => {
     renderOutline({ projectFormat: 'series' })
 

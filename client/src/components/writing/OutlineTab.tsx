@@ -128,7 +128,7 @@ export function OutlineTab({
               value={activeView}
               onChange={(next) => onViewPreferencesPatch({ activeView: next })}
             />
-            {onClear && (
+            {onClear && activeView === 'edit' && (
               <button
                 type="button"
                 style={{
