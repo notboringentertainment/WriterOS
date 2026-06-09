@@ -37,6 +37,32 @@ describe('buildComposePrompt', () => {
     expect(system).toContain(`"${firstHeading}"`)
   })
 
+  it('grants authoring license and drops "connective transitions only"', () => {
+    expect(system).not.toMatch(/connective transitions only/i)
+    expect(system).toMatch(/you are the author|author of the prose|author a .*outline/i)
+  })
+
+  it('specifies the WriterOS outline voice: cinematic, compressed, causal', () => {
+    expect(system).toMatch(/cinematic/i)
+    expect(system).toMatch(/compressed|concise/i)
+    expect(system).toMatch(/cause-and-effect|causal/i)
+  })
+
+  it('requires per-beat who / what happens / what changes in one or two sentences', () => {
+    expect(system).toMatch(/what changes/i)
+    expect(system).toMatch(/one or two .*sentence/i)
+  })
+
+  it('forbids verbatim answer restatement (anti-echo)', () => {
+    expect(system).toMatch(/do not (restate|paraphrase|echo)|mistaken for the raw answer/i)
+    expect(system).toMatch(/verbatim/i)
+  })
+
+  it('forbids treatment-like paragraphs and demands a scannable step-outline', () => {
+    expect(system).toMatch(/treatment/i)
+    expect(system).toMatch(/scannable|step-outline|terse/i)
+  })
+
   it('does not let authored answers terminate the fenced block', () => {
     const malicious: FactSheet = {
       surface: 'outline',
