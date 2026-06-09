@@ -1,4 +1,5 @@
 import type { ComposedDocument, ComposeIdentity } from '../../../shared/compose/types'
+import { ComposedDocumentSchema } from '../../../shared/compose/schemas'
 import type { OutlineDocumentContent } from '../../../shared/documents'
 
 export async function requestOutlineCompose(input: {
@@ -15,6 +16,8 @@ export async function requestOutlineCompose(input: {
     const body = await res.json().catch(() => ({}))
     return { ok: false, reason: body?.reason ?? `HTTP ${res.status}` }
   }
-  const body = await res.json()
-  return { ok: true, composed: body.composed as ComposedDocument }
+  const body = await res.json().catch(() => null)
+  const parsed = ComposedDocumentSchema.safeParse(body?.composed)
+  if (!parsed.success) return { ok: false, reason: 'invalid_compose_response' }
+  return { ok: true, composed: parsed.data }
 }

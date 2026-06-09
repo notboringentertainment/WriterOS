@@ -99,7 +99,7 @@ It runs as one function call. The persona has real authorship over **form**, nev
 
 The official internal model is:
 
-```
+```text
 Edit View answers  ->  surface skill  ->  composed artifact
 ```
 

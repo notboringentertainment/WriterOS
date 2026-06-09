@@ -1078,7 +1078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await composeOutline({ content: data.content, format: data.format, identity: data.identity });
       if (!result.ok) {
         console.error("compose-document soft-fail:", result.reason);
-        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: result.reason });
+        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
       }
       res.json({ composed: result.composed });
     } catch (error) {

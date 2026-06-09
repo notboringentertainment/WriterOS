@@ -6,7 +6,7 @@ const INJECTION_PATTERNS = [
   /ignore (all |the )?(previous|prior|above) instructions/i,
   /mark everything (as )?verified/i,
   /disregard (the )?(system|rules)/i,
-  /you are now/i,
+  /\byou are now\s+(?:unrestricted|allowed|authorized|free to|(?:an?\s+|the\s+)?(?:assistant|system|developer|admin|root|superuser))\b/i,
 ]
 
 // Includes the structural lead label — used for injection scanning, where a

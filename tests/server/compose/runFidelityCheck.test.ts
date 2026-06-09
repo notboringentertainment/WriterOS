@@ -62,6 +62,13 @@ describe('runFidelityCheck', () => {
     const r = runFidelityCheck(blocks, fs, recipe, inv)
     expect(r.warnings.some(w => w.kind === 'injection_echo')).toBe(true)
   })
+  it('does not flag benign prose that happens to say "you are now"', () => {
+    const blocks: ComposedBlock[] = [
+      { type: 'paragraph', text: 'Vera Solano says you are now alone with the choice.', sourceFieldIds: ['spine.protagonist', 'spine.centralOpposition'] },
+    ]
+    const r = runFidelityCheck(blocks, fs, recipe, inv)
+    expect(r.warnings.some(w => w.kind === 'injection_echo')).toBe(false)
+  })
   it('warns on uncovered important answered field (coverage)', () => {
     const blocks: ComposedBlock[] = [
       { type: 'paragraph', text: 'Vera Solano appears.', sourceFieldIds: ['spine.protagonist'] },
@@ -82,6 +89,12 @@ describe('hasSevereInjection', () => {
     const blocks: ComposedBlock[] = [
       { type: 'heading', text: 'Who We Follow' },
       { type: 'paragraph', text: 'Vera Solano fights The Meridian Group.', sourceFieldIds: ['spine.protagonist'] },
+    ]
+    expect(hasSevereInjection(blocks)).toBe(false)
+  })
+  it('does not hard-fail benign "you are now" prose', () => {
+    const blocks: ComposedBlock[] = [
+      { type: 'paragraph', text: 'Vera Solano says you are now alone with the choice.', sourceFieldIds: ['spine.protagonist'] },
     ]
     expect(hasSevereInjection(blocks)).toBe(false)
   })

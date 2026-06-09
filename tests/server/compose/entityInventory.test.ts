@@ -19,12 +19,27 @@ describe('entityInventory', () => {
   it('traces a known entity and misses an invented one', () => {
     const inv = buildEntityInventory(fs)
     expect(traceEntity('Vera Solano', inv)).toBe(true)
+    expect(traceEntity('Meridian Group', inv)).toBe(true)
     expect(traceEntity('Kane Yoshida', inv)).toBe(false)
+  })
+  it('does not treat a shared stop word as entity provenance', () => {
+    const inv = buildEntityInventory(fs)
+    expect(inv.names).not.toContain('The')
+    expect(inv.names).not.toContain('She')
+    expect(traceEntity('The Council', inv)).toBe(false)
   })
   it('collects and traces numbers, missing invented ones', () => {
     const inv = buildEntityInventory(fs)
     expect(inv.numbers).toContain('3')
     expect(traceNumber('3', inv)).toBe(true)
     expect(traceNumber('4', inv)).toBe(false)
+  })
+  it('normalizes punctuation variants in traced numbers', () => {
+    const inv = buildEntityInventory({
+      surface: 'outline',
+      format: 'feature',
+      fields: [{ id: 'feature.turn.whatHappens', label: 'x', kind: 'prose', value: 'The call comes at 10:30.' }],
+    })
+    expect(traceNumber('10.30', inv)).toBe(true)
   })
 })

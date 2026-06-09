@@ -211,6 +211,23 @@ describe('OutlineTab Document View', () => {
     expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
   })
 
+  it('ignores duplicate compose clicks while a request is already in flight', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ composed: cleanComposed() }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+
+    const cta = screen.getByRole('button', { name: /compose this outline/i })
+    fireEvent.click(cta)
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText('Who We Follow')).toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('clears composing and shows error/retry when the compose request throws', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
     vi.stubGlobal('fetch', fetchMock)

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AuthoredDocumentState,
   DocumentViewPreferences,
@@ -50,11 +50,14 @@ export function OutlineTab({
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const isComposingRef = useRef(false)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
 
   const handleCompose = useCallback(async () => {
+    if (isComposingRef.current) return
+    isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
@@ -71,6 +74,7 @@ export function OutlineTab({
     } catch {
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
+      isComposingRef.current = false
       setIsComposing(false)
     }
   }, [document.content, activeFormat, identity, onComposed])

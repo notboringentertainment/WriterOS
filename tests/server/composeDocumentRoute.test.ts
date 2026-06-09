@@ -15,6 +15,11 @@ async function startApp() {
   await new Promise<void>(r => server.listen(0, r))
   return { server, port: (server.address() as AddressInfo).port }
 }
+async function stopServer(server: http.Server) {
+  await new Promise<void>((resolve, reject) => {
+    server.close(err => (err ? reject(err) : resolve()))
+  })
+}
 async function postJson(port: number, path: string, body: unknown) {
   const res = await fetch(`http://localhost:${port}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return { status: res.status, json: await res.json().catch(() => null) }
@@ -53,7 +58,7 @@ describe('POST /api/compose-document', () => {
       expect(res.status).toBe(200)
       expect(res.json.composed.blocks.length).toBeGreaterThan(0)
       expect(res.json.composed.fidelity.status).toBe('clean')
-    } finally { server.close() }
+    } finally { await stopServer(server) }
   })
   it('returns 422 soft-fail on invalid model JSON', async () => {
     stubProvider(['nope', 'nope'])
@@ -63,13 +68,14 @@ describe('POST /api/compose-document', () => {
         surface: 'outline', format: 'feature', content: syntheticOutlineFeature, identity: { title: 'T', genre: 'Drama' },
       })
       expect(res.status).toBe(422)
-    } finally { server.close() }
+      expect(res.json.reason).toBe('compose_failed')
+    } finally { await stopServer(server) }
   })
   it('returns 400 on invalid request body', async () => {
     const { server, port } = await startApp()
     try {
       const res = await postJson(port, '/api/compose-document', { surface: 'synopsis' })
       expect(res.status).toBe(400)
-    } finally { server.close() }
+    } finally { await stopServer(server) }
   })
 })
