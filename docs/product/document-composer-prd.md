@@ -1,8 +1,8 @@
 # Document Composer PRD
 
-Status: Approved direction (v2 + final clarifications). Ready to slice.
+Status: Approved direction (v2 + final clarifications + composer-agent skills). Ready to slice.
 Owner: Ben
-Last updated: 2026-06-04
+Last updated: 2026-06-08
 
 ## Summary
 
@@ -25,6 +25,12 @@ beat lead-ins), answers woven into sentences with transitions and emphasis — n
 of `Label: value` rows. That reframing-and-weaving is the entire feature, and it is the
 one part deterministic code cannot do. Everything else stays deterministic.
 
+The Composer should be treated internally as a trained **Document Composer Agent**: a
+bounded, non-chat composing role with surface-specific skills for Synopsis, Outline,
+Treatment, and Story Bible. "Agent" here means a skilled composition lens with a recipe,
+rubric, and style contract. It does **not** mean autonomous orchestration, a transcript,
+OpenSwarm delegation, or permission to mutate canon.
+
 ## Non-negotiable constraints
 
 - **Read-only Document View.** Document View is read-only in V1 (per existing PRDs).
@@ -44,9 +50,10 @@ one part deterministic code cannot do. Everything else stays deterministic.
   events, motives, relationships, stakes, or causality.** The composer may write
   transitions and reframe structure; it may not introduce anything not present in the
   answers.
-- **Voice:** a **neutral-professional house voice**, not an imitation of the writer's
-  personal voice. The composed document must not put distinctive words in the writer's
-  mouth.
+- **Voice:** a **surface-specific WriterOS house voice**, not an imitation of the
+  writer's personal voice. The Composer is allowed to author the prose, compress,
+  clarify, and sequence for the artifact's professional format, but it must not put
+  distinctive new story facts or unsupported claims in the writer's mouth.
 
 These two rulings govern the recipe and the later entailment critic.
 
@@ -57,6 +64,7 @@ These two rulings govern the recipe and the later entailment critic.
 | Layer | Name | Rationale |
 |---|---|---|
 | Feature (internal) | **Document Composer** | "View" was always too passive |
+| Skilled composing role (internal) | **Document Composer Agent** | Names the trained, surface-aware composing lens; not a chat persona or autonomous agent |
 | User action | **Compose** / **Recompose** | Verb, not noun. Avoid "Generate" — reads as AI-cheap, invites distrust |
 | Toggle | unchanged: **Edit \| Document** | Don't churn a pattern 4 surfaces + users already share |
 | Artifact, to the user | just "your Outline / Synopsis / …" | Never "the generated document." It is *the document*; composition is how it got made |
@@ -86,6 +94,53 @@ not cosmetic, and not autonomous. A persona contributes:
 It is never a chat partner, a delegator, or anything that decides facts or mutates canon.
 It runs as one function call. The persona has real authorship over **form**, never over
 **facts**.
+
+### Document Composer Agent skills
+
+The official internal model is:
+
+```
+Edit View answers  ->  surface skill  ->  composed artifact
+```
+
+Edit View is the intake layer: plain-language questions that clarify the writer's story
+intent. The Document Composer Agent is the trained composition layer: it applies the
+correct professional document skill, turns the answers into a readable artifact, and
+keeps the output derived from the answers. Document View is the read-only artifact layer.
+
+This direction is grounded in professional film-writing document-type standards: the
+Synopsis, Outline, Treatment, and Story Bible references each treat the artifact as
+a separate professional document type with its own structure, quality bar, and
+transformation rules.
+
+The repo should not rely on external skill-pack files being present at runtime. Instead,
+their document-type principles become product requirements, recipes, prompts, rubrics,
+and tests.
+
+Each surface gets its own composer skill. Do not use one generic "polish this document"
+prompt across all surfaces.
+
+| Surface skill | Professional job | Composer target |
+|---|---|---|
+| Synopsis Composer | Compact, complete reader orientation | One-page-ish present-tense third-person summary; protagonist, goal, obstacle, stakes, major turns, climax, and known ending revealed; causal, visible, not marketing copy |
+| Outline Composer | Structural blueprint | Scannable beat/sequence/scene/episode structure; each beat turns the story, tracks conflict/change/consequence, and justifies why the next beat exists |
+| Treatment Composer | Full-story prose | Cinematic present-tense prose that lets a reader experience the dramatic flow, tone, characters, turns, climax, and ending; more vivid than Synopsis, less mechanical than Outline |
+| Story Bible Composer | Source-of-truth reference system | Organized canon for premise, tone, world rules, characters, story engine, continuity, open questions, and AI production continuity when useful |
+
+Every skill must define:
+
+- the artifact's purpose and audience,
+- required and omittable source fields,
+- section order and output shape,
+- style rules and anti-patterns,
+- a quality rubric for the fidelity/quality pass,
+- a missing-information policy (`[NEEDS DECISION]` in manual docs; omitted or missing-context
+  state in app-composed artifacts),
+- AI filmmaking continuity fields only where they support the artifact instead of crowding it.
+
+The Document Composer Agent is therefore "trained" by explicit surface recipes and rubrics,
+not by hidden chat memory. Future composer slices should start by researching and locking
+the appropriate surface skill before implementation.
 
 ## 3. Architecture
 
