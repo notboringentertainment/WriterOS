@@ -11,7 +11,8 @@ function featureRecipe(): Recipe {
       {
         key: 'logline', heading: 'Logline', style: 'prose', omittable: false,
         requiredFieldIds: ['logline.protagonist'],
-        importantFieldIds: ['logline.text', 'logline.protagonist', 'logline.goal', 'logline.obstacle', 'logline.stakes'],
+        // hook is omittable for readiness but coverage-counted when answered.
+        importantFieldIds: ['logline.text', 'logline.protagonist', 'logline.goal', 'logline.obstacle', 'logline.stakes', 'logline.hook'],
       },
       {
         key: 'synopsisBody', heading: 'Synopsis', style: 'prose', omittable: false,

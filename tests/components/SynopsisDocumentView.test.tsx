@@ -4,6 +4,7 @@ import { SynopsisDocumentView } from '../../client/src/components/writing/synops
 import { syntheticSynopsisFeature } from '../fixtures/synopsis/syntheticSynopsis'
 import { computeSynopsisSourceHash } from '../../shared/compose/synopsisSourceHash'
 import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
+import { syntheticSynopsisSeries } from '../fixtures/synopsis/syntheticSynopsis'
 import { createEmptySynopsisContent } from '../../shared/documents'
 import type { ComposedDocument } from '../../shared/compose/types'
 
@@ -62,6 +63,42 @@ describe('SynopsisDocumentView', () => {
     expect(screen.getByText(/could not compose/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /compose/i })).toBeEnabled()
+  })
+
+  it('renders the title and useful metadata outside the composed body (feature)', () => {
+    render(<SynopsisDocumentView {...baseProps} />)
+    // Title is a top-level heading sourced from header, not a composed block.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Tideline')
+    expect(screen.getByText('B. Vance')).toBeInTheDocument()
+    expect(screen.getByText('Thriller')).toBeInTheDocument()
+  })
+
+  it('uses the format prop as authority, not a stale header.format mirror', () => {
+    const content = { ...syntheticSynopsisFeature, header: { ...syntheticSynopsisFeature.header, format: 'series' } }
+    render(<SynopsisDocumentView {...baseProps} content={content} />)
+    expect(screen.getByText('feature')).toBeInTheDocument()
+    expect(screen.queryByText('series')).not.toBeInTheDocument()
+  })
+
+  it('renders series metadata rows and hides the runtime row in series mode', () => {
+    const seriesIdentity = { title: 'Reset Crew', genre: 'Heist' }
+    const content = { ...syntheticSynopsisSeries, header: { ...syntheticSynopsisSeries.header, targetRuntime: '30m' } }
+    const seriesComposed: ComposedDocument = {
+      ...composed, format: 'series',
+      recipeVersion: getSynopsisRecipe('series').recipeVersion,
+      sourceHash: computeSynopsisSourceHash(content, 'series', seriesIdentity),
+      blocks: [{ type: 'heading', text: 'Logline' }, { type: 'paragraph', text: 'the crew resets weekly', sourceFieldIds: ['logline.text'] }],
+    }
+    render(
+      <SynopsisDocumentView
+        content={content} format="series" identity={seriesIdentity}
+        composed={seriesComposed} isComposing={false} onCompose={vi.fn()} error={null}
+      />,
+    )
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Reset Crew')
+    expect(screen.getByText(/ongoing/i)).toBeInTheDocument()
+    expect(screen.getByText(/hour/i)).toBeInTheDocument()
+    expect(screen.queryByText('30m')).not.toBeInTheDocument()
   })
 
   it('names the missing ending in the missing-context state', () => {

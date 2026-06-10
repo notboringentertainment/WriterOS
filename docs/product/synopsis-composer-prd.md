@@ -204,8 +204,9 @@ question labels.
 - `coreRequiredFieldIds: ['logline.protagonist']`
 - Sections:
   1. `logline` — style `prose`, `omittable: false`, important:
-     `logline.text, logline.protagonist, logline.goal, logline.obstacle, logline.stakes`.
-     Emits a single `logline` block (the lead line).
+     `logline.text, logline.protagonist, logline.goal, logline.obstacle, logline.stakes,
+     logline.hook`. `logline.hook` is omittable for readiness but coverage-counted when
+     answered (standards L213). Emits a single `logline` block (the lead line).
   2. `synopsisBody` — style `prose`, `omittable: false`, important:
      `prose.opening, prose.escalation, prose.middle, prose.climax, prose.resolution`.
      Emits the compact causal body (≈3–5 `paragraph` blocks). Present-tense, third-person,

@@ -47,3 +47,24 @@ describe('synopsis series fidelity — dynamic section coverage', () => {
     expect(result.status).toBe('clean')
   })
 })
+
+describe('synopsis feature fidelity — hook coverage', () => {
+  it('flags an answered logline.hook the model never cites', () => {
+    const content = createEmptySynopsisContent()
+    content.logline.text = 'a flood thriller'
+    content.logline.protagonist = 'mara'
+    content.logline.hook = 'the trail only surfaces at low tide'
+    content.prose.opening = 'a quiet morning above the tideline'
+    const factSheet = buildSynopsisFactSheet(content, 'feature')
+    const featureRecipe = getSynopsisRecipe('feature')
+    // Cite everything answered except the hook.
+    const blocks: ComposedBlock[] = [
+      { type: 'heading', text: 'Logline' },
+      { type: 'logline', text: 'a flood thriller about mara', sourceFieldIds: ['logline.text', 'logline.protagonist'] },
+      { type: 'paragraph', text: 'a quiet morning above the tideline', sourceFieldIds: ['prose.opening'] },
+    ]
+    const result = runFidelityCheck(blocks, factSheet, featureRecipe, buildEntityInventory(factSheet))
+    expect(result.status).toBe('flagged')
+    expect(result.warnings.some(w => w.kind === 'coverage' && w.fieldId === 'logline.hook')).toBe(true)
+  })
+})

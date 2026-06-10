@@ -37,6 +37,56 @@ const footerStyle: React.CSSProperties = {
   fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--fg-muted)',
 }
 
+const titleStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-display)', fontSize: '2.25rem', fontWeight: 700,
+  color: 'var(--fg)', margin: 0, lineHeight: 1.2,
+}
+const metaLabelStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.1em',
+  textTransform: 'uppercase', color: 'var(--fg-muted)', paddingTop: 2,
+}
+const metaValueStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--fg)',
+}
+
+const SERIES_TYPE_LABELS: Record<string, string> = { limited: 'Limited', ongoing: 'Ongoing' }
+const EPISODE_LENGTH_LABELS: Record<string, string> = { half_hour: 'Half-hour', hour: 'Hour', other: 'Other' }
+
+// Title + useful metadata, rendered OUTSIDE the composed body (the prompt forbids the
+// model from emitting a title/byline/meta block). Format is taken from the prop authority,
+// not the stale header.format mirror.
+function ArtifactHeader({ content, format }: { content: SynopsisDocumentContent; format: 'feature' | 'series' }) {
+  const { header, series } = content
+  const showMetadata = Boolean(header.title || header.writer)
+  const rows: Array<[string, string]> = []
+  if (header.title) rows.push(['TITLE', header.title])
+  if (header.writer) rows.push(['WRITER', header.writer])
+  rows.push(['FORMAT', format])
+  if (header.genre) rows.push(['GENRE', header.genre])
+  if (format !== 'series' && header.targetRuntime) rows.push(['RUNTIME', header.targetRuntime])
+  if (format === 'series' && series) {
+    if (series.seriesType) rows.push(['SERIES TYPE', SERIES_TYPE_LABELS[series.seriesType] ?? series.seriesType])
+    if (series.episodeLength) rows.push(['EPISODE LENGTH', EPISODE_LENGTH_LABELS[series.episodeLength] ?? series.episodeLength])
+  }
+  if (header.comps && header.comps.length > 0) rows.push(['COMPS', header.comps.join(', ')])
+
+  return (
+    <header style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {header.title && <h1 style={titleStyle}>{header.title}</h1>}
+      {showMetadata && (
+        <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '16px 0', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 16px' }}>
+          {rows.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <span style={metaLabelStyle}>{label}</span>
+              <span style={metaValueStyle}>{value}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </header>
+  )
+}
+
 function formatLead(lead: string): string {
   const trimmed = lead.trim()
   return /[.!?:]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `
@@ -116,6 +166,7 @@ export function SynopsisDocumentView(props: SynopsisDocumentViewProps) {
     <div style={pageStyle}>
       {errorBanner}
       {banner}
+      <ArtifactHeader content={content} format={format} />
       <article style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {state.composed!.blocks.map((b, i) => <Block key={i} block={b} />)}
       </article>

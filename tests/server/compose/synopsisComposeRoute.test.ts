@@ -34,7 +34,7 @@ function stubProvider(responses: string[]) {
 // Keep capitalized tokens to entities present in the fixture (Vera, Meridian).
 const goodBlocks = JSON.stringify({ blocks: [
   { type: 'heading', text: 'Logline' },
-  { type: 'logline', text: 'Vera races a rising flood to expose Meridian and clear her name.', sourceFieldIds: ['logline.text', 'logline.protagonist', 'logline.goal', 'logline.obstacle', 'logline.stakes'] },
+  { type: 'logline', text: 'Vera races a rising flood to expose Meridian and clear her name.', sourceFieldIds: ['logline.text', 'logline.protagonist', 'logline.goal', 'logline.obstacle', 'logline.stakes', 'logline.hook'] },
   { type: 'heading', text: 'Synopsis' },
   { type: 'paragraph', text: 'Vera reconciles audits as the water climbs and a deleted ledger surfaces.', sourceFieldIds: ['prose.opening', 'prose.escalation'] },
   { type: 'paragraph', text: 'Vera turns an insider, then testifies and loses everything but her integrity.', sourceFieldIds: ['prose.middle', 'prose.climax', 'prose.resolution'] },
