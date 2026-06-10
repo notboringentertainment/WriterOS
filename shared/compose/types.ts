@@ -24,6 +24,9 @@ export interface RecipeSection {
   style: 'prose' | 'leadIns'
   requiredFieldIds: string[]
   importantFieldIds: string[]
+  // Coverage for dynamic-id sections (per-character, per-future-season): any answered
+  // fact whose id starts with one of these prefixes must be cited by some block.
+  importantFieldPrefixes?: string[]
   omittable: boolean
   beats?: RecipeBeat[]
 }

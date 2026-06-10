@@ -19,7 +19,7 @@ describe('getSynopsisRecipe', () => {
   it('series: show-overview core gate, seven sections, optional tail sections omittable', () => {
     const r = getSynopsisRecipe('series')
     expect(r.format).toBe('series')
-    expect(r.coreRequiredFieldIds).toEqual(['series.showOverview'])
+    expect(r.coreRequiredFieldIds).toEqual(['logline.text', 'series.showOverview'])
     expect(r.sections.map(s => s.key)).toEqual([
       'seriesLogline', 'showOverview', 'pilotSynopsis', 'seasonOneArc',
       'whereItGoes', 'characters', 'compsWhyNow',

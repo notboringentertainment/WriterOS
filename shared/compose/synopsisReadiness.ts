@@ -19,7 +19,7 @@ const FEATURE_RICH_FIELD_IDS = [
   ...FEATURE_CORE_PROSE_FIELD_IDS,
 ]
 const SERIES_RICH_FIELD_IDS = [
-  'series.showOverview', 'series.pilot.logline', 'series.pilot.prose', 'series.seasonOneArc',
+  'logline.text', 'series.showOverview', 'series.pilot.logline', 'series.pilot.prose', 'series.seasonOneArc',
 ]
 
 export function getSynopsisReadiness(fs: FactSheet, recipe: Recipe): Readiness {
@@ -39,6 +39,7 @@ function featureReadiness(fs: FactSheet): Readiness {
 
 function seriesReadiness(fs: FactSheet, recipe: Recipe): Readiness {
   const missingCoreLabels: string[] = []
+  if (!has(fs, 'logline.text')) missingCoreLabels.push('Series logline')
   if (!has(fs, 'series.showOverview')) missingCoreLabels.push('Show overview')
   if (!SERIES_CORE_PILOT_FIELD_IDS.some(id => has(fs, id))) {
     missingCoreLabels.push('Pilot or season material')

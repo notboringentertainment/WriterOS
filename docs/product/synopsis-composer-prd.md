@@ -122,17 +122,19 @@ OR-group: ≥1 of the five `prose.*` movement fields.
 
 ### Series
 
-- **Hard-disable (`sparse`)** if either:
+- **Hard-disable (`sparse`)** if any of:
+  - `logline.text` is empty (the non-omittable Logline section opens the artifact and the
+    prompt requires the first block to be the Logline heading — it must be present), or
   - `series.showOverview` is empty (standards L224: no central show engine ⇒
     hard-disable), or
   - zero of `series.pilot.logline`, `series.pilot.prose`, `series.seasonOneArc` is present.
-- **Missing-context (`partial`)** if `series.showOverview` is present but any of:
+- **Missing-context (`partial`)** if the core gate is met but any of:
   `series.pilot.prose` empty (pilot ending not yet answered) or `series.seasonOneArc`
   empty.
-- **Rich** if `series.showOverview`, `series.pilot.{logline,prose}`, `series.seasonOneArc`
-  are all present.
+- **Rich** if `logline.text`, `series.showOverview`, `series.pilot.{logline,prose}`, and
+  `series.seasonOneArc` are all present.
 
-`coreRequiredFieldIds` (Series): `['series.showOverview']`.
+`coreRequiredFieldIds` (Series): `['logline.text', 'series.showOverview']`.
 OR-group: ≥1 of `series.pilot.logline`, `series.pilot.prose`, `series.seasonOneArc`.
 
 `series.futureSeasons`, `series.characters`, and `series.compsAndWhyThisShowNow` are
@@ -211,7 +213,7 @@ question labels.
 
 ### Series recipe
 
-- `coreRequiredFieldIds: ['series.showOverview']`
+- `coreRequiredFieldIds: ['logline.text', 'series.showOverview']`
 - Sections (each a `heading` + `paragraph`; omittable ones omitted when empty):
   1. `seriesLogline` — `prose`, `omittable: false`, important: `logline.text`.
   2. `showOverview` — `prose`, `omittable: false`, important: `series.showOverview`.
@@ -262,10 +264,17 @@ JSON-only rule, first-heading/no-preamble rule, block-type list).
 
 ## Fidelity
 
-Reuse `server/compose/runFidelityCheck.ts` and `server/compose/entityInventory.ts`
-unchanged — both are surface-generic. Same five checks (missing_provenance,
-dangling_source_id, coverage, entity_diff, injection_echo). Same "structure-checked, not
-meaning-verified" labeling. Entailment critic stays deferred.
+Reuse `server/compose/entityInventory.ts` unchanged (surface-generic). Same five checks
+(missing_provenance, dangling_source_id, coverage, entity_diff, injection_echo), same
+"structure-checked, not meaning-verified" labeling, entailment critic deferred.
+
+`runFidelityCheck.ts` gains one **generic** capability used by Series: a `RecipeSection`
+may declare `importantFieldPrefixes`, and the coverage check flags any answered fact whose
+id starts with such a prefix but is not cited by any block. This makes the dynamic-id
+sections (`whereItGoes` → `series.futureSeasons.`, `characters` → `series.characters.`)
+coverage-checked, so the model cannot silently drop answered future seasons or characters
+and still pass clean. Sections with no prefixes (all Outline sections, Synopsis feature)
+are unaffected.
 
 ## Document View
 

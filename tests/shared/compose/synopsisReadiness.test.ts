@@ -12,6 +12,7 @@ function featureReadiness(mutate: (c: ReturnType<typeof createEmptySynopsisConte
 
 function seriesReadiness(mutate: (s: ReturnType<typeof createEmptySeriesContent>) => void) {
   const content = createEmptySynopsisContent()
+  content.logline.text = 'A heist crew resets each week.' // series logline is core
   content.series = createEmptySeriesContent()
   mutate(content.series)
   return getSynopsisReadiness(buildSynopsisFactSheet(content, 'series'), getSynopsisRecipe('series'))
@@ -60,6 +61,16 @@ describe('getSynopsisReadiness — series', () => {
   it('sparse when no show overview', () => {
     const r = seriesReadiness(s => { s.pilot.logline = 'The first job.' })
     expect(r.tier).toBe('sparse')
+  })
+
+  it('sparse when the series logline is missing even if overview and pilot exist', () => {
+    const content = createEmptySynopsisContent() // no logline.text
+    content.series = createEmptySeriesContent()
+    content.series.showOverview = 'A crew resets each week.'
+    content.series.pilot.logline = 'The first job.'
+    const r = getSynopsisReadiness(buildSynopsisFactSheet(content, 'series'), getSynopsisRecipe('series'))
+    expect(r.tier).toBe('sparse')
+    expect(r.missingCoreLabels).toContain('Series logline')
   })
 
   it('partial when show overview present but pilot/season thin, with omitted tail sections', () => {

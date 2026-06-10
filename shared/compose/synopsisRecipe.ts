@@ -25,7 +25,9 @@ function featureRecipe(): Recipe {
 function seriesRecipe(): Recipe {
   return {
     surface: 'synopsis', format: 'series', recipeVersion: SYNOPSIS_RECIPE_VERSION,
-    coreRequiredFieldIds: ['series.showOverview'],
+    // logline.text is core: the non-omittable Logline section opens the artifact and the
+    // prompt requires the first block to be the Logline heading, so it must be present.
+    coreRequiredFieldIds: ['logline.text', 'series.showOverview'],
     sections: [
       {
         key: 'seriesLogline', heading: 'Logline', style: 'prose', omittable: false,
@@ -44,14 +46,14 @@ function seriesRecipe(): Recipe {
         requiredFieldIds: [], importantFieldIds: ['series.seasonOneArc'],
       },
       {
-        // Dynamic per-future-season ids; coverage is prefix-checked in readiness, not enumerated.
+        // Dynamic per-future-season ids; coverage is prefix-checked, not enumerated.
         key: 'whereItGoes', heading: 'Where It Goes', style: 'prose', omittable: true,
-        requiredFieldIds: [], importantFieldIds: [],
+        requiredFieldIds: [], importantFieldIds: [], importantFieldPrefixes: [SERIES_FUTURE_SEASON_PREFIX],
       },
       {
-        // Dynamic per-character ids; coverage is prefix-checked in readiness, not enumerated.
+        // Dynamic per-character ids; coverage is prefix-checked, not enumerated.
         key: 'characters', heading: 'Characters', style: 'prose', omittable: true,
-        requiredFieldIds: [], importantFieldIds: [],
+        requiredFieldIds: [], importantFieldIds: [], importantFieldPrefixes: [SERIES_CHARACTER_PREFIX],
       },
       {
         key: 'compsWhyNow', heading: 'Comps & Why This Show Now', style: 'prose', omittable: true,

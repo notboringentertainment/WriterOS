@@ -62,6 +62,14 @@ export function runFidelityCheck(
         warnings.push({ kind: 'coverage', message: `Important answered field not covered: ${id}`, fieldId: id })
       }
     }
+    // Dynamic-id coverage: every answered fact under an important prefix must be cited.
+    for (const prefix of section.importantFieldPrefixes ?? []) {
+      for (const f of factSheet.fields) {
+        if (f.id.startsWith(prefix) && !citedIds.has(f.id)) {
+          warnings.push({ kind: 'coverage', message: `Important answered field not covered: ${f.id}`, fieldId: f.id })
+        }
+      }
+    }
   }
 
   return { status: warnings.length > 0 ? 'flagged' : 'clean', warnings }
