@@ -242,7 +242,10 @@ tests stay byte-stable).
 
 The Synopsis lens/style contract instructs compact causal synopsis prose with the
 standards "Must Avoid" list baked in: no hiding the ending, no poster copy, no
-scene-by-scene outline, no camera directions, no unsupported theme/motive claims. The
+scene-by-scene outline, no camera directions, no unsupported theme/motive claims, and
+**no assistant-to-user framing or metacommentary** ("Based on what you have", "your
+answers", "you provided", "this draft will…") — the artifact must read as the synopsis
+itself, especially in the comps / why-this-show-now section. The
 generic scaffolding is shared and unchanged in behavior: inert fenced source facts, no
 invented facts, every prose block carries `sourceFieldIds`, JSON-only `{ blocks }` output,
 `temperature: 0.2`.

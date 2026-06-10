@@ -36,4 +36,9 @@ describe('buildComposePrompt — synopsis contract', () => {
   it('drives the first block to the first recipe heading (Logline)', () => {
     expect(system).toContain('"Logline"')
   })
+
+  it('bans assistant-to-user framing and metacommentary in composed blocks', () => {
+    expect(system).toMatch(/based on what you have|your answers|you provided|this draft/i)
+    expect(system).toMatch(/write the synopsis itself/i)
+  })
 })
