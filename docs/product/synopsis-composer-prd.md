@@ -45,6 +45,42 @@ Inherited verbatim from `document-composer-prd.md`:
 - Staleness tracked by `sourceHash` plus `recipeVersion` and `composerVersion`, surfacing
   distinct answer-stale and recipe-stale states.
 
+## Shared Architecture vs Surface-Specific Standard
+
+Outline is the shipped foundation and the implementation pattern — but Synopsis must not
+feel like "Outline with different fields." The architecture is shared; the document
+standard is surface-specific. The line is explicit:
+
+**Reused from Outline (shared architecture — do not re-invent):**
+
+- the compose route shape (`POST /api/compose-document`, single endpoint),
+- the `ComposedDocument` / `ComposedBlock` model and its Zod schemas,
+- `sourceHash` + `recipeVersion` + `composerVersion` and the answer-stale / recipe-stale
+  staleness states,
+- the deterministic fidelity pipeline (provenance, coverage, entity diff, injection echo)
+  and the "structure-checked, not meaning-verified" labeling,
+- persistence into `documents.<surface>.composed`,
+- the readiness tiering shape and the Document View / Tab UI state model
+  (below-readiness, ready, fresh, missing-context, answer-stale, recipe-stale, flagged).
+
+**Surface-specific to Synopsis (must NOT inherit Outline's document standard):**
+
+- **Not** the Oliver lens. Synopsis uses its own composing lens (a synopsis/coverage
+  editor), supplied as a per-surface prompt contract.
+- **Not** the step-outline voice, the "scannable beats" mandate, the bold beat-lead-in
+  assumption, or the "terse, 1–2 sentence" per-beat rule.
+- Synopsis voice is compact, present-tense, third-person, causal whole-story prose
+  (roughly 3–5 short paragraphs for a feature; short sections for a series), with the
+  **ending revealed**. It reads like a professional synopsis an outside reader uses to
+  understand the whole story — not a mini-outline, treatment, pitch, or trailer.
+- Synopsis sections, readiness gates, recipe, and fact sheet are its own (defined below);
+  they share the Outline *shapes* but none of Outline's *content*.
+
+This distinction is load-bearing for every later surface: Treatment (cinematic full-story
+prose) and Story Bible (reference/canon system) will each supply their own lens and
+standard over the same shared architecture. The generalized prompt builder (see Composer
+Prompt) is the seam that makes this possible.
+
 ## Resolved Open Questions
 
 These resolve the standards PRD open questions for the Synopsis slice:
@@ -207,6 +243,22 @@ scene-by-scene outline, no camera directions, no unsupported theme/motive claims
 generic scaffolding is shared and unchanged in behavior: inert fenced source facts, no
 invented facts, every prose block carries `sourceFieldIds`, JSON-only `{ blocks }` output,
 `temperature: 0.2`.
+
+**The Synopsis contract must NOT reuse Outline's document standard.** Specifically it does
+not carry over:
+
+- the "Oliver, author of this outline" lens,
+- the "tight, scannable WriterOS outline / professional step-outline" framing,
+- the "VOICE: cinematic, compressed … scan the beats" line,
+- the bold beat-lead-in section style or `leadIns`/`beats` plan rendering,
+- the "every beat stays terse … one or two sentences … scannable" rule.
+
+Instead the Synopsis contract states it is a synopsis (not an outline/treatment/pitch),
+sets a present-tense causal whole-story voice with the ending revealed, and renders all
+sections as compact prose. Outline's exact strings stay isolated in the Outline contract
+so Outline output is byte-identical and its golden test stays green; the two contracts
+share only the safety scaffolding (fence rule, no-invention rule, `sourceFieldIds` rule,
+JSON-only rule, first-heading/no-preamble rule, block-type list).
 
 ## Fidelity
 
