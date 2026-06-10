@@ -57,7 +57,6 @@ const EPISODE_LENGTH_LABELS: Record<string, string> = { half_hour: 'Half-hour', 
 // not the stale header.format mirror.
 function ArtifactHeader({ content, format }: { content: SynopsisDocumentContent; format: 'feature' | 'series' }) {
   const { header, series } = content
-  const showMetadata = Boolean(header.title || header.writer)
   const rows: Array<[string, string]> = []
   if (header.title) rows.push(['TITLE', header.title])
   if (header.writer) rows.push(['WRITER', header.writer])
@@ -73,7 +72,7 @@ function ArtifactHeader({ content, format }: { content: SynopsisDocumentContent;
   return (
     <header style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {header.title && <h1 style={titleStyle}>{header.title}</h1>}
-      {showMetadata && (
+      {rows.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '16px 0', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 16px' }}>
           {rows.map(([label, value]) => (
             <React.Fragment key={label}>

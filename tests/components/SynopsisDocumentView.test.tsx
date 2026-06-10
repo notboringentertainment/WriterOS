@@ -101,6 +101,14 @@ describe('SynopsisDocumentView', () => {
     expect(screen.queryByText('30m')).not.toBeInTheDocument()
   })
 
+  it('renders metadata rows even when title and writer are blank', () => {
+    const content = { ...syntheticSynopsisFeature, header: { title: '', writer: '', format: '', genre: 'Thriller', targetRuntime: '100', comps: ['Heat'] } }
+    render(<SynopsisDocumentView {...baseProps} content={content} />)
+    expect(screen.getByText('GENRE')).toBeInTheDocument()
+    expect(screen.getByText('Heat')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  })
+
   it('names the missing ending in the missing-context state', () => {
     const partial = createEmptySynopsisContent()
     partial.logline = { text: '', protagonist: 'Mara', goal: 'Escape', obstacle: 'The tide', stakes: 'Her sister', hook: '' }
