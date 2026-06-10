@@ -8,8 +8,10 @@ export interface FactSheetField {
   items?: string[]
 }
 
+export type ComposeSurface = 'outline' | 'synopsis'
+
 export interface FactSheet {
-  surface: 'outline'
+  surface: ComposeSurface
   format: 'feature' | 'series'
   fields: FactSheetField[]
 }
@@ -27,7 +29,7 @@ export interface RecipeSection {
 }
 
 export interface Recipe {
-  surface: 'outline'
+  surface: ComposeSurface
   format: 'feature' | 'series'
   recipeVersion: number
   sections: RecipeSection[]
