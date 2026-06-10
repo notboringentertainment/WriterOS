@@ -8,8 +8,10 @@ export interface FactSheetField {
   items?: string[]
 }
 
+export type ComposeSurface = 'outline' | 'synopsis'
+
 export interface FactSheet {
-  surface: 'outline'
+  surface: ComposeSurface
   format: 'feature' | 'series'
   fields: FactSheetField[]
 }
@@ -22,12 +24,15 @@ export interface RecipeSection {
   style: 'prose' | 'leadIns'
   requiredFieldIds: string[]
   importantFieldIds: string[]
+  // Coverage for dynamic-id sections (per-character, per-future-season): any answered
+  // fact whose id starts with one of these prefixes must be cited by some block.
+  importantFieldPrefixes?: string[]
   omittable: boolean
   beats?: RecipeBeat[]
 }
 
 export interface Recipe {
-  surface: 'outline'
+  surface: ComposeSurface
   format: 'feature' | 'series'
   recipeVersion: number
   sections: RecipeSection[]

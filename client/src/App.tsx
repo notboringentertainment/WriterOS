@@ -686,11 +686,13 @@ export default function App() {
           <SynopsisTab
             document={project.state.documents.synopsis}
             projectFormat={project.state.meta.format}
+            identity={pickIdentity(project.state.meta)}
             onProjectFormatChange={project.setProjectFormat}
             onContentPatch={(patch) =>
               project.setSynopsisDocument((content) => ({ ...content, ...patch }))
             }
             onViewPreferencesPatch={(patch) => project.setSynopsisViewPreferences(patch)}
+            onComposed={(composed) => project.setComposedDocument('synopsis', composed)}
             onClear={project.clearSynopsis}
           />
         )

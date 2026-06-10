@@ -10,7 +10,7 @@ import { runPersonaTask } from "./persona-capability/runPersonaTask";
 import { normalizeProjectFormat } from "@shared/projectFormat";
 import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
-import { composeOutline } from "./compose";
+import { composeOutline, composeSynopsis } from "./compose";
 
 const openaiService = new OpenAIService();
 
@@ -1075,7 +1075,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/compose-document", async (req, res) => {
     try {
       const data = ComposeDocumentRequestSchema.parse(req.body);
-      const result = await composeOutline({ content: data.content, format: data.format, identity: data.identity });
+      const result = data.surface === "synopsis"
+        ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity })
+        : await composeOutline({ content: data.content, format: data.format, identity: data.identity });
       if (!result.ok) {
         console.error("compose-document soft-fail:", result.reason);
         return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });

@@ -1,10 +1,21 @@
 import { z } from 'zod'
-import { OutlineDocumentContentSchema } from '../documents'
+import { OutlineDocumentContentSchema, SynopsisDocumentContentSchema } from '../documents'
 
-export const ComposeDocumentRequestSchema = z.object({
-  surface: z.literal('outline'),
-  format: z.enum(['feature', 'series']),
-  content: OutlineDocumentContentSchema,
-  identity: z.object({ title: z.string(), genre: z.string() }),
-})
+const IdentitySchema = z.object({ title: z.string(), genre: z.string() })
+const FormatSchema = z.enum(['feature', 'series'])
+
+export const ComposeDocumentRequestSchema = z.discriminatedUnion('surface', [
+  z.object({
+    surface: z.literal('outline'),
+    format: FormatSchema,
+    content: OutlineDocumentContentSchema,
+    identity: IdentitySchema,
+  }),
+  z.object({
+    surface: z.literal('synopsis'),
+    format: FormatSchema,
+    content: SynopsisDocumentContentSchema,
+    identity: IdentitySchema,
+  }),
+])
 export type ComposeDocumentRequest = z.infer<typeof ComposeDocumentRequestSchema>
