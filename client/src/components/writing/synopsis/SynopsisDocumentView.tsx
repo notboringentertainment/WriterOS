@@ -1,332 +1,128 @@
-import React from 'react'
-import type { SynopsisDocumentContent, SynopsisSeriesContent } from '@shared/documents'
-import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import React, { useMemo } from 'react'
+import type { SynopsisDocumentContent } from '@shared/documents'
+import type { ComposedBlock, ComposedDocument, ComposeIdentity } from '@shared/compose/types'
+import { deriveSynopsisDocumentState } from '../../../lib/synopsisDocumentState'
 
 export interface SynopsisDocumentViewProps {
   content: SynopsisDocumentContent
-  projectFormat?: ProjectFormat
-  updatedAt: string
+  format: 'feature' | 'series'
+  identity: ComposeIdentity
+  composed: ComposedDocument | undefined
+  isComposing: boolean
+  onCompose: () => void
+  error: string | null
 }
 
-const PROSE_FIELDS: Array<keyof SynopsisDocumentContent['prose']> = [
-  'opening',
-  'escalation',
-  'middle',
-  'climax',
-  'resolution',
-]
-
-const METADATA_LABELS: Array<{ key: keyof SynopsisDocumentContent['header']; label: string }> = [
-  { key: 'title', label: 'TITLE' },
-  { key: 'writer', label: 'WRITER' },
-  { key: 'format', label: 'FORMAT' },
-  { key: 'genre', label: 'GENRE' },
-  { key: 'targetRuntime', label: 'RUNTIME' },
-]
-
-const SERIES_TYPE_LABELS: Record<string, string> = {
-  limited: 'Limited',
-  ongoing: 'Ongoing',
+const pageStyle: React.CSSProperties = {
+  maxWidth: 680, margin: '0 auto', padding: '48px 24px',
+  display: 'flex', flexDirection: 'column', gap: 24,
+}
+const headingStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700,
+  color: 'var(--fg)', margin: 0, lineHeight: 1.25,
+}
+const subheadingStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-display)', fontSize: '0.75rem', fontWeight: 700,
+  letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
+}
+const bodyStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-body)', fontSize: '1rem', lineHeight: 1.75, color: 'var(--fg)', margin: 0,
+}
+const metaStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.1em',
+  textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
+}
+const footerStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+  fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--fg-muted)',
 }
 
-const EPISODE_LENGTH_LABELS: Record<string, string> = {
-  half_hour: 'Half-hour',
-  hour: 'Hour',
-  other: 'Other',
+function formatLead(lead: string): string {
+  const trimmed = lead.trim()
+  return /[.!?:]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `
 }
 
-const sectionHeadingStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-display)',
-  fontSize: '0.75rem',
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-  color: 'var(--fg-muted)',
-  margin: 0,
+// Renderer purity: the body emits ONLY composed text. It never reads
+// sourceFieldIds, recipe labels, fidelity warnings, or answer ids.
+function Block({ block }: { block: ComposedBlock }) {
+  switch (block.type) {
+    case 'heading': return <h2 style={headingStyle}>{block.text}</h2>
+    case 'subheading': return <h3 style={subheadingStyle}>{block.text}</h3>
+    case 'divider': return <hr style={{ border: 0, borderTop: '1px solid var(--border)', width: '100%' }} />
+    case 'meta': return <p style={metaStyle}>{block.text}</p>
+    case 'logline': return <p style={{ ...bodyStyle, fontStyle: 'italic' }}>{block.text}</p>
+    case 'paragraph': return <p style={bodyStyle}>{block.text}</p>
+    case 'leadInParagraph': return <p style={bodyStyle}><strong>{formatLead(block.lead)}</strong>{block.text}</p>
+    default: return null
+  }
 }
 
-const sectionBodyStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-body)',
-  fontSize: '1rem',
-  lineHeight: 1.75,
-  color: 'var(--fg)',
-  margin: 0,
-}
-
-const metaLabelStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: '0.7rem',
-  letterSpacing: '0.1em',
-  color: 'var(--fg-muted)',
-  textTransform: 'uppercase',
-  paddingTop: 2,
-}
-
-const metaValueStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-body)',
-  fontSize: '0.875rem',
-  color: 'var(--fg)',
-}
-
-function Section({ heading, children }: { heading: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 style={sectionHeadingStyle}>{heading}</h2>
-      {children}
-    </div>
+export function SynopsisDocumentView(props: SynopsisDocumentViewProps) {
+  const { content, format, identity, composed, isComposing, onCompose, error } = props
+  const state = useMemo(
+    () => deriveSynopsisDocumentState({ content, format, identity, composed }),
+    [content, format, identity, composed],
   )
-}
 
-function seriesHasCharacter(c: SynopsisSeriesContent['characters'][number]): boolean {
-  return Boolean(c.name.trim() || c.role.trim() || c.bio.trim() || c.arcPerSeason.some(value => value.trim()))
-}
+  if (isComposing) {
+    return <div style={pageStyle}><p style={bodyStyle}>Composing…</p></div>
+  }
 
-export function SynopsisDocumentView({ content, projectFormat, updatedAt }: SynopsisDocumentViewProps) {
-  const { header, logline, prose } = content
+  if (state.kind === 'below_readiness') {
+    return (
+      <div style={pageStyle}>
+        <p style={bodyStyle}>Add a few more answers before composing your Synopsis.</p>
+        {state.missingCoreLabels.length > 0 && (
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {state.missingCoreLabels.map(l => <li key={l} style={bodyStyle}>{l}</li>)}
+          </ul>
+        )}
+        <button type="button" disabled onClick={onCompose}>Compose this Synopsis</button>
+      </div>
+    )
+  }
 
-  const activeFormat = normalizeProjectFormat(projectFormat)
-  const isSeriesFormat = activeFormat === 'series'
-  const isSeriesMode = isSeriesFormat && content.series !== undefined
-  const series = content.series
+  const errorBanner = error ? (
+    <p style={{ ...metaStyle, color: 'var(--error, #b91c1c)' }}>
+      {error} <button type="button" onClick={onCompose}>Retry</button>
+    </p>
+  ) : null
 
-  const showMetadata = Boolean(header.title || header.writer)
+  if (state.kind === 'ready_uncomposed') {
+    return (
+      <div style={pageStyle}>
+        {errorBanner}
+        {state.omittedSectionHeadings.length > 0 && (
+          <p style={metaStyle}>Some sections will be omitted until you add more: {state.omittedSectionHeadings.join(', ')}.</p>
+        )}
+        <button type="button" onClick={onCompose}>Compose this Synopsis</button>
+      </div>
+    )
+  }
 
-  const paragraphs = PROSE_FIELDS.map(f => prose[f]).filter(Boolean)
+  const endingNote = state.endingMissing ? ' The ending isn’t answered yet.' : ''
+  const missingContextCopy = state.omittedSectionHeadings.length > 0
+    ? `Composed from what you’ve answered so far — add ${state.omittedSectionHeadings.join(', ')} for a fuller document.${endingNote}`
+    : `Composed from what you’ve answered so far.${endingNote}`
 
-  const formattedDate = new Date(updatedAt).toLocaleDateString()
-
-  const compsDisplay = header.comps && header.comps.length > 0 ? header.comps.join(', ') : ''
+  const banner =
+    state.kind === 'answer_stale' ? <p style={{ ...metaStyle, color: 'var(--warn, #b45309)' }}>Your answers changed — Recompose.</p>
+    : state.kind === 'recipe_stale' ? <p style={metaStyle}>A newer document format is available — Recompose.</p>
+    : state.kind === 'missing_context' ? <p style={metaStyle}>{missingContextCopy}</p>
+    : state.kind === 'flagged' ? <p style={metaStyle}>Review: some lines may not match your answers. Structure-checked, not meaning-verified.</p>
+    : null
 
   return (
-    <div
-      style={{
-        maxWidth: 680,
-        margin: '0 auto',
-        padding: '48px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 32,
-      }}
-    >
-      {/* Title */}
-      {header.title && (
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '2.25rem',
-            fontWeight: 700,
-            color: 'var(--fg)',
-            margin: 0,
-            lineHeight: 1.2,
-          }}
-        >
-          {header.title}
-        </h1>
-      )}
-
-      {/* Logline */}
-      {logline.text && (
-        <p
-          style={{
-            fontFamily: 'var(--font-body)',
-            fontSize: '1rem',
-            fontStyle: 'italic',
-            color: 'var(--fg)',
-            margin: 0,
-            lineHeight: 1.7,
-          }}
-        >
-          {logline.text}
-        </p>
-      )}
-
-      {/* Metadata block */}
-      {showMetadata && (
-        <div
-          style={{
-            borderTop: '1px solid var(--border)',
-            borderBottom: '1px solid var(--border)',
-            padding: '16px 0',
-            display: 'grid',
-            gridTemplateColumns: 'max-content 1fr',
-            gap: '4px 16px',
-          }}
-        >
-          {METADATA_LABELS.map(({ key, label }) => {
-            // Hide RUNTIME row in series mode
-            if (isSeriesFormat && key === 'targetRuntime') return null
-            const val = key === 'format' ? activeFormat : header[key as keyof typeof header]
-            if (!val || (Array.isArray(val) && val.length === 0)) return null
-            const display = Array.isArray(val) ? (val as string[]).join(', ') : String(val)
-            return (
-              <React.Fragment key={key}>
-                <span style={metaLabelStyle}>{label}</span>
-                <span style={metaValueStyle}>{display}</span>
-              </React.Fragment>
-            )
-          })}
-
-          {/* Series-only rows */}
-          {isSeriesMode && series && series.seriesType && (
-            <React.Fragment>
-              <span style={metaLabelStyle}>SERIES TYPE</span>
-              <span style={metaValueStyle}>{SERIES_TYPE_LABELS[series.seriesType] ?? series.seriesType}</span>
-            </React.Fragment>
-          )}
-          {isSeriesMode && series && series.episodeLength && (
-            <React.Fragment>
-              <span style={metaLabelStyle}>EPISODE LENGTH</span>
-              <span style={metaValueStyle}>{EPISODE_LENGTH_LABELS[series.episodeLength] ?? series.episodeLength}</span>
-            </React.Fragment>
-          )}
-
-          {compsDisplay && (
-            <React.Fragment>
-              <span style={metaLabelStyle}>COMPS</span>
-              <span style={metaValueStyle}>{compsDisplay}</span>
-            </React.Fragment>
-          )}
-        </div>
-      )}
-
-      {/* Series sections */}
-      {isSeriesMode && series ? (
-        <>
-          {/* Show Overview */}
-          {series.showOverview.trim() && (
-            <Section heading="Show Overview">
-              <p style={sectionBodyStyle}>{series.showOverview}</p>
-            </Section>
-          )}
-
-          {/* Pilot Synopsis */}
-          {(series.pilot.logline.trim() || series.pilot.prose.trim()) && (
-            <Section heading="Pilot Synopsis">
-              {series.pilot.logline.trim() && (
-                <p style={{ ...sectionBodyStyle, fontStyle: 'italic' }}>{series.pilot.logline}</p>
-              )}
-              {series.pilot.prose
-                .split('\n\n')
-                .filter(Boolean)
-                .map((para, i) => (
-                  <p key={i} style={sectionBodyStyle}>{para}</p>
-                ))}
-            </Section>
-          )}
-
-          {/* Season One Arc */}
-          {series.seasonOneArc.trim() && (
-            <Section heading="Season One Arc">
-              <p style={sectionBodyStyle}>{series.seasonOneArc}</p>
-            </Section>
-          )}
-
-          {/* Where It Goes */}
-          {series.futureSeasons.some(s => s.label.trim() || s.summary.trim()) && (
-            <Section heading="Where It Goes">
-              {series.futureSeasons
-                .filter(s => s.label.trim() || s.summary.trim())
-                .map((s, i) => (
-                  <div key={s.id}>
-                    <h3
-                      style={{
-                        fontFamily: 'var(--font-display)',
-                        fontSize: '1rem',
-                        fontWeight: 600,
-                        color: 'var(--fg)',
-                        margin: '0 0 4px 0',
-                      }}
-                    >
-                      {s.label.trim() || `Season ${i + 2}`}
-                    </h3>
-                    {s.summary && <p style={sectionBodyStyle}>{s.summary}</p>}
-                  </div>
-                ))}
-            </Section>
-          )}
-
-          {/* Characters */}
-          {series.characters.some(seriesHasCharacter) && (
-            <Section heading="Characters">
-              {series.characters.filter(seriesHasCharacter).map(char => (
-                <div key={char.id}>
-                  <h3
-                    style={{
-                      fontFamily: 'var(--font-display)',
-                      fontSize: '1rem',
-                      fontWeight: 600,
-                      color: 'var(--fg)',
-                      margin: '0 0 4px 0',
-                    }}
-                  >
-                    {char.name || '(unnamed)'}
-                  </h3>
-                  {char.role && (
-                    <p style={{ ...sectionBodyStyle, fontStyle: 'italic' }}>{char.role}</p>
-                  )}
-                  {char.bio && <p style={sectionBodyStyle}>{char.bio}</p>}
-                  {char.arcPerSeason.some(Boolean) && (
-                    <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
-                      {char.arcPerSeason.filter(Boolean).map((arc, i) => (
-                        <li
-                          key={i}
-                          style={{
-                            fontFamily: 'var(--font-body)',
-                            fontSize: '0.9375rem',
-                            lineHeight: 1.7,
-                            color: 'var(--fg)',
-                          }}
-                        >
-                          {arc}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </Section>
-          )}
-
-          {/* Comps & Why This Show Now */}
-          {series.compsAndWhyThisShowNow.trim() && (
-            <Section heading="Comps & Why This Show Now">
-              <p style={sectionBodyStyle}>{series.compsAndWhyThisShowNow}</p>
-            </Section>
-          )}
-        </>
-      ) : (
-        /* Feature prose paragraphs */
-        paragraphs.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {paragraphs.map((para, i) => (
-              <p
-                key={i}
-                style={{
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '1rem',
-                  lineHeight: 1.75,
-                  color: 'var(--fg)',
-                  margin: 0,
-                }}
-              >
-                {para}
-              </p>
-            ))}
-          </div>
-        )
-      )}
-
-      {/* Footer */}
-      <p
-        style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: '0.75rem',
-          color: 'var(--fg-muted)',
-          margin: 0,
-        }}
-      >
-        Last edited {formattedDate}
-      </p>
+    <div style={pageStyle}>
+      {errorBanner}
+      {banner}
+      <article style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {state.composed!.blocks.map((b, i) => <Block key={i} block={b} />)}
+      </article>
+      <footer style={footerStyle}>
+        <span>Composed from your answers · {new Date(state.composed!.generatedAt).toLocaleDateString()}</span>
+        <button type="button" onClick={onCompose}>Recompose</button>
+      </footer>
     </div>
   )
 }

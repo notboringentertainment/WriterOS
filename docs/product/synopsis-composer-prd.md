@@ -336,6 +336,26 @@ placeholders (standards L106–119).
 (`server/compose/buildComposePrompt.ts` is **not** in this list — it is generalized under
 Edit above.)
 
+### Build-reality deltas (recorded post-implementation)
+
+Two items in "Create" above were in fact **edits** to shipped files, because the synopsis
+surface already shipped a tab and a (stored-answer) Document View:
+
+- `client/src/components/writing/SynopsisTab.tsx` — **edited** existing tab: added optional
+  `identity`/`onComposed` props, the compose handler + `isComposingRef` guard, and switched
+  it to pass composed props to the Document View. (`identity`/`onComposed` are optional so
+  existing Edit-View tests keep compiling.)
+- `client/src/components/writing/synopsis/SynopsisDocumentView.tsx` — **replaced** the
+  stored-answer rendering with composed-artifact rendering via `deriveSynopsisDocumentState`
+  (mirrors `OutlineDocumentView`), per `document-composer-prd.md` superseding the old
+  re-render-stored-answers Document View. Its component test was rewritten to the composed
+  contract.
+- `server/compose/promptContracts.ts` — the Synopsis lens/style contract landed here
+  (not `synopsisPromptContract.ts`), alongside the extracted Outline contract.
+- `client/src/lib/useProjectState.ts` — `setComposedDocument` surface param widened from
+  `'outline'` to `'outline' | 'synopsis'`; `client/src/App.tsx` wires
+  `identity`/`onComposed` for `SynopsisTab`.
+
 ### Persistence
 
 `documents.synopsis.composed` already exists in `shared/documents.ts` (the

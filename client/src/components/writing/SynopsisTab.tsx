@@ -1,33 +1,63 @@
-import React from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
+import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
+import { requestSynopsisCompose } from '../../lib/synopsisComposeClient'
 import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
 
 export interface SynopsisTabProps {
   document: AuthoredDocumentState<SynopsisDocumentContent>
   projectFormat?: ProjectFormat
+  identity?: ComposeIdentity
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentPatch: (patch: Partial<SynopsisDocumentContent>) => void
   onViewPreferencesPatch: (patch: {
     activeView?: 'edit' | 'document'
   }) => void
+  onComposed?: (composed: ComposedDocument) => void
   onClear: () => void
 }
 
 export function SynopsisTab({
   document,
   projectFormat = 'feature',
+  identity = { title: '', genre: '' },
   onProjectFormatChange,
   onContentPatch,
   onViewPreferencesPatch,
+  onComposed,
   onClear,
 }: SynopsisTabProps) {
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const activeFormat = normalizeProjectFormat(projectFormat)
+
+  const [isComposing, setIsComposing] = useState(false)
+  const [composeError, setComposeError] = useState<string | null>(null)
+  const isComposingRef = useRef(false)
+
+  const handleCompose = useCallback(async () => {
+    if (isComposingRef.current) return
+    isComposingRef.current = true
+    setIsComposing(true)
+    setComposeError(null)
+    try {
+      const result = await requestSynopsisCompose({ content: document.content, format: activeFormat, identity })
+      if (result.ok) {
+        onComposed?.(result.composed)
+      } else {
+        setComposeError('WriterOS could not compose this document right now.')
+      }
+    } catch {
+      setComposeError('WriterOS could not compose this document right now.')
+    } finally {
+      isComposingRef.current = false
+      setIsComposing(false)
+    }
+  }, [document.content, activeFormat, identity, onComposed])
 
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return
@@ -106,8 +136,12 @@ export function SynopsisTab({
       ) : (
         <SynopsisDocumentView
           content={document.content}
-          projectFormat={activeFormat}
-          updatedAt={document.updatedAt}
+          format={activeFormat}
+          identity={identity}
+          composed={document.composed}
+          isComposing={isComposing}
+          error={composeError}
+          onCompose={handleCompose}
         />
       )}
     </div>
