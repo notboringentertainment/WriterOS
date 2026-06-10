@@ -122,9 +122,17 @@ touched, and their golden/prompt tests stay green.
    blocks; the lead line is a `logline` block. List/key-value/table blocks stay reserved
    for the Story Bible slice.
 6. **Custom passages: integrated into the story body, not a separate section.** Standards
-   L358 render them "where they support the story flow." They are coverage-checked via
-   `importantFieldPrefixes` on the body section so the model cannot silently drop an
-   answered passage.
+   L358 render them "where they support the story flow." They are citation-coverage-checked
+   via `importantFieldPrefixes` on the body section: an answered passage left uncited by
+   every block raises a fidelity warning (see Fidelity for what this does and does not
+   guarantee).
+7. **Output token budget: per-surface, Treatment gets a larger ceiling.**
+   `server/compose/composeDocument.ts` hardcodes `maxTokens: 2000` (L18) — sized for
+   Outline/Synopsis. A treatment is the longest composed artifact so far; 2000 tokens
+   risks clipping the model's JSON mid-stream (soft-fail) or pressuring it into
+   synopsis-like compression. The model call gains a per-surface `maxTokens`: Outline and
+   Synopsis keep `2000` (behavior unchanged), Treatment uses `6000`. This is a safety
+   ceiling, not a length target — length stays rubric-only (Resolved OQ4).
 
 ## Pinned Readiness Thresholds
 
@@ -286,9 +294,17 @@ output, first-heading/no-preamble rule, block-type list, `temperature: 0.2`.
 Reuse `server/compose/entityInventory.ts` and `server/compose/runFidelityCheck.ts`
 unchanged. The `importantFieldPrefixes` coverage shipped in the Synopsis slice already
 handles Treatment's dynamic-id sections (`mainCharacters` → `mainCharacters.`,
-`treatmentBody` → `prose.customSections.`), so the model cannot silently drop an answered
-character or custom passage and still pass clean. Same five checks, same
-"structure-checked, not meaning-verified" labeling, entailment critic deferred.
+`treatmentBody` → `prose.customSections.`). Same five checks, same "structure-checked,
+not meaning-verified" labeling, entailment critic deferred.
+
+Be precise about what prefix coverage guarantees: it is **citation coverage only**. The
+check flags any answered fact under an important prefix that no block cites in
+`sourceFieldIds` (`runFidelityCheck.ts` L65–72). It does **not** verify the cited
+character or passage actually appears in the prose — a model could cite a field id while
+omitting its content, and coverage would still pass. That semantic gap is exactly what
+the deferred entailment critic owns; until it lands, the honest claim is "every answered
+character and passage must be cited, and uncited ones are flagged" — which is also why
+the artifact stays labeled structure-checked, not meaning-verified.
 
 ## Document View
 
@@ -325,6 +341,9 @@ recipe keys, or placeholders.
   builder, recipe, source-hash fn, and readiness; Outline and Synopsis paths unchanged.
 - `server/compose/promptContracts.ts` — add the Treatment contract to the registry;
   Outline/Synopsis strings untouched.
+- `server/compose/composeDocument.ts` — parameterize the model-call `maxTokens` per
+  surface (Resolved OQ7): Outline/Synopsis keep `2000`, Treatment uses `6000`. No other
+  behavior change.
 - `server/routes.ts` — `POST /api/compose-document` accepts `surface: 'treatment'`.
   Single endpoint, no new route.
 - `client/src/lib/useProjectState.ts` — widen `setComposedDocument` surface param to
@@ -361,7 +380,7 @@ recipe keys, or placeholders.
 
 ### Reuse unchanged (no edits)
 
-`server/compose/composeDocument.ts`, `server/compose/buildComposePrompt.ts` (already
+`server/compose/buildComposePrompt.ts` (already
 contract-driven), `server/compose/entityInventory.ts`,
 `server/compose/runFidelityCheck.ts`, `shared/compose/schemas.ts`,
 `shared/compose/stableHash.ts`, `shared/compose/factSheet.ts`,
@@ -390,8 +409,10 @@ layer at a time — shared → server → client libs → client UI):
 - `tests/server/compose/treatmentPrompt.test.ts` (lens/style contract; no Oliver, no
   synopsis-coverage strings; must-avoid + anti-metacommentary present)
 - `tests/server/compose/treatmentGolden.test.ts` (full compose flow golden file)
-- `tests/server/compose/treatmentFidelityCoverage.test.ts` (prefix coverage flags a
-  dropped answered character / custom passage)
+- `tests/server/compose/treatmentFidelityCoverage.test.ts` (prefix citation coverage
+  flags an answered character / custom passage no block cites)
+- `tests/server/compose/composeDocument.test.ts` — extend: Treatment call passes
+  `maxTokens: 6000`; Outline and Synopsis calls still pass `2000`
 - `tests/lib/treatmentComposeClient.test.ts` (request + response validation only)
 - `tests/lib/treatmentDocumentState.test.ts` (answer-stale, recipe-stale, missing-ending)
 - `tests/components/TreatmentDocumentView.test.tsx` (rewritten to the composed contract)
@@ -415,8 +436,12 @@ golden/prompt tests byte-identical after the `ComposeSurface` widening.
   answered yet."; no fabricated resolution, ever.
 - `openQuestions.*` and `aiProductionImplications.*` never reach the fact sheet, the
   prompt, or the composed body.
-- Answered main characters and custom passages are coverage-checked via
-  `importantFieldPrefixes`; silently dropping one produces a fidelity warning.
+- Answered main characters and custom passages are citation-coverage-checked via
+  `importantFieldPrefixes`; one left uncited by every block produces a fidelity warning.
+  (Citation coverage is structural, not semantic — meaning verification stays with the
+  deferred entailment critic.)
+- The Treatment model call uses a `maxTokens: 6000` ceiling; Outline and Synopsis calls
+  keep `2000` unchanged.
 - Deterministic fidelity warnings surface and the artifact is labeled structure-checked.
 - `sourceHash`/`recipeVersion` drive answer-stale and recipe-stale states; a project
   format flip surfaces as answer-stale via the hash.
