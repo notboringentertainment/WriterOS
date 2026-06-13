@@ -8,7 +8,7 @@ export interface FactSheetField {
   items?: string[]
 }
 
-export type ComposeSurface = 'outline' | 'synopsis'
+export type ComposeSurface = 'outline' | 'synopsis' | 'treatment'
 
 export interface FactSheet {
   surface: ComposeSurface
