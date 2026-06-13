@@ -620,6 +620,14 @@ describe('createContextSummary — surface awareness', () => {
     expect(withSurface.toLowerCase()).toMatch(/ground|name the question|the writer is on/)
   })
 
+  it('does not reference a named question when nextQuestion is null', () => {
+    const noNext = { ...intakeSurface, nextQuestion: null }
+    const summary = createContextSummary({ ...populatedStoryMemory(), surface: noNext }, 'sam')
+    expect(summary).toContain('SURFACE AWARENESS')
+    expect(summary).not.toContain('question named above')
+    expect(summary).not.toContain('next unanswered question is')
+  })
+
   it('renders NOTHING and stays byte-identical when surface is absent or none (F1 guard)', () => {
     const baseline = createContextSummary(populatedStoryMemory(), 'sam')
     expect(createContextSummary({ ...populatedStoryMemory(), surface: undefined }, 'sam')).toBe(baseline)

@@ -498,10 +498,14 @@ function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
       ? `- Every question is answered. The first question is "${q.label}" — ${q.helper}`
       : `- The next unanswered question is "${q.label}" — ${q.helper}`;
     lines.push(label);
+    lines.push(
+      `- When the writer asks what to do, what's next, or which question this is, ground your answer in the question named above. Name the ${surface.surfaceTitle} surface rather than implying you can see more of the screen.`,
+    );
+  } else {
+    lines.push(
+      `- When the writer asks what to do or which surface this is, ground your answer in the ${surface.surfaceTitle} surface state above. Name the surface rather than implying you can see more of the screen.`,
+    );
   }
-  lines.push(
-    `- When the writer asks what to do, what's next, or which question this is, ground your answer in the question named above. Name the ${surface.surfaceTitle} surface rather than implying you can see more of the screen.`,
-  );
   return lines.join('\n');
 }
 

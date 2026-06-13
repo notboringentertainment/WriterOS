@@ -13,7 +13,7 @@ export const SurfaceQuestionSchema = z.object({
 })
 export type SurfaceQuestion = z.infer<typeof SurfaceQuestionSchema>
 
-export const SurfaceAwarenessSchema = z.discriminatedUnion('kind', [
+const SurfaceAwarenessUnion = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
   z.object({
     kind: z.literal('intake'),
@@ -28,4 +28,17 @@ export const SurfaceAwarenessSchema = z.discriminatedUnion('kind', [
     nextRecommendedAction: z.enum(['answer_next_question', 'all_answered']),
   }),
 ])
+
+// Cross-field invariants for the intake variant. Note: nextQuestion intentionally stays
+// non-null even when all questions are answered (it anchors to the first card), so this
+// does NOT require null-when-complete.
+export const SurfaceAwarenessSchema = SurfaceAwarenessUnion.superRefine((value, ctx) => {
+  if (value.kind !== 'intake') return
+  if (value.totalCount !== value.questions.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['totalCount'], message: 'totalCount must equal questions.length' })
+  }
+  if (value.answeredCount < 0 || value.answeredCount > value.totalCount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['answeredCount'], message: 'answeredCount must be between 0 and totalCount' })
+  }
+})
 export type SurfaceAwareness = z.infer<typeof SurfaceAwarenessSchema>

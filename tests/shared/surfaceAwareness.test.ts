@@ -50,4 +50,27 @@ describe('SurfaceAwarenessSchema', () => {
     const bad = { ...intake, questions: [{ ...question, status: 'maybe' }] }
     expect(SurfaceAwarenessSchema.safeParse(bad).success).toBe(false)
   })
+
+  it('rejects totalCount that does not match questions.length', () => {
+    expect(SurfaceAwarenessSchema.safeParse({ ...intake, totalCount: 5 }).success).toBe(false)
+  })
+
+  it('rejects answeredCount above totalCount or below zero', () => {
+    expect(SurfaceAwarenessSchema.safeParse({ ...intake, answeredCount: 2, totalCount: 1 }).success).toBe(false)
+    expect(SurfaceAwarenessSchema.safeParse({ ...intake, answeredCount: -1 }).success).toBe(false)
+  })
+
+  it('still accepts a non-null nextQuestion when all questions are answered (first-card anchor)', () => {
+    // Deliberate design: when complete, nextQuestion anchors to the first card rather than
+    // going null, so the agent keeps a reference. (Rejecting CodeRabbit PR#29 "null-when-complete".)
+    const complete = {
+      ...intake,
+      questions: [{ ...question, status: 'answered' as const }],
+      nextQuestion: { ...question, status: 'answered' as const },
+      answeredCount: 1,
+      totalCount: 1,
+      nextRecommendedAction: 'all_answered' as const,
+    }
+    expect(SurfaceAwarenessSchema.safeParse(complete).success).toBe(true)
+  })
 })
