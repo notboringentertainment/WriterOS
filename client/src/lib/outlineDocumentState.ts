@@ -27,10 +27,16 @@ export function deriveOutlineDocumentState(input: {
   const fs = buildOutlineFactSheet(content, format)
   const readiness = getOutlineReadiness(fs, recipe)
 
+  // The readiness gate outranks staleness: if answers drop below the gate after a
+  // compose, Recompose must disable rather than POST sparse content (authored content
+  // is the only canon — a composed artifact it no longer supports does not keep the
+  // gate open).
+  if (readiness.tier === 'sparse') {
+    return { kind: 'below_readiness', missingCoreLabels: readiness.missingCoreLabels, omittedSectionHeadings: [] }
+  }
+
   if (!composed) {
-    return readiness.tier === 'sparse'
-      ? { kind: 'below_readiness', missingCoreLabels: readiness.missingCoreLabels, omittedSectionHeadings: [] }
-      : { kind: 'ready_uncomposed', missingCoreLabels: [], omittedSectionHeadings: readiness.omittedSectionHeadings }
+    return { kind: 'ready_uncomposed', missingCoreLabels: [], omittedSectionHeadings: readiness.omittedSectionHeadings }
   }
 
   const currentHash = computeOutlineSourceHash(content, format, identity)

@@ -44,6 +44,17 @@ describe('deriveSynopsisDocumentState', () => {
     expect(s.kind).toBe('ready_uncomposed')
   })
 
+  it('below_readiness when answers drop below the gate after composing (sparse beats stale)', () => {
+    const content = richFeature()
+    const composed = composedFor(content)
+    // Delete the protagonist and every story movement: below the readiness floor.
+    content.logline.protagonist = ''
+    content.prose = { opening: '', escalation: '', middle: '', climax: '', resolution: '' }
+    const s = deriveSynopsisDocumentState({ content, format: 'feature', identity, composed })
+    expect(s.kind).toBe('below_readiness')
+    expect(s.missingCoreLabels.length).toBeGreaterThan(0)
+  })
+
   it('answer_stale when the source hash no longer matches', () => {
     const content = richFeature()
     const composed = composedFor(content, { sourceHash: 'stale' })
