@@ -36,10 +36,16 @@ export function deriveSynopsisDocumentState(input: {
   const readiness = getSynopsisReadiness(fs, recipe)
   const endingMissing = isEndingMissing(content, format)
 
+  // The readiness gate outranks staleness: if answers drop below the gate after a
+  // compose, Recompose must disable rather than POST sparse content (authored content
+  // is the only canon — a composed artifact it no longer supports does not keep the
+  // gate open).
+  if (readiness.tier === 'sparse') {
+    return { kind: 'below_readiness', missingCoreLabels: readiness.missingCoreLabels, omittedSectionHeadings: [], endingMissing }
+  }
+
   if (!composed) {
-    return readiness.tier === 'sparse'
-      ? { kind: 'below_readiness', missingCoreLabels: readiness.missingCoreLabels, omittedSectionHeadings: [], endingMissing }
-      : { kind: 'ready_uncomposed', missingCoreLabels: [], omittedSectionHeadings: readiness.omittedSectionHeadings, endingMissing }
+    return { kind: 'ready_uncomposed', missingCoreLabels: [], omittedSectionHeadings: readiness.omittedSectionHeadings, endingMissing }
   }
 
   const currentHash = computeSynopsisSourceHash(content, format, identity)

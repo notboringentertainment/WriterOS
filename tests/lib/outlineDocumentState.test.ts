@@ -22,6 +22,12 @@ describe('deriveOutlineDocumentState', () => {
     const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: undefined })
     expect(s.kind).toBe('ready_uncomposed')
   })
+  it('below-readiness when answers drop below the gate after composing (sparse beats stale)', () => {
+    // Empty content is sparse; a leftover composed artifact must not re-enable Recompose.
+    const s = deriveOutlineDocumentState({ content: createEmptyOutlineContent(), format: 'feature', identity, composed: composedFor('stale-hash') })
+    expect(s.kind).toBe('below_readiness')
+    expect(s.missingCoreLabels.length).toBeGreaterThan(0)
+  })
   it('answer-stale when hash differs', () => {
     const s = deriveOutlineDocumentState({ content: syntheticOutlineFeature, format: 'feature', identity, composed: composedFor('stale-hash') })
     expect(s.kind).toBe('answer_stale')
