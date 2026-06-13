@@ -5,8 +5,10 @@ import type {
   TreatmentMainCharacter,
 } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
 import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
+import { requestTreatmentCompose } from '../../lib/treatmentComposeClient'
 import { TreatmentDocumentView } from './treatment/TreatmentDocumentView'
 import {
   TREATMENT_PASSAGE_TEMPLATES,
@@ -18,9 +20,12 @@ import {
 interface TreatmentTabProps {
   document: AuthoredDocumentState<TreatmentDocumentContent>
   projectFormat?: ProjectFormat
+  // Optional so existing Edit View tests keep compiling (Synopsis build-reality delta).
+  identity?: ComposeIdentity
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentChange: (updater: (content: TreatmentDocumentContent) => TreatmentDocumentContent) => void
   onViewPreferencesPatch?: (patch: { activeView?: 'edit' | 'document' }) => void
+  onComposed?: (composed: ComposedDocument) => void
   onClear?: () => void
 }
 
@@ -119,9 +124,11 @@ function hasTreatmentAnswers(content: TreatmentDocumentContent): boolean {
 export function TreatmentTab({
   document,
   projectFormat = 'feature',
+  identity = { title: '', genre: '' },
   onProjectFormatChange,
   onContentChange,
   onViewPreferencesPatch,
+  onComposed,
   onClear,
 }: TreatmentTabProps) {
   const content = document.content
@@ -129,6 +136,31 @@ export function TreatmentTab({
   const activeFormat = normalizeProjectFormat(projectFormat)
   const canClear = hasTreatmentAnswers(content)
   const [collapsedIds, setCollapsedIds] = React.useState<Set<string>>(() => new Set())
+
+  const [isComposing, setIsComposing] = React.useState(false)
+  const [composeError, setComposeError] = React.useState<string | null>(null)
+  // The double-submit guard lives here in the tab handler, not in the compose client.
+  const isComposingRef = React.useRef(false)
+
+  const handleCompose = React.useCallback(async () => {
+    if (isComposingRef.current) return
+    isComposingRef.current = true
+    setIsComposing(true)
+    setComposeError(null)
+    try {
+      const result = await requestTreatmentCompose({ content, format: activeFormat, identity })
+      if (result.ok) {
+        onComposed?.(result.composed)
+      } else {
+        setComposeError('WriterOS could not compose this document right now.')
+      }
+    } catch {
+      setComposeError('WriterOS could not compose this document right now.')
+    } finally {
+      isComposingRef.current = false
+      setIsComposing(false)
+    }
+  }, [content, activeFormat, identity, onComposed])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {
@@ -515,8 +547,12 @@ export function TreatmentTab({
       ) : (
         <TreatmentDocumentView
           content={content}
-          projectFormat={activeFormat}
-          updatedAt={document.updatedAt}
+          format={activeFormat}
+          identity={identity}
+          composed={document.composed}
+          isComposing={isComposing}
+          error={composeError}
+          onCompose={handleCompose}
         />
       )}
     </div>
