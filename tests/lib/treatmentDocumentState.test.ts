@@ -44,6 +44,20 @@ describe('deriveTreatmentDocumentState', () => {
     expect(state.endingMissing).toBe(false)
   })
 
+  it('below_readiness when answers drop below the gate after composing (sparse beats stale)', () => {
+    const content = buildSyntheticTreatment()
+    const composed = composedFor(content)
+    // Delete the story engine and the spine: logline+premise empty, <2 movements.
+    content.logline = ''
+    content.concept.premise = ''
+    content.prose.opening = ''
+    content.prose.actOne = ''
+    content.prose.actTwo = ''
+    const state = deriveTreatmentDocumentState({ content, format: 'feature', identity, composed })
+    expect(state.kind).toBe('below_readiness')
+    expect(state.missingCoreLabels.length).toBeGreaterThan(0)
+  })
+
   it('answer_stale when an authored answer changes after composing', () => {
     const content = buildSyntheticTreatment()
     const composed = composedFor(content)
