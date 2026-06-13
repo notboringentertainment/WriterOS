@@ -482,6 +482,29 @@ function formatScriptFactLines(script: StoryMemory['script']): string[] {
   ].filter(filled);
 }
 
+// Renders the Surface Awareness Contract into a context block. Returns '' for absent /
+// 'none' surface so existing prompts stay byte-identical. The grounding instruction lives
+// here (conditional), never in the unconditional persona response rules.
+function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
+  if (!surface || surface.kind !== 'intake') return '';
+  const lines = [
+    `SURFACE AWARENESS:`,
+    `- The writer is on the ${surface.surfaceTitle} surface (${surface.format}).`,
+    `- Answered: ${surface.answeredCount}/${surface.totalCount} questions.`,
+  ];
+  if (surface.nextQuestion) {
+    const q = surface.nextQuestion;
+    const label = surface.nextRecommendedAction === 'all_answered'
+      ? `- Every question is answered. The first question is "${q.label}" — ${q.helper}`
+      : `- The next unanswered question is "${q.label}" — ${q.helper}`;
+    lines.push(label);
+  }
+  lines.push(
+    `- When the writer asks what to do, what's next, or which question this is, ground your answer in the question named above. Name the ${surface.surfaceTitle} surface rather than implying you can see more of the screen.`,
+  );
+  return lines.join('\n');
+}
+
 export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
   const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
   const writingPartnerBrief = createWritingPartnerBrief(storyMemory);
@@ -571,7 +594,14 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     storyBible: worldLines.length ? `STORY BIBLE:\n${worldLines.join('\n')}` : '',
   };
 
-  return contextOrder.map(section => sectionBlocks[section]).filter(Boolean).join('\n\n') || 'No structured project details yet.';
+  const orderedBlocks = contextOrder.map(section => sectionBlocks[section]).filter(Boolean);
+  // Surface awareness renders FIRST when present (the room the writer is standing in), and
+  // carries its own grounding instruction so no unconditional prompt rule changes. Absent /
+  // 'none' surface emits nothing, keeping existing prompts byte-identical.
+  const surfaceBlock = renderSurfaceAwareness(storyMemory.surface);
+  const allBlocks = surfaceBlock ? [surfaceBlock, ...orderedBlocks] : orderedBlocks;
+
+  return allBlocks.join('\n\n') || 'No structured project details yet.';
 }
 
 function sourceLinesForCapability(input: PersonaCapabilitySynthesisInput): string {

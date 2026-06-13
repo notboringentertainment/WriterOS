@@ -1,6 +1,6 @@
 import React from 'react'
 import type { OutlineCardDef } from '../../../lib/outlineDeck'
-import { resolveOutlinePath } from '../../../lib/outlineDeck'
+import { getOutlineCardBindings, resolveOutlinePath } from '../../../lib/outlineDeck'
 import type { OutlineDocumentContent } from '@shared/documents'
 
 interface OutlineCardProps {
@@ -10,9 +10,7 @@ interface OutlineCardProps {
 }
 
 export function OutlineCard({ card, content, onFieldChange }: OutlineCardProps) {
-  const bindings = typeof card.mappingPath === 'string'
-    ? [{ label: card.question, path: card.mappingPath }]
-    : card.mappingPath
+  const bindings = getOutlineCardBindings(card)
   const composite = bindings.length > 1
 
   return (

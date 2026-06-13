@@ -8,6 +8,7 @@ import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import { personaCapabilityRequestSchema } from "@shared/personaCapability";
 import { runPersonaTask } from "./persona-capability/runPersonaTask";
 import { normalizeProjectFormat } from "@shared/projectFormat";
+import { SurfaceAwarenessSchema } from "@shared/surfaceAwareness";
 import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
@@ -256,6 +257,8 @@ const projectContextSchema = z.object({
   genre: z.string().optional(),
   format: z.string().default('feature').transform(normalizeProjectFormat),
   logline: z.string().optional(),
+  // Surface Awareness Contract — optional; only the wp-chat client path supplies it.
+  surface: SurfaceAwarenessSchema.optional(),
   script: scriptContextSchema,
   synopsis: z.object({
     logline: z.string(),
@@ -916,6 +919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           treatment: buildStoryMemoryTreatment(data.projectContext),
           themes: data.projectContext.storyBible.themes,
         },
+        surface: data.projectContext.surface,
         script: scriptContext ? {
           excerpt: scriptContext.excerpt,
           sceneHeadings: scriptContext.sceneHeadings,

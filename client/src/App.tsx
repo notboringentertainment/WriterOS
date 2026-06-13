@@ -4,6 +4,7 @@ import { useProjectState } from './lib/useProjectState'
 import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
@@ -629,7 +630,10 @@ export default function App() {
         return
       }
 
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext, conversationHistory })
+      // Surface awareness is attached only to the wp-chat payload (not OpenSwarm /
+      // persona-capability above), so the agent knows which page/question the writer is on.
+      const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
+      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface }, conversationHistory })
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
@@ -647,14 +651,15 @@ export default function App() {
 
     try {
       const projectContext = buildFreshProjectContext(text)
-      const response = await postWPChat({ personaId: specialistId, message: text, projectContext, conversationHistory })
+      const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
+      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface }, conversationHistory })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
     }
-  }, [buildFreshProjectContext, project])
+  }, [buildFreshProjectContext, project, shellState.activeTab])
 
   const renderActiveSurface = () => {
     switch (shellState.activeTab) {

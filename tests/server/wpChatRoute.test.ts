@@ -238,6 +238,64 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     }
   })
 
+  it('passes a Surface Awareness Contract through to StoryMemory when present', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    const surface = {
+      kind: 'intake' as const,
+      surface: 'outline' as const,
+      surfaceTitle: 'Outline',
+      format: 'feature' as const,
+      questions: [{ id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const }],
+      nextQuestion: { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const },
+      selectionSource: 'first_unanswered' as const,
+      answeredCount: 0,
+      totalCount: 1,
+      nextRecommendedAction: 'answer_next_question' as const,
+    }
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's the first question here?",
+        projectContext: { ...buildProjectContext(state), surface },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toEqual(surface)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('leaves StoryMemory.surface undefined when no surface is sent', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Review the synopsis.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
   it('sends current Script Facts through Writer Room specialist context', async () => {
     const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
       message: 'Maya response.',
