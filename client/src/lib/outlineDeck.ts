@@ -333,6 +333,21 @@ export function hasText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+// Normalize a card's mappingPath (a single string OR an explicit binding list) into a
+// binding list. Single shorthand: the card question is the binding label. Mirrors the
+// inline logic in OutlineCard so per-card resolution lives in one place.
+export function getOutlineCardBindings(card: OutlineCardDef): OutlineCardBinding[] {
+  return typeof card.mappingPath === 'string'
+    ? [{ label: card.question, path: card.mappingPath }]
+    : card.mappingPath
+}
+
+// A card is answered only when EVERY binding resolves to non-empty text. Composite cards
+// (e.g. spine.wantNeed: want + need) are not "answered" until both halves are filled.
+export function isOutlineCardAnswered(content: OutlineDocumentContent, card: OutlineCardDef): boolean {
+  return getOutlineCardBindings(card).every(binding => hasText(resolveOutlinePath(content, binding.path)))
+}
+
 export function hasFeatureOutlineAnswers(content: OutlineDocumentContent): boolean {
   return FEATURE_UNITS.some(def => {
     const unit = content.units.find(item => item.id === def.id)

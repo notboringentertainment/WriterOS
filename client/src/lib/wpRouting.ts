@@ -2,6 +2,7 @@ import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
+import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import { normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
@@ -23,6 +24,9 @@ export interface ProjectContext {
   genre?: string
   format: ProjectFormat
   logline?: string
+  // Surface Awareness Contract — attached only at the wp-chat call sites (not OpenSwarm /
+  // persona-capability). Absent → omitted from the payload (output unchanged).
+  surface?: SurfaceAwareness
   script: ScriptContext
   synopsis: {
     logline: string

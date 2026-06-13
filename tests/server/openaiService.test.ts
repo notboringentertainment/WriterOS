@@ -584,3 +584,61 @@ describe('parseJsonObject', () => {
     expect(parseJsonObject('```json\n{"message":"hello"}\n```')).toEqual({ message: 'hello' })
   })
 })
+
+describe('createContextSummary — surface awareness', () => {
+  const intakeSurface = {
+    kind: 'intake' as const,
+    surface: 'outline' as const,
+    surfaceTitle: 'Outline',
+    format: 'feature' as const,
+    questions: [
+      { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the person or group whose choices drive the story.', status: 'unanswered' as const },
+      { id: 'spine.theme', label: 'What truth is the story testing?', helper: 'A rough theme is enough.', status: 'unanswered' as const },
+    ],
+    nextQuestion: { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the person or group whose choices drive the story.', status: 'unanswered' as const },
+    selectionSource: 'first_unanswered' as const,
+    answeredCount: 0,
+    totalCount: 2,
+    nextRecommendedAction: 'answer_next_question' as const,
+  }
+
+  it('renders a SURFACE AWARENESS block naming the surface and the next question', () => {
+    const summary = createContextSummary(populatedStoryMemory(), 'sam')
+    expect(summary).not.toContain('SURFACE AWARENESS')
+
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    expect(withSurface).toContain('SURFACE AWARENESS')
+    expect(withSurface).toContain('Outline')
+    expect(withSurface).toContain('Who are we following?')
+    expect(withSurface).toContain('Name the person or group whose choices drive the story.')
+    expect(withSurface).toContain('0/2')
+  })
+
+  it('carries the grounding instruction inside the surface block (not in unconditional rules)', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    // The instruction tells the agent to ground "what's next here" in the named question.
+    expect(withSurface.toLowerCase()).toMatch(/ground|name the question|the writer is on/)
+  })
+
+  it('authorizes the agent to treat the surface block as real app state and forbids denial', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    const lower = withSurface.toLowerCase()
+    // Must counter the model's default "I can't see your page" denial.
+    expect(lower).toMatch(/provided by the app|live (app )?state|real .*state|authoritative/)
+    expect(lower).toMatch(/do not (say|claim|tell).*(can'?t|cannot).*(see|access|view)/)
+  })
+
+  it('does not reference a named question when nextQuestion is null', () => {
+    const noNext = { ...intakeSurface, nextQuestion: null }
+    const summary = createContextSummary({ ...populatedStoryMemory(), surface: noNext }, 'sam')
+    expect(summary).toContain('SURFACE AWARENESS')
+    expect(summary).not.toContain('question named above')
+    expect(summary).not.toContain('next unanswered question is')
+  })
+
+  it('renders NOTHING and stays byte-identical when surface is absent or none (F1 guard)', () => {
+    const baseline = createContextSummary(populatedStoryMemory(), 'sam')
+    expect(createContextSummary({ ...populatedStoryMemory(), surface: undefined }, 'sam')).toBe(baseline)
+    expect(createContextSummary({ ...populatedStoryMemory(), surface: { kind: 'none' } }, 'sam')).toBe(baseline)
+  })
+})
