@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { composeOutline } from '../../../server/compose'
+import { composeOutline, composeSynopsis, composeTreatment } from '../../../server/compose'
 import { syntheticOutlineFeature } from '../../fixtures/outline/syntheticOutline'
+import { syntheticSynopsisFeature } from '../../fixtures/synopsis/syntheticSynopsis'
+import { syntheticTreatment } from '../../fixtures/treatment/syntheticTreatment'
 
 // Cite every answered important field so the fidelity coverage check is clean.
 // Text uses only entities present in the source answers (Vera Solano, The Meridian Group).
@@ -21,7 +23,10 @@ const goodBlocks = JSON.stringify({ blocks: [
 
 function fakeProvider(responses: string[]) {
   const calls = [...responses]
-  return { name: 'test', model: 'test-model', isConfigured: () => true, generateResponse: vi.fn(async () => calls.shift() ?? '') }
+  return {
+    name: 'test', model: 'test-model', isConfigured: () => true,
+    generateResponse: vi.fn(async (_req: { maxTokens?: number }) => calls.shift() ?? ''),
+  }
 }
 
 describe('composeOutline', () => {
@@ -48,5 +53,34 @@ describe('composeOutline', () => {
     const provider = fakeProvider([bad, bad])
     const result = await composeOutline({ content: syntheticOutlineFeature, format: 'feature', identity: { title: 'T', genre: 'Drama' }, provider: provider as never })
     expect(result.ok).toBe(false)
+  })
+})
+
+// Per-surface output token ceiling (a ceiling, not a length target): assert the value
+// the provider actually receives, not just that compose succeeds.
+describe('per-surface maxTokens', () => {
+  const identity = { title: 'T', genre: 'Drama' }
+  const anyBlocks = JSON.stringify({ blocks: [{ type: 'heading', text: 'Logline' }] })
+
+  function sentMaxTokens(provider: ReturnType<typeof fakeProvider>): number | undefined {
+    return provider.generateResponse.mock.calls[0]?.[0]?.maxTokens
+  }
+
+  it('treatment calls the model with maxTokens 6000', async () => {
+    const provider = fakeProvider([anyBlocks])
+    await composeTreatment({ content: syntheticTreatment, format: 'feature', identity, provider: provider as never })
+    expect(sentMaxTokens(provider)).toBe(6000)
+  })
+
+  it('outline still calls the model with maxTokens 2000', async () => {
+    const provider = fakeProvider([anyBlocks])
+    await composeOutline({ content: syntheticOutlineFeature, format: 'feature', identity, provider: provider as never })
+    expect(sentMaxTokens(provider)).toBe(2000)
+  })
+
+  it('synopsis still calls the model with maxTokens 2000', async () => {
+    const provider = fakeProvider([anyBlocks])
+    await composeSynopsis({ content: syntheticSynopsisFeature, format: 'feature', identity, provider: provider as never })
+    expect(sentMaxTokens(provider)).toBe(2000)
   })
 })

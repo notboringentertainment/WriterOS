@@ -6,11 +6,14 @@ import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
 import { buildSynopsisFactSheet } from '../../shared/compose/synopsisFactSheet'
 import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
 import { computeSynopsisSourceHash } from '../../shared/compose/synopsisSourceHash'
+import { buildTreatmentFactSheet } from '../../shared/compose/treatmentFactSheet'
+import { getTreatmentRecipe } from '../../shared/compose/treatmentRecipe'
+import { computeTreatmentSourceHash } from '../../shared/compose/treatmentSourceHash'
 import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION } from '../../shared/compose/types'
 import type { ComposeIdentity, ComposedDocument, FactSheet, Recipe } from '../../shared/compose/types'
-import type { OutlineDocumentContent, SynopsisDocumentContent } from '../../shared/documents'
+import type { OutlineDocumentContent, SynopsisDocumentContent, TreatmentDocumentContent } from '../../shared/documents'
 import { buildComposePrompt } from './buildComposePrompt'
-import { callComposeModel } from './composeDocument'
+import { callComposeModel, MAX_TOKENS_BY_SURFACE } from './composeDocument'
 import { buildEntityInventory } from './entityInventory'
 import { runFidelityCheck, hasSevereInjection } from './runFidelityCheck'
 
@@ -30,7 +33,7 @@ async function composeFromRecipe(
   const inventory = buildEntityInventory(factSheet)
   const { system, user } = buildComposePrompt(factSheet, recipe)
 
-  const model = await callComposeModel(provider, system, user)
+  const model = await callComposeModel(provider, system, user, MAX_TOKENS_BY_SURFACE[recipe.surface])
   if (!model.ok) return { ok: false, reason: model.reason }
   if (hasSevereInjection(model.blocks)) return { ok: false, reason: 'severe injection echo' }
 
@@ -77,5 +80,20 @@ export async function composeSynopsis(args: ComposeSynopsisArgs): Promise<Compos
   const factSheet = buildSynopsisFactSheet(args.content, args.format)
   const recipe = getSynopsisRecipe(args.format)
   const sourceHash = computeSynopsisSourceHash(args.content, args.format, args.identity)
+  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash)
+}
+
+export interface ComposeTreatmentArgs {
+  content: TreatmentDocumentContent
+  format: 'feature' | 'series'
+  identity: ComposeIdentity
+  provider?: ModelProvider
+}
+
+export async function composeTreatment(args: ComposeTreatmentArgs): Promise<ComposeResult> {
+  const provider = args.provider ?? createModelProvider()
+  const factSheet = buildTreatmentFactSheet(args.content, args.format)
+  const recipe = getTreatmentRecipe(args.format)
+  const sourceHash = computeTreatmentSourceHash(args.content, args.format, args.identity)
   return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash)
 }

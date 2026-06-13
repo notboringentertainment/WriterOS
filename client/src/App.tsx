@@ -716,9 +716,11 @@ export default function App() {
           <TreatmentTab
             document={project.state.documents.treatment}
             projectFormat={project.state.meta.format}
+            identity={pickIdentity(project.state.meta)}
             onProjectFormatChange={project.setProjectFormat}
             onContentChange={project.setTreatmentDocument}
             onViewPreferencesPatch={(patch) => project.setTreatmentViewPreferences(patch)}
+            onComposed={(composed) => project.setComposedDocument('treatment', composed)}
             onClear={project.clearTreatment}
           />
         )

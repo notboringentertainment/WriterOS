@@ -349,7 +349,7 @@ export function useProjectState() {
   )
 
   const setComposedDocument = useCallback(
-    (surface: 'outline' | 'synopsis', composed: ComposedDocument) => {
+    (surface: 'outline' | 'synopsis' | 'treatment', composed: ComposedDocument) => {
       update(s => ({
         ...s,
         documents: {

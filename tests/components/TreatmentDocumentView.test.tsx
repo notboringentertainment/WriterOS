@@ -1,110 +1,117 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TreatmentDocumentView } from '../../client/src/components/writing/treatment/TreatmentDocumentView'
-import { createEmptyTreatmentContent, type TreatmentDocumentContent } from '@shared/documents'
+import { buildSyntheticTreatment, syntheticTreatment } from '../fixtures/treatment/syntheticTreatment'
+import { computeTreatmentSourceHash } from '../../shared/compose/treatmentSourceHash'
+import { getTreatmentRecipe } from '../../shared/compose/treatmentRecipe'
+import { createEmptyTreatmentContent } from '../../shared/documents'
+import type { ComposedDocument } from '../../shared/compose/types'
 
-const updatedAt = '2026-05-20T10:00:00.000Z'
-
-function populatedCharacter(): TreatmentDocumentContent['mainCharacters'][number] {
-  return {
-    id: 'c1',
-    name: 'Mara',
-    role: 'Paramedic',
-    externalWant: 'Find the caller before another patient vanishes.',
-    internalNeed: 'Trust help before she burns out.',
-    flawOrWound: 'She believes every loss is her fault.',
-    secretOrContradiction: 'She keeps answering calls no one else can hear.',
-    arc: 'She moves from solitary rescue to shared command.',
-    relationshipPressure: 'Her partner thinks the calls are a symptom.',
-  }
+const identity = { title: 'Tidewrack', genre: 'Thriller' }
+const hash = computeTreatmentSourceHash(syntheticTreatment, 'feature', identity)
+const composed: ComposedDocument = {
+  schemaVersion: 1, generatedAt: '2026-06-12T00:00:00.000Z', model: 'm',
+  recipeVersion: getTreatmentRecipe('feature').recipeVersion, composerVersion: 1,
+  sourceHash: hash, format: 'feature',
+  blocks: [
+    { type: 'heading', text: 'Logline' },
+    { type: 'logline', text: 'Mara Voss dives a drowned city and surfaces with proof of murder.', sourceFieldIds: ['logline'] },
+    { type: 'heading', text: 'The Story' },
+    { type: 'paragraph', text: 'Mara finds the engineer zip-tied to the bell cage at dawn.', sourceFieldIds: ['prose.opening'] },
+  ],
+  fidelity: { status: 'clean', warnings: [] },
 }
 
-describe('TreatmentDocumentView', () => {
-  it('renders authored treatment material as a clean readable document', () => {
-    const content = createEmptyTreatmentContent()
-    content.header = {
-      title: 'Night Line',
-      writer: 'Ben Crane',
-      format: 'feature',
-      genre: 'Supernatural thriller',
-      version: 'Draft 1',
-      date: 'May 2026',
-    }
-    content.logline = 'A medic hears impossible calls from missing patients.'
-    content.concept = {
-      premise: 'A city rescue line starts taking calls from the dead.',
-      tone: 'Grounded procedural dread.',
-      theme: 'Mercy has a cost.',
-      emotionalPromise: 'A haunted rescue story that ends in earned release.',
-    }
-    content.mainCharacters = [populatedCharacter()]
-    content.prose.opening = 'Mara ends a night shift.\n\nThe phone rings from a dead ward.'
-    content.prose.actOne = 'She follows the first impossible call into a sealed hospital wing.'
-    content.prose.customSections = [
-      { id: 'turn', heading: 'Major Turn', body: 'Isaiah answers from inside the emergency network.' },
-    ]
-    content.visualAndTonal.musicOrSoundFeeling = 'Analog pulse under emergency-line static.'
+const baseProps = {
+  content: syntheticTreatment, format: 'feature' as const, identity,
+  composed, isComposing: false, onCompose: vi.fn(), error: null,
+}
 
-    render(<TreatmentDocumentView content={content} projectFormat="series" updatedAt={updatedAt} />)
-
-    expect(screen.getByRole('heading', { level: 1, name: 'Night Line' })).toBeInTheDocument()
-    expect(screen.getByText('A medic hears impossible calls from missing patients.')).toBeInTheDocument()
-    expect(screen.getByText('WRITER')).toBeInTheDocument()
-    expect(screen.getByText('Ben Crane')).toBeInTheDocument()
-    expect(screen.getByText('Series')).toBeInTheDocument()
-    expect(screen.getByText('A city rescue line starts taking calls from the dead.')).toBeInTheDocument()
-    expect(screen.getByText('Mara')).toBeInTheDocument()
-    expect(screen.getByText('Paramedic')).toBeInTheDocument()
-    expect(screen.getByText('Mara ends a night shift.')).toBeInTheDocument()
-    expect(screen.getByText('The phone rings from a dead ward.')).toBeInTheDocument()
-    expect(screen.getByText('Major Turn')).toBeInTheDocument()
-    expect(screen.getByText('Analog pulse under emergency-line static.')).toBeInTheDocument()
-
+describe('TreatmentDocumentView — composed contract', () => {
+  it('renders composed treatment prose, not labeled answer rows', () => {
+    render(<TreatmentDocumentView {...baseProps} />)
+    expect(screen.getByText('Mara finds the engineer zip-tied to the bell cage at dawn.')).toBeInTheDocument()
+    // Edit View questions never appear in the professional body.
     expect(screen.queryByText('What is the story in one sentence?')).not.toBeInTheDocument()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByText('How does the story open on screen?')).not.toBeInTheDocument()
   })
 
-  it('excludes empty template passages, open questions, and AI production notes', () => {
-    const content = createEmptyTreatmentContent()
-    content.logline = 'A medic hears impossible calls.'
-    content.prose.customSections = [
-      { id: 'empty-free', heading: 'New passage', body: '' },
-      { id: 'side-thread', heading: 'Side Thread', body: 'Mara lies to her partner to keep listening.' },
-    ]
-    content.openQuestions.story = ['Should the rescue network feel benevolent or predatory?']
-    content.openQuestions.production = ['Can the impossible calls be represented without expensive VFX?']
-    content.aiProductionImplications = {
-      visualSequenceRisks: 'Avoid a costly crowd sequence.',
-      characterContinuityRisks: 'Track Mara phone handoffs.',
-      locationContinuityRisks: 'Hospital geography changes.',
-      vfxOrGenerationChallenges: 'Impossible callers require spectral assets.',
-      referenceAssetsNeeded: 'Emergency dispatch boards.',
-    }
-
-    render(<TreatmentDocumentView content={content} updatedAt={updatedAt} />)
-
-    expect(screen.getByText('Side Thread')).toBeInTheDocument()
-    expect(screen.getByText('Mara lies to her partner to keep listening.')).toBeInTheDocument()
-    expect(screen.queryByText('New passage')).not.toBeInTheDocument()
-    expect(screen.queryByText('Should the rescue network feel benevolent or predatory?')).not.toBeInTheDocument()
-    expect(screen.queryByText('Can the impossible calls be represented without expensive VFX?')).not.toBeInTheDocument()
-    expect(screen.queryByText('Avoid a costly crowd sequence.')).not.toBeInTheDocument()
-    expect(screen.queryByText(/open questions/i)).not.toBeInTheDocument()
+  it('NEVER leaks sourceFieldIds, schema paths, or recipe keys into the body', () => {
+    const { container } = render(<TreatmentDocumentView {...baseProps} />)
+    expect(container.textContent).not.toContain('sourceFieldIds')
+    expect(container.textContent).not.toContain('prose.opening')
+    expect(container.textContent).not.toContain('treatmentBody')
   })
 
-  it('renders a quiet empty state without default format metadata', () => {
-    render(<TreatmentDocumentView content={createEmptyTreatmentContent()} updatedAt={updatedAt} />)
-
-    expect(screen.getByText('No authored treatment content yet.')).toBeInTheDocument()
-    expect(screen.queryByText('FORMAT')).not.toBeInTheDocument()
-    expect(screen.getByText(`Last edited ${new Date(updatedAt).toLocaleDateString()}`)).toBeInTheDocument()
+  it('shows the Compose CTA when ready and uncomposed', () => {
+    render(<TreatmentDocumentView {...baseProps} composed={undefined} />)
+    expect(screen.getByRole('button', { name: /compose this treatment/i })).toBeEnabled()
   })
 
-  it('omits the Last edited footer when updatedAt is not a valid date', () => {
-    render(<TreatmentDocumentView content={createEmptyTreatmentContent()} updatedAt="" />)
+  it('disables Compose when below readiness (empty content)', () => {
+    render(<TreatmentDocumentView {...baseProps} content={createEmptyTreatmentContent()} composed={undefined} />)
+    expect(screen.getByRole('button', { name: /compose this treatment/i })).toBeDisabled()
+    expect(screen.getByText(/add a few more answers before composing your treatment/i)).toBeInTheDocument()
+  })
 
-    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Last edited/)).not.toBeInTheDocument()
+  it('shows an answer-stale banner when answers changed', () => {
+    const changed = buildSyntheticTreatment()
+    changed.prose.actTwo = 'A different middle.'
+    render(<TreatmentDocumentView {...baseProps} content={changed} />)
+    expect(screen.getByText(/your answers changed — recompose/i)).toBeInTheDocument()
+  })
+
+  it('shows a recipe-stale banner for an older recipe version', () => {
+    render(<TreatmentDocumentView {...baseProps} composed={{ ...composed, recipeVersion: 0 }} />)
+    expect(screen.getByText(/a newer document format is available — recompose/i)).toBeInTheDocument()
+  })
+
+  it('labels a flagged artifact structure-checked, not meaning-verified', () => {
+    render(
+      <TreatmentDocumentView
+        {...baseProps}
+        composed={{ ...composed, fidelity: { status: 'flagged', warnings: [{ kind: 'coverage', message: 'x' }] } }}
+      />,
+    )
+    expect(screen.getByText(/structure-checked, not meaning-verified/i)).toBeInTheDocument()
+  })
+
+  it('names the missing ending in the missing-context state', () => {
+    const content = buildSyntheticTreatment()
+    content.prose.actThree = ''
+    const stillCurrent = { ...composed, sourceHash: computeTreatmentSourceHash(content, 'feature', identity) }
+    render(<TreatmentDocumentView {...baseProps} content={content} composed={stillCurrent} />)
+    expect(screen.getByText(/composed from what you’ve answered so far/i)).toBeInTheDocument()
+    expect(screen.getByText(/the ending isn’t answered yet/i)).toBeInTheDocument()
+  })
+
+  it('shows error/retry alongside the Compose CTA when uncomposed and errored', () => {
+    render(<TreatmentDocumentView {...baseProps} composed={undefined} error="WriterOS could not compose this document right now." />)
+    expect(screen.getByText(/could not compose/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
+
+  it('renders the title and metadata outside the composed body, with format from the prop authority', () => {
+    const content = buildSyntheticTreatment()
+    content.header = { title: 'Tidewrack', writer: 'Ben', format: 'feature', genre: 'Thriller', version: 'Draft 2', date: 'June 2026' }
+    const stillCurrent = { ...composed, sourceHash: computeTreatmentSourceHash(content, 'feature', identity) }
+    render(<TreatmentDocumentView {...baseProps} content={content} composed={stillCurrent} format="feature" />)
+    expect(screen.getByRole('heading', { name: 'Tidewrack' })).toBeInTheDocument()
+    expect(screen.getByText('Ben')).toBeInTheDocument()
+    expect(screen.getByText('Draft 2')).toBeInTheDocument()
+  })
+
+  it('uses the format prop as authority, not a stale header.format mirror', () => {
+    const content = buildSyntheticTreatment()
+    content.header = { ...content.header, title: 'Tidewrack', format: 'series' }
+    const stillCurrent = { ...composed, sourceHash: computeTreatmentSourceHash(content, 'feature', identity) }
+    render(<TreatmentDocumentView {...baseProps} content={content} composed={stillCurrent} format="feature" />)
+    expect(screen.getByText('feature')).toBeInTheDocument()
+    expect(screen.queryByText('series')).not.toBeInTheDocument()
+  })
+
+  it('shows Composing… while a request is in flight', () => {
+    render(<TreatmentDocumentView {...baseProps} isComposing />)
+    expect(screen.getByText('Composing…')).toBeInTheDocument()
   })
 })
