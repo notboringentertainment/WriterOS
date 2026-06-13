@@ -275,6 +275,70 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     }
   })
 
+  it('routes a Writer’s Room specialist (zoe) with surface to a 200, surface intact', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Zoe response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    const surface = {
+      kind: 'intake' as const,
+      surface: 'outline' as const,
+      surfaceTitle: 'Outline',
+      format: 'feature' as const,
+      questions: [{ id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const }],
+      nextQuestion: { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const },
+      selectionSource: 'first_unanswered' as const,
+      answeredCount: 0,
+      totalCount: 1,
+      nextRecommendedAction: 'answer_next_question' as const,
+    }
+    const { server, port } = await startApp()
+    try {
+      const res = await postJson(port, '/api/wp-chat', {
+        personaId: 'zoe',
+        message: "What's the first question here?",
+        projectContext: { ...buildProjectContext(state), surface },
+        conversationHistory: [],
+      })
+      expect(res.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toEqual(surface)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('NEVER 500s on a malformed surface — degrades to no surface so chat still works', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    // totalCount disagrees with questions.length — exactly the kind of payload that must
+    // not take down the whole chat (symptom 2: connection error from a 500).
+    const badSurface = {
+      kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'feature',
+      questions: [], nextQuestion: null, selectionSource: 'first_unanswered',
+      answeredCount: 9, totalCount: 9, nextRecommendedAction: 'answer_next_question',
+    }
+    const { server, port } = await startApp()
+    try {
+      const res = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Review the synopsis.',
+        projectContext: { ...buildProjectContext(state), surface: badSurface },
+        conversationHistory: [],
+      })
+      expect(res.status).toBe(200) // chat works
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toBeUndefined() // malformed surface dropped, not fatal
+    } finally {
+      server.close()
+    }
+  })
+
   it('leaves StoryMemory.surface undefined when no surface is sent', async () => {
     const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
       message: 'Sam response.',

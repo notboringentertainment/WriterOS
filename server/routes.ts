@@ -257,8 +257,10 @@ const projectContextSchema = z.object({
   genre: z.string().optional(),
   format: z.string().default('feature').transform(normalizeProjectFormat),
   logline: z.string().optional(),
-  // Surface Awareness Contract — optional; only the wp-chat client path supplies it.
-  surface: SurfaceAwarenessSchema.optional(),
+  // Surface Awareness Contract — optional, advisory context. A malformed surface must
+  // never break chat, so it degrades to undefined (no block) instead of failing the parse
+  // and 500ing the whole request.
+  surface: SurfaceAwarenessSchema.optional().catch(undefined),
   script: scriptContextSchema,
   synopsis: z.object({
     logline: z.string(),

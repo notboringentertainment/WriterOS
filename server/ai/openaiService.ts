@@ -488,7 +488,7 @@ function formatScriptFactLines(script: StoryMemory['script']): string[] {
 function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
   if (!surface || surface.kind !== 'intake') return '';
   const lines = [
-    `SURFACE AWARENESS:`,
+    `SURFACE AWARENESS (live app state — this is real context the WriterOS app gave you about the page the writer currently has open; treat it as authoritative, not a guess):`,
     `- The writer is on the ${surface.surfaceTitle} surface (${surface.format}).`,
     `- Answered: ${surface.answeredCount}/${surface.totalCount} questions.`,
   ];
@@ -498,14 +498,10 @@ function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
       ? `- Every question is answered. The first question is "${q.label}" — ${q.helper}`
       : `- The next unanswered question is "${q.label}" — ${q.helper}`;
     lines.push(label);
-    lines.push(
-      `- When the writer asks what to do, what's next, or which question this is, ground your answer in the question named above. Name the ${surface.surfaceTitle} surface rather than implying you can see more of the screen.`,
-    );
-  } else {
-    lines.push(
-      `- When the writer asks what to do or which surface this is, ground your answer in the ${surface.surfaceTitle} surface state above. Name the surface rather than implying you can see more of the screen.`,
-    );
   }
+  lines.push(
+    `- You DO have this page's structured state from the app. When the writer asks what's here, what's next, or which question this is, answer directly using the surface state above and name the ${surface.surfaceTitle} surface and its question. Do NOT say or claim you cannot see, access, or view the page — you have its state. (You still cannot inspect pixels or unlisted fields, so do not invent visual details beyond this data.)`,
+  );
   return lines.join('\n');
 }
 

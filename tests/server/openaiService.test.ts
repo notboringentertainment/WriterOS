@@ -620,6 +620,14 @@ describe('createContextSummary — surface awareness', () => {
     expect(withSurface.toLowerCase()).toMatch(/ground|name the question|the writer is on/)
   })
 
+  it('authorizes the agent to treat the surface block as real app state and forbids denial', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    const lower = withSurface.toLowerCase()
+    // Must counter the model's default "I can't see your page" denial.
+    expect(lower).toMatch(/provided by the app|live (app )?state|real .*state|authoritative/)
+    expect(lower).toMatch(/do not (say|claim|tell).*(can'?t|cannot).*(see|access|view)/)
+  })
+
   it('does not reference a named question when nextQuestion is null', () => {
     const noNext = { ...intakeSurface, nextQuestion: null }
     const summary = createContextSummary({ ...populatedStoryMemory(), surface: noNext }, 'sam')
