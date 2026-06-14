@@ -33,7 +33,7 @@ Make the writer's Voice Profile actually condition persona chat.
 
 Mirror the `surface` precedent + the OpenSwarm sibling shape. Add `voiceProfile` as a top-level sibling of `projectContext` in the wp-chat payload (NOT inside projectContext — profile is "the writer," projectContext is "the project").
 
-```
+```text
 client/src/App.tsx  (handleWPSend :636 + specialist :655)
   loadCompletedVoiceProfile()              ← already imported, App.tsx:8
   → postWPChat({ ..., voiceProfile })       ← App.tsx:62 (extend body type)
@@ -87,7 +87,7 @@ Register block gated entirely behind "profile present." Exact wording from Ben:
 
 D.1 RESOLVED: **LITERAL constant** — house stance, identical for every writer. Per-writer voice is carried by the P1 subset block; the register instructs the persona to honor the profile's collaboration prefs / feedback style, not interpolate them. Register text (final, supplied by Ben 2026-06-14):
 
-```
+```text
 YOUR STANCE — an elite specialist in service of the work:
 - You're a working professional at the top of your craft, brought in to serve a serious writer. Treat them as a peer, never a student.
 - Earn trust through precision and judgment, not reassurance. No cheerleading, no praise as filler. If something works, say why in one line and move on.
