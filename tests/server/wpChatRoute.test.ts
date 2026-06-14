@@ -395,3 +395,99 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     }
   })
 })
+
+describe('/api/wp-chat voice profile pass-through', () => {
+  function completedVoiceProfile() {
+    return {
+      version: 1,
+      createdAt: '2026-06-14T00:00:00.000Z',
+      updatedAt: '2026-06-14T00:00:00.000Z',
+      displayName: 'Ben',
+      archetype: 'The Moral-Complexity Dramatist',
+      coreStatement: 'Elevated genre with a conscience.',
+      creativeNorthStars: ['Earn every beat'],
+      storytellingDNA: { principles: ['No filler'], recurringThemes: ['loyalty'], notes: '' },
+      influences: { writers: [], directors: [], filmsAndShows: [], scenesAndLines: [], notes: 'Sheridan' },
+      characterInstincts: { drawnTo: [], rejects: [], notes: '' },
+      dialogue: { rules: [], instinctsByMode: '', avoidances: [] },
+      visualLanguage: { instincts: ['negative space'], notes: '' },
+      process: { whenFlowing: '', stuckPatterns: [], supportNeeds: [] },
+      strengths: [],
+      growthEdges: [],
+      collaborationPreferences: { always: [], never: [], feedbackStyle: 'blunt' },
+      alexCoachingNotes: [],
+    }
+  }
+
+  it('forwards a completed voiceProfile as the 6th generatePersonaResponse argument', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const profile = completedVoiceProfile()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+        voiceProfile: profile,
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toEqual(profile)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('degrades a malformed voiceProfile to undefined and still returns 200', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+        voiceProfile: { version: 1, archetype: 42 }, // malformed
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('passes undefined when no voiceProfile is sent', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+})

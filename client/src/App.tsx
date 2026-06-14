@@ -64,6 +64,7 @@ async function postWPChat(body: {
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
+  voiceProfile?: VoiceProfileDocument
 }): Promise<{ message: string; suggestions?: string[] }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
@@ -633,7 +634,7 @@ export default function App() {
       // Surface awareness is attached only to the wp-chat payload (not OpenSwarm /
       // persona-capability above), so the agent knows which page/question the writer is on.
       const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface }, conversationHistory })
+      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
@@ -652,7 +653,7 @@ export default function App() {
     try {
       const projectContext = buildFreshProjectContext(text)
       const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
-      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface }, conversationHistory })
+      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
     } catch (error) {
