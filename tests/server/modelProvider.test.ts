@@ -57,8 +57,8 @@ describe('AnthropicProvider — streaming + resilience', () => {
     await provider.generateResponse({ systemPrompt: 's', messages: [{ role: 'user', content: 'hi' }] })
 
     expect(ctorCalls[0]).toMatchObject({ timeout: expect.any(Number), maxRetries: expect.any(Number) })
-    expect(ctorCalls[0].timeout as number).toBeGreaterThanOrEqual(120000)
-    expect(ctorCalls[0].maxRetries as number).toBeGreaterThanOrEqual(1)
+    expect(ctorCalls[0].timeout as number).toBe(10 * 60 * 1000)
+    expect(ctorCalls[0].maxRetries as number).toBe(2)
   })
 
   it('passes system, messages, temperature and max_tokens through to the stream call', async () => {
