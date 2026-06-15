@@ -75,14 +75,24 @@ class AnthropicProvider implements ModelProvider {
       throw new Error('ANTHROPIC_API_KEY not configured');
     }
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await client.messages.create({
+    // Stream the completion instead of a single blocking request. Long generations
+    // (e.g. voice-profile synthesis at max_tokens 5000, ~60-90s) drop their HTTP
+    // connection on non-streaming calls, surfacing as APIConnectionTimeoutError.
+    // Streaming keeps the socket alive with incremental events. The explicit
+    // timeout/maxRetries add belt-and-suspenders resilience.
+    const client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      timeout: 10 * 60 * 1000,
+      maxRetries: 2,
+    });
+    const stream = client.messages.stream({
       model: this.model,
       system: input.systemPrompt,
       messages: input.messages,
       temperature: input.temperature ?? 0.7,
       max_tokens: input.maxTokens ?? 800,
     });
+    const response = await stream.finalMessage();
 
     return response.content
       .map(block => block.type === 'text' ? block.text : '')
