@@ -375,6 +375,10 @@ const wpChatSchema = z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
   })),
+  // Writer Voice Profile — optional, advisory style guidance. A malformed profile
+  // must never break chat, so it degrades to undefined (no conditioning) instead of
+  // failing the parse. Mirrors the `surface` safety rule.
+  voiceProfile: voiceProfileDocumentSchema.optional().catch(undefined),
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
@@ -969,7 +973,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.message,
         userProfile,
         storyMemory,
-        data.conversationHistory
+        data.conversationHistory,
+        data.voiceProfile
       );
 
       res.json({ message: response.message, suggestions: response.suggestions });

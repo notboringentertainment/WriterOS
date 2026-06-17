@@ -634,9 +634,23 @@ function findingLinesForCapability(input: PersonaCapabilitySynthesisInput): stri
   ].join('\n\n')
 }
 
-function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
-  const profile = input.voiceProfile
-  if (!profile) return '- None supplied'
+// Structural subset both VoiceProfileDocument and WorldContextVoiceProfileSlice
+// satisfy — the only fields the focused renderer reads.
+type VoiceProfileSubsetSource = {
+  displayName?: string
+  archetype: string
+  coreStatement: string
+  storytellingDNA: { recurringThemes: string[] }
+  influences: { notes: string }
+  visualLanguage: { instincts: string[]; notes: string }
+}
+
+// Single shared focused-subset renderer for a writer Voice Profile. Used by the
+// persona-capability synthesis prompt and the persona chat system prompt so there
+// is exactly one focused renderer (the full-doc renderer lives in routes.ts as
+// buildVoiceProfileLines for the OpenSwarm path). Returns '' when no profile.
+function renderVoiceProfileSubset(profile?: VoiceProfileSubsetSource): string {
+  if (!profile) return ''
 
   return [
     profile.displayName && `- Display name: ${truncate(profile.displayName, 100)}`,
@@ -652,6 +666,21 @@ function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): stri
     filled(profile.visualLanguage.notes) ? `- Visual notes: ${truncate(profile.visualLanguage.notes, 220)}` : '',
   ].filter(Boolean).join('\n')
 }
+
+function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
+  return renderVoiceProfileSubset(input.voiceProfile) || '- None supplied'
+}
+
+// Literal house-stance register. Replaces the default "Warm and encouraging" line
+// only when a completed Voice Profile is present. Per-writer voice is carried by the
+// WRITER VOICE PROFILE block; this stance is identical for every writer by design.
+const VOICE_PROFILE_REGISTER = `YOUR STANCE — an elite specialist in service of the work:
+- You're a working professional at the top of your craft, brought in to serve a serious writer. Treat them as a peer, never a student.
+- Earn trust through precision and judgment, not reassurance. No cheerleading, no praise as filler. If something works, say why in one line and move on.
+- Say the hard thing plainly. A soft beat, a cliché, a page that isn't earning its place — name it directly. Withholding the real note to be nice is a failure of service.
+- Hold strong opinions, offer them without hedging, then defer. The writer holds the pen; you serve their vision, not your taste. When you disagree, make the case once, clearly, and let them decide.
+- Signal over volume. Respect their time and intelligence; don't restate what they already know.
+- Adapt your directness to the writer's stated collaboration preferences and feedback style; honor what they said they want and don't want.`
 
 export function buildPersonaCapabilitySynthesisPrompt(input: PersonaCapabilitySynthesisInput): string {
   const sourceLabels = input.sources.map(source => source.label).join(', ') || 'none'
@@ -732,22 +761,32 @@ export function parsePersonaCapabilitySynthesisResponse(
 
 export class OpenAIService {
   private createPersonaSystemPrompt(
-    persona: Persona, 
-    userProfile: AssessmentProfile, 
+    persona: Persona,
+    userProfile: AssessmentProfile,
     storyMemory: StoryMemory,
-    userMessage: string
+    userMessage: string,
+    voiceProfile?: VoiceProfileDocument
   ): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
+    // When a completed Voice Profile is present, the literal house-stance register
+    // replaces the default warm line and a focused profile subset is appended.
+    // When absent, output is byte-identical to before (no profile branch).
+    const stanceLine = voiceProfile
+      ? VOICE_PROFILE_REGISTER
+      : '- Warm and encouraging, but specific and actionable';
+    const voiceProfileBlock = voiceProfile
+      ? `\n\nWRITER VOICE PROFILE (the writer's craft identity — honor it; do not quote it back):\n${renderVoiceProfileSubset(voiceProfile)}`
+      : '';
     const basePrompt = `You are ${persona.name}, a ${persona.role}. ${persona.personality}.
 
 YOUR PERSONALITY TRAITS:
-- Warm and encouraging, but specific and actionable
-- ${userProfile.feedbackStyle === 'direct' ? 'Direct and to-the-point' : 
-     userProfile.feedbackStyle === 'gentle' ? 'Gentle and supportive' : 
+${stanceLine}
+- ${userProfile.feedbackStyle === 'direct' ? 'Direct and to-the-point' :
+     userProfile.feedbackStyle === 'gentle' ? 'Gentle and supportive' :
      'Detailed with examples'}
 - Expert in: ${persona.expertise.join(', ')}
 - Always address the writer as ${userProfile.writerName}
-- Available specialists are Writing Partner, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.
+- Available specialists are Writing Partner, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.${voiceProfileBlock}
 
 CURRENT PROJECT CONTEXT:
 ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New project'}
@@ -892,10 +931,11 @@ IMPORTANT: Respond with JSON in this format:
     userMessage: string,
     userProfile: AssessmentProfile,
     storyMemory: StoryMemory,
-    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>
+    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
+    voiceProfile?: VoiceProfileDocument
   ): Promise<PersonaResponse> {
     try {
-      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage);
+      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
       
       const messages: ModelMessage[] = [
         ...conversationHistory.slice(-6).map(msg => ({
