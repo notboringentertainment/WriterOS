@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Context Console (Phase 0 · Comparison Variant)</title>
+<!--
+  PHASE 0 COMPARISON VARIANT — sibling to writers-room-vertical-slice.html, NOT a replacement.
+  Question under test: should WriterOS expose its context state THEATRICALLY rather than hide it
+  inside the cinematic flow?
+
+  Borrowed structural grammar ONLY (no Pi branding / assets / logo / copy):
+    1. a dark gridded field
+    2. a floating, terminal-like context console
+    3. large editorial agent / readback text
+
+  Preserved from WriterOS: canonical tokens (new-ui-plan §1), persona accents, document functions,
+  earned-structure rule (acts are never pre-printed). Elicitation copy is the REAL §4 Voice-Profile
+  domains, identical to the vertical slice — Morgan (why / themes) → Oliver (endings / principle).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,300..420&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* ── canonical tokens — new-ui-plan.md §1 (surface mockups win) ── */
+    --bg:        hsl(220 14% 7%);
+    --bg-deep:   hsl(220 16% 5%);
+    --rail:      hsl(220 14% 8.5%);
+    --rail-2:    hsl(220 13% 11%);
+    --surface:   hsl(220 13% 12%);
+    --border:    hsl(220 13% 16%);
+    --border-2:  hsl(220 13% 22%);
+
+    --paper:     hsl(36 9% 9.5%);
+    --paper-hi:  hsl(38 11% 12.5%);
+    --ink:       hsl(40 14% 87%);
+    --ink-soft:  hsl(40 10% 64%);
+
+    --fg:        hsl(220 10% 86%);
+    --fg-muted:  hsl(220 10% 52%);
+    --fg-subtle: hsl(220 10% 34%);
+
+    /* persona accents — one hue per member */
+    --amber:     hsl(38 90% 68%);   --amber-dim: hsl(38 55% 44%);
+    --host:      var(--amber);      --host-dim:  var(--amber-dim);
+    --oliver:    hsl(120 38% 64%);  --oliver-dim:hsl(120 24% 42%);
+    --sam:       hsl(45 100% 75%);
+    --casey:     hsl(200 100% 75%);
+    --maya:      hsl(330 80% 75%);
+    --zoe:       hsl(270 70% 75%);
+    --alex:      hsl(15 80% 70%);
+
+    --ok:        hsl(120 40% 62%);
+    --del:       hsl(6 52% 60%);
+
+    --serif: "Fraunces", Georgia, serif;
+    --read:  "Newsreader", Georgia, serif;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+
+    --spot:  var(--host);   /* the live hue; slides on handoff */
+    --ease:  cubic-bezier(.16,.84,.28,1);
+    --slow:  cubic-bezier(.65,.02,.16,1);
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:var(--read);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ── THE GRIDDED FIELD ─────────────────────────────────────────────
+     a dark void scored with a faint grid; a persona-hued bloom rides the
+     grid and slides on handoff. the grid is the desk, not decoration. */
+  .field{ position:fixed; inset:0; z-index:0; overflow:hidden; isolation:isolate; }
+  .field .grid{
+    position:absolute; inset:-2px;
+    background-image:
+      linear-gradient(to right,  color-mix(in oklab, var(--fg) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--fg) 5%, transparent) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(135% 125% at 52% 46%, #000 42%, transparent 88%);
+    -webkit-mask-image:radial-gradient(135% 125% at 52% 46%, #000 42%, transparent 88%);
+  }
+  /* a second, finer grid for depth */
+  .field .grid.fine{
+    background-size:46px 46px;
+    background-image:
+      linear-gradient(to right,  color-mix(in oklab, var(--spot) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--spot) 7%, transparent) 1px, transparent 1px);
+    background-position:0 0;
+    opacity:.5; transition:background-image 1.6s var(--slow);
+  }
+  .field .bloom{
+    position:absolute; inset:-25%;
+    background:radial-gradient(48% 46% at var(--spot-x,40%) var(--spot-y,42%),
+      color-mix(in oklab, var(--spot) 20%, transparent) 0%,
+      color-mix(in oklab, var(--spot) 7%, transparent) 36%,
+      transparent 64%);
+    transition:background 1.8s var(--slow);
+    z-index:-1;
+  }
+  .field .vignette{
+    position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(125% 125% at 50% 40%, transparent 50%, var(--bg-deep) 100%);
+  }
+  .grain{
+    position:fixed; inset:-120%; z-index:60; pointer-events:none;
+    opacity:.045; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 5.6s steps(6) infinite;
+  }
+  @keyframes grain{
+    0%{transform:translate(0,0)} 16%{transform:translate(-6%,4%)}
+    33%{transform:translate(4%,-7%)} 50%{transform:translate(-5%,6%)}
+    66%{transform:translate(7%,2%)} 83%{transform:translate(-3%,-5%)} 100%{transform:translate(0,0)}
+  }
+
+  /* ── variant ribbon (this is a comparison artifact, say so) ───────── */
+  .ribbon{
+    position:fixed; top:0; left:0; right:0; z-index:50; height:30px;
+    display:flex; align-items:center; gap:14px; padding:0 18px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--fg-subtle);
+    background:linear-gradient(to bottom, var(--bg-deep), transparent);
+    pointer-events:none;
+  }
+  .ribbon b{ color:var(--fg-muted); font-weight:500; }
+  .ribbon .tag{ color:var(--spot); transition:color 1.4s var(--slow); }
+  .ribbon .spacer{ flex:1; }
+
+  /* ════════════════════════════════════════════════════════════════
+     THE CONTEXT CONSOLE — floating terminal instrument.
+     Always-on. Reads the room's live state out loud.
+     ════════════════════════════════════════════════════════════════ */
+  /* centered two-part composition: console + readback as one balanced cluster */
+  .shell{
+    position:fixed; inset:0; z-index:20;
+    display:flex; align-items:center; justify-content:center;
+    gap:clamp(44px, 5vw, 96px);
+    padding:60px clamp(32px,4vw,72px) 48px;
+  }
+  .console{
+    z-index:40; flex:none; align-self:center;
+    width:clamp(400px, 31vw, 472px); max-height:80vh; display:flex; flex-direction:column;
+    background:color-mix(in oklab, var(--rail) 88%, transparent);
+    border:1px solid var(--border); border-radius:12px;
+    box-shadow:
+      0 1px 0 0 color-mix(in oklab, var(--fg) 6%, transparent) inset,
+      0 40px 90px -30px #000,
+      0 0 0 1px color-mix(in oklab, var(--spot) 14%, transparent);
+    backdrop-filter:blur(7px) saturate(1.1);
+    transition:box-shadow 1.6s var(--slow), transform 1.1s var(--ease), opacity 1.1s var(--ease);
+    opacity:0; transform:translateX(-16px);
+    overflow:hidden;
+  }
+  .console.on{ opacity:1; transform:none; }
+
+  /* terminal title bar */
+  .console .bar{
+    display:flex; align-items:center; gap:8px; padding:11px 14px;
+    border-bottom:1px solid var(--border);
+    background:linear-gradient(to bottom, color-mix(in oklab,var(--rail-2) 90%,transparent), transparent);
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--fg-muted);
+  }
+  .console .bar .lamps{ display:flex; gap:6px; margin-right:4px; }
+  .console .bar .lamps i{ width:9px; height:9px; border-radius:50%; background:var(--border-2); }
+  .console .bar .lamps i:first-child{ background:color-mix(in oklab,var(--spot) 70%, var(--border-2)); transition:background 1.4s var(--slow); }
+  .console .bar .path{ color:var(--fg-subtle); }
+  .console .bar .path b{ color:var(--fg-muted); font-weight:500; }
+  .console .bar .live{
+    margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+    color:var(--spot); font-size:9.5px; letter-spacing:.2em; transition:color 1.4s var(--slow);
+  }
+  .console .bar .live::before{
+    content:""; width:6px; height:6px; border-radius:50%; background:currentColor;
+    box-shadow:0 0 9px 1px currentColor; animation:pulse 1.8s var(--ease) infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  /* scrolling body */
+  .console .body{ padding:6px 0 12px; overflow-y:auto; scrollbar-width:thin; }
+  .console .body::-webkit-scrollbar{ width:8px; }
+  .console .body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:8px; }
+
+  .grp{ padding:12px 16px 4px; }
+  .grp > .k{
+    font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase;
+    color:var(--fg-subtle); display:flex; align-items:center; gap:8px; margin-bottom:9px;
+  }
+  .grp > .k::after{ content:""; flex:1; height:1px; background:var(--border); }
+
+  /* a key:value row */
+  .kv{ display:flex; gap:10px; align-items:baseline; padding:3px 0;
+       font-family:var(--mono); font-size:11.5px; line-height:1.5; }
+  .kv .kk{ color:var(--fg-subtle); min-width:74px; }
+  .kv .vv{ color:var(--fg); flex:1; }
+  .kv .vv.accent{ color:var(--spot); transition:color 1.2s var(--slow); }
+
+  /* the host chip in the console */
+  .who-chip{ display:inline-flex; align-items:center; gap:8px; }
+  .who-chip .d{ width:7px; height:7px; border-radius:50%; background:var(--spot); box-shadow:0 0 8px 0 var(--spot); transition:background 1.2s var(--slow), box-shadow 1.2s var(--slow); }
+  .who-chip .nm{ color:var(--fg); }
+  .who-chip .rl{ color:var(--fg-subtle); }
+
+  /* active question — typed, with a caret */
+  .activeq{
+    font-family:var(--mono); font-size:11.5px; line-height:1.6; color:var(--fg-muted);
+    min-height:2.6em; white-space:pre-wrap;
+  }
+  .activeq .caret{ display:inline-block; width:7px; height:14px; vertical-align:-2px; margin-left:1px;
+    background:var(--spot); animation:blink 1s steps(2) infinite; transition:background 1.2s var(--slow); }
+  @keyframes blink{ 50%{opacity:0} }
+
+  /* accumulating facts / signals — chips that drop in */
+  .stack{ display:flex; flex-direction:column; gap:7px; }
+  .fact{
+    font-family:var(--mono); font-size:11px; line-height:1.5; color:var(--fg);
+    padding:7px 10px; border:1px solid var(--border); border-radius:6px;
+    background:color-mix(in oklab, var(--surface) 60%, transparent);
+    border-left:2px solid var(--spot);
+    opacity:0; transform:translateY(8px); transition:opacity .7s var(--ease), transform .7s var(--ease);
+  }
+  .fact.on{ opacity:1; transform:none; }
+  .fact .ft{ color:var(--fg-subtle); font-size:9px; letter-spacing:.18em; text-transform:uppercase; display:block; margin-bottom:4px; }
+  .fact[data-by="oliver"]{ border-left-color:var(--oliver); }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.04em; color:var(--fg-muted);
+    padding:4px 9px; border:1px solid var(--border-2); border-radius:999px;
+    background:color-mix(in oklab, var(--surface) 50%, transparent);
+    opacity:0; transform:scale(.9); transition:opacity .5s var(--ease), transform .5s var(--ease), color .4s, border-color .4s;
+  }
+  .chip.on{ opacity:1; transform:none; }
+  .chip.hot{ color:var(--spot); border-color:color-mix(in oklab,var(--spot) 50%, var(--border-2)); }
+
+  /* pending issues — earned-structure + linter, the loop that closes */
+  .todo{ display:flex; align-items:flex-start; gap:9px; padding:5px 0;
+         font-family:var(--mono); font-size:11px; line-height:1.5; color:var(--fg-muted);
+         transition:color .6s var(--ease); }
+  .todo .box{ flex:none; width:13px; height:13px; border:1px solid var(--border-2); border-radius:3px; margin-top:2px;
+         display:grid; place-items:center; font-size:9px; color:transparent; transition:all .5s var(--ease); }
+  .todo.done{ color:var(--fg-subtle); }
+  .todo.done .box{ background:color-mix(in oklab,var(--ok) 30%, transparent); border-color:var(--ok); color:var(--ok); }
+  .todo.done .t{ text-decoration:line-through; text-decoration-color:var(--border-2); }
+  .todo .route{ color:var(--fg-subtle); }
+  .todo.active{ color:var(--fg); }
+  .todo.active .box{ border-color:var(--spot); box-shadow:0 0 0 3px color-mix(in oklab,var(--spot) 12%, transparent); }
+
+  /* a quiet footer note: structure is earned */
+  .console .foot{
+    padding:11px 16px; border-top:1px solid var(--border);
+    font-family:var(--mono); font-size:9.5px; line-height:1.6; letter-spacing:.04em; color:var(--fg-subtle);
+  }
+  .console .foot b{ color:var(--fg-muted); font-weight:500; }
+
+  /* ════════════════════════════════════════════════════════════════
+     THE AGENT READBACK — large editorial prose, center/right stage.
+     Not chat bubbles. The agent speaks at scale.
+     ════════════════════════════════════════════════════════════════ */
+  .stage{
+    z-index:20; flex:1 1 auto; min-width:0; max-width:640px;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .reader{ width:100%; }
+
+  .plate{ display:flex; align-items:baseline; gap:16px; margin-bottom:26px;
+          opacity:0; transform:translateY(8px); }
+  .plate.on{ opacity:1; transform:none; transition:opacity 1s var(--ease), transform 1s var(--ease); }
+  .plate .role{ font-family:var(--mono); font-size:10.5px; letter-spacing:.28em; text-transform:uppercase; color:var(--spot); transition:color 1.2s var(--slow); }
+  .plate .nm{ font-family:var(--serif); font-weight:300; font-size:30px; letter-spacing:-.01em; color:var(--fg); transition:font-family .01s; }
+  .stage[data-host="oliver"] .plate .nm{ font-family:var(--mono); font-weight:400; font-size:23px; letter-spacing:.05em; text-transform:uppercase; }
+  .plate .bar{ flex:1; height:1px; background:linear-gradient(90deg, color-mix(in oklab,var(--spot) 60%,transparent), transparent); align-self:center; }
+
+  /* the big editorial question */
+  .ask{
+    font-family:var(--read); font-weight:300; font-size:clamp(26px, 3.1vw, 38px); line-height:1.3;
+    letter-spacing:-.01em; color:var(--fg); max-width:20ch;
+    opacity:0; transform:translateY(14px); filter:blur(4px);
+  }
+  .ask.on{ opacity:1; transform:none; filter:none; transition:opacity 1.1s var(--ease), transform 1.1s var(--ease), filter 1.1s var(--ease); }
+  .ask em{ font-style:italic; color:var(--spot); font-weight:380; transition:color 1.2s var(--slow); }
+  .stage[data-host="oliver"] .ask{ font-family:var(--mono); font-weight:300; font-size:clamp(20px,2.3vw,27px); line-height:1.5; max-width:30ch; }
+  .stage[data-host="oliver"] .ask em{ font-style:normal; border-bottom:1px solid var(--oliver-dim); }
+
+  /* the ink field — large */
+  .field-wrap{ margin-top:34px; max-width:34ch; opacity:0; transform:translateY(10px); }
+  .field-wrap.on{ opacity:1; transform:none; transition:opacity .9s var(--ease) .2s, transform .9s var(--ease) .2s; }
+  .field-wrap .field{ position:relative; }
+  .field-wrap textarea{
+    width:100%; background:transparent; border:none; resize:none; overflow:hidden;
+    color:var(--fg); font-family:var(--read); font-weight:380; font-size:23px; line-height:1.5;
+    padding:6px 0 14px; outline:none; caret-color:var(--spot);
+  }
+  .stage[data-host="oliver"] .field-wrap textarea{ font-family:var(--mono); font-weight:300; font-size:18px; line-height:1.7; }
+  .field-wrap .field::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+      background:var(--fg-subtle); transform:scaleX(.4); transform-origin:left; transition:transform .6s var(--ease), background .4s; }
+  .field-wrap .field:focus-within::after{ transform:scaleX(1); background:var(--spot); }
+  .field-wrap .ph{ position:absolute; left:0; top:6px; pointer-events:none; color:var(--fg-subtle);
+      font-style:italic; font-size:23px; transition:opacity .4s; }
+  .stage[data-host="oliver"] .field-wrap .ph{ font-style:normal; font-size:18px; font-family:var(--mono); }
+  .field-wrap.filled .ph{ opacity:0; }
+  .cue{ margin-top:26px; font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+        color:var(--fg-muted); display:inline-flex; align-items:center; gap:11px; cursor:pointer;
+        opacity:0; transform:translateY(6px); transition:opacity .6s var(--ease), transform .6s var(--ease), color .3s; user-select:none; }
+  .cue.show{ opacity:1; transform:none; }
+  .cue:hover{ color:var(--spot); }
+  .cue .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 8px; font-size:10px; color:var(--fg-muted); transition:border-color .3s,color .3s; }
+  .cue:hover .key{ border-color:var(--spot); color:var(--spot); }
+
+  /* host's authored handoff line */
+  .handoff{ margin-top:30px; font-family:var(--serif); font-weight:300; font-style:italic;
+            font-size:clamp(22px,2.4vw,28px); line-height:1.35; color:var(--host); max-width:22ch;
+            opacity:0; transform:translateY(10px); transition:opacity 1.3s var(--ease), transform 1.3s var(--ease); }
+  .handoff.on{ opacity:1; transform:none; }
+  .handoff .sub{ display:block; margin-top:14px; font-family:var(--mono); font-style:normal;
+            font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--oliver); }
+
+  /* ── final readback: the profile assembles at scale ──────────────── */
+  .profile{ width:min(680px,100%); opacity:0; transform:translateY(12px); }
+  .profile.on{ opacity:1; transform:none; transition:opacity 1.2s var(--ease), transform 1.2s var(--ease); }
+  .profile .lede{ font-family:var(--mono); font-size:11px; letter-spacing:.3em; text-transform:uppercase; color:var(--fg-muted); margin-bottom:34px; }
+  .pline{ opacity:0; transform:translateY(14px); filter:blur(4px); margin-bottom:26px;
+          transition:opacity 1.1s var(--ease), transform 1.1s var(--ease), filter 1.1s var(--ease); }
+  .pline.on{ opacity:1; transform:none; filter:none; }
+  .pline .lab{ font-family:var(--mono); font-size:9.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); display:block; margin-bottom:8px; }
+  .pline .val{ font-family:var(--read); font-weight:300; font-size:clamp(20px,2.2vw,26px); line-height:1.4; color:var(--fg); }
+  .pline .val.q{ font-style:italic; color:color-mix(in oklab,var(--fg) 84%,var(--host)); }
+  .pline.struct .lab{ color:var(--oliver-dim); }
+  .pline.struct .val{ font-family:var(--mono); font-weight:300; font-size:clamp(17px,1.9vw,21px); line-height:1.55; color:color-mix(in oklab,var(--fg) 90%,var(--oliver)); }
+  .arch{ margin:40px 0 30px; opacity:0; transform:translateY(18px); transition:opacity 1.6s var(--ease), transform 1.6s var(--ease); }
+  .arch.on{ opacity:1; transform:none; }
+  .arch .pre{ font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:12px; }
+  .arch .nm{ font-family:var(--serif); font-weight:300; font-size:clamp(32px,5vw,50px); line-height:1.04; letter-spacing:-.015em;
+        background:linear-gradient(100deg, var(--host), color-mix(in oklab,var(--host) 40%, var(--oliver)) 60%, var(--oliver));
+        -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .affirm{ display:inline-flex; align-items:center; gap:14px; cursor:pointer; font-family:var(--read); font-style:italic; font-size:19px; color:var(--fg-muted);
+        opacity:0; transition:opacity 1.2s var(--ease), color .4s; }
+  .affirm.on{ opacity:1; }
+  .affirm:hover{ color:var(--fg); }
+  .affirm .mk{ font-family:var(--mono); font-style:normal; font-size:18px; color:var(--host); transition:transform .5s var(--ease); }
+  .affirm:hover .mk{ transform:translateX(5px); }
+
+  /* ── opening card ─────────────────────────────────────────────────── */
+  .curtain{ position:fixed; inset:0; z-index:80; background:var(--bg-deep); display:grid; place-items:center; transition:opacity 1.6s var(--ease); }
+  .curtain.lift{ opacity:0; pointer-events:none; }
+  .curtain .ttl{ text-align:center; max-width:540px; padding:0 24px; }
+  .curtain .k{ font-family:var(--mono); font-size:11px; letter-spacing:.4em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:22px; opacity:0; animation:fadeIn 1.4s var(--ease) .3s forwards; }
+  .curtain h1{ font-family:var(--serif); font-weight:300; font-size:clamp(32px,5.5vw,54px); letter-spacing:-.02em; color:var(--fg); opacity:0; animation:rise 1.6s var(--ease) .7s forwards; }
+  .curtain p{ margin-top:20px; font-family:var(--read); font-size:16px; line-height:1.6; color:var(--fg-muted); opacity:0; animation:fadeIn 1.4s var(--ease) 1.2s forwards; }
+  .curtain .go{ margin-top:38px; font-family:var(--mono); font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-muted); cursor:pointer; opacity:0; animation:fadeIn 1.3s var(--ease) 1.7s forwards; transition:color .3s; }
+  .curtain .go:hover{ color:var(--host); }
+  .curtain .go .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 8px; margin-left:6px; }
+
+  @keyframes fadeIn{ to{opacity:1} }
+  @keyframes rise{ from{opacity:0; transform:translateY(12px)} to{opacity:1; transform:none} }
+
+  @media (max-width:1100px){
+    .shell{ gap:32px; padding:54px 28px 40px; }
+    .console{ width:clamp(330px,40vw,400px); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.01ms !important; transition-duration:.2s !important; }
+    .grain{ animation:none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="field" aria-hidden="true">
+    <div class="grid"></div>
+    <div class="grid fine"></div>
+    <div class="bloom"></div>
+    <div class="vignette"></div>
+  </div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="ribbon" aria-hidden="true">
+    <b>WriterOS</b> · Phase 0 · Comparison Variant
+    <span class="spacer"></span>
+    <span>Context exposed: <span class="tag" id="ribbon-state">theatrical</span></span>
+  </div>
+
+  <!-- opening card -->
+  <div class="curtain" id="curtain">
+    <div class="ttl">
+      <div class="k">Voice Profile Intake · Console Variant</div>
+      <h1>What if the room showed its work?</h1>
+      <p>Same intake, different posture. The console on the left reads the room's state out loud as you speak — surface, active question, the facts it's keeping, the signals it's hearing, the loops still open.</p>
+      <div class="go" id="begin">Enter the room <span class="key">↵</span></div>
+    </div>
+  </div>
+
+  <div class="shell">
+
+  <!-- ════ CONTEXT CONSOLE ════ -->
+  <aside class="console" id="console" aria-label="Context console">
+    <div class="bar">
+      <span class="lamps"><i></i><i></i><i></i></span>
+      <span class="path"><b>writeros</b>://voice-profile/intake</span>
+      <span class="live">LIVE</span>
+    </div>
+    <div class="body">
+
+      <div class="grp">
+        <div class="k">Surface</div>
+        <div class="kv"><span class="kk">room</span><span class="vv">Writers’ Room</span></div>
+        <div class="kv"><span class="kk">surface</span><span class="vv accent">Voice Profile · Intake</span></div>
+        <div class="kv"><span class="kk">host</span><span class="vv">
+          <span class="who-chip"><span class="d"></span><span class="nm" id="c-host-nm">Morgan</span> <span class="rl" id="c-host-rl">· Showrunner</span></span>
+        </span></div>
+        <div class="kv"><span class="kk">beat</span><span class="vv" id="c-beat">I · the inward why</span></div>
+      </div>
+
+      <div class="grp">
+        <div class="k">Active question</div>
+        <div class="activeq" id="c-activeq"><span class="caret"></span></div>
+      </div>
+
+      <div class="grp">
+        <div class="k">Story facts <span id="c-facts-n" style="color:var(--fg-subtle)"></span></div>
+        <div class="stack" id="c-facts"></div>
+      </div>
+
+      <div class="grp">
+        <div class="k">Voice signals</div>
+        <div class="chips" id="c-signals"></div>
+      </div>
+
+      <div class="grp">
+        <div class="k">Pending · structure &amp; linter</div>
+        <div id="c-todos">
+          <div class="todo active" data-todo="why"><span class="box">✓</span><span class="t">core <em style="font-style:normal;color:inherit">why</em> — captured by Morgan <span class="route">→ coreStatement</span></span></div>
+          <div class="todo" data-todo="themes"><span class="box">✓</span><span class="t">recurring themes <span class="route">→ storytellingDNA.recurringThemes</span></span></div>
+          <div class="todo" data-todo="ending"><span class="box">✓</span><span class="t">ending instinct <span class="route">→ Oliver / principles</span></span></div>
+          <div class="todo" data-todo="rule"><span class="box">✓</span><span class="t">rule held &amp; broken <span class="route">→ Oliver / principles</span></span></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="foot">
+      <b>structure is earned.</b> acts &amp; sequences are not drawn until the beats earn them — the console hints, the writer commits.
+    </div>
+  </aside>
+
+  <!-- ════ AGENT READBACK STAGE ════ -->
+  <main class="stage" id="stage" data-host="host">
+    <div class="reader" id="reader">
+      <div class="plate" id="plate">
+        <span class="role" id="r-role">Showrunner</span>
+        <span class="nm" id="r-nm">Morgan</span>
+        <span class="bar"></span>
+      </div>
+      <div class="ask" id="r-ask"></div>
+      <div class="field-wrap" id="r-fieldwrap">
+        <div class="field">
+          <div class="ph" id="r-ph"></div>
+          <textarea id="r-ta" rows="1" spellcheck="false"></textarea>
+        </div>
+        <div class="cue" id="r-cue"><span class="key">↵</span> continue</div>
+      </div>
+      <div class="handoff" id="r-handoff"></div>
+    </div>
+
+    <!-- final profile -->
+    <div class="profile" id="profile" hidden>
+      <div class="lede">Here’s the writer the room found.</div>
+      <div class="pline" data-p="why"><span class="lab">Why you write — the core</span><div class="val q" id="p-why"></div></div>
+      <div class="pline" data-p="themes"><span class="lab">What you keep circling</span><div class="val" id="p-themes"></div></div>
+      <div class="pline struct" data-p="ending"><span class="lab">On endings — structural instinct</span><div class="val" id="p-ending"></div></div>
+      <div class="pline struct" data-p="rule"><span class="lab">The rule you hold &amp; the one you break</span><div class="val" id="p-rule"></div></div>
+      <div class="arch" id="p-arch"><div class="pre">The room names you</div><div class="nm" id="p-arch-nm">The Patient Architect</div></div>
+      <div class="affirm" id="p-affirm">Yes — that’s the writer. <span class="mk">⤷</span></div>
+    </div>
+  </main>
+
+  </div><!-- /shell -->
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const stage = document.getElementById('stage');
+  const css = (v) => getComputedStyle(root).getPropertyValue(v).trim();
+  const setSpot = (hue) => root.style.setProperty('--spot', hue);
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // ── REAL elicitation — domains per docs/plans/voice-profile-room.md §4 ──
+  // identical content to writers-room-vertical-slice.html, so the two variants are
+  // comparable on POSTURE, not copy.
+  const HOST = [
+    { beat:'I · the inward why',
+      ask:`Before any craft — <em>why do you write?</em> Not what. Why.`,
+      ph:`because the silence had to be answered with something…`,
+      val:`because some part of me only makes sense once it's on the page`,
+      fact:{ label:'core statement', text:'writes to make an unspoken part of the self legible' },
+      signals:['interiority','compulsion','self as material'] },
+    { beat:'I · recurring themes',
+      ask:`And the thing you keep <em>circling back to</em> — across everything you’ve made — what is it?`,
+      ph:`people who stay when leaving would be easier…`,
+      val:`the cost of loyalty, and who pays it`,
+      fact:{ label:'recurring theme', text:'the cost of loyalty — and who pays it' },
+      signals:['loyalty','moral cost','who pays'] },
+  ];
+  const OLIVER = [
+    { beat:'II · endings',
+      ask:`When you picture the end — do you <em>know it before you start</em>, or write toward something you can’t yet see?`,
+      ph:`I write toward a feeling, not a scene…`,
+      val:`I never know the scene — only the temperature of the last frame`,
+      fact:{ label:'principle · endings', text:'writes toward the temperature of the last frame, not a planned scene', by:'oliver' },
+      signals:['ending-as-feeling','last-frame'] },
+    { beat:'II · the rule',
+      ask:`Name one structural rule you <em>believe in</em> — and the one you <em>love to break</em>.`,
+      ph:`believe: earn every turn. break: the tidy resolution…`,
+      val:`Believe: every act break costs the hero something. Break: the third act should resolve`,
+      fact:{ label:'principle · structure', text:'hold: every act break costs the hero · break: the tidy third-act resolution', by:'oliver' },
+      signals:['act-break = cost','anti-tidy'] },
+  ];
+
+  const captured = {};
+
+  // ── console writers ──
+  const elActiveQ = document.getElementById('c-activeq');
+  const elBeat    = document.getElementById('c-beat');
+  const elFacts   = document.getElementById('c-facts');
+  const elFactsN  = document.getElementById('c-facts-n');
+  const elSignals = document.getElementById('c-signals');
+
+  function stripTags(s){ return s.replace(/<[^>]+>/g,'').replace(/&[a-z]+;/g,'…'); }
+
+  // type the active question into the console, char by char
+  async function typeQuestion(q){
+    const plain = stripTags(q).replace(/\s+/g,' ').trim();
+    elActiveQ.innerHTML = '<span class="caret"></span>';
+    const caret = elActiveQ.querySelector('.caret');
+    for (let i=0;i<plain.length;i++){
+      caret.insertAdjacentText('beforebegin', plain[i]);
+      if (i % 2 === 0) await wait(14);
+    }
+  }
+
+  let factCount = 0;
+  function addFact(f){
+    factCount++;
+    elFactsN.textContent = '· ' + factCount;
+    const el = document.createElement('div');
+    el.className = 'fact'; if (f.by) el.dataset.by = f.by;
+    el.innerHTML = `<span class="ft">${f.label}</span>${f.text}`;
+    elFacts.appendChild(el);
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('on')));
+  }
+  async function addSignals(list){
+    for (const s of list){
+      const c = document.createElement('span');
+      c.className = 'chip'; c.textContent = s;
+      elSignals.appendChild(c);
+      requestAnimationFrame(() => requestAnimationFrame(() => { c.classList.add('on'); c.classList.add('hot'); }));
+      await wait(120);
+      setTimeout(() => c.classList.remove('hot'), 1400);
+    }
+  }
+  function setTodo(key, state){
+    const t = document.querySelector(`.todo[data-todo="${key}"]`);
+    if (!t) return;
+    t.classList.remove('active');
+    if (state === 'active') t.classList.add('active');
+    if (state === 'done')   t.classList.add('done');
+  }
+
+  // ── readback stage writers ──
+  const elRole = document.getElementById('r-role');
+  const elNm   = document.getElementById('r-nm');
+  const elAsk  = document.getElementById('r-ask');
+  const elFW   = document.getElementById('r-fieldwrap');
+  const elPh   = document.getElementById('r-ph');
+  const elTa   = document.getElementById('r-ta');
+  const elCue  = document.getElementById('r-cue');
+  const plate  = document.getElementById('plate');
+
+  function autosize(){ elTa.style.height='auto'; elTa.style.height = elTa.scrollHeight+'px'; }
+
+  function askOnStage(q){
+    return new Promise(resolve => {
+      // reset
+      elAsk.classList.remove('on'); elFW.classList.remove('on','filled'); elCue.classList.remove('show');
+      elTa.value=''; autosize();
+      elAsk.innerHTML = q.ask; elPh.textContent = q.ph;
+
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        plate.classList.add('on'); elAsk.classList.add('on');
+        setTimeout(() => { elFW.classList.add('on'); elTa.focus(); }, 560);
+      }));
+
+      const onInput = () => {
+        autosize();
+        elFW.classList.toggle('filled', elTa.value.length>0);
+        elCue.classList.toggle('show', elTa.value.trim().length>0);
+      };
+      elTa.addEventListener('input', onInput);
+
+      const commit = () => {
+        const answer = elTa.value.trim() || q.val;   // mockup fallback keeps the reveal whole
+        elTa.removeEventListener('input', onInput);
+        elTa.removeEventListener('keydown', onKey);
+        elCue.removeEventListener('click', onClick);
+        resolve(answer);
+      };
+      const onKey = (e) => { if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); } };
+      const onClick = () => commit();
+      elTa.addEventListener('keydown', onKey);
+      elCue.addEventListener('click', onClick);
+    });
+  }
+
+  // run one full question: console types it + stage asks it + on answer, console records it
+  async function turn(q, todoKey){
+    elBeat.textContent = q.beat;
+    setTodo(todoKey, 'active');
+    await typeQuestion(q.ask);
+    const answer = await askOnStage(q);
+    captured[todoKey] = answer;
+    addFact(q.fact);
+    await addSignals(q.signals);
+    setTodo(todoKey, 'done');
+    return answer;
+  }
+
+  function gate(label){
+    return new Promise(resolve => {
+      elCue.className = 'cue show'; elCue.innerHTML = `<span class="key">↵</span> ${label}`;
+      const go = () => { document.removeEventListener('keydown', onKey); elCue.removeEventListener('click', go); resolve(); };
+      const onKey = (e) => { if (e.key==='Enter'){ e.preventDefault(); go(); } };
+      document.addEventListener('keydown', onKey);
+      elCue.addEventListener('click', go);
+    });
+  }
+
+  // ── THE CHOREOGRAPHY ──
+  async function run(){
+    document.getElementById('console').classList.add('on');
+
+    // ACT I — Morgan, the host (amber, serif). console hue = amber.
+    stage.dataset.host = 'host';
+    setSpot(css('--host'));
+    root.style.setProperty('--spot-x','52%'); root.style.setProperty('--spot-y','44%');
+    document.getElementById('ribbon-state').textContent = 'reading the room';
+
+    await turn(HOST[0], 'why');
+    await turn(HOST[1], 'themes');
+
+    // authored handoff
+    const ho = document.getElementById('r-handoff');
+    ho.innerHTML = `That’s not a logline — that’s a spine.
+        <span class="sub">Oliver should hear this one ↓</span>`;
+    requestAnimationFrame(() => requestAnimationFrame(() => ho.classList.add('on')));
+    await gate('hand the room to Oliver');
+    ho.classList.remove('on');
+
+    // HANDOFF — hue slides amber→green, bloom slides right across the grid
+    await wait(200);
+    setSpot(css('--oliver'));
+    root.style.setProperty('--spot-x','60%');
+    document.getElementById('c-host-nm').textContent = 'Oliver';
+    document.getElementById('c-host-rl').textContent = '· Story Structure';
+    stage.dataset.host = 'oliver';
+    elRole.textContent = 'Story Structure Editor'; elNm.textContent = 'Oliver';
+    plate.classList.remove('on');
+    await wait(900);
+
+    // ACT II — Oliver (green, mono)
+    await turn(OLIVER[0], 'ending');
+    await turn(OLIVER[1], 'rule');
+    await gate('see who the room found');
+
+    // ACT III — READBACK assembles at scale
+    document.getElementById('ribbon-state').textContent = 'profile synthesized';
+    elBeat.textContent = 'III · readback';
+    elActiveQ.innerHTML = '<span style="color:var(--ok)">profile assembled — 4 facts, 0 loops open</span><span class="caret"></span>';
+    document.getElementById('reader').style.transition = 'opacity .7s var(--ease)';
+    document.getElementById('reader').style.opacity = '0';
+    await wait(700);
+    document.getElementById('reader').hidden = true;
+
+    fill('p-why', captured.why);
+    fill('p-themes', captured.themes);
+    fill('p-ending', captured.ending);
+    fill('p-rule', captured.rule);
+    document.getElementById('p-arch-nm').textContent = nameArchetype(captured);
+
+    const prof = document.getElementById('profile');
+    prof.hidden = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => prof.classList.add('on')));
+    await wait(300);
+    for (const sel of ['[data-p="why"]','[data-p="themes"]','[data-p="ending"]','[data-p="rule"]']){
+      document.querySelector(sel).classList.add('on'); await wait(620);
+    }
+    document.getElementById('p-arch').classList.add('on'); await wait(820);
+    document.getElementById('p-affirm').classList.add('on');
+
+    document.getElementById('p-affirm').addEventListener('click', () => {
+      document.getElementById('p-affirm').innerHTML = `Saved to Voice Profile. <span class="mk" style="color:var(--oliver)">✓</span>`;
+    });
+  }
+
+  function fill(id, text){ document.getElementById(id).textContent = '“' + text + '”'; }
+
+  function nameArchetype(c){
+    const t = (c.ending + ' ' + c.rule + ' ' + c.why + ' ' + c.themes).toLowerCase();
+    if (t.includes('feel') || t.includes('temperature') || t.includes('frame')) return 'The Architect of the Last Frame';
+    if (t.includes('cost') || t.includes('loyal') || t.includes('stay'))        return 'The Keeper of What It Costs';
+    if (t.includes('break') || t.includes('resolve'))                            return 'The One Who Refuses the Tidy End';
+    return 'The Patient Architect';
+  }
+
+  // ── ignition ──
+  const begin = () => {
+    document.getElementById('curtain').classList.add('lift');
+    document.removeEventListener('keydown', onBegin);
+    setTimeout(run, 800);
+  };
+  const onBegin = (e) => { if (e.key==='Enter') begin(); };
+  document.getElementById('begin').addEventListener('click', begin);
+  document.addEventListener('keydown', onBegin);
+})();
+</script>
+</body>
+</html>

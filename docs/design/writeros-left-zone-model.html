@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Left-Zone Layout Model (PRD §4.0 reference)</title>
+<!--
+  LEFT-ZONE LAYOUT MODEL — the §4.0 vocabulary made concrete (PRD top-priority follow-up).
+  Proves ONE model, not four columns:
+    THREE ZONES = [ LEFT ZONE | PAPER | TELEPROMPTER ]
+    LEFT ZONE   = one column, two stacked regions with INDEPENDENT scroll:
+                    · Structure Spine (top, primary scroll — absorbs project growth)
+                    · Context Console (bottom, pinned, lean, bounded state)
+  Toggle the width buttons to see the Console's responsive FORMS: panel → strip → overlay.
+  The Spine is deliberately overstuffed (5 sequences, many beats) to prove the Console
+  stays pinned + glanceable while the Spine scrolls. Demo only — no app wiring.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..500&family=Newsreader:opsz,wght@6..72,300..440&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:hsl(220 14% 7%); --bg-deep:hsl(220 16% 5%); --rail:hsl(220 14% 8.5%); --rail-2:hsl(220 13% 11%);
+    --surface:hsl(220 13% 12%); --border:hsl(220 13% 16%); --border-2:hsl(220 13% 22%);
+    --paper:hsl(36 9% 9.5%); --paper-hi:hsl(38 11% 12.5%); --ink:hsl(40 14% 87%); --ink-soft:hsl(40 10% 64%);
+    --fg:hsl(220 10% 86%); --fg-muted:hsl(220 10% 52%); --fg-subtle:hsl(220 10% 34%);
+    --amber:hsl(38 90% 68%); --amber-dim:hsl(38 55% 44%); --oliver:hsl(120 38% 64%); --oliver-dim:hsl(120 24% 42%);
+    --casey:hsl(200 100% 75%); --ok:hsl(120 40% 62%); --amberd:hsl(38 55% 44%);
+    --serif:"Fraunces",Georgia,serif; --read:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --ease:cubic-bezier(.16,.84,.28,1);
+    /* zone widths (panel form) */
+    --spine-w: 300px;
+    --rail-w: 392px;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--fg); font-family:var(--read); overflow:hidden; -webkit-font-smoothing:antialiased; }
+
+  .gridfield{ position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:linear-gradient(to right,color-mix(in oklab,var(--fg) 4%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in oklab,var(--fg) 4%,transparent) 1px,transparent 1px);
+    background-size:46px 46px; mask-image:radial-gradient(140% 130% at 50% 40%,#000 42%,transparent 88%); -webkit-mask-image:radial-gradient(140% 130% at 50% 40%,#000 42%,transparent 88%); }
+
+  /* ── annotation bar ──────────────────────────────────────────────── */
+  .note{ position:fixed; top:0; left:0; right:0; z-index:50; height:38px; display:flex; align-items:center; gap:16px; padding:0 16px;
+    background:var(--bg-deep); border-bottom:1px solid var(--border); font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--fg-muted); }
+  .note b{ color:var(--amber); letter-spacing:.18em; text-transform:uppercase; }
+  .note .seg{ display:flex; gap:4px; margin-left:auto; }
+  .note .seg button{ font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--fg-muted); background:transparent; border:1px solid var(--border-2); border-radius:6px; padding:5px 11px; cursor:pointer; transition:all .2s; }
+  .note .seg button.on{ color:var(--amber); border-color:var(--amber-dim); background:color-mix(in oklab,var(--amber) 12%,transparent); }
+  .note .w{ color:var(--fg-subtle); }
+
+  /* ── THREE ZONES ─────────────────────────────────────────────────── */
+  .app{ position:fixed; inset:38px 0 0 0; z-index:10; display:grid;
+    grid-template-columns: var(--spine-w) minmax(0,1fr) var(--rail-w); }
+
+  /* zone labels (demo annotation) */
+  .zlabel{ position:absolute; top:6px; font-family:var(--mono); font-size:8.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); z-index:5; pointer-events:none; }
+
+  /* ════ LEFT ZONE — one column, two stacked independent-scroll regions ════ */
+  .leftzone{ position:relative; display:grid; grid-template-rows: minmax(0,1fr) auto; min-height:0;
+    border-right:1px solid var(--border); background:color-mix(in oklab,var(--rail) 80%,transparent); backdrop-filter:blur(8px); }
+  .leftzone::after{ content:"LEFT ZONE"; position:absolute; top:6px; left:14px; font-family:var(--mono); font-size:8px; letter-spacing:.24em; color:color-mix(in oklab,var(--amber) 60%,transparent); z-index:6; pointer-events:none; }
+
+  /* SPINE region — primary scroll, grows */
+  .spine{ overflow-y:auto; min-height:0; padding:26px 0 16px; scrollbar-width:thin; border-bottom:1px solid var(--border); position:relative; }
+  .spine::-webkit-scrollbar{ width:8px; } .spine::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:8px; }
+  .rtag{ position:sticky; top:0; z-index:4; display:flex; align-items:center; gap:8px; padding:4px 14px 10px; margin-top:-26px; padding-top:26px;
+    background:linear-gradient(to bottom,color-mix(in oklab,var(--rail) 94%,transparent) 70%,transparent);
+    font-family:var(--mono); font-size:8.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle); }
+  .rtag b{ color:var(--oliver); }
+  .docrow{ display:flex; align-items:center; gap:9px; padding:5px 16px; font-family:var(--mono); font-size:12px; color:var(--fg-muted); }
+  .docrow.sel{ color:var(--fg); border-left:2px solid var(--oliver); background:color-mix(in oklab,var(--oliver) 8%,transparent); }
+  .docrow .ic{ color:var(--fg-subtle); width:13px; text-align:center; }
+  .seqh{ display:flex; align-items:center; gap:8px; padding:11px 16px 5px; font-family:var(--mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--oliver); }
+  .seqh.loose{ color:var(--fg-subtle); }
+  .seqh .ct{ margin-left:auto; font-size:8px; color:var(--fg-subtle); }
+  .bx{ display:flex; align-items:center; gap:10px; padding:4px 16px 4px 26px; font-family:var(--read); font-size:13px; color:var(--ink-soft); }
+  .bx .s{ width:7px; height:7px; border-radius:50%; flex:none; background:var(--ok); box-shadow:0 0 6px color-mix(in oklab,var(--ok) 70%,transparent); }
+  .bx.thin .s{ background:var(--amber); box-shadow:0 0 6px color-mix(in oklab,var(--amber) 70%,transparent); }
+  .bx.empty{ color:var(--fg-subtle); font-style:italic; } .bx.empty .s{ background:transparent; border:1px dashed var(--fg-subtle); box-shadow:none; }
+  .spine-note{ padding:12px 16px 4px; font-family:var(--read); font-style:italic; font-size:11px; line-height:1.5; color:var(--fg-subtle); }
+
+  /* CONSOLE region — pinned, lean, bounded (does NOT scroll in common case) */
+  .console{ position:relative; background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .console::before{ content:""; position:absolute; left:0; right:0; top:-1px; height:1px; background:linear-gradient(90deg,color-mix(in oklab,var(--amber) 40%,transparent),transparent 70%); }
+  .console .ctag{ display:flex; align-items:center; gap:8px; padding:11px 16px 8px; font-family:var(--mono); font-size:8.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle); }
+  .console .ctag .live{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; color:var(--amber); font-size:8.5px; }
+  .console .ctag .live::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; box-shadow:0 0 7px currentColor; animation:pulse 1.8s var(--ease) infinite; }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .cgrp{ padding:3px 16px 9px; }
+  .cgrp .k{ font-family:var(--mono); font-size:8px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:6px; }
+  .kv{ display:flex; gap:9px; font-family:var(--mono); font-size:11px; line-height:1.5; padding:1px 0; }
+  .kv .kk{ color:var(--fg-subtle); min-width:52px; } .kv .vv{ color:var(--fg); } .kv .vv.a{ color:var(--oliver); }
+  .chips{ display:flex; flex-wrap:wrap; gap:5px; }
+  .chip{ font-family:var(--mono); font-size:9.5px; color:var(--fg-muted); padding:3px 8px; border:1px solid var(--border-2); border-radius:999px; }
+  .pend{ display:flex; gap:8px; padding:3px 0; font-family:var(--mono); font-size:10px; line-height:1.4; color:var(--fg-muted); }
+  .pend .sig{ font-size:7.5px; letter-spacing:.1em; text-transform:uppercase; border-radius:3px; padding:1px 5px; flex:none; margin-top:1px; }
+  .pend .sig.s{ color:var(--oliver); border:1px solid var(--oliver-dim); } .pend .sig.c{ color:var(--casey); border:1px solid color-mix(in oklab,var(--casey) 45%,transparent); }
+
+  /* ════ PAPER ════ */
+  .paperzone{ position:relative; overflow-y:auto; display:flex; justify-content:center; padding:34px 32px 60px; }
+  .paperzone::after{ content:"PAPER"; position:absolute; top:6px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:8px; letter-spacing:.24em; color:var(--fg-subtle); }
+  .paper{ width:min(560px,100%); align-self:flex-start; border-radius:14px; border:1px solid var(--border-2);
+    background:radial-gradient(120% 50% at 50% -6%,var(--paper-hi),var(--paper) 52%); box-shadow:0 50px 120px -40px #000; padding:40px 44px; }
+  .paper h1{ font-family:var(--serif); font-weight:300; font-size:30px; color:var(--ink); }
+  .paper .meta{ margin-top:8px; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--fg-subtle); }
+  .paper .rule{ margin:20px 0; height:1px; background:linear-gradient(90deg,var(--border-2),transparent); }
+  .pbeat{ padding:13px 0; border-bottom:1px solid color-mix(in oklab,var(--border) 55%,transparent); }
+  .pbeat .sc{ font-family:var(--mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:6px; }
+  .pbeat .tx{ font-family:var(--read); font-weight:330; font-size:17px; line-height:1.55; color:var(--ink); }
+
+  /* ════ TELEPROMPTER ════ */
+  .telezone{ position:relative; border-left:1px solid var(--border); background:color-mix(in oklab,var(--rail) 80%,transparent); backdrop-filter:blur(8px); display:flex; flex-direction:column; min-height:0; }
+  .telezone::after{ content:"TELEPROMPTER"; position:absolute; top:6px; right:14px; font-family:var(--mono); font-size:8px; letter-spacing:.24em; color:var(--fg-subtle); }
+  .telezone .rh{ display:flex; align-items:center; gap:10px; padding:15px 20px; border-bottom:1px solid var(--border); }
+  .telezone .rh .av{ width:9px; height:9px; border-radius:50%; background:var(--oliver); box-shadow:0 0 9px var(--oliver); }
+  .telezone .rh .nm{ font-family:var(--serif); font-weight:300; font-size:18px; }
+  .telezone .rh .role{ margin-left:auto; font-family:var(--mono); font-size:8.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--oliver); }
+  .tele{ flex:1; overflow-y:auto; padding:22px 22px 10px; }
+  .turn .by{ font-family:var(--mono); font-size:8.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--oliver); margin-bottom:7px; }
+  .turn.you .by{ color:var(--fg-subtle); }
+  .turn.h{ opacity:.32; margin-bottom:22px; } .turn.h.old{ opacity:.18; }
+  .turn.h .tx{ font-family:var(--read); font-size:20px; line-height:1.45; color:var(--fg-muted); }
+  .turn.a{ margin:8px 0 18px; } .turn.a .tx{ font-family:var(--read); font-size:25px; line-height:1.42; color:var(--fg); }
+  .turn.a .tx em{ font-style:italic; color:var(--oliver); }
+  .pinbar{ border-top:1px solid var(--border); padding:15px 22px; }
+  .pinbar .pl{ font-family:var(--mono); font-size:8.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:11px; }
+  .pinbar .pb{ width:100%; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--oliver); background:transparent; border:1px solid color-mix(in oklab,var(--oliver) 55%,var(--border-2)); border-radius:9px; padding:12px; cursor:pointer; }
+
+  /* ════ RESPONSIVE FORMS (driven by data-w on body for the demo toggle) ════ */
+  /* LAPTOP: console → strip form (slim, state collapses to one line), spine narrows */
+  body[data-w="laptop"]{ --spine-w:248px; --rail-w:360px; }
+  body[data-w="laptop"] .console{ }
+  body[data-w="laptop"] .console .cgrp.detail{ display:none; }              /* verbose rows hide */
+  body[data-w="laptop"] .console .stripline{ display:flex; }                /* compact strip line shows */
+  /* NARROW: paper-only; spine + console + tele become summoned forms (shown here as docked chips) */
+  body[data-w="narrow"] .app{ display:block; }
+  body[data-w="narrow"] .leftzone, body[data-w="narrow"] .telezone{ display:none; }
+  body[data-w="narrow"] .paperzone{ height:100%; padding-bottom:92px; }
+  body[data-w="narrow"] .summon{ display:flex; }
+
+  .stripline{ display:none; align-items:center; gap:10px; padding:8px 16px; font-family:var(--mono); font-size:10px; color:var(--fg-muted); flex-wrap:wrap; }
+  .stripline .d{ width:6px; height:6px; border-radius:50%; background:var(--oliver); box-shadow:0 0 7px var(--oliver); }
+  .stripline b{ color:var(--fg); }
+
+  /* narrow summon dock (proves nothing vanishes — state + voice are one tap away) */
+  .summon{ display:none; position:fixed; left:0; right:0; bottom:0; z-index:40; gap:10px; padding:12px 16px;
+    background:var(--bg-deep); border-top:1px solid var(--border); }
+  .summon button{ flex:1; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--fg-muted);
+    background:var(--rail-2); border:1px solid var(--border-2); border-radius:9px; padding:12px; cursor:pointer; }
+  .summon button.voice{ color:var(--oliver); border-color:var(--oliver-dim); }
+
+  @media (prefers-reduced-motion:reduce){ *{ animation:none !important; } }
+</style>
+</head>
+<body data-w="desktop">
+
+  <div class="gridfield" aria-hidden="true"></div>
+
+  <div class="note">
+    <span><b>WriterOS</b> · Left-Zone Layout Model · PRD §4.0</span>
+    <span class="w">three zones · left zone = spine region + console region (independent scroll)</span>
+    <span class="seg">
+      <button data-set="desktop" class="on">Desktop ≥1440 · panel</button>
+      <button data-set="laptop">Laptop 1100–1440 · strip</button>
+      <button data-set="narrow">Narrow &lt;1100 · overlay</button>
+    </span>
+  </div>
+
+  <div class="app">
+
+    <!-- ════ LEFT ZONE (one column · two regions) ════ -->
+    <div class="leftzone">
+
+      <!-- SPINE region — overstuffed to force scroll while console stays pinned -->
+      <div class="spine" id="spine">
+        <div class="rtag">Navigation · <b>Structure Spine</b> · grows ↓ own scroll</div>
+        <div class="docrow"><span class="ic">❧</span> Story Bible</div>
+        <div class="docrow"><span class="ic">▤</span> Synopsis</div>
+        <div class="docrow sel"><span class="ic">≣</span> Outline</div>
+
+        <div class="seqh">Sequence 1 · The Cleanup <span class="ct">3</span></div>
+        <div class="bx"><span class="s"></span>Ace’s craft</div>
+        <div class="bx"><span class="s"></span>The pool job</div>
+        <div class="bx"><span class="s"></span>Sebastian’s offer</div>
+        <div class="seqh">Sequence 2 · The Realization <span class="ct">3</span></div>
+        <div class="bx"><span class="s"></span>The recording plays</div>
+        <div class="bx thin"><span class="s"></span>Call to Ghost</div>
+        <div class="bx"><span class="s"></span>Can’t be cleaned</div>
+        <div class="seqh">Sequence 3 · The Burn <span class="ct">4</span></div>
+        <div class="bx"><span class="s"></span>Ace torches the rolodex</div>
+        <div class="bx"><span class="s"></span>Ivy confronts him</div>
+        <div class="bx thin"><span class="s"></span>The coroner flips</div>
+        <div class="bx"><span class="s"></span>Sebastian raises the price</div>
+        <div class="seqh">Sequence 4 · The Reckoning <span class="ct">3</span></div>
+        <div class="bx"><span class="s"></span>The last clean job</div>
+        <div class="bx"><span class="s"></span>He chooses to be seen</div>
+        <div class="bx thin"><span class="s"></span>Daughter hears the tape</div>
+        <div class="seqh">Sequence 5 · The Last Frame <span class="ct">2</span></div>
+        <div class="bx"><span class="s"></span>He lets the tape play</div>
+        <div class="bx empty"><span class="s"></span>Final image — unwritten</div>
+        <div class="seqh loose">Unsequenced <span class="ct">2</span></div>
+        <div class="bx empty"><span class="s"></span>Ivy’s motive</div>
+        <div class="bx empty"><span class="s"></span>The 2009 flashback</div>
+        <div class="spine-note">Structure deepens as you group — acts aren’t drawn until the beats earn them.</div>
+      </div>
+
+      <!-- CONSOLE region — pinned, lean, bounded; forms: panel ↔ strip -->
+      <div class="console">
+        <div class="ctag">Context Console · <span style="color:var(--fg-muted)">state</span> <span class="live">LIVE</span></div>
+
+        <!-- strip form (laptop): one compact line -->
+        <div class="stripline">
+          <span class="d"></span><b>Oliver</b> · Outline · beat <b>S2·2</b> · <span style="color:var(--oliver)">2 signals</span> · <span style="color:var(--amber)">1 pending</span>
+        </div>
+
+        <!-- panel form (desktop): full lean state -->
+        <div class="cgrp detail">
+          <div class="k">Host · slot</div>
+          <div class="kv"><span class="kk">host</span><span class="vv a">Oliver · Structure</span></div>
+          <div class="kv"><span class="kk">beat</span><span class="vv">S2 · The recording plays</span></div>
+        </div>
+        <div class="cgrp detail">
+          <div class="k">Voice signals · from profile</div>
+          <div class="chips"><span class="chip">act-break = cost</span><span class="chip">anti-tidy</span></div>
+        </div>
+        <div class="cgrp detail">
+          <div class="k">Pending · structure &amp; linter · 1</div>
+          <div class="pend"><span class="sig c">Craft</span><span>Call to Ghost is thin → Casey</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ════ PAPER ════ -->
+    <div class="paperzone">
+      <article class="paper">
+        <h1>Outline</h1>
+        <div class="meta">Draft · 15 beats · 5 sequences · 2 loose</div>
+        <div class="rule"></div>
+        <div class="pbeat"><div class="sc">Int. A Burning Reputation — Night</div><div class="tx">Ace dismantles a scandal in real time — we learn his craft, his calm, and his one rule: leave no trace.</div></div>
+        <div class="pbeat"><div class="sc">Int. Producer’s Pool House — Night</div><div class="tx">The pool job. A dead girl, a panicking client. Routine — until the body sits up and asks for a towel.</div></div>
+        <div class="pbeat"><div class="sc">Ext. Infinity Pool — Night</div><div class="tx">Sebastian’s offer. Never a victim — a client. He hands Ace a 2009 recording and a deadline.</div></div>
+      </article>
+    </div>
+
+    <!-- ════ TELEPROMPTER ════ -->
+    <div class="telezone">
+      <div class="rh"><span class="av"></span><span class="nm">Oliver</span><span class="role">Structure</span></div>
+      <div class="tele">
+        <div class="turn h old"><div class="by">Oliver</div><div class="tx">Sequence 1 is clean. The three after it are floating — act break hiding in plain sight?</div></div>
+        <div class="turn h you"><div class="by">Ben</div><div class="tx">The recording, the call to Ghost, the realization — that’s one move.</div></div>
+        <div class="turn a"><div class="by">Oliver</div><div class="tx">Then that’s a sequence, not loose change. Call it <em>The Realization</em> — you’ll still own the act break.</div></div>
+      </div>
+      <div class="pinbar">
+        <div class="pl">↳ proposed structure · awaiting you</div>
+        <button class="pb">⊞ Group beats 4–6 into Sequence 2</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- narrow-width summon dock: proves state + agent voice never vanish -->
+  <div class="summon">
+    <button>☰ Spine</button>
+    <button>▣ State</button>
+    <button class="voice">◑ Oliver</button>
+  </div>
+
+<script>
+  document.querySelectorAll('.note .seg button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.note .seg button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.dataset.w = b.dataset.set;
+  }));
+</script>
+</body>
+</html>

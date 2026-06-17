@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Projects / Home (Phase 0 · Reskin Mockup)</title>
+<!--
+  PHASE 0 RESKIN MOCKUP — the Projects / Home page in the WriterOS design language (new-ui-plan §6).
+  Visual layer only: every function preserved (New Project · Change Folder · Import .fdx · folder/projects/local
+  stat cards · Active/Archive · filter · sort · Open/Show in Folder/Duplicate/Archive/Delete). No feature change.
+
+  What changed vs the live page:
+    · legacy PURPLE (--primary) → canonical AMBER (app accent / Morgan host). Purple is not in the new system.
+    · generic chrome → void shell + faint gridded field; hairline panels matching the console aesthetic.
+    · type system applied: Fraunces display, IBM Plex Mono labels/system, Newsreader reading text.
+  Cold-void chrome is intentional: paper/ink is reserved for documents; the project list is shell, not work.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:hsl(220 14% 7%); --bg-deep:hsl(220 16% 5%); --rail:hsl(220 14% 8.5%); --rail-2:hsl(220 13% 11%);
+    --surface:hsl(220 13% 12%); --border:hsl(220 13% 16%); --border-2:hsl(220 13% 22%);
+    --fg:hsl(220 10% 86%); --fg-muted:hsl(220 10% 52%); --fg-subtle:hsl(220 10% 34%);
+    --amber:hsl(38 90% 68%); --amber-dim:hsl(38 55% 44%);
+    --oliver:hsl(120 38% 64%); --sam:hsl(45 100% 75%); --casey:hsl(200 100% 75%); --maya:hsl(330 80% 75%); --zoe:hsl(270 70% 75%); --alex:hsl(15 80% 70%);
+    --ok:hsl(120 40% 62%); --del:hsl(6 52% 60%);
+    --serif:"Fraunces",Georgia,serif; --read:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --ease:cubic-bezier(.16,.84,.28,1);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--fg); font-family:var(--read); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; min-height:100vh; }
+  ::selection{ background:color-mix(in oklab,var(--amber) 28%,transparent); }
+  a{ color:inherit; text-decoration:none; }
+
+  /* faint gridded field — same family as the surfaces, quieter for a management page */
+  .field{ position:fixed; inset:0; z-index:0; pointer-events:none; }
+  .field .grid{ position:absolute; inset:-2px;
+    background-image:linear-gradient(to right,color-mix(in oklab,var(--fg) 4%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in oklab,var(--fg) 4%,transparent) 1px,transparent 1px);
+    background-size:48px 48px; mask-image:radial-gradient(140% 120% at 50% 0%,#000 30%,transparent 78%); -webkit-mask-image:radial-gradient(140% 120% at 50% 0%,#000 30%,transparent 78%); }
+  .field .bloom{ position:absolute; inset:-25%; background:radial-gradient(40% 32% at 50% -4%,color-mix(in oklab,var(--amber) 8%,transparent) 0%,transparent 60%); }
+  .field .vignette{ position:absolute; inset:0; background:radial-gradient(130% 110% at 50% 30%,transparent 55%,var(--bg-deep) 100%); }
+
+  /* ── top bar ─────────────────────────────────────────────────────── */
+  header{ position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:6px; height:54px; padding:0 22px;
+    background:color-mix(in oklab,var(--rail) 86%,transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+  header .brand{ font-family:var(--mono); font-weight:600; font-size:13px; letter-spacing:.2em; text-transform:uppercase; color:var(--amber); margin-right:18px; }
+  header nav{ display:flex; align-items:center; gap:2px; }
+  header nav a{ font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--fg-muted); padding:7px 13px; border-radius:7px; transition:color .2s,background .2s; }
+  header nav a:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 70%,transparent); }
+  header nav a.sel{ color:var(--amber); background:color-mix(in oklab,var(--amber) 12%,transparent); }
+  header .center{ position:absolute; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; }
+  header .center .proj{ font-family:var(--read); font-style:italic; font-size:13px; color:var(--fg-muted); }
+  header .center .nb{ font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--fg-muted); border:1px solid var(--border-2); border-radius:6px; padding:5px 10px; transition:all .2s; cursor:pointer; }
+  header .center .nb:hover{ color:var(--fg); border-color:var(--fg-subtle); }
+  header .right{ margin-left:auto; display:flex; align-items:center; gap:9px; }
+  header .right .gb{ font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--fg-muted); border:1px solid var(--border-2); border-radius:7px; padding:7px 13px; cursor:pointer; transition:all .2s; }
+  header .right .gb:hover{ color:var(--fg); border-color:var(--fg-subtle); }
+  header .right .gb.room{ color:var(--amber); border-color:var(--amber-dim); }
+  header .right .gb.room:hover{ background:color-mix(in oklab,var(--amber) 12%,transparent); }
+  header .right .kbd{ font-family:var(--mono); font-size:10px; color:var(--fg-subtle); border:1px solid var(--border); border-radius:5px; padding:5px 8px; }
+
+  /* ── page ────────────────────────────────────────────────────────── */
+  main{ position:relative; z-index:10; max-width:1180px; margin:0 auto; padding:46px 36px 120px; }
+  .crumb{ font-family:var(--mono); font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:14px; }
+  .titlerow{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:34px; }
+  .titlerow h1{ font-family:var(--serif); font-weight:300; font-size:48px; letter-spacing:-.02em; color:var(--fg); }
+  .actions{ display:flex; align-items:center; gap:10px; }
+  .btn{ font-family:var(--mono); font-size:11.5px; letter-spacing:.08em; padding:10px 16px; border-radius:8px; cursor:pointer; border:1px solid var(--border-2); background:transparent; color:var(--fg-muted); transition:all .22s var(--ease); display:inline-flex; align-items:center; gap:8px; }
+  .btn:hover{ color:var(--fg); border-color:var(--fg-subtle); }
+  .btn.primary{ color:var(--bg-deep); background:var(--amber); border-color:var(--amber); font-weight:500; }
+  .btn.primary:hover{ background:color-mix(in oklab,var(--amber) 88%,#fff); box-shadow:0 0 0 4px color-mix(in oklab,var(--amber) 14%,transparent); }
+  .btn.danger{ color:var(--del); border-color:color-mix(in oklab,var(--del) 40%,var(--border-2)); }
+  .btn.danger:hover{ color:#fff; background:color-mix(in oklab,var(--del) 80%,#000); border-color:var(--del); }
+
+  /* ── stat cards (console-panel aesthetic) ────────────────────────── */
+  .cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:40px; }
+  .card{ position:relative; border:1px solid var(--border); border-radius:12px; padding:20px 22px 22px;
+    background:color-mix(in oklab,var(--rail) 70%,transparent); backdrop-filter:blur(6px);
+    box-shadow:0 1px 0 0 color-mix(in oklab,var(--fg) 5%,transparent) inset; overflow:hidden; }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,color-mix(in oklab,var(--amber) 40%,transparent),transparent 60%); }
+  .card .lab{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:12px; }
+  .card .big{ font-family:var(--serif); font-weight:300; font-size:26px; letter-spacing:-.01em; color:var(--fg); line-height:1.1; }
+  .card .big.num{ font-size:34px; }
+  .card .sub{ margin-top:6px; font-family:var(--read); font-size:13.5px; color:var(--fg-muted); }
+  .card .mini{ margin-top:16px; display:flex; gap:8px; }
+  .card .mini .btn{ padding:6px 12px; font-size:10.5px; }
+
+  /* ── tabs + controls ─────────────────────────────────────────────── */
+  .tabs{ display:flex; gap:6px; margin-bottom:22px; }
+  .tab{ font-family:var(--mono); font-size:11.5px; letter-spacing:.08em; padding:9px 16px; border-radius:8px; cursor:pointer; border:1px solid transparent; color:var(--fg-muted); transition:all .2s; }
+  .tab:hover{ color:var(--fg); }
+  .tab.on{ color:var(--amber); background:color-mix(in oklab,var(--amber) 12%,transparent); border-color:var(--amber-dim); }
+
+  .controls{ display:flex; align-items:flex-end; gap:18px; margin-bottom:8px; }
+  .fcol{ flex:1; } .scol{ width:230px; }
+  .controls .clab{ font-family:var(--mono); font-size:9px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:8px; display:block; }
+  .inp{ width:100%; background:var(--rail-2); border:1px solid var(--border); border-radius:9px; color:var(--fg); font-family:var(--read); font-size:15px; padding:12px 14px; outline:none; transition:border-color .2s,box-shadow .2s; }
+  .inp::placeholder{ color:var(--fg-subtle); font-style:italic; }
+  .inp:focus{ border-color:var(--amber-dim); box-shadow:0 0 0 3px color-mix(in oklab,var(--amber) 10%,transparent); }
+  select.inp{ font-family:var(--mono); font-size:13px; appearance:none; cursor:pointer;
+    background-image:linear-gradient(45deg,transparent 50%,var(--fg-subtle) 50%),linear-gradient(135deg,var(--fg-subtle) 50%,transparent 50%);
+    background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%; background-size:5px 5px,5px 5px; background-repeat:no-repeat; }
+
+  /* ── project rows ────────────────────────────────────────────────── */
+  .rows{ margin-top:14px; }
+  .row{ display:flex; align-items:center; gap:24px; padding:22px 16px; border-bottom:1px solid var(--border); position:relative; transition:background .2s; }
+  .row::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--accent,var(--border-2)); opacity:.0; transition:opacity .25s; }
+  .row:hover{ background:color-mix(in oklab,var(--rail) 60%,transparent); }
+  .row:hover::before{ opacity:.9; }
+  .row .meta{ flex:1; min-width:0; }
+  .row .ttl{ font-family:var(--serif); font-weight:300; font-size:23px; letter-spacing:-.01em; color:var(--fg); display:flex; align-items:baseline; gap:13px; }
+  .row .fmt{ font-family:var(--mono); font-size:8.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent,var(--amber)); border:1px solid color-mix(in oklab,var(--accent,var(--amber)) 45%,transparent); border-radius:4px; padding:2px 7px; position:relative; top:-3px; }
+  .row .det{ margin-top:7px; font-family:var(--read); font-size:13.5px; color:var(--fg-muted); }
+  .row .file{ margin-top:5px; font-family:var(--mono); font-size:11px; color:var(--fg-subtle); }
+  .row .ops{ display:flex; align-items:center; gap:7px; flex:none; }
+  .row .ops .btn{ padding:8px 13px; font-size:10.5px; }
+  .row .ops .btn.open{ color:var(--amber); border-color:var(--amber-dim); }
+  .row .ops .btn.open:hover{ background:color-mix(in oklab,var(--amber) 12%,transparent); }
+  .empty-note{ padding:40px 16px; font-family:var(--read); font-style:italic; color:var(--fg-subtle); }
+
+  @media (max-width:860px){ .cards{ grid-template-columns:1fr; } .row{ flex-wrap:wrap; } .titlerow{ flex-direction:column; align-items:flex-start; } }
+</style>
+</head>
+<body>
+
+  <div class="field" aria-hidden="true"><div class="grid"></div><div class="bloom"></div><div class="vignette"></div></div>
+
+  <header>
+    <span class="brand">WriterOS</span>
+    <nav>
+      <a href="#" class="sel">Home</a>
+      <a href="#">Script</a>
+      <a href="#">Story Bible</a>
+      <a href="#">Outline</a>
+      <a href="#">Treatment</a>
+      <a href="#">Synopsis</a>
+    </nav>
+    <div class="center">
+      <span class="proj">Untitled Project</span>
+      <span class="nb">New script</span>
+      <span class="nb">···</span>
+    </div>
+    <div class="right">
+      <span class="gb">Voice</span>
+      <span class="gb room">Writer’s Room</span>
+      <span class="kbd">⌘K</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="crumb">Home</div>
+    <div class="titlerow">
+      <h1>Projects</h1>
+      <div class="actions">
+        <button class="btn primary">＋ New Project</button>
+        <button class="btn">Change Folder</button>
+        <button class="btn">Import .fdx</button>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="lab">Folder</div>
+        <div class="big">WriterOS Projects</div>
+        <div class="sub">Remembered in this browser</div>
+        <div class="mini">
+          <button class="btn">Refresh</button>
+          <button class="btn">Forget</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="lab">Projects</div>
+        <div class="big num">2</div>
+        <div class="sub">Discovered in WriterOS Projects</div>
+      </div>
+      <div class="card">
+        <div class="lab">Local Projects</div>
+        <div class="big num">0</div>
+        <div class="sub">Available for future migration</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab on" data-tab="active">Active (2)</button>
+      <button class="tab" data-tab="archive">Archive (0)</button>
+    </div>
+
+    <div class="controls">
+      <div class="fcol">
+        <label class="clab">Filter</label>
+        <input class="inp" id="filter" placeholder="Project title" />
+      </div>
+      <div class="scol">
+        <label class="clab">Sort</label>
+        <select class="inp">
+          <option>Last updated</option>
+          <option>Title A–Z</option>
+          <option>Date created</option>
+          <option>Scene count</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="rows" id="rows">
+      <div class="row" data-title="bloodless" style="--accent:var(--maya)">
+        <div class="meta">
+          <div class="ttl">Bloodless <span class="fmt">Series</span></div>
+          <div class="det">3 scenes · Updated Jun 13, 11:50 AM</div>
+          <div class="file">Bloodless (bab59988).writeros</div>
+        </div>
+        <div class="ops">
+          <button class="btn open">Open</button>
+          <button class="btn">Show in Folder</button>
+          <button class="btn">Duplicate</button>
+          <button class="btn">Archive</button>
+          <button class="btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="row" data-title="enrage 2" style="--accent:var(--alex)">
+        <div class="meta">
+          <div class="ttl">Enrage 2 <span class="fmt">Feature</span></div>
+          <div class="det">19 scenes · Updated Jun 13, 10:27 AM</div>
+          <div class="file">Enrage 2 (7f5952f4).writeros</div>
+        </div>
+        <div class="ops">
+          <button class="btn open">Open</button>
+          <button class="btn">Show in Folder</button>
+          <button class="btn">Duplicate</button>
+          <button class="btn">Archive</button>
+          <button class="btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="empty-note" id="empty" hidden>No projects match that filter.</div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  // tabs (cosmetic)
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+  }));
+  // filter rows by title
+  const f = document.getElementById('filter');
+  const rows = [...document.querySelectorAll('.row')];
+  const empty = document.getElementById('empty');
+  f.addEventListener('input', () => {
+    const q = f.value.trim().toLowerCase();
+    let shown = 0;
+    rows.forEach(r => { const m = r.dataset.title.includes(q); r.style.display = m ? '' : 'none'; if (m) shown++; });
+    empty.hidden = shown > 0;
+  });
+})();
+</script>
+</body>
+</html>

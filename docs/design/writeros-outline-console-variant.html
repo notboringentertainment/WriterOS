@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Outline · Docked Console + Teleprompter (Phase 0 · Comparison Variant)</title>
+<!--
+  PHASE 0 COMPARISON VARIANT — the OUTLINE surface, hybrid posture.
+  Resolves two notes from the design conversation:
+    1. The console is EDGE-DOCKED (not centered-float) — grid bleeds behind it, no dead gutters,
+       and it absorbs navigation + the surface-aware earned-structure spine (§3).
+    2. The right rail is a TELEPROMPTER: latest agent line large + pinned, history recedes (dim/small,
+       hover to restore) — conversational feel without losing scrollback. The PINNED action
+       (group beats) stays until resolved, then demotes to history.
+
+  Live beat (earned structure, §4): accept Oliver's grouping → beats 4–6 form Sequence 2 "The Realization"
+  on the page AND in the spine; the structure linter clears; the active turn demotes; a new line takes the stage.
+
+  Preserved: canonical tokens (new-ui-plan §1), persona accents (Oliver = structure green),
+  earned structure (writer-approved grouping, acts never auto-drawn), story linter, voice signals from profile.
+  Content = Image-#2 outline of The Fixer's Debt.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,320..440&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:hsl(220 14% 7%); --bg-deep:hsl(220 16% 5%); --rail:hsl(220 14% 8.5%); --rail-2:hsl(220 13% 11%);
+    --surface:hsl(220 13% 12%); --border:hsl(220 13% 16%); --border-2:hsl(220 13% 22%);
+    --paper:hsl(36 9% 9.5%); --paper-hi:hsl(38 11% 12.5%); --ink:hsl(40 14% 87%); --ink-soft:hsl(40 10% 64%);
+    --fg:hsl(220 10% 86%); --fg-muted:hsl(220 10% 52%); --fg-subtle:hsl(220 10% 34%);
+    --amber:hsl(38 90% 68%); --amber-dim:hsl(38 55% 44%);
+    --oliver:hsl(120 38% 64%); --oliver-dim:hsl(120 24% 42%);
+    --sam:hsl(45 100% 75%); --casey:hsl(200 100% 75%); --maya:hsl(330 80% 75%); --zoe:hsl(270 70% 75%); --alex:hsl(15 80% 70%);
+    --ok:hsl(120 40% 62%); --del:hsl(6 52% 60%);
+    --serif:"Fraunces",Georgia,serif; --read:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --spot:var(--oliver); --ease:cubic-bezier(.16,.84,.28,1); --slow:cubic-bezier(.65,.02,.16,1);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--fg); font-family:var(--read); overflow:hidden; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  ::selection{ background:color-mix(in oklab, var(--oliver) 28%, transparent); }
+
+  /* gridded field */
+  .field{ position:fixed; inset:0; z-index:0; overflow:hidden; }
+  .field .grid{ position:absolute; inset:-2px;
+    background-image:linear-gradient(to right,color-mix(in oklab,var(--fg) 5%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in oklab,var(--fg) 5%,transparent) 1px,transparent 1px);
+    background-size:46px 46px; mask-image:radial-gradient(135% 125% at 50% 46%,#000 44%,transparent 90%); -webkit-mask-image:radial-gradient(135% 125% at 50% 46%,#000 44%,transparent 90%); }
+  .field .bloom{ position:absolute; inset:-25%; background:radial-gradient(46% 46% at var(--spot-x,50%) var(--spot-y,46%),color-mix(in oklab,var(--spot) 14%,transparent) 0%,color-mix(in oklab,var(--spot) 6%,transparent) 38%,transparent 64%); transition:background 1.6s var(--slow); }
+  .field .vignette{ position:absolute; inset:0; pointer-events:none; background:radial-gradient(125% 125% at 50% 40%,transparent 52%,var(--bg-deep) 100%); }
+  .grain{ position:fixed; inset:-120%; z-index:90; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 6s steps(6) infinite; }
+  @keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-5%,3%)}50%{transform:translate(4%,-6%)}75%{transform:translate(-4%,5%)}100%{transform:translate(0,0)}}
+
+  /* ribbon */
+  .ribbon{ position:fixed; top:0; left:0; right:0; z-index:50; height:30px; display:flex; align-items:center; gap:14px; padding:0 18px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle);
+    background:linear-gradient(to bottom,var(--bg-deep),transparent); pointer-events:none; }
+  .ribbon b{ color:var(--fg-muted); font-weight:500; } .ribbon .spacer{ flex:1; }
+  .ribbon .crumb{ color:var(--fg-subtle); text-transform:none; letter-spacing:.04em; font-size:11px; } .ribbon .crumb b{ color:var(--fg-muted); }
+
+  /* ── three-zone app: docked console | paper | teleprompter rail ── */
+  .app{ position:fixed; inset:30px 0 0 0; z-index:20; display:grid;
+    grid-template-columns: clamp(326px,23vw,360px) minmax(0,1fr) clamp(372px,28vw,440px);
+    opacity:0; transition:opacity 1s var(--ease); }
+  .app.on{ opacity:1; }
+
+  /* ════ EDGE-DOCKED CONSOLE (grid bleeds through) ════ */
+  .console{ border-right:1px solid var(--border); background:color-mix(in oklab,var(--rail) 80%,transparent); backdrop-filter:blur(8px) saturate(1.1);
+    display:flex; flex-direction:column; min-height:0; }
+  .console .bar{ display:flex; align-items:center; gap:8px; padding:11px 16px; border-bottom:1px solid var(--border);
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--fg-muted); flex:none; }
+  .console .bar .lamps{ display:flex; gap:6px; margin-right:4px; } .console .bar .lamps i{ width:9px; height:9px; border-radius:50%; background:var(--border-2); }
+  .console .bar .lamps i:first-child{ background:color-mix(in oklab,var(--spot) 70%,var(--border-2)); }
+  .console .bar .path{ color:var(--fg-subtle); } .console .bar .path b{ color:var(--fg-muted); font-weight:500; }
+  .console .bar .live{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; color:var(--spot); font-size:9.5px; letter-spacing:.2em; }
+  .console .bar .live::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 9px 1px currentColor; animation:pulse 1.8s var(--ease) infinite; }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .console .body{ overflow-y:auto; padding:4px 0 12px; scrollbar-width:thin; flex:1; min-height:0; }
+
+  .grp{ padding:13px 16px 4px; }
+  .grp > .k{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .grp > .k::after{ content:""; flex:1; height:1px; background:var(--border); }
+
+  /* nav rows */
+  .nav a{ display:flex; align-items:center; gap:10px; padding:5px 16px; color:var(--fg-muted); text-decoration:none; font-family:var(--mono); font-size:12px;
+    border-left:2px solid transparent; transition:color .2s,background .2s,border-color .2s; }
+  .nav a .ic{ color:var(--fg-subtle); width:13px; text-align:center; }
+  .nav a:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .nav a.sel{ color:var(--fg); border-left-color:var(--oliver); background:color-mix(in oklab,var(--oliver) 8%,transparent); }
+  .nav a.sel .ic{ color:var(--oliver); }
+
+  /* earned-structure spine */
+  .spine{ padding:2px 0 4px; }
+  .seqhead{ display:flex; align-items:center; gap:9px; padding:9px 16px 5px; font-family:var(--mono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--oliver); }
+  .seqhead.loose{ color:var(--fg-subtle); }
+  .seqhead .ct{ margin-left:auto; font-size:8px; color:var(--fg-subtle); letter-spacing:.1em; }
+  .seqhead .belong{ margin-left:auto; font-size:8px; letter-spacing:.12em; color:var(--amber); border:1px solid var(--amber-dim); border-radius:3px; padding:1px 6px; }
+  .bx{ display:flex; align-items:center; gap:10px; padding:4px 16px 4px 24px; font-family:var(--read); font-size:13px; color:var(--ink-soft); cursor:pointer; transition:background .2s,color .2s; }
+  .bx:hover{ background:color-mix(in oklab,var(--rail-2) 60%,transparent); color:var(--fg); }
+  .bx .s{ width:7px; height:7px; border-radius:50%; flex:none; border:1px solid var(--fg-subtle); background:var(--ok); border-color:var(--ok); box-shadow:0 0 6px color-mix(in oklab,var(--ok) 70%,transparent); }
+  .bx.thin .s{ background:var(--amber); border-color:var(--amber); box-shadow:0 0 6px color-mix(in oklab,var(--amber) 70%,transparent); }
+  .bx.empty{ color:var(--fg-subtle); font-style:italic; } .bx.empty .s{ background:transparent; border-style:dashed; box-shadow:none; }
+  .spine-note{ padding:10px 16px 4px; font-family:var(--read); font-style:italic; font-size:11.5px; line-height:1.5; color:var(--fg-subtle); }
+
+  .who-chip{ display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11.5px; padding:0 16px; }
+  .who-chip .d{ width:7px; height:7px; border-radius:50%; background:var(--oliver); box-shadow:0 0 8px 0 var(--oliver); }
+  .who-chip .rl{ color:var(--fg-subtle); }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; padding:0 16px; }
+  .chip{ font-family:var(--mono); font-size:10px; color:var(--fg-muted); padding:4px 9px; border:1px solid var(--border-2); border-radius:999px; background:color-mix(in oklab,var(--surface) 50%,transparent); transition:color .5s,border-color .5s,box-shadow .5s; }
+  .chip.hot{ color:var(--oliver); border-color:color-mix(in oklab,var(--oliver) 55%,var(--border-2)); box-shadow:0 0 0 3px color-mix(in oklab,var(--oliver) 9%,transparent); }
+
+  .todo{ display:flex; align-items:flex-start; gap:9px; padding:5px 16px; font-family:var(--mono); font-size:10.5px; line-height:1.5; color:var(--fg-muted); transition:color .6s,opacity .6s; }
+  .todo .sig{ font-size:8px; letter-spacing:.1em; text-transform:uppercase; border-radius:3px; padding:1px 5px; flex:none; margin-top:1px; }
+  .todo .sig.struct{ color:var(--oliver); border:1px solid var(--oliver-dim); } .todo .sig.craft{ color:var(--casey); border:1px solid color-mix(in oklab,var(--casey) 45%,transparent); }
+  .todo .route{ color:var(--fg-subtle); }
+  .todo.active{ color:var(--fg); }
+  .todo.done{ color:var(--fg-subtle); } .todo.done .t{ text-decoration:line-through; text-decoration-color:var(--border-2); }
+  .todo.done .sig.struct{ color:var(--ok); border-color:var(--ok); }
+
+  .console .foot{ padding:11px 16px; border-top:1px solid var(--border); font-family:var(--mono); font-size:9.5px; line-height:1.6; letter-spacing:.04em; color:var(--fg-subtle); flex:none; }
+  .console .foot b{ color:var(--oliver); font-weight:500; }
+
+  /* ════ CENTER — warm-paper sheet floating on the grid ════ */
+  .center{ overflow-y:auto; display:flex; justify-content:center; padding:34px clamp(24px,3vw,56px) 60px; }
+  .paper{ width:min(640px,100%); align-self:flex-start; border-radius:14px; border:1px solid var(--border-2);
+    background:radial-gradient(120% 50% at 50% -6%,var(--paper-hi),var(--paper) 52%); box-shadow:0 50px 120px -40px #000, 0 0 0 1px color-mix(in oklab,#000 40%,transparent);
+    padding:42px 48px; position:relative; }
+  .doc-head h1{ font-family:var(--serif); font-weight:300; font-size:34px; letter-spacing:-.015em; color:var(--ink); }
+  .doc-head .meta{ margin-top:9px; font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--fg-subtle); display:flex; gap:14px; }
+  .doc-head .meta .draft{ color:var(--oliver-dim); }
+  .doc-head .rule{ margin:22px 0 10px; height:1px; background:linear-gradient(90deg,var(--border-2),transparent); }
+
+  .seq{ margin:26px 0 6px; }
+  .seq > .sh{ display:flex; align-items:center; gap:14px; font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--oliver); margin-bottom:6px; }
+  .seq > .sh .cnt{ color:var(--fg-subtle); letter-spacing:.1em; }
+  .seq > .sh .ln{ flex:1; height:1px; background:linear-gradient(90deg,color-mix(in oklab,var(--oliver) 50%,transparent),transparent); }
+  .seq.formed{ border-left:2px solid var(--oliver); margin-left:-16px; padding-left:14px; }
+  .seq.just-formed{ animation:formflash 1.6s var(--ease); }
+  @keyframes formflash{ 0%{background:color-mix(in oklab,var(--oliver) 12%,transparent)} 100%{background:transparent} }
+
+  .beat{ display:flex; gap:18px; padding:14px 0; border-bottom:1px solid color-mix(in oklab,var(--border) 55%,transparent); }
+  .beat .num{ font-family:var(--mono); font-size:12px; color:var(--fg-subtle); padding-top:4px; display:flex; align-items:flex-start; gap:7px; flex:none; width:34px; }
+  .beat .num .d{ width:7px; height:7px; border-radius:50%; background:var(--ok); box-shadow:0 0 6px color-mix(in oklab,var(--ok) 70%,transparent); margin-top:5px; }
+  .beat.thin .num .d{ background:var(--amber); box-shadow:0 0 6px color-mix(in oklab,var(--amber) 70%,transparent); }
+  .beat.empty .num .d{ background:transparent; border:1px dashed var(--fg-subtle); box-shadow:none; }
+  .beat .c .sc{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:7px; }
+  .beat .c .tx{ font-family:var(--read); font-weight:330; font-size:18px; line-height:1.55; color:var(--ink); }
+  .beat .c .tx em{ font-style:italic; color:var(--amber); }
+  .beat.empty .c .tx{ color:var(--fg-subtle); font-style:italic; }
+  .beat.empty .c .tx::before{ content:"⌑  "; color:var(--border-2); font-style:normal; }
+  .beat.moving{ transition:opacity .5s var(--ease), transform .5s var(--ease); }
+  .beat.out{ opacity:0; transform:translateY(-6px); }
+
+  .loose-cap{ font-family:var(--read); font-style:italic; font-size:13px; color:var(--fg-subtle); margin:4px 0 6px; }
+
+  .linter{ margin-top:26px; padding:15px 18px; border:1px solid var(--border); border-radius:9px; background:color-mix(in oklab,var(--rail) 50%,transparent); }
+  .linter .ttl{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .lflag{ display:flex; align-items:baseline; gap:11px; font-family:var(--read); font-size:13.5px; color:var(--ink-soft); padding:4px 0; transition:opacity .6s var(--ease),transform .6s var(--ease); }
+  .lflag .sig{ font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; border-radius:3px; padding:2px 6px; flex:none; }
+  .lflag .sig.struct{ color:var(--oliver); border:1px solid var(--oliver-dim); } .lflag .sig.craft{ color:var(--casey); border:1px solid color-mix(in oklab,var(--casey) 45%,transparent); }
+  .lflag.resolved{ opacity:0; transform:translateX(-8px); height:0; padding:0; overflow:hidden; }
+
+  /* ════ TELEPROMPTER RAIL — Oliver, latest large + pinned, history recedes ════ */
+  .rail{ border-left:1px solid var(--border); background:color-mix(in oklab,var(--rail) 80%,transparent); backdrop-filter:blur(8px) saturate(1.1);
+    display:flex; flex-direction:column; min-height:0; }
+  .rail .rhead{ display:flex; align-items:center; gap:11px; padding:15px 22px; border-bottom:1px solid var(--border); flex:none; }
+  .rail .rhead .av{ width:9px; height:9px; border-radius:50%; background:var(--oliver); box-shadow:0 0 9px var(--oliver); }
+  .rail .rhead .nm{ font-family:var(--serif); font-weight:300; font-size:19px; color:var(--fg); }
+  .rail .rhead .role{ margin-left:auto; font-family:var(--mono); font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--oliver); }
+
+  .teleprompt{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; justify-content:flex-start; padding:24px 24px 10px; gap:4px; }
+  .turn{ transition:opacity .8s var(--ease), font-size .6s var(--ease), margin .6s var(--ease), color .6s var(--ease); }
+  .turn .by{ font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:8px; }
+  .turn.ai .by{ color:var(--oliver); }
+  .turn .tx{ font-family:var(--read); line-height:1.46; }
+  .turn .tx em{ font-style:italic; color:var(--oliver); }
+
+  /* history: stays large — recedes by DIMMING, not shrinking. hover restores. */
+  .turn.history{ opacity:.34; margin-bottom:24px; cursor:default; }
+  .turn.history .tx{ font-size:clamp(19px,1.4vw,23px); color:var(--fg-muted); }
+  .turn.history.you .tx{ color:var(--fg-subtle); font-style:italic; }
+  .turn.history:hover{ opacity:.9; }
+  /* the oldest turns fade further so the column breathes without going tiny */
+  .turn.history.faded-2{ opacity:.22; }
+  .turn.history.faded-3{ opacity:.14; }
+
+  /* active: full presence, takes the stage */
+  .turn.active{ opacity:1; margin:8px 0 20px; }
+  .turn.active .tx{ font-size:clamp(23px,1.7vw,29px); color:var(--fg); }
+  .turn.active.you .tx{ color:var(--ink-soft); font-style:italic; font-size:clamp(19px,1.3vw,22px); }
+
+  /* pinned action — stays until resolved, then demotes with its turn */
+  .pin{ flex:none; border-top:1px solid var(--border); padding:16px 24px 20px; }
+  .pin .plab{ font-family:var(--mono); font-size:9px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:6px; }
+  .pin .align{ font-family:var(--mono); font-size:9.5px; line-height:1.6; color:var(--fg-subtle); margin-bottom:13px; }
+  .pin .align b{ color:var(--oliver); font-weight:500; }
+  .pinbtn{ width:100%; display:inline-flex; align-items:center; justify-content:center; gap:10px; padding:14px 16px; border-radius:9px; cursor:pointer;
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; background:transparent;
+    border:1px solid color-mix(in oklab,var(--oliver) 55%,var(--border-2)); color:var(--oliver); transition:all .25s var(--ease); }
+  .pinbtn:hover{ background:color-mix(in oklab,var(--oliver) 14%,transparent); box-shadow:0 0 0 4px color-mix(in oklab,var(--oliver) 10%,transparent); }
+  .pin.gone{ opacity:0; pointer-events:none; transition:opacity .5s var(--ease); }
+  .composer{ flex:none; border-top:1px solid var(--border); padding:13px 18px; display:flex; gap:10px; align-items:flex-end; }
+  .composer textarea{ flex:1; background:var(--rail-2); border:1px solid var(--border); border-radius:8px; resize:none; overflow:hidden; color:var(--fg);
+    font-family:var(--read); font-size:14px; line-height:1.45; padding:10px 12px; outline:none; transition:border-color .25s; }
+  .composer textarea::placeholder{ color:var(--fg-subtle); font-style:italic; }
+  .composer textarea:focus{ border-color:var(--oliver-dim); }
+  .composer .send{ width:34px; height:34px; flex:none; border-radius:8px; border:1px solid var(--border-2); background:transparent; color:var(--fg-muted); cursor:pointer; transition:all .25s; }
+  .composer .send:hover{ color:var(--oliver); border-color:var(--oliver-dim); }
+
+  /* curtain */
+  .curtain{ position:fixed; inset:0; z-index:80; background:var(--bg-deep); display:grid; place-items:center; transition:opacity 1.6s var(--ease); }
+  .curtain.lift{ opacity:0; pointer-events:none; }
+  .curtain .ttl{ text-align:center; max-width:580px; padding:0 24px; }
+  .curtain .k{ font-family:var(--mono); font-size:11px; letter-spacing:.4em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:22px; opacity:0; animation:fadeIn 1.4s var(--ease) .3s forwards; }
+  .curtain h1{ font-family:var(--serif); font-weight:300; font-size:clamp(32px,5.5vw,52px); letter-spacing:-.02em; color:var(--fg); opacity:0; animation:rise2 1.6s var(--ease) .7s forwards; }
+  .curtain p{ margin-top:20px; font-family:var(--read); font-size:16px; line-height:1.6; color:var(--fg-muted); opacity:0; animation:fadeIn 1.4s var(--ease) 1.2s forwards; }
+  .curtain .go{ margin-top:38px; font-family:var(--mono); font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-muted); cursor:pointer; opacity:0; animation:fadeIn 1.3s var(--ease) 1.7s forwards; transition:color .3s; }
+  .curtain .go:hover{ color:var(--oliver); }
+  .curtain .go .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 8px; margin-left:6px; }
+  @keyframes fadeIn{ to{opacity:1} } @keyframes rise2{ from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+
+  ::-webkit-scrollbar{ width:9px; } ::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:5px; border:2px solid transparent; background-clip:content-box; } ::-webkit-scrollbar-track{ background:transparent; }
+  @media (prefers-reduced-motion:reduce){ *{ animation-duration:.01ms !important; transition-duration:.2s !important; } .grain{ animation:none; } }
+</style>
+</head>
+<body>
+
+  <div class="field" aria-hidden="true"><div class="grid"></div><div class="bloom"></div><div class="vignette"></div></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="ribbon" aria-hidden="true">
+    <b>WriterOS</b> · Phase 0 · Comparison Variant — Outline · docked console + teleprompter
+    <span class="spacer"></span>
+    <span class="crumb"><b>The Fixer’s Debt</b> / Outline</span>
+    <span class="spacer"></span>
+    <span>● Draft · autosaved 12:21</span>
+  </div>
+
+  <div class="curtain" id="curtain">
+    <div class="ttl">
+      <div class="k">Outline · Hybrid Posture</div>
+      <h1>Quiet to work in. Loud when it matters.</h1>
+      <p>The console docks to the edge — nav and the earned-structure spine, grid showing through. Oliver speaks large on the right, but the conversation recedes as it goes: latest line in focus, history dimmed (hover to bring it back). Group his three loose beats and watch a sequence earn itself.</p>
+      <div class="go" id="begin">Open the outline <span class="key">↵</span></div>
+    </div>
+  </div>
+
+  <div class="app" id="app">
+
+    <!-- ════ DOCKED CONSOLE ════ -->
+    <aside class="console">
+      <div class="bar"><span class="lamps"><i></i><i></i><i></i></span><span class="path"><b>writeros</b>://outline/the-fixers-debt</span><span class="live">LIVE</span></div>
+      <div class="body">
+
+        <div class="grp"><div class="k">Documents</div></div>
+        <nav class="nav">
+          <a href="#"><span class="ic">❧</span> Story Bible</a>
+          <a href="#"><span class="ic">▤</span> Synopsis</a>
+          <a href="#" class="sel"><span class="ic">≣</span> Outline</a>
+        </nav>
+
+        <div class="grp"><div class="k">Outline · beats <span style="color:var(--fg-subtle)">· surface spine</span></div></div>
+        <div class="spine" id="spine">
+          <div class="seqhead">Sequence 1 · The Cleanup <span class="ct">3 beats</span></div>
+          <div class="bx"><span class="s"></span>Ace’s craft</div>
+          <div class="bx"><span class="s"></span>The pool job</div>
+          <div class="bx"><span class="s"></span>Sebastian’s offer</div>
+          <div class="seqhead loose" id="spine-loose">Unsequenced <span class="belong" id="spine-belong">3 may belong</span></div>
+          <div class="bx" data-sb="b4"><span class="s"></span>The recording plays</div>
+          <div class="bx thin" data-sb="b5"><span class="s"></span>Call to Ghost</div>
+          <div class="bx" data-sb="b6"><span class="s"></span>Can’t be cleaned</div>
+          <div class="bx empty" data-sb="b7"><span class="s"></span>Ivy enters</div>
+          <div class="spine-note">Structure deepens as you group — acts aren’t drawn until the beats earn them.</div>
+        </div>
+
+        <div class="grp"><div class="k">Host</div></div>
+        <div class="who-chip"><span class="d"></span>Oliver <span class="rl">· Story Structure</span></div>
+
+        <div class="grp"><div class="k">Voice signals <span style="color:var(--fg-subtle)">· from profile</span></div></div>
+        <div class="chips" id="signals">
+          <span class="chip" data-sig="act-break = cost">act-break = cost</span>
+          <span class="chip" data-sig="anti-tidy">anti-tidy</span>
+          <span class="chip" data-sig="last-frame">last-frame</span>
+        </div>
+
+        <div class="grp"><div class="k">Pending · structure &amp; linter <span id="todo-n" style="color:var(--fg-subtle)">· 2</span></div></div>
+        <div id="todos">
+          <div class="todo active" data-todo="struct"><span class="sig struct">Struct</span><span class="t">3 beats unsequenced — may hide your first act break <span class="route">→ Oliver</span></span></div>
+          <div class="todo" data-todo="craft"><span class="sig craft">Craft</span><span class="t">Beat 5 (Ghost) is thin — the relationship isn’t on the page <span class="route">→ Casey</span></span></div>
+        </div>
+
+      </div>
+      <div class="foot"><b>earned.</b> the room proposes a grouping — you commit it. acts aren’t drawn until sequences earn them.</div>
+    </aside>
+
+    <!-- ════ PAPER ════ -->
+    <section class="center">
+      <article class="paper">
+        <div class="doc-head">
+          <h1>Outline</h1>
+          <div class="meta"><span class="draft">● Draft in progress</span><span id="doc-meta">7 beats · 1 sequence formed · 4 loose</span></div>
+          <div class="rule"></div>
+        </div>
+
+        <!-- sequenced area -->
+        <div id="sequenced">
+          <div class="seq">
+            <div class="sh">Sequence 1 · The Cleanup <span class="cnt">3 beats</span><span class="ln"></span></div>
+            <div class="beat"><div class="num">1<span class="d"></span></div><div class="c"><div class="sc">Int. A Burning Reputation — Night</div><div class="tx">Ace dismantles a scandal in real time — we learn his craft, his calm, and his one rule: leave no trace.</div></div></div>
+            <div class="beat"><div class="num">2<span class="d"></span></div><div class="c"><div class="sc">Int. Producer’s Pool House — Night</div><div class="tx">The pool job. A dead girl, a panicking client. Routine — until the body sits up and asks for a towel.</div></div></div>
+            <div class="beat"><div class="num">3<span class="d"></span></div><div class="c"><div class="sc">Ext. Infinity Pool — Night</div><div class="tx">Sebastian’s offer. Never a victim — a client. He hands Ace a 2009 recording and a deadline.</div></div></div>
+          </div>
+        </div>
+
+        <!-- loose area -->
+        <div id="loose">
+          <div class="seq">
+            <div class="sh" id="loose-head" style="color:var(--fg-subtle)">Unsequenced <span class="cnt" id="loose-cnt">· 4</span> <span class="belong" id="loose-belong" style="margin-left:14px;font-size:9px;letter-spacing:.12em;color:var(--amber);border:1px solid var(--amber-dim);border-radius:3px;padding:2px 7px">3 may belong together</span><span class="ln"></span></div>
+            <div class="loose-cap" id="loose-cap">Beats you’ve captured but haven’t placed. Group them when they tell you to — not before.</div>
+            <div class="beat" id="b4"><div class="num">4<span class="d"></span></div><div class="c"><div class="tx">Ace plays the recording alone. We watch his face, never the screen.</div></div></div>
+            <div class="beat thin" id="b5"><div class="num">5<span class="d"></span></div><div class="c"><div class="tx">He calls Ghost — who else has a copy? <em>(thin — does Ghost trust him?)</em></div></div></div>
+            <div class="beat" id="b6"><div class="num">6<span class="d"></span></div><div class="c"><div class="tx">The realization: this is the one job he can’t make disappear.</div></div></div>
+            <div class="beat empty" id="b7"><div class="num">7<span class="d"></span></div><div class="c"><div class="tx">Ivy enters — leverage, or the only person left who knows the real him?</div></div></div>
+          </div>
+        </div>
+
+        <div class="linter" id="linter">
+          <div class="ttl"><span style="color:var(--amber)">⚑</span> Story Problems · <span id="lint-n">2</span></div>
+          <div class="lflag" id="lflag-struct"><span class="sig struct">Structure</span><span>3 beats are unsequenced — they may be hiding your first act break.</span></div>
+          <div class="lflag"><span class="sig craft">Craft</span><span>Beat 5 (Ghost) is thin — the relationship isn’t on the page yet.</span></div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ════ TELEPROMPTER RAIL ════ -->
+    <aside class="rail">
+      <div class="rhead"><span class="av"></span><span class="nm">Oliver</span><span class="role">Structure</span></div>
+      <div class="teleprompt" id="teleprompt">
+        <div class="turn ai history"><div class="by">Oliver</div><div class="tx">Sequence 1 is clean — craft, job, offer. But the three beats after it are floating. Do they belong together, or is that your <em>act break</em> hiding in plain sight?</div></div>
+        <div class="turn you history"><div class="by">Ben</div><div class="tx">The recording, the call to Ghost, him realizing he can’t clean this — that’s all one move. Ace understanding he’s the body this time.</div></div>
+        <div class="turn ai active" id="active-turn"><div class="by">Oliver</div><div class="tx">Then that’s a sequence, not loose change. Call it <em>The Realization</em>. I’ll group those three — you’ll still own the act break.</div></div>
+      </div>
+      <div class="pin" id="pin">
+        <div class="plab">↳ proposed structure · awaiting you</div>
+        <div class="align">aligned to your principle <b>every act break costs the hero</b> — grouping makes the gap between sequences carry weight.</div>
+        <button class="pinbtn" id="groupbtn">⊞ Group beats 4–6 into Sequence 2</button>
+      </div>
+      <div class="composer">
+        <textarea id="say" rows="1" placeholder="Answer Oliver…" spellcheck="false"></textarea>
+        <button class="send" id="send">↑</button>
+      </div>
+    </aside>
+
+  </div>
+
+<script>
+(() => {
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const begin = () => {
+    document.getElementById('curtain').classList.add('lift');
+    document.removeEventListener('keydown', onBegin);
+    setTimeout(() => document.getElementById('app').classList.add('on'), 300);
+  };
+  const onBegin = (e) => { if (e.key==='Enter') begin(); };
+  document.getElementById('begin').addEventListener('click', begin);
+  document.addEventListener('keydown', onBegin);
+
+  // ── teleprompter: demote current active → history, append a new large active ──
+  const tele = document.getElementById('teleprompt');
+  // older history turns dim further (graduated recede) — most recent history brightest
+  function regradeHistory(){
+    const hist = [...tele.querySelectorAll('.turn.history')];
+    hist.forEach(t => t.classList.remove('faded-2','faded-3'));
+    for (let i = 0; i < hist.length - 1; i++){
+      const fromEnd = hist.length - 1 - i;      // 1 = second-newest, grows older
+      if (fromEnd >= 2) hist[i].classList.add(fromEnd >= 3 ? 'faded-3' : 'faded-2');
+    }
+  }
+  function demoteActive(){
+    const a = tele.querySelector('.turn.active');
+    if (a){ a.classList.remove('active'); a.classList.add('history'); }
+    regradeHistory();
+  }
+  regradeHistory();
+  function speak(text){
+    demoteActive();
+    const t = document.createElement('div');
+    t.className = 'turn ai active'; t.style.opacity = '0';
+    t.innerHTML = `<div class="by">Oliver</div><div class="tx">${text}</div>`;
+    tele.appendChild(t);
+    requestAnimationFrame(() => requestAnimationFrame(() => { t.style.transition='opacity 1s var(--ease)'; t.style.opacity='1'; }));
+    tele.scrollTop = tele.scrollHeight;
+  }
+
+  // ── the earned-structure grouping ──
+  let grouped = false;
+  function group(){
+    if (grouped) return; grouped = true;
+
+    // 1. fade beats 4,5,6 out of the loose area
+    const b4=document.getElementById('b4'), b5=document.getElementById('b5'), b6=document.getElementById('b6');
+    [b4,b5,b6].forEach(b => { b.classList.add('moving'); });
+    requestAnimationFrame(() => [b4,b5,b6].forEach(b => b.classList.add('out')));
+
+    setTimeout(() => {
+      // 2. build Sequence 2 in the sequenced area, move the beats in (renumbered visually as a formed seq)
+      const seq = document.createElement('div');
+      seq.className = 'seq formed just-formed';
+      seq.innerHTML = `<div class="sh">Sequence 2 · The Realization <span class="cnt">3 beats</span><span class="ln"></span></div>`;
+      [b4,b5,b6].forEach(b => { b.classList.remove('out'); seq.appendChild(b); });
+      document.getElementById('sequenced').appendChild(seq);
+      requestAnimationFrame(() => requestAnimationFrame(() => [b4,b5,b6].forEach(b => b.classList.remove('moving'))));
+
+      // 3. loose area shrinks to just Ivy
+      document.getElementById('loose-cnt').textContent = '· 1';
+      document.getElementById('loose-belong').remove();
+      document.getElementById('loose-cap').textContent = 'One beat still loose — let it tell you where it goes.';
+      document.getElementById('doc-meta').textContent = '7 beats · 2 sequences formed · 1 loose';
+
+      // 4. mirror in the console spine
+      const sp = document.getElementById('spine');
+      const sb4=sp.querySelector('[data-sb="b4"]'), sb5=sp.querySelector('[data-sb="b5"]'), sb6=sp.querySelector('[data-sb="b6"]');
+      const sh = document.createElement('div'); sh.className='seqhead'; sh.innerHTML = `Sequence 2 · The Realization <span class="ct">3 beats</span>`;
+      const looseHead = document.getElementById('spine-loose');
+      sp.insertBefore(sh, looseHead);
+      [sb4,sb5,sb6].forEach(n => sp.insertBefore(n, looseHead));
+      document.getElementById('spine-belong').remove();
+      looseHead.innerHTML = `Unsequenced <span class="ct">1 beat</span>`;
+
+      // 5. structure linter + console pending clear — the loop closes
+      document.getElementById('lflag-struct').classList.add('resolved');
+      setTimeout(() => document.getElementById('lint-n').textContent = '1', 650);
+      const td = document.querySelector('.todo[data-todo="struct"]');
+      td.classList.remove('active'); td.classList.add('done');
+      td.querySelector('.t').innerHTML = 'Sequence 2 formed — act break now earned <span class="route">→ resolved</span>';
+      document.getElementById('todo-n').textContent = '· 1';
+
+      // 6. voice signal that the move honored lights up
+      document.querySelector('.chip[data-sig="act-break = cost"]').classList.add('hot');
+
+      // 7. the pinned action demotes with its turn; Oliver takes the stage again
+      const pin = document.getElementById('pin'); pin.classList.add('gone');
+      setTimeout(() => pin.remove(), 520);
+      speak(`Two sequences now — and the gap between them is your act break. It earned itself. <em>Ivy</em> is the only thing still loose; she’ll tell you if she’s leverage or the last witness.`);
+    }, 520);
+  }
+  document.getElementById('groupbtn').addEventListener('click', group);
+
+  // composer — append the writer's line as the new active turn (mockup)
+  const say = document.getElementById('say');
+  const grow = () => { say.style.height='auto'; say.style.height=say.scrollHeight+'px'; };
+  say.addEventListener('input', grow);
+  function send(){
+    const v = say.value.trim(); if(!v) return;
+    demoteActive();
+    const t = document.createElement('div'); t.className='turn you active'; t.style.opacity='0';
+    t.innerHTML = `<div class="by">Ben</div><div class="tx"></div>`;
+    t.querySelector('.tx').textContent = v;
+    tele.appendChild(t); say.value=''; grow();
+    requestAnimationFrame(() => requestAnimationFrame(() => { t.style.transition='opacity .8s var(--ease)'; t.style.opacity='1'; }));
+    tele.scrollTop = tele.scrollHeight;
+  }
+  document.getElementById('send').addEventListener('click', send);
+  say.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+})();
+</script>
+</body>
+</html>
