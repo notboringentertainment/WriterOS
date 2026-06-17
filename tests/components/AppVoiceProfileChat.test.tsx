@@ -72,8 +72,8 @@ function seedDraft() {
 function sendToWritingPartner(text: string) {
   render(<App />)
   fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
-  fireEvent.click(screen.getByTitle('Writing Partner'))
-  const input = screen.getByPlaceholderText('Message Writing Partner…')
+  fireEvent.click(screen.getByTitle('Morgan'))
+  const input = screen.getByPlaceholderText('Message Morgan…')
   fireEvent.change(input, { target: { value: text } })
   fireEvent.keyDown(input, { key: 'Enter' })
 }

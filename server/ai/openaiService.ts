@@ -786,7 +786,7 @@ ${stanceLine}
      'Detailed with examples'}
 - Expert in: ${persona.expertise.join(', ')}
 - Always address the writer as ${userProfile.writerName}
-- Available specialists are Writing Partner, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.${voiceProfileBlock}
+- Available specialists are Morgan, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.${voiceProfileBlock}
 
 CURRENT PROJECT CONTEXT:
 ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New project'}

@@ -18,49 +18,49 @@ function makeMsg(overrides: Partial<TranscriptMessage> = {}): TranscriptMessage 
 }
 
 describe('LeftRail', () => {
-  it('renders Writing Partner avatar in collapsed state', () => {
+  it('renders Morgan avatar in collapsed state', () => {
     render(<LeftRail {...defaultProps} open={false} />)
-    expect(screen.getByTitle('Writing Partner')).toBeInTheDocument()
+    expect(screen.getByTitle('Morgan')).toBeInTheDocument()
   })
 
   it('calls onToggle when avatar clicked', () => {
     const onToggle = vi.fn()
     render(<LeftRail {...defaultProps} onToggle={onToggle} />)
-    fireEvent.click(screen.getByTitle('Writing Partner'))
+    fireEvent.click(screen.getByTitle('Morgan'))
     expect(onToggle).toHaveBeenCalled()
   })
 
   it('shows chat panel when open', () => {
     render(<LeftRail {...defaultProps} open={true} />)
-    expect(screen.getAllByText('Writing Partner').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Morgan').length).toBeGreaterThan(0)
     expect(screen.getByPlaceholderText(/message/i)).toBeInTheDocument()
   })
 
   it('shows the active helper hint for the current surface', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="synopsis" />)
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Sam')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Sam')
   })
 
   it('updates the helper hint when a manual mention is typed', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="outline" />)
     const textarea = screen.getByPlaceholderText(/message/i)
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Oliver')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Oliver')
 
     fireEvent.change(textarea, { target: { value: '@Partner keep this broad' } })
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
   })
 
   it('updates Story Bible helper hint from message intent', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="story-bible" storyBibleSection="world" />)
     const textarea = screen.getByPlaceholderText(/message/i)
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Zoe')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Zoe')
 
     fireEvent.change(textarea, { target: { value: "What about Isaiah's state of mind?" } })
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Writing Partner will ask @Casey')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Casey')
   })
 
   it('does not show chat panel when closed', () => {
@@ -149,7 +149,7 @@ describe('LeftRail', () => {
         id: '2',
         role: 'assistant',
         content: 'Use the gate as a threshold into layered jurisdiction. [Archive]',
-        speaker: 'Writing Partner (@Zoe)',
+        speaker: 'Morgan (@Zoe)',
         capabilityReceipt: {
           schemaVersion: 1,
           taskKind: 'research_world_context',
@@ -168,7 +168,7 @@ describe('LeftRail', () => {
 
     render(<LeftRail {...defaultProps} open={true} transcript={transcript} />)
 
-    expect(screen.getByText('Writing Partner (@Zoe)')).toBeInTheDocument()
+    expect(screen.getByText('Morgan (@Zoe)')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /world-context research receipt/i })).toHaveTextContent('Research · 1 source · completed')
   })
 })

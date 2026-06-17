@@ -34,9 +34,9 @@ describe('App surface awareness — live request path', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
-    fireEvent.click(screen.getByTitle('Writing Partner')) // open the rail
+    fireEvent.click(screen.getByTitle('Morgan')) // open the rail
 
-    const input = screen.getByPlaceholderText('Message Writing Partner…')
+    const input = screen.getByPlaceholderText('Message Morgan…')
     fireEvent.change(input, { target: { value: 'What is the first question on this page?' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 

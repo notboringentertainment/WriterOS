@@ -139,7 +139,7 @@ const STORY_BIBLE_CASEY_INTENT_RE = /\b(character|protagonist|antagonist|hero|vi
 const STORY_BIBLE_ZOE_INTENT_RE = /\b(world|worldbuilding|world-building|setting|location|place|city|environment|culture|cultural|society|rules|rule|logic|constraint|constraints|system|systems|technology|mythology|continuity|geography|politics|institution|institutions)\b/i
 
 const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
-  writingPartner: 'Writing Partner',
+  writingPartner: 'Morgan',
   sam: 'Sam',
   casey: 'Casey',
   oliver: 'Oliver',
@@ -149,8 +149,8 @@ const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
 }
 
 export function formatWritingPartnerSpeaker(personaId: PersonaId): string {
-  if (personaId === 'writingPartner') return 'Writing Partner'
-  return `Writing Partner (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
+  if (personaId === 'writingPartner') return 'Morgan'
+  return `Morgan (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
 }
 
 export function getActiveHelperText(
@@ -165,8 +165,8 @@ export function getActiveHelperText(
     ? mentionResult.personaId
     : getDefaultPersona(activeTab, storyBibleSection, inputText)
 
-  if (personaId === 'writingPartner') return 'Writing Partner'
-  return `Writing Partner will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
+  if (personaId === 'writingPartner') return 'Morgan'
+  return `Morgan will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
 }
 
 function text(value: unknown): string {
