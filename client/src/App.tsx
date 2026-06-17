@@ -573,14 +573,14 @@ export default function App() {
         const projectContext = buildFreshProjectContext(openSwarmMessage)
         const voiceProfile = loadCompletedVoiceProfile()
         const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext, voiceProfile })
-        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Writing Partner (OpenSwarm)'))
+        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)'))
       } catch {
         project.addMessage(
           'writingPartner',
           makeMessage(
             'assistant',
             'OpenSwarm connection error — start the OpenSwarm server on port 8080 and try again.',
-            'Writing Partner (OpenSwarm)'
+            'Morgan (OpenSwarm)'
           )
         )
       } finally {
@@ -638,7 +638,7 @@ export default function App() {
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
-      project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Writing Partner'))
+      project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Morgan'))
     } finally {
       setWpLoading(false)
     }

@@ -224,7 +224,7 @@ export function ScriptTab({
       <div style={styles.pageWrapper}>
         {!focusMode && (
           <p style={styles.surfaceNote}>
-            Script pages are for formatted scenes and line-level craft. Writing Partner stays primary here; mention @Maya for dialogue and voice.
+            Script pages are for formatted scenes and line-level craft. Morgan stays primary here; mention @Maya for dialogue and voice.
           </p>
         )}
         <ScreenplayToolbar

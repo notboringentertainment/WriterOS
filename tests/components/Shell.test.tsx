@@ -31,10 +31,10 @@ function makeShellState(overrides = {}) {
 }
 
 describe('Shell', () => {
-  it('hides the Writing Partner rail in focus mode', () => {
+  it('hides the Morgan rail in focus mode', () => {
     const shellState = makeShellState({ focusMode: true })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
-    expect(screen.queryByTitle('Writing Partner')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Morgan')).not.toBeInTheDocument()
   })
 
   it('routes Cmd+1 through Cmd+5 to writing tabs', () => {
@@ -65,11 +65,11 @@ describe('Shell', () => {
     expect(openHome).toHaveBeenCalled()
   })
 
-  it('hides the Writing Partner rail on Home', () => {
+  it('hides the Morgan rail on Home', () => {
     const shellState = makeShellState({ homeActive: true, panelOpen: true })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
 
-    expect(screen.queryByTitle('Writing Partner')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Morgan')).not.toBeInTheDocument()
   })
 
   it('routes Home button to shell state', () => {

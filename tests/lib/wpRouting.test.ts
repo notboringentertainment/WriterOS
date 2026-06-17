@@ -111,13 +111,13 @@ describe('parseOpenSwarmCommand', () => {
 
 describe('formatWritingPartnerSpeaker', () => {
   it('labels general partner responses plainly', () => {
-    expect(formatWritingPartnerSpeaker('writingPartner')).toBe('Writing Partner')
+    expect(formatWritingPartnerSpeaker('writingPartner')).toBe('Morgan')
   })
 
   it('labels auto-routed specialist responses as writing partner delegates', () => {
-    expect(formatWritingPartnerSpeaker('sam')).toBe('Writing Partner (@Sam)')
-    expect(formatWritingPartnerSpeaker('oliver')).toBe('Writing Partner (@Oliver)')
-    expect(formatWritingPartnerSpeaker('maya')).toBe('Writing Partner (@Maya)')
+    expect(formatWritingPartnerSpeaker('sam')).toBe('Morgan (@Sam)')
+    expect(formatWritingPartnerSpeaker('oliver')).toBe('Morgan (@Oliver)')
+    expect(formatWritingPartnerSpeaker('maya')).toBe('Morgan (@Maya)')
   })
 })
 
@@ -181,26 +181,26 @@ describe('getDefaultPersona', () => {
 
 describe('getActiveHelperText', () => {
   it('uses Writing Partner directly on script', () => {
-    expect(getActiveHelperText('', 'script', null)).toBe('Writing Partner')
+    expect(getActiveHelperText('', 'script', null)).toBe('Morgan')
   })
 
   it('shows the default specialist for synopsis, outline, and treatment', () => {
-    expect(getActiveHelperText('', 'synopsis', null)).toBe('Writing Partner will ask @Sam')
-    expect(getActiveHelperText('', 'outline', null)).toBe('Writing Partner will ask @Oliver')
-    expect(getActiveHelperText('', 'treatment', null)).toBe('Writing Partner will ask @Alex')
+    expect(getActiveHelperText('', 'synopsis', null)).toBe('Morgan will ask @Sam')
+    expect(getActiveHelperText('', 'outline', null)).toBe('Morgan will ask @Oliver')
+    expect(getActiveHelperText('', 'treatment', null)).toBe('Morgan will ask @Alex')
   })
 
   it('separates Story Bible defaults by section', () => {
-    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'themes')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'tone')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Writing Partner will ask @Zoe')
-    expect(getActiveHelperText('', 'story-bible', 'rules')).toBe('Writing Partner will ask @Zoe')
+    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Morgan will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'themes')).toBe('Morgan will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'tone')).toBe('Morgan will ask @Casey')
+    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Morgan will ask @Zoe')
+    expect(getActiveHelperText('', 'story-bible', 'rules')).toBe('Morgan will ask @Zoe')
   })
 
   it('lets a typed manual mention override the surface hint', () => {
-    expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Writing Partner will ask @Maya')
-    expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Writing Partner')
+    expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Morgan will ask @Maya')
+    expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Morgan')
   })
 
   it('shows OpenSwarm Writing Partner for /swarm commands', () => {
@@ -208,8 +208,8 @@ describe('getActiveHelperText', () => {
   })
 
   it('updates the Story Bible hint from typed message intent', () => {
-    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Writing Partner will ask @Zoe')
+    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Morgan will ask @Casey')
+    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Morgan will ask @Zoe')
   })
 })
 

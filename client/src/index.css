@@ -1,40 +1,74 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Night Desk color tokens */
-  --bg:           hsl(220 13% 9%);
-  --surface:      hsl(220 13% 12%);
-  --surface-2:    hsl(220 13% 15%);
-  --border:       hsl(220 13% 20%);
-  --fg:           hsl(220 10% 88%);
-  --fg-muted:     hsl(220 10% 50%);
-  --fg-subtle:    hsl(220 10% 35%);
+  /* ── Canonical WriterOS tokens (new-ui-plan §1). Single source; surfaces
+     consume, never redefine. Legacy names kept as compatibility aliases
+     until every consumer migrates. ── */
 
-  /* Script page */
+  /* Chrome / void — cold near-black shell, rails, management pages */
+  --bg:           hsl(220 14% 7%);
+  --bg-deep:      hsl(220 16% 5%);
+  --rail:         hsl(220 14% 8.5%);
+  --rail-2:       hsl(220 13% 11%);
+  --surface:      hsl(220 13% 12%);
+  --surface-2:    hsl(220 13% 15%);   /* legacy raised surface; still consumed */
+  --border:       hsl(220 13% 16%);
+  --border-2:     hsl(220 13% 22%);
+
+  /* Paper / document — warm sheet for the work the writer is in */
+  --paper:        hsl(36 9% 9.5%);
+  --paper-hi:     hsl(38 11% 12.5%);
+  --ink:          hsl(40 14% 87%);
+  --ink-soft:     hsl(40 10% 64%);
+
+  /* Foreground (chrome text) */
+  --fg:           hsl(220 10% 86%);
+  --fg-muted:     hsl(220 10% 52%);
+  --fg-subtle:    hsl(220 10% 34%);
+
+  /* Script page (screenplay surface) */
   --script-page:  #F5F2EC;
   --script-text:  #1a1814;
 
-  /* Writing Partner */
-  --wp-amber:     hsl(38 90% 68%);
-  --wp-amber-dim: hsl(38 60% 45%);
+  /* Host accent — Morgan/Showrunner. --amber is the literal; --host the alias. */
+  --amber:        hsl(38 90% 68%);
+  --amber-dim:    hsl(38 55% 44%);
+  --host:         var(--amber);
+  --host-dim:     var(--amber-dim);
+  --wp-amber:     var(--amber);       /* legacy alias → --amber */
+  --wp-amber-dim: var(--amber-dim);   /* legacy alias → --amber-dim */
 
-  /* App primary */
-  --primary:      hsl(260 100% 80%);
-  --primary-dim:  hsl(260 60% 50%);
+  /* Persona accents — one hue per roster member */
+  --sam:        hsl(45 100% 75%);
+  --casey:      hsl(200 100% 75%);
+  --oliver:     hsl(120 38% 64%);
+  --oliver-dim: hsl(120 24% 42%);
+  --maya:       hsl(330 80% 75%);
+  --zoe:        hsl(270 70% 75%);
+  --alex:       hsl(15 80% 70%);
+  --marcus:     var(--alex);          /* orphan legacy name → --alex */
 
-  /* Persona accents */
-  --sam:    hsl(45 100% 75%);
-  --casey:  hsl(200 100% 75%);
-  --oliver: hsl(120 60% 70%);
-  --maya:   hsl(330 80% 75%);
-  --zoe:    hsl(270 70% 75%);
-  --marcus: hsl(15 80% 70%);
+  /* Semantic state */
+  --ok:   hsl(120 40% 62%);
+  --del:  hsl(6 52% 60%);
 
-  /* Typography */
+  /* Legacy purple — RETIRED. Aliased to amber so live consumers keep working
+     until the gated Home reskin migrates them off --primary entirely. */
+  --primary:      var(--amber);
+  --primary-dim:  var(--amber-dim);
+
+  /* Typography — Fraunces display, Newsreader prose, IBM Plex Mono system voice */
   --font-display: 'Fraunces', Georgia, serif;
-  --font-body:    'Lora', Georgia, serif;
-  --font-mono:    'DM Mono', 'Courier New', monospace;
+  --font-body:    'Newsreader', Georgia, serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
   --font-script:  'Courier Prime', 'Courier New', monospace;
+  --serif:        var(--font-display);   /* canonical alias */
+  --read:         var(--font-body);      /* canonical alias */
+  --mono:         var(--font-mono);       /* canonical alias */
+
+  /* Motion */
+  --ease: cubic-bezier(.16, .84, .28, 1);
+  --slow: cubic-bezier(.65, .02, .16, 1);
 
   /* Layout */
   --topbar-height:   48px;
