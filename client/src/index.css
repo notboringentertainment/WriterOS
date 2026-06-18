@@ -80,8 +80,10 @@
   /* Three-zone working surface — [ Left Zone | Paper | Teleprompter ].
      Defaults are the PANEL form (>=1440); @media below narrows to strip, then overlay. */
   --zone-spine-w:       300px;  /* left zone width  (spine + console share one column) */
-  --zone-tele-w:        392px;  /* teleprompter (Morgan voice) width */
   --zone-console-max-h: 200px;  /* console is height-bounded; overflows internally, never clips */
+  /* Teleprompter column is content-sized (`auto`) so it hugs the collapsed Morgan rail
+     (~48px) instead of reserving a fixed slab. It widens only when the rail is expanded.
+     Restore a fixed --zone-tele-w here once the teleprompter has real content. */
 }
 
 html, body, #root {
@@ -129,9 +131,14 @@ textarea, input { resize: vertical; }
    ════════════════════════════════════════════════════════════════════════ */
 .three-zone {
   display: grid;
-  grid-template-columns: var(--zone-spine-w) minmax(0, 1fr) var(--zone-tele-w);
+  grid-template-columns: var(--zone-spine-w) minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
+  /* Fill the flex parent so the 1fr paper column actually receives free space —
+     without flex-grow the grid is content-sized and the paper never expands. */
+  flex: 1;
+  min-width: 0;
+  width: 100%;
   position: relative;
 }
 
@@ -188,7 +195,6 @@ textarea, input { resize: vertical; }
 @media (max-width: 1439px) {
   :root {
     --zone-spine-w: 248px;
-    --zone-tele-w: 360px;
     --zone-console-max-h: 88px;   /* console compacts — overflows internally, not clipped */
   }
 }
