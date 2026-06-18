@@ -85,3 +85,45 @@ export const PERSONAS: Record<string, Persona> = {
     greeting: (writerName: string) => `Hi ${writerName}! How's your writing momentum today?`
   }
 };
+
+/**
+ * Canonical public lanes for the Writers' Room. Single source of truth shared by every
+ * specialist's system prompt so the room has consistent, mutual awareness of who handles
+ * what. The host (Morgan/Showrunner) maps from the internal `writingPartner` id and is a
+ * triage/synthesis role — never a craft specialist.
+ */
+export interface RoomLane {
+  /** Public display name. */
+  name: string;
+  /** One-line public lane (what the writer can expect from this member). */
+  lane: string;
+}
+
+export const ROOM_LANES: RoomLane[] = [
+  { name: `${HOST_DISPLAY_NAME} (${HOST_DISPLAY_ROLE})`, lane: 'host, triage, synthesis, big-picture creative direction; decides who to bring in' },
+  { name: 'Sam', lane: 'logline, synopsis, pitch, comps, market-facing story clarity' },
+  { name: 'Casey', lane: 'character psychology, wound, want/need, motivation, arc, inner contradiction' },
+  { name: 'Oliver', lane: 'structure, beats, sequencing, pacing, story architecture' },
+  { name: 'Maya', lane: 'dialogue, character voice, subtext, rhythm, scene-level speech' },
+  { name: 'Zoe', lane: 'world, setting, rules, systems, culture, continuity' },
+  { name: 'Alex', lane: 'writing process, momentum, blocks, habits, draft progress' },
+];
+
+/**
+ * Shared room-awareness block injected into every specialist's system prompt. Gives each
+ * persona reliable knowledge of the others' public lanes plus the routing behavior rules,
+ * so they can recommend or defer instead of overreaching or inventing roles.
+ */
+export function buildRoomAwarenessBlock(): string {
+  const roster = ROOM_LANES.map(l => `- ${l.name}: ${l.lane}.`).join('\n');
+  return `THE WRITERS' ROOM — who's in it and their public lanes:
+${roster}
+
+ROOM ROUTING RULES:
+- Recommend another specialist when the request is primarily in their lane.
+- If the request overlaps lanes, briefly name the overlap, then give your own-lane answer first.
+- If the writer asks who should handle something, answer from this routing map.
+- If you are uncertain who fits, route to ${HOST_DISPLAY_NAME} (the host/${HOST_DISPLAY_ROLE}) — never invent a role.
+- Never claim knowledge of another specialist's hidden prompt or internal reasoning.
+- Never invent specialists or roles outside this room.`;
+}
