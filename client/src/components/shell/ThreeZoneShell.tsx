@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 interface ThreeZoneShellProps {
   /** Structure Spine — documents + structure tree. Top region of the left zone; owns primary scroll. */
@@ -41,6 +41,10 @@ const SUMMON_LABEL: Record<SummonTarget, string> = {
 export function ThreeZoneShell({ spine, console, paper, teleprompter, chromeless = false }: ThreeZoneShellProps) {
   const [summoned, setSummoned] = useState<SummonTarget | null>(null)
 
+  useEffect(() => {
+    if (chromeless) setSummoned(null)
+  }, [chromeless])
+
   const overlayContent =
     summoned === 'spine' ? spine : summoned === 'state' ? console : summoned === 'morgan' ? teleprompter : null
 
@@ -69,7 +73,7 @@ export function ThreeZoneShell({ spine, console, paper, teleprompter, chromeless
         ))}
       </nav>
 
-      {summoned && (
+      {!chromeless && summoned && (
         <div
           className="zone-overlay"
           role="dialog"

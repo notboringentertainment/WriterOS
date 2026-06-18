@@ -54,4 +54,13 @@ describe('ThreeZoneShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /close/i }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('does not keep summon overlay visible in chromeless mode', () => {
+    const { rerender } = render(<ThreeZoneShell {...slots} />)
+    fireEvent.click(within(screen.getByLabelText('Summon')).getByRole('button', { name: /spine/i }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    rerender(<ThreeZoneShell {...slots} chromeless />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })
