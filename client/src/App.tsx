@@ -5,6 +5,7 @@ import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
+import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
@@ -821,10 +822,19 @@ export default function App() {
     onClearTranscript: () => project.clearTranscript('writingPartner'),
   }
 
+  const leftZone = useMemo(
+    () => ({
+      structure: selectSurfaceStructure(shellState.activeTab, project.state),
+      state: selectConsoleState(project.state, shellState.activeTab, shellState.storyBibleSection),
+    }),
+    [project.state, shellState.activeTab, shellState.storyBibleSection],
+  )
+
   return (
     <Shell
       shellState={shellState}
       projectTitle={project.state.meta.title}
+      leftZone={leftZone}
       activeProjectId={project.activeProjectId}
       projectSummaries={project.projects}
       onProjectTitleChange={title => project.setMeta({ title })}
