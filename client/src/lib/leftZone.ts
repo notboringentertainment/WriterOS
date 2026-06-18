@@ -126,9 +126,9 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
       ]
       const nodes: StructureNode[] = [
         ...acts.map(([label, value], i) => ({ id: `treatment-act-${i}`, label, detail: filledDetail(value) })),
-        ...content.prose.customSections.map(s => ({
+        ...content.prose.customSections.map((s, i) => ({
           id: s.id,
-          label: labelOr(s.heading, 'Section', 0),
+          label: labelOr(s.heading, 'Section', i + 1),
           detail: filledDetail(s.body),
         })),
         ...content.mainCharacters.map((c, i) => ({

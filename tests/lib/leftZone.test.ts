@@ -72,6 +72,22 @@ describe('selectSurfaceStructure', () => {
     expect(labels).toContain('Lead')
   })
 
+  it('numbers multiple untitled treatment custom sections distinctly', () => {
+    const state = defaultProjectState()
+    state.documents.treatment.content.prose.customSections = [
+      { id: 'cs1', heading: '', body: '' },
+      { id: 'cs2', heading: '', body: '' },
+      { id: 'cs3', heading: 'Named', body: '' },
+    ]
+    const labels = selectSurfaceStructure('treatment', state).nodes.map(n => n.label)
+    expect(labels).toContain('Section 1')
+    expect(labels).toContain('Section 2')
+    expect(labels).toContain('Named')
+    // no duplicate fallback labels
+    const sectionLabels = labels.filter(l => l.startsWith('Section '))
+    expect(new Set(sectionLabels).size).toBe(sectionLabels.length)
+  })
+
   it('lists story-bible sections plus its characters', () => {
     const state = defaultProjectState()
     state.documents.storyBible.content.characters = [
