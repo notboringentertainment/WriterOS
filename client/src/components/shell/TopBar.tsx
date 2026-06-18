@@ -150,6 +150,8 @@ export function TopBar({
         {editingTitle ? (
           <input
             aria-label="Project title"
+            name="projectTitle"
+            autoComplete="off"
             autoFocus
             value={draftTitle}
             onChange={e => setDraftTitle(e.target.value)}
