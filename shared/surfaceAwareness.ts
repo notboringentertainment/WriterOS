@@ -2,8 +2,14 @@ import { z } from 'zod'
 
 // Surface Awareness Contract — a serialized snapshot of the surface the writer is on,
 // so agents can ground answers in "this question", "your last answer", "the next thing".
-// V1 ships exactly `none | intake` for the feature Outline surface. The Script `editor`
-// variant is added as an additive union member when that surface is built.
+// Intake surfaces are the Story Coach document-question pages. The Script `editor`
+// variant can be added later as an additive union member when that surface is built.
+
+export const SurfaceIdSchema = z.enum(['outline', 'synopsis', 'treatment', 'story-bible'])
+export type SurfaceId = z.infer<typeof SurfaceIdSchema>
+
+export const SurfaceFormatSchema = z.enum(['feature', 'series'])
+export type SurfaceFormat = z.infer<typeof SurfaceFormatSchema>
 
 export const SurfaceQuestionSchema = z.object({
   id: z.string(),
@@ -17,9 +23,9 @@ const SurfaceAwarenessUnion = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
   z.object({
     kind: z.literal('intake'),
-    surface: z.literal('outline'),
+    surface: SurfaceIdSchema,
     surfaceTitle: z.string(),
-    format: z.literal('feature'),
+    format: SurfaceFormatSchema,
     questions: z.array(SurfaceQuestionSchema),
     nextQuestion: SurfaceQuestionSchema.nullable(),
     selectionSource: z.literal('first_unanswered'),
