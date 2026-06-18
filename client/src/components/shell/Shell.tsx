@@ -2,7 +2,10 @@ import React, { useEffect } from 'react'
 import { TopBar } from './TopBar'
 import { LeftRail } from './LeftRail'
 import { ThreeZoneShell } from './ThreeZoneShell'
+import { StructureSpine } from './StructureSpine'
+import { ContextConsole } from './ContextConsole'
 import { VoiceProfileDrawer } from './VoiceProfileDrawer'
+import type { SurfaceStructure, ConsoleState } from '../../lib/leftZone'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type { ProjectSummary } from '../../lib/projectLibrary'
@@ -46,6 +49,8 @@ interface ShellProps {
   onSaveProject?: () => void
   onDeleteProject?: () => void
   railProps: RailProps
+  /** Real left-zone content for the workspace. When omitted, a lean placeholder is shown. */
+  leftZone?: { structure: SurfaceStructure; state: ConsoleState }
   children: React.ReactNode
 }
 
@@ -60,6 +65,7 @@ export function Shell({
   onSaveProject,
   onDeleteProject,
   railProps,
+  leftZone,
   children,
 }: ShellProps) {
   const {
@@ -120,14 +126,18 @@ export function Shell({
     />
   )
 
-  // Generic, slot-based scaffold content — no project-specific labels or logic.
-  const spineContent = (
+  // Real left-zone content when provided by the host; otherwise a lean, generic placeholder.
+  const spineContent = leftZone ? (
+    <StructureSpine structure={leftZone.structure} />
+  ) : (
     <div style={styles.spine}>
       <div style={styles.spineHeader}>Structure</div>
       <div style={styles.spineProject}>{displayProjectTitle}</div>
     </div>
   )
-  const consoleContent = (
+  const consoleContent = leftZone ? (
+    <ContextConsole state={leftZone.state} />
+  ) : (
     <div style={styles.console}>
       <span style={styles.consoleDot} aria-hidden="true" />
       <span style={styles.consoleLabel}>Surface</span>
