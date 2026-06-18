@@ -1,4 +1,5 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
+import { buildRoomAwarenessBlock } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
@@ -759,14 +760,13 @@ export function parsePersonaCapabilitySynthesisResponse(
   return { finalMessage, citedLabels }
 }
 
-export class OpenAIService {
-  private createPersonaSystemPrompt(
-    persona: Persona,
-    userProfile: AssessmentProfile,
-    storyMemory: StoryMemory,
-    userMessage: string,
-    voiceProfile?: VoiceProfileDocument
-  ): string {
+export function createPersonaSystemPrompt(
+  persona: Persona,
+  userProfile: AssessmentProfile,
+  storyMemory: StoryMemory,
+  userMessage: string,
+  voiceProfile?: VoiceProfileDocument
+): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
     // When a completed Voice Profile is present, the literal house-stance register
     // replaces the default warm line and a focused profile subset is appended.
@@ -785,8 +785,9 @@ ${stanceLine}
      userProfile.feedbackStyle === 'gentle' ? 'Gentle and supportive' :
      'Detailed with examples'}
 - Expert in: ${persona.expertise.join(', ')}
-- Always address the writer as ${userProfile.writerName}
-- Available specialists are Morgan, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.${voiceProfileBlock}
+- Always address the writer as ${userProfile.writerName}${voiceProfileBlock}
+
+${buildRoomAwarenessBlock()}
 
 CURRENT PROJECT CONTEXT:
 ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New project'}
@@ -924,8 +925,9 @@ IMPORTANT: Respond with JSON in this format:
       default:
         return basePrompt + '\n\nIMPORTANT: Respond with JSON format: {"message": "your response", "suggestions": []}';
     }
-  }
+}
 
+export class OpenAIService {
   async generatePersonaResponse(
     persona: Persona,
     userMessage: string,
@@ -935,7 +937,7 @@ IMPORTANT: Respond with JSON in this format:
     voiceProfile?: VoiceProfileDocument
   ): Promise<PersonaResponse> {
     try {
-      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
+      const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
       
       const messages: ModelMessage[] = [
         ...conversationHistory.slice(-6).map(msg => ({
