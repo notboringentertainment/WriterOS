@@ -453,7 +453,7 @@ const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'character
 
 const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   writingPartner: DEFAULT_CONTEXT_ORDER,
-  sam: ['brief', 'synopsis', 'treatment', 'outline', 'characters'],
+  sam: ['brief', 'synopsis', 'treatment', 'outline', 'characters', 'scenes'],
   casey: ['brief', 'characters', 'treatment', 'outline', 'storyBible', 'scenes', 'synopsis'],
   oliver: ['brief', 'outline', 'scenes', 'synopsis'],
   maya: ['brief', 'scenes', 'characters', 'storyBible'],

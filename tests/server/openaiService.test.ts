@@ -131,6 +131,34 @@ describe('createContextSummary', () => {
     expect(summary).not.toContain('SYNOPSIS SECTIONS:')
   })
 
+  it('gives Sam the real SCRIPT EXCERPT text when script context exists', () => {
+    // Regression: Sam answered logline/story questions blind because its context order
+    // omitted the 'scenes' section that carries the SCRIPT EXCERPT — it received only
+    // metadata counts, then contradicted itself about whether it could read the pages.
+    const summary = createContextSummary(storyMemory({
+      script: {
+        excerpt: [
+          'INT. CORRECTIONAL FACILITY - DAY',
+          'DANTE stands at the gate, holding a sealed file.',
+          'DANTE',
+          'Everything in here is true. That is the problem.',
+        ].join('\n'),
+        sceneHeadings: ['INT. CORRECTIONAL FACILITY - DAY'],
+        dialogueSnippets: ['DANTE: Everything in here is true. That is the problem.'],
+        actionSnippets: ['DANTE stands at the gate, holding a sealed file.'],
+        characterNames: ['DANTE'],
+        excerptWordCount: 18,
+        excerptWordLimit: 500,
+        excerptTruncated: false,
+      },
+    }), 'sam')
+
+    expect(summary).toContain('SCRIPT EXCERPT (18 words):')
+    expect(summary).toContain('DANTE stands at the gate, holding a sealed file.')
+    expect(summary).toContain('SCRIPT CHARACTER NAMES:')
+    expect(summary).toContain('DANTE')
+  })
+
   it('emphasizes world context for Zoe without including synopsis sections', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'zoe')
 
@@ -465,7 +493,7 @@ describe('createContextSummary', () => {
     expect(brief).not.toContain('INT. CALL CENTER - NIGHT')
   })
 
-  it('keeps the Writing Partner brief compact when a specialist owns the full script pack', () => {
+  it('keeps the Writing Partner brief compact (metadata only) while Sam still receives the full script pack', () => {
     const sensitiveLine = 'MARA: This exact dialogue belongs in the specialist pack.'
     const memory = populatedStoryMemory()
     memory.script = {
@@ -480,12 +508,16 @@ describe('createContextSummary', () => {
     const brief = createWritingPartnerBrief(memory)
     const samSummary = createContextSummary(memory, 'sam')
 
+    // The BRIEF stays compact — it summarizes the script as metadata and never inlines the
+    // excerpt body, so the host overview is not bloated by the full pack.
     expect(brief).toContain('Script: 500 excerpt words available, capped at first 500 words')
     expect(brief).not.toContain(sensitiveLine)
+    // Sam DOES own the full script pack: the excerpt text reaches Sam via the scenes section
+    // so it can ground logline/story answers in the actual pages instead of guessing.
     expect(samSummary).toContain('WRITING PARTNER BRIEF:')
     expect(samSummary).toContain('SYNOPSIS SECTIONS:')
-    expect(samSummary).not.toContain('SCRIPT EXCERPT')
-    expect(samSummary).not.toContain(sensitiveLine)
+    expect(samSummary).toContain('SCRIPT EXCERPT')
+    expect(samSummary).toContain(sensitiveLine)
   })
 
   it('includes project format in the Writing Partner brief when supplied', () => {
