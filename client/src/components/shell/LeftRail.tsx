@@ -27,16 +27,9 @@ export function LeftRail({
   onSend,
   onClearTranscript,
 }: LeftRailProps) {
-  const [hasProactive, setHasProactive] = useState(false)
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
   const activeHelperText = getActiveHelperText(inputText, activeTab, storyBibleSection)
-
-  // Pulse after 20 min of no toggle — placeholder for real idle detection
-  useEffect(() => {
-    const timer = setTimeout(() => setHasProactive(true), 20 * 60 * 1000)
-    return () => clearTimeout(timer)
-  }, [])
 
   // Auto-scroll to bottom on new messages or loading change
   useEffect(() => {
@@ -66,9 +59,6 @@ export function LeftRail({
         style={styles.avatar}
       >
         <span style={styles.avatarInner}>M</span>
-        {hasProactive && !open && (
-          <span style={styles.pulse} aria-hidden="true" />
-        )}
         {!open && (
           <span style={styles.shortcutHint}>⌘\</span>
         )}
@@ -179,16 +169,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-mono)',
     fontWeight: 700,
     color: '#1a1200',
-  },
-  pulse: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: 'var(--wp-amber)',
-    animation: 'wp-pulse 3s ease-in-out infinite',
   },
   shortcutHint: {
     position: 'absolute',

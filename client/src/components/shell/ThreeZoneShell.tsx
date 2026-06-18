@@ -7,10 +7,10 @@ interface ThreeZoneShellProps {
   console: React.ReactNode
   /** Paper — the writing surface. Primary zone. */
   paper: React.ReactNode
-  /** Teleprompter — Morgan's voice surface (right zone). */
-  teleprompter: React.ReactNode
+  /** Morgan rail — the assistant/host conversation surface (right zone). Not a teleprompter yet. */
+  morgan: React.ReactNode
   /**
-   * Full-bleed paper with all chrome hidden (left zone, teleprompter, summon).
+   * Full-bleed paper with all chrome hidden (left zone, Morgan rail, summon).
    * Used by modes like Writer's Room. The zones stay mounted but hidden via CSS so the
    * paper subtree is never remounted across the transition.
    */
@@ -20,13 +20,13 @@ interface ThreeZoneShellProps {
 type SummonTarget = 'spine' | 'state' | 'morgan'
 
 const SUMMON_LABEL: Record<SummonTarget, string> = {
-  spine: 'Spine',
-  state: 'State',
+  spine: 'Map',
+  state: 'Status',
   morgan: 'Morgan',
 }
 
 /**
- * Three-zone working surface: [ Left Zone | Paper | Teleprompter ].
+ * Three-zone working surface: [ Left Zone | Paper | Morgan rail ].
  *
  * The LEFT ZONE is ONE column with two stacked regions and independent scroll:
  *   · Structure Spine (top, primary scroll — absorbs project growth)
@@ -38,7 +38,7 @@ const SUMMON_LABEL: Record<SummonTarget, string> = {
  *
  * Content is supplied entirely via slots — no project-specific labels, logic, or layout live here.
  */
-export function ThreeZoneShell({ spine, console, paper, teleprompter, chromeless = false }: ThreeZoneShellProps) {
+export function ThreeZoneShell({ spine, console, paper, morgan, chromeless = false }: ThreeZoneShellProps) {
   const [summoned, setSummoned] = useState<SummonTarget | null>(null)
 
   useEffect(() => {
@@ -46,18 +46,18 @@ export function ThreeZoneShell({ spine, console, paper, teleprompter, chromeless
   }, [chromeless])
 
   const overlayContent =
-    summoned === 'spine' ? spine : summoned === 'state' ? console : summoned === 'morgan' ? teleprompter : null
+    summoned === 'spine' ? spine : summoned === 'state' ? console : summoned === 'morgan' ? morgan : null
 
   return (
     <div className={chromeless ? 'three-zone three-zone--chromeless' : 'three-zone'}>
       <div className="zone-left" aria-label="Structure and state">
-        <div className="zone-spine" aria-label="Structure Spine">{spine}</div>
-        <div className="zone-console" aria-label="Context Console">{console}</div>
+        <div className="zone-spine" aria-label="Surface Map">{spine}</div>
+        <div className="zone-console" aria-label="Project status">{console}</div>
       </div>
 
       <main className="zone-paper">{paper}</main>
 
-      <aside className="zone-tele" aria-label="Morgan">{teleprompter}</aside>
+      <aside className="zone-morgan" aria-label="Morgan">{morgan}</aside>
 
       {/* Summon bar — only visible in the <1100 overlay form (CSS). Real buttons, not hover. */}
       <nav className="zone-summon" aria-label="Summon">

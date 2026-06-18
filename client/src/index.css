@@ -77,13 +77,13 @@
   --rail-transition: 180ms ease-out;
   --tab-transition:  200ms ease-out;
 
-  /* Three-zone working surface — [ Left Zone | Paper | Teleprompter ].
+  /* Three-zone working surface — [ Left Zone | Paper | Morgan rail ].
      Defaults are the PANEL form (>=1440); @media below narrows to strip, then overlay. */
   --zone-spine-w:       300px;  /* left zone width  (spine + console share one column) */
   --zone-console-max-h: 200px;  /* console is height-bounded; overflows internally, never clips */
-  /* Teleprompter column is content-sized (`auto`) so it hugs the collapsed Morgan rail
+  /* Morgan rail column is content-sized (`auto`) so it hugs the collapsed rail
      (~48px) instead of reserving a fixed slab. It widens only when the rail is expanded.
-     Restore a fixed --zone-tele-w here once the teleprompter has real content. */
+     Give it a fixed --zone-morgan-w here if/when this becomes a real teleprompter surface. */
 }
 
 html, body, #root {
@@ -110,11 +110,6 @@ button { cursor: pointer; }
 textarea, input { resize: vertical; }
 
 /* Animations used by components */
-@keyframes wp-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50%       { opacity: 1;   transform: scale(1.1);  }
-}
-
 @keyframes script-appear {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -122,11 +117,12 @@ textarea, input { resize: vertical; }
 
 /* ════════════════════════════════════════════════════════════════════════
    THREE-ZONE WORKING SURFACE
-   [ Left Zone | Paper | Teleprompter ] — one model, never four columns.
+   [ Left Zone | Paper | Morgan rail ] — one model, never four columns.
+   (The right zone hosts the Morgan assistant rail today — not yet a real teleprompter.)
    Forms driven by TRUE @media queries (no JS, no container queries):
-     >=1440  panel    · full left zone + full teleprompter
+     >=1440  panel    · full left zone + full Morgan rail
      1100–1439 strip  · narrower zones, console compacts to one line
-     <1100   overlay  · paper-primary; left zone + teleprompter hidden,
+     <1100   overlay  · paper-primary; left zone + Morgan rail hidden,
                         reachable via the accessible summon bar.
    ════════════════════════════════════════════════════════════════════════ */
 .three-zone {
@@ -148,7 +144,7 @@ textarea, input { resize: vertical; }
   grid-template-columns: minmax(0, 1fr);
 }
 .three-zone--chromeless > .zone-left,
-.three-zone--chromeless > .zone-tele,
+.three-zone--chromeless > .zone-morgan,
 .three-zone--chromeless > .zone-summon {
   display: none;
 }
@@ -179,8 +175,8 @@ textarea, input { resize: vertical; }
   position: relative;
 }
 
-/* TELEPROMPTER — Morgan voice (right zone) */
-.zone-tele {
+/* MORGAN RAIL — assistant/host voice (right zone). Not yet a real teleprompter. */
+.zone-morgan {
   min-height: 0;
   overflow-y: auto;
   border-left: 1px solid var(--border);
@@ -199,13 +195,13 @@ textarea, input { resize: vertical; }
   }
 }
 
-/* ── OVERLAY form: <1100 ── paper primary; left zone + teleprompter summon-on-demand ── */
+/* ── OVERLAY form: <1100 ── paper primary; left zone + Morgan rail summon-on-demand ── */
 @media (max-width: 1099px) {
   .three-zone {
     grid-template-columns: minmax(0, 1fr);
   }
   .zone-left,
-  .zone-tele {
+  .zone-morgan {
     display: none;
   }
   .zone-paper {

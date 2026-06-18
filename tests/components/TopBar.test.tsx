@@ -64,6 +64,13 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: 'Voice Profile' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('does not render a non-functional ⌘K command-palette button', () => {
+    // Guard against re-adding a control that implies a command palette before one exists.
+    render(<TopBar {...defaultProps} />)
+    expect(screen.queryByText('⌘K')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /⌘k/i })).not.toBeInTheDocument()
+  })
+
   it('shows project title', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('The Long Hallway')).toBeInTheDocument()
