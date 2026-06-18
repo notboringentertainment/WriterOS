@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildSurfaceAwareness } from '../../client/src/lib/surfaceAwareness'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { setOutlinePath, FEATURE_DECK } from '../../client/src/lib/outlineDeck'
+import { setOutlinePath, FEATURE_DECK, SERIES_DECK } from '../../client/src/lib/outlineDeck'
+import { FEATURE_SYNOPSIS_DECK } from '../../client/src/lib/synopsisDeck'
+import { FEATURE_STORY_BIBLE_DECK } from '../../client/src/lib/storyBibleDeck'
+import { TREATMENT_SURFACE_DECK } from '../../client/src/lib/treatmentDeck'
 import type { ProjectState } from '../../client/src/lib/projectState'
 
 function featureState(): ProjectState {
@@ -74,14 +77,48 @@ describe('buildSurfaceAwareness', () => {
     expect(sa.nextQuestion?.id).toBe(FEATURE_DECK[0].id)
   })
 
-  it('series format → none (deferred in V1)', () => {
+  it('series outline uses the series question deck', () => {
     const base = defaultProjectState()
     const state = { ...base, meta: { ...base.meta, format: 'series' as const } }
-    expect(buildSurfaceAwareness('outline', state)).toEqual({ kind: 'none' })
+    const sa = buildSurfaceAwareness('outline', state)
+    expect(sa.kind).toBe('intake')
+    if (sa.kind !== 'intake') return
+    expect(sa.format).toBe('series')
+    expect(sa.totalCount).toBe(SERIES_DECK.length)
+    expect(sa.nextQuestion?.label).toBe('Who are we following?')
   })
 
-  it('non-outline tab → none', () => {
-    expect(buildSurfaceAwareness('synopsis', featureState())).toEqual({ kind: 'none' })
+  it('feature synopsis sends its live question deck', () => {
+    const sa = buildSurfaceAwareness('synopsis', featureState())
+    expect(sa.kind).toBe('intake')
+    if (sa.kind !== 'intake') return
+    expect(sa.surface).toBe('synopsis')
+    expect(sa.surfaceTitle).toBe('Synopsis')
+    expect(sa.totalCount).toBe(FEATURE_SYNOPSIS_DECK.length)
+    expect(sa.nextQuestion?.label).toBe('What should appear as the title?')
+  })
+
+  it('treatment sends its live question deck', () => {
+    const sa = buildSurfaceAwareness('treatment', featureState())
+    expect(sa.kind).toBe('intake')
+    if (sa.kind !== 'intake') return
+    expect(sa.surface).toBe('treatment')
+    expect(sa.surfaceTitle).toBe('Treatment')
+    expect(sa.totalCount).toBe(TREATMENT_SURFACE_DECK.length)
+    expect(sa.nextQuestion?.label).toBe('What is the story in one sentence?')
+  })
+
+  it('story bible sends its live question deck', () => {
+    const sa = buildSurfaceAwareness('story-bible', featureState())
+    expect(sa.kind).toBe('intake')
+    if (sa.kind !== 'intake') return
+    expect(sa.surface).toBe('story-bible')
+    expect(sa.surfaceTitle).toBe('Story Bible')
+    expect(sa.totalCount).toBe(FEATURE_STORY_BIBLE_DECK.length)
+    expect(sa.nextQuestion?.label).toBe('What should appear as the title?')
+  })
+
+  it('script tab stays outside intake surface awareness', () => {
     expect(buildSurfaceAwareness('script', featureState())).toEqual({ kind: 'none' })
   })
 })

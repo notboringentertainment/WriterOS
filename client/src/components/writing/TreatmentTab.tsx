@@ -16,6 +16,11 @@ import {
   getPassagePlaceholder,
   type TreatmentPassageTemplate,
 } from '../../lib/treatmentPassages'
+import {
+  TREATMENT_OPEN_QUESTION_FIELDS as QUESTION_FIELDS,
+  TREATMENT_PROSE_FIELDS as PROSE_FIELDS,
+  TREATMENT_VISUAL_FIELDS as VISUAL_FIELDS,
+} from '../../lib/treatmentDeck'
 
 interface TreatmentTabProps {
   document: AuthoredDocumentState<TreatmentDocumentContent>
@@ -34,46 +39,6 @@ type ProseField = Exclude<keyof TreatmentDocumentContent['prose'], 'customSectio
 type VisualField = keyof TreatmentDocumentContent['visualAndTonal']
 type QuestionField = keyof TreatmentDocumentContent['openQuestions']
 type CharacterField = keyof TreatmentMainCharacter
-
-const PROSE_FIELDS: Array<{ field: ProseField; question: string; helper: string }> = [
-  {
-    field: 'opening',
-    question: 'How does the story open on screen?',
-    helper: 'Establish the person, world, tone, and first disturbance in present tense.',
-  },
-  {
-    field: 'actOne',
-    question: 'What pulls them into the story?',
-    helper: 'Tell the setup, first choices, conflict, and commitment into the story.',
-  },
-  {
-    field: 'actTwo',
-    question: 'How does the pressure build and turn?',
-    helper: 'Follow escalation, reversals, discoveries, relationship pressure, and collapse.',
-  },
-  {
-    field: 'actThree',
-    question: 'How does it resolve?',
-    helper: 'Tell the final plan, decisive choice, cost, resolution, and last image.',
-  },
-]
-
-const VISUAL_FIELDS: Array<{ field: VisualField; label: string }> = [
-  { field: 'overallTone', label: "What's the atmosphere from scene to scene?" },
-  { field: 'visualWorld', label: 'What does the world look like?' },
-  { field: 'recurringImagesOrMotifs', label: 'What images or motifs keep returning?' },
-  { field: 'musicOrSoundFeeling', label: 'What should it sound like?' },
-  { field: 'pacing', label: 'How should the story move?' },
-  { field: 'genreRules', label: 'What genre promises or rules matter?' },
-  { field: 'compsAndReferences', label: 'What does this remind people of?' },
-]
-
-const QUESTION_FIELDS: Array<{ field: QuestionField; label: string }> = [
-  { field: 'story', label: 'Story decisions still needed' },
-  { field: 'character', label: 'Character decisions still needed' },
-  { field: 'worldOrMythology', label: 'World or mythology decisions still needed' },
-  { field: 'production', label: 'Production decisions still needed' },
-]
 
 function linesToArray(value: string): string[] {
   return value

@@ -26,6 +26,20 @@ describe('SurfaceAwarenessSchema', () => {
     expect(parsed.success).toBe(true)
   })
 
+  it('accepts document intake surfaces beyond outline', () => {
+    for (const surface of ['synopsis', 'treatment', 'story-bible'] as const) {
+      expect(SurfaceAwarenessSchema.safeParse({
+        ...intake,
+        surface,
+        surfaceTitle: surface === 'story-bible' ? 'Story Bible' : surface,
+      }).success).toBe(true)
+    }
+  })
+
+  it('accepts series intake surfaces', () => {
+    expect(SurfaceAwarenessSchema.safeParse({ ...intake, format: 'series' }).success).toBe(true)
+  })
+
   it('allows nextQuestion to be null (all answered)', () => {
     const allAnswered = {
       ...intake,

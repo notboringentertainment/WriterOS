@@ -67,4 +67,27 @@ describe('App surface awareness — live request path', () => {
     expect(body.projectContext.surface.surface).toBe('outline')
     expect(body.projectContext.surface.nextQuestion.label).toBe('Who are we following?')
   })
+
+  it.each([
+    ['Synopsis', 'synopsis', 'What should appear as the title?'],
+    ['Treatment', 'treatment', 'What is the story in one sentence?'],
+    ['Story Bible', 'story-bible', 'What should appear as the title?'],
+  ])('left-rail Writing Partner on %s sends that surface question deck', async (tabLabel, surface, firstQuestion) => {
+    const fetchMock = mockFetchCapturing()
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('tab', { name: tabLabel }))
+    fireEvent.click(screen.getByTitle('Morgan'))
+
+    const input = screen.getByPlaceholderText('Message Morgan…')
+    fireEvent.change(input, { target: { value: 'What is the first question on this page?' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
+
+    const body = wpChatBody(fetchMock)
+    expect(body.projectContext.surface.kind).toBe('intake')
+    expect(body.projectContext.surface.surface).toBe(surface)
+    expect(body.projectContext.surface.nextQuestion.label).toBe(firstQuestion)
+  })
 })
