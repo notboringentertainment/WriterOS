@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { TopBar } from './TopBar'
 import { LeftRail } from './LeftRail'
+import { ThreeZoneShell } from './ThreeZoneShell'
 import { VoiceProfileDrawer } from './VoiceProfileDrawer'
 import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
@@ -103,6 +104,36 @@ export function Shell({
     else enterWritersRoom()
   }
   const displayProjectTitle = getDisplayProjectTitle(projectTitle)
+  // Home and focus mode are full-bleed (no shell chrome). Workspace and Writer's Room both
+  // flow through ThreeZoneShell so the paper subtree is never reparented across that toggle;
+  // Writer's Room runs chromeless (zones hidden via CSS, paper stays mounted).
+  const fullBleed = homeActive || focusMode
+
+  const morganRail = (
+    <LeftRail
+      open={panelOpen}
+      onToggle={togglePanel}
+      projectTitle={displayProjectTitle}
+      activeTab={activeTab}
+      storyBibleSection={storyBibleSection}
+      {...railProps}
+    />
+  )
+
+  // Generic, slot-based scaffold content — no project-specific labels or logic.
+  const spineContent = (
+    <div style={styles.spine}>
+      <div style={styles.spineHeader}>Structure</div>
+      <div style={styles.spineProject}>{displayProjectTitle}</div>
+    </div>
+  )
+  const consoleContent = (
+    <div style={styles.console}>
+      <span style={styles.consoleDot} aria-hidden="true" />
+      <span style={styles.consoleLabel}>Surface</span>
+      <span style={styles.consoleValue}>{activeTab}</span>
+    </div>
+  )
 
   return (
     <div style={styles.root}>
@@ -127,19 +158,19 @@ export function Shell({
         />
       )}
       <div style={styles.body}>
-        {!homeActive && !writersRoomActive && !focusMode && (
-          <LeftRail
-            open={panelOpen}
-            onToggle={togglePanel}
-            projectTitle={displayProjectTitle}
-            activeTab={activeTab}
-            storyBibleSection={storyBibleSection}
-            {...railProps}
+        {fullBleed ? (
+          <main style={styles.center}>
+            {children}
+          </main>
+        ) : (
+          <ThreeZoneShell
+            spine={spineContent}
+            console={consoleContent}
+            paper={children}
+            teleprompter={morganRail}
+            chromeless={writersRoomActive}
           />
         )}
-        <main style={styles.center}>
-          {children}
-        </main>
       </div>
       <VoiceProfileDrawer open={voiceProfileOpen} onClose={closeVoiceProfile} />
     </div>
@@ -163,5 +194,43 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: 'auto',
     position: 'relative',
+  },
+  spine: {
+    padding: '14px 16px',
+  },
+  spineHeader: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    color: 'var(--fg-subtle)',
+    marginBottom: 6,
+  },
+  spineProject: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    color: 'var(--fg)',
+  },
+  console: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '10px 16px',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    color: 'var(--fg-muted)',
+  },
+  consoleDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: 'var(--wp-amber)',
+    flexShrink: 0,
+  },
+  consoleLabel: {
+    color: 'var(--fg-subtle)',
+    textTransform: 'uppercase',
+  },
+  consoleValue: {
+    color: 'var(--fg)',
   },
 }
