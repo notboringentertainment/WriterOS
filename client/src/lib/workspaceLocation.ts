@@ -63,7 +63,7 @@ function buildScriptLocation(input: BuildLocationInput): WorkspaceLocation {
       provenance: 'confirmed',
       anchor: {
         kind: 'block',
-        stableId: `block:${focus.blockIndex}`,
+        stableId: `block:${focus.blockIndex ?? 'sel'}`,
         label: focus.selectedText?.trim().slice(0, 160) ?? '',
       },
       updatedAt: focus.updatedAt,
