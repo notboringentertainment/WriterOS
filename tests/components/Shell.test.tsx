@@ -23,6 +23,7 @@ function makeShellState(overrides = {}) {
     togglePanel: vi.fn(),
     enterWritersRoom: vi.fn(),
     exitWritersRoom: vi.fn(),
+    toggleWritersRoom: vi.fn(),
     toggleFocusMode: vi.fn(),
     toggleVoiceProfile: vi.fn(),
     closeVoiceProfile: vi.fn(),
@@ -83,13 +84,13 @@ describe('Shell', () => {
   })
 
   it("routes Cmd+6 to Writer's Room", () => {
-    const enterWritersRoom = vi.fn()
-    const shellState = makeShellState({ enterWritersRoom })
+    const toggleWritersRoom = vi.fn()
+    const shellState = makeShellState({ toggleWritersRoom })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
 
     fireEvent.keyDown(window, { key: '6', metaKey: true })
 
-    expect(enterWritersRoom).toHaveBeenCalled()
+    expect(toggleWritersRoom).toHaveBeenCalled()
   })
 
   it('routes Voice Profile button to shell state', () => {

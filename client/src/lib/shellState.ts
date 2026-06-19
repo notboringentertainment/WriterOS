@@ -24,7 +24,6 @@ export function useShellState() {
   const setActiveTab = useCallback((tab: WritingTab) => {
     setHomeActive(false)
     setActiveTabRaw(tab)
-    setWritersRoomActive(false)
     setFocusMode(false)
   }, [])
 
@@ -54,6 +53,13 @@ export function useShellState() {
   const exitWritersRoom = useCallback(() => {
     setWritersRoomActive(false)
   }, [])
+
+  const toggleWritersRoom = useCallback(() => {
+    setHomeActive(false)
+    setPanelByTab(prev => ({ ...prev, [activeTab]: false }))
+    setFocusMode(false)
+    setWritersRoomActive(prev => !prev)
+  }, [activeTab])
 
   const toggleFocusMode = useCallback(() => {
     setFocusMode(prev => !prev)
@@ -85,6 +91,7 @@ export function useShellState() {
     togglePanel,
     enterWritersRoom,
     exitWritersRoom,
+    toggleWritersRoom,
     toggleFocusMode,
     setStoryBibleSection,
     toggleVoiceProfile,

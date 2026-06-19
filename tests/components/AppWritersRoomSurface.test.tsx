@@ -35,6 +35,20 @@ describe("App Writer's Room layout", () => {
     expect(screen.getByText('Sam Chat')).toBeInTheDocument()
   })
 
+  it('keeps Writer Room open when switching writing surfaces', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Synopsis' }))
+
+    expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
+    expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: "Writer's Room" })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('does not remount the active script surface when toggling Writer Room', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))

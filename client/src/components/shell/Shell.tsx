@@ -26,6 +26,7 @@ interface ShellState {
   togglePanel: () => void
   enterWritersRoom: () => void
   exitWritersRoom: () => void
+  toggleWritersRoom: () => void
   toggleFocusMode: () => void
   toggleVoiceProfile: () => void
   closeVoiceProfile: () => void
@@ -71,7 +72,7 @@ export function Shell({
   const {
     homeActive, activeTab, writersRoomActive, panelOpen, focusMode,
     storyBibleSection, voiceProfileOpen,
-    setActiveTab, openHome, togglePanel, enterWritersRoom, exitWritersRoom, toggleFocusMode,
+    setActiveTab, openHome, togglePanel, toggleWritersRoom, toggleFocusMode,
     toggleVoiceProfile, closeVoiceProfile,
   } = shellState
 
@@ -91,7 +92,7 @@ export function Shell({
         const tabs: ActiveTab[] = ['script', 'story-bible', 'outline', 'treatment', 'synopsis']
         const tab = tabs[Number(e.key) - 1]
         if (tab) setActiveTab(tab)
-        else enterWritersRoom()
+        else toggleWritersRoom()
       }
       if (e.key === 'Escape' && voiceProfileOpen) {
         closeVoiceProfile()
@@ -103,12 +104,8 @@ export function Shell({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePanel, openHome, setActiveTab, enterWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
+  }, [togglePanel, openHome, setActiveTab, toggleWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
 
-  const handleWritersRoom = () => {
-    if (writersRoomActive) exitWritersRoom()
-    else enterWritersRoom()
-  }
   const displayProjectTitle = getDisplayProjectTitle(projectTitle)
   // Home and focus mode are full-bleed (no shell chrome). Workspace and Writer's Room both
   // flow through ThreeZoneShell so the paper subtree is never reparented across that toggle;
@@ -162,7 +159,7 @@ export function Shell({
           onDeleteProject={onDeleteProject}
           onHome={openHome}
           onTabChange={setActiveTab}
-          onWritersRoom={handleWritersRoom}
+          onWritersRoom={toggleWritersRoom}
           onVoiceProfile={toggleVoiceProfile}
           voiceProfileOpen={voiceProfileOpen}
         />
