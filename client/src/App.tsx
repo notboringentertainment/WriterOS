@@ -5,6 +5,7 @@ import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
 import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
+import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
 import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
@@ -632,10 +633,17 @@ export default function App() {
         return
       }
 
-      // Surface awareness is attached only to the wp-chat payload (not OpenSwarm /
-      // persona-capability above), so the agent knows which page/question the writer is on.
+      // Surface/location state is attached only to the wp-chat payload (not OpenSwarm /
+      // persona-capability above), so the agent can ground the current WriterOS context.
       const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const location = buildWorkspaceLocation({
+        activeTab: shellState.activeTab,
+        scriptRawHtml: latestScriptSnapshotRef.current.rawHtml,
+        scriptFocus: shellState.activeTab === 'script' ? latestScriptSnapshotRef.current.focus : undefined,
+        storyBibleSection: shellState.storyBibleSection,
+        surface,
+      })
+      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
@@ -654,14 +662,21 @@ export default function App() {
     try {
       const projectContext = buildFreshProjectContext(text)
       const surface = buildSurfaceAwareness(shellState.activeTab, project.state)
-      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const location = buildWorkspaceLocation({
+        activeTab: shellState.activeTab,
+        scriptRawHtml: latestScriptSnapshotRef.current.rawHtml,
+        scriptFocus: shellState.activeTab === 'script' ? latestScriptSnapshotRef.current.focus : undefined,
+        storyBibleSection: shellState.storyBibleSection,
+        surface,
+      })
+      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
     }
-  }, [buildFreshProjectContext, project, shellState.activeTab])
+  }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
   const renderActiveSurface = () => {
     switch (shellState.activeTab) {
