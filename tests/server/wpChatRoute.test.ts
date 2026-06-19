@@ -275,6 +275,63 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     }
   })
 
+  it('passes a valid location through to StoryMemory', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const location = {
+      activeSurface: 'script' as const,
+      sourceKind: 'selected_text' as const,
+      provenance: 'confirmed' as const,
+      anchor: { kind: 'block' as const, stableId: 'block:1', label: 'a selected line' },
+    }
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's selected?",
+        projectContext: { ...buildProjectContext(state), location },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.location).toEqual(location)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('degrades a malformed location to undefined instead of failing the request', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's selected?",
+        projectContext: {
+          ...buildProjectContext(state),
+          location: { activeSurface: 'script', sourceKind: 'confirmed' },
+        },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.location).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
   it('routes a Writer’s Room specialist (zoe) with surface to a 200, surface intact', async () => {
     const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
       message: 'Zoe response.',

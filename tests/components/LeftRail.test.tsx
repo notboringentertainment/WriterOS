@@ -38,14 +38,14 @@ describe('LeftRail', () => {
 
   it('shows the active helper hint for the current surface', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="synopsis" />)
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Sam')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
   })
 
   it('updates the helper hint when a manual mention is typed', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="outline" />)
     const textarea = screen.getByPlaceholderText(/message/i)
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Oliver')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
 
     fireEvent.change(textarea, { target: { value: '@Partner keep this broad' } })
 
@@ -56,11 +56,11 @@ describe('LeftRail', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="story-bible" storyBibleSection="world" />)
     const textarea = screen.getByPlaceholderText(/message/i)
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Zoe')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
 
     fireEvent.change(textarea, { target: { value: "What about Isaiah's state of mind?" } })
 
-    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan will ask @Casey')
+    expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
   })
 
   it('does not show chat panel when closed', () => {

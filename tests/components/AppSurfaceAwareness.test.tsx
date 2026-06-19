@@ -43,6 +43,7 @@ describe('App surface awareness — live request path', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
 
     const body = wpChatBody(fetchMock)
+    expect(body.personaId).toBe('writingPartner')
     expect(body.projectContext.surface.kind).toBe('intake')
     expect(body.projectContext.surface.surface).toBe('outline')
     expect(body.projectContext.surface.nextQuestion.label).toBe('Who are we following?')
@@ -86,8 +87,27 @@ describe('App surface awareness — live request path', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
 
     const body = wpChatBody(fetchMock)
+    expect(body.personaId).toBe('writingPartner')
     expect(body.projectContext.surface.kind).toBe('intake')
     expect(body.projectContext.surface.surface).toBe(surface)
     expect(body.projectContext.surface.nextQuestion.label).toBe(firstQuestion)
+  })
+
+  it('left-rail Writing Partner honors explicit specialist mentions', async () => {
+    const fetchMock = mockFetchCapturing()
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByTitle('Morgan'))
+
+    const input = screen.getByPlaceholderText('Message Morgan…')
+    fireEvent.change(input, { target: { value: '@Sam help with the pitch' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
+
+    const body = wpChatBody(fetchMock)
+    expect(body.personaId).toBe('sam')
+    expect(body.message).toBe('help with the pitch')
   })
 })

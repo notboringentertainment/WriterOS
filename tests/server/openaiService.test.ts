@@ -602,7 +602,7 @@ describe('createContextSummary — surface awareness', () => {
     nextRecommendedAction: 'answer_next_question' as const,
   }
 
-  it('renders a SURFACE AWARENESS block naming the surface and the next question', () => {
+  it('renders a SURFACE AWARENESS block with the surface and the next question', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'sam')
     expect(summary).not.toContain('SURFACE AWARENESS')
 
@@ -614,10 +614,27 @@ describe('createContextSummary — surface awareness', () => {
     expect(withSurface).toContain('0/2')
   })
 
+  it('renders the ordered question deck so ordinal question requests are answerable', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+
+    expect(withSurface).toContain('QUESTION DECK ORDER')
+    expect(withSurface).toContain('1. [unanswered] Who are we following? - Name the person or group whose choices drive the story.')
+    expect(withSurface).toContain('2. [unanswered] What truth is the story testing? - A rough theme is enough.')
+    expect(withSurface).toContain('If the writer asks for an ordinal question')
+  })
+
   it('carries the grounding instruction inside the surface block (not in unconditional rules)', () => {
     const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
     // The instruction tells the agent to ground "what's next here" in the named question.
-    expect(withSurface.toLowerCase()).toMatch(/ground|name the question|the writer is on/)
+    expect(withSurface.toLowerCase()).toMatch(/ground|question deck order|current app surface/)
+  })
+
+  it('tells agents to use surface awareness quietly unless location is asked for', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    const lower = withSurface.toLowerCase()
+
+    expect(lower).toContain('do not open by announcing')
+    expect(lower).toContain('mention the surface name only')
   })
 
   it('authorizes the agent to treat the surface block as real app state and forbids denial', () => {
@@ -640,5 +657,61 @@ describe('createContextSummary — surface awareness', () => {
     const baseline = createContextSummary(populatedStoryMemory(), 'sam')
     expect(createContextSummary({ ...populatedStoryMemory(), surface: undefined }, 'sam')).toBe(baseline)
     expect(createContextSummary({ ...populatedStoryMemory(), surface: { kind: 'none' } }, 'sam')).toBe(baseline)
+  })
+})
+
+describe('createContextSummary — workspace-location', () => {
+  it('renders a confirmed script selection as a workspace-location block', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'script',
+        sourceKind: 'selected_text',
+        provenance: 'confirmed',
+        anchor: { kind: 'block', stableId: 'block:4', label: 'Everything in here is true.' },
+      },
+    }) as any)
+
+    expect(summary).toContain('WORKSPACE LOCATION')
+    expect(summary).toContain('The writer has text selected')
+    expect(summary).toContain('Everything in here is true.')
+    expect(summary).toContain('Do not describe visual appearance')
+  })
+
+  it('renders a synthetic location as an inferred warning, not as current focus', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'outline',
+        sourceKind: 'first_unanswered',
+        provenance: 'synthetic',
+        anchor: { kind: 'question', stableId: 'feature.incitingIncident', label: 'The inciting incident' },
+      },
+    }) as any)
+
+    expect(summary).toContain('No confirmed location')
+    expect(summary).toContain("not the writer's actual focus")
+    expect(summary).not.toContain('I can see')
+    expect(summary).not.toContain('you are currently on')
+  })
+
+  it('renders a story-bible section as last-focus, never as confirmed current position', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'story-bible',
+        sourceKind: 'active_section',
+        provenance: 'inferred',
+        anchor: { kind: 'section', stableId: 'world', label: 'Premise & World' },
+      },
+    }) as any)
+
+    expect(summary).toContain('was last working in the Premise & World section')
+    expect(summary).toContain('not confirmed current position')
+  })
+
+  it('renders nothing for a none location', () => {
+    const summary = createContextSummary(storyMemory({
+      location: { activeSurface: 'script', sourceKind: 'none', provenance: 'none' },
+    }) as any)
+
+    expect(summary).not.toContain('WORKSPACE LOCATION')
   })
 })

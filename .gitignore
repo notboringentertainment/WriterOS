@@ -4,3 +4,9 @@ dist/
 .env*
 !.env.example
 *.local
+
+# Local assistant/session scratch. Durable plans/specs belong under docs/ and should be
+# committed intentionally; handoff scratch should not sit untracked at repo root.
+.claude/
+/HANDOFF.md
+/*_HANDOFF.md

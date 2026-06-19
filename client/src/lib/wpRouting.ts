@@ -3,6 +3,7 @@ import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
+import type { WorkspaceLocation } from '@shared/workspaceLocation'
 import { normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
@@ -24,9 +25,10 @@ export interface ProjectContext {
   genre?: string
   format: ProjectFormat
   logline?: string
-  // Surface Awareness Contract — attached only at the wp-chat call sites (not OpenSwarm /
-  // persona-capability). Absent → omitted from the payload (output unchanged).
+  // Advisory app-state contracts attached only at the wp-chat call sites (not OpenSwarm /
+  // persona-capability). Absent -> omitted from the payload (output unchanged).
   surface?: SurfaceAwareness
+  location?: WorkspaceLocation
   script: ScriptContext
   synopsis: {
     logline: string
@@ -161,9 +163,7 @@ export function getActiveHelperText(
   if (parseOpenSwarmCommand(inputText)) return 'OpenSwarm Writing Partner'
 
   const mentionResult = parseMention(inputText.trimStart())
-  const personaId = mentionResult
-    ? mentionResult.personaId
-    : getDefaultPersona(activeTab, storyBibleSection, inputText)
+  const personaId = mentionResult ? mentionResult.personaId : 'writingPartner'
 
   if (personaId === 'writingPartner') return 'Morgan'
   return `Morgan will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`

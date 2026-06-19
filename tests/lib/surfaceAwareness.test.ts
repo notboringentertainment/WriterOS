@@ -115,7 +115,19 @@ describe('buildSurfaceAwareness', () => {
     expect(sa.surface).toBe('story-bible')
     expect(sa.surfaceTitle).toBe('Story Bible')
     expect(sa.totalCount).toBe(FEATURE_STORY_BIBLE_DECK.length)
+    expect(sa.answeredCount).toBe(0)
     expect(sa.nextQuestion?.label).toBe('What should appear as the title?')
+    expect(sa.questions.find(q => q.id === 'feature-status')?.status).toBe('unanswered')
+  })
+
+  it('story bible does count a non-default status selection as answered', () => {
+    const state = featureState()
+    state.documents.storyBible.content.cover.status = 'pitch'
+    const sa = buildSurfaceAwareness('story-bible', state)
+    expect(sa.kind).toBe('intake')
+    if (sa.kind !== 'intake') return
+    expect(sa.answeredCount).toBe(1)
+    expect(sa.questions.find(q => q.id === 'feature-status')?.status).toBe('answered')
   })
 
   it('script tab stays outside intake surface awareness', () => {

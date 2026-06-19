@@ -1,5 +1,6 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import type { SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
+import { createEmptyStoryBibleContent } from '@shared/documents'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
 import { getOutlineDeck, isOutlineCardAnswered } from './outlineDeck'
@@ -14,6 +15,8 @@ import {
   type StoryBiblePromptDef,
 } from './storyBibleDeck'
 import { TREATMENT_SURFACE_DECK, resolveTreatmentPath, type TreatmentPromptDef } from './treatmentDeck'
+
+const EMPTY_STORY_BIBLE_CONTENT = createEmptyStoryBibleContent()
 
 export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState): SurfaceAwareness {
   const format = normalizeProjectFormat(state.meta.format)
@@ -110,7 +113,10 @@ function isStoryBiblePromptAnswered(
 ): boolean {
   return prompt.inputs.every(input => {
     const resolved = resolveStoryBiblePath(content, input.path)
-    return resolved.defined && hasMeaningfulContent(resolved.value)
+    const emptyResolved = resolveStoryBiblePath(EMPTY_STORY_BIBLE_CONTENT, input.path)
+    return resolved.defined
+      && hasMeaningfulContent(resolved.value)
+      && (!emptyResolved.defined || !sameValue(resolved.value, emptyResolved.value))
   })
 }
 
@@ -134,5 +140,24 @@ function hasMeaningfulContent(value: unknown): boolean {
       return hasMeaningfulContent(child)
     })
   }
+  return false
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((item, index) => sameValue(item, b[index]))
+  }
+
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aEntries = Object.entries(a as Record<string, unknown>)
+    const bObject = b as Record<string, unknown>
+    const bKeys = Object.keys(bObject)
+    if (aEntries.length !== bKeys.length) return false
+    return aEntries.every(([key, value]) => Object.prototype.hasOwnProperty.call(bObject, key) && sameValue(value, bObject[key]))
+  }
+
   return false
 }

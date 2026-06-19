@@ -26,12 +26,13 @@ describe('useShellState', () => {
     expect(result.current.storyBibleSection).toBe('characters')
   })
 
-  it('setActiveTab switches tab and clears writersRoom', () => {
+  it('setActiveTab switches tab without closing Writer Room', () => {
     const { result } = renderHook(() => useShellState())
+    act(() => result.current.enterWritersRoom())
     act(() => result.current.setActiveTab('synopsis'))
     expect(result.current.homeActive).toBe(false)
     expect(result.current.activeTab).toBe('synopsis')
-    expect(result.current.writersRoomActive).toBe(false)
+    expect(result.current.writersRoomActive).toBe(true)
   })
 
   it('setActiveTab exits focus mode', () => {
@@ -59,6 +60,18 @@ describe('useShellState', () => {
     act(() => result.current.exitWritersRoom())
     expect(result.current.writersRoomActive).toBe(false)
     expect(result.current.activeTab).toBe('outline')
+  })
+
+  it('toggleWritersRoom opens and closes Writer Room explicitly', () => {
+    const { result } = renderHook(() => useShellState())
+    act(() => result.current.togglePanel())
+    act(() => result.current.toggleWritersRoom())
+    expect(result.current.homeActive).toBe(false)
+    expect(result.current.writersRoomActive).toBe(true)
+    expect(result.current.panelOpen).toBe(false)
+
+    act(() => result.current.toggleWritersRoom())
+    expect(result.current.writersRoomActive).toBe(false)
   })
 
   it('opens and leaves Home explicitly', () => {
