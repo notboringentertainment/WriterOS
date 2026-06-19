@@ -9,6 +9,7 @@ import { personaCapabilityRequestSchema } from "@shared/personaCapability";
 import { runPersonaTask } from "./persona-capability/runPersonaTask";
 import { normalizeProjectFormat } from "@shared/projectFormat";
 import { SurfaceAwarenessSchema } from "@shared/surfaceAwareness";
+import { WorkspaceLocationSchema } from "@shared/workspaceLocation";
 import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
@@ -261,6 +262,9 @@ const projectContextSchema = z.object({
   // never break chat, so it degrades to undefined (no block) instead of failing the parse
   // and 500ing the whole request.
   surface: SurfaceAwarenessSchema.optional().catch(undefined),
+  // WorkspaceLocation is optional, advisory, and read-only. Malformed packets degrade to
+  // undefined just like surface awareness so chat keeps working without a location block.
+  location: WorkspaceLocationSchema.optional().catch(undefined),
   script: scriptContextSchema,
   synopsis: z.object({
     logline: z.string(),
@@ -926,6 +930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           themes: data.projectContext.storyBible.themes,
         },
         surface: data.projectContext.surface,
+        location: data.projectContext.location,
         script: scriptContext ? {
           excerpt: scriptContext.excerpt,
           sceneHeadings: scriptContext.sceneHeadings,
