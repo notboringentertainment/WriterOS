@@ -642,3 +642,59 @@ describe('createContextSummary — surface awareness', () => {
     expect(createContextSummary({ ...populatedStoryMemory(), surface: { kind: 'none' } }, 'sam')).toBe(baseline)
   })
 })
+
+describe('createContextSummary — workspace-location', () => {
+  it('renders a confirmed script selection as a workspace-location block', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'script',
+        sourceKind: 'selected_text',
+        provenance: 'confirmed',
+        anchor: { kind: 'block', stableId: 'block:4', label: 'Everything in here is true.' },
+      },
+    }) as any)
+
+    expect(summary).toContain('WORKSPACE LOCATION')
+    expect(summary).toContain('The writer has text selected')
+    expect(summary).toContain('Everything in here is true.')
+    expect(summary).toContain('Do not describe visual appearance')
+  })
+
+  it('renders a synthetic location as an inferred warning, not as current focus', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'outline',
+        sourceKind: 'first_unanswered',
+        provenance: 'synthetic',
+        anchor: { kind: 'question', stableId: 'feature.incitingIncident', label: 'The inciting incident' },
+      },
+    }) as any)
+
+    expect(summary).toContain('No confirmed location')
+    expect(summary).toContain("not the writer's actual focus")
+    expect(summary).not.toContain('I can see')
+    expect(summary).not.toContain('you are currently on')
+  })
+
+  it('renders a story-bible section as last-focus, never as confirmed current position', () => {
+    const summary = createContextSummary(storyMemory({
+      location: {
+        activeSurface: 'story-bible',
+        sourceKind: 'active_section',
+        provenance: 'inferred',
+        anchor: { kind: 'section', stableId: 'world', label: 'Premise & World' },
+      },
+    }) as any)
+
+    expect(summary).toContain('was last working in the Premise & World section')
+    expect(summary).toContain('not confirmed current position')
+  })
+
+  it('renders nothing for a none location', () => {
+    const summary = createContextSummary(storyMemory({
+      location: { activeSurface: 'script', sourceKind: 'none', provenance: 'none' },
+    }) as any)
+
+    expect(summary).not.toContain('WORKSPACE LOCATION')
+  })
+})

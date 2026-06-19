@@ -506,6 +506,39 @@ function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
   return lines.join('\n');
 }
 
+// Renders WorkspaceLocation into a read-only prompt block via fixed provenance templates.
+// The model authors no part of the location claim; it only reads structured app state.
+function renderWorkspaceLocation(location: StoryMemory['location']): string {
+  if (!location || location.sourceKind === 'none' || !location.anchor) return '';
+
+  const surface = location.activeSurface;
+  const label = location.anchor.label;
+  let line = '';
+
+  switch (location.sourceKind) {
+    case 'selected_text':
+      line = `The writer has text selected in the ${surface} editor: "${label}".`;
+      break;
+    case 'editor_cursor':
+      line = `The writer's cursor is in the ${surface} editor at ${label}.`;
+      break;
+    case 'active_section':
+      line = `The writer was last working in the ${label} section of ${surface}. (Last focus - not confirmed current position.)`;
+      break;
+    case 'first_unanswered':
+      line = `No confirmed location on ${surface}. By document completeness, the next unanswered item is "${label}" - inferred from what's filled in, not the writer's actual focus.`;
+      break;
+    default:
+      return '';
+  }
+
+  return [
+    'WORKSPACE LOCATION (where the writer is in the work - read-only app state, not a view of their screen):',
+    `- ${line}`,
+    '- Structured app state only. Do not describe visual appearance or claim to see the page.',
+  ].join('\n');
+}
+
 export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
   const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
   const writingPartnerBrief = createWritingPartnerBrief(storyMemory);
@@ -600,7 +633,9 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   // carries its own grounding instruction so no unconditional prompt rule changes. Absent /
   // 'none' surface emits nothing, keeping existing prompts byte-identical.
   const surfaceBlock = renderSurfaceAwareness(storyMemory.surface);
-  const allBlocks = surfaceBlock ? [surfaceBlock, ...orderedBlocks] : orderedBlocks;
+  const locationBlock = renderWorkspaceLocation(storyMemory.location);
+  const leadingBlocks = [surfaceBlock, locationBlock].filter(Boolean);
+  const allBlocks = leadingBlocks.length ? [...leadingBlocks, ...orderedBlocks] : orderedBlocks;
 
   return allBlocks.join('\n\n') || 'No structured project details yet.';
 }
