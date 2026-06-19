@@ -163,9 +163,7 @@ export function getActiveHelperText(
   if (parseOpenSwarmCommand(inputText)) return 'OpenSwarm Writing Partner'
 
   const mentionResult = parseMention(inputText.trimStart())
-  const personaId = mentionResult
-    ? mentionResult.personaId
-    : getDefaultPersona(activeTab, storyBibleSection, inputText)
+  const personaId = mentionResult ? mentionResult.personaId : 'writingPartner'
 
   if (personaId === 'writingPartner') return 'Morgan'
   return `Morgan will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`

@@ -184,18 +184,13 @@ describe('getActiveHelperText', () => {
     expect(getActiveHelperText('', 'script', null)).toBe('Morgan')
   })
 
-  it('shows the default specialist for synopsis, outline, and treatment', () => {
-    expect(getActiveHelperText('', 'synopsis', null)).toBe('Morgan will ask @Sam')
-    expect(getActiveHelperText('', 'outline', null)).toBe('Morgan will ask @Oliver')
-    expect(getActiveHelperText('', 'treatment', null)).toBe('Morgan will ask @Alex')
-  })
-
-  it('separates Story Bible defaults by section', () => {
-    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Morgan will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'themes')).toBe('Morgan will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'tone')).toBe('Morgan will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Morgan will ask @Zoe')
-    expect(getActiveHelperText('', 'story-bible', 'rules')).toBe('Morgan will ask @Zoe')
+  it('uses Morgan directly by default on all writing surfaces', () => {
+    expect(getActiveHelperText('', 'script', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'synopsis', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'outline', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'treatment', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Morgan')
+    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Morgan')
   })
 
   it('lets a typed manual mention override the surface hint', () => {
@@ -207,9 +202,9 @@ describe('getActiveHelperText', () => {
     expect(getActiveHelperText('/swarm review this premise', 'synopsis', null)).toBe('OpenSwarm Writing Partner')
   })
 
-  it('updates the Story Bible hint from typed message intent', () => {
-    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Morgan will ask @Casey')
-    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Morgan will ask @Zoe')
+  it('does not infer specialist delegation from plain Story Bible message intent', () => {
+    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Morgan')
+    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Morgan')
   })
 })
 

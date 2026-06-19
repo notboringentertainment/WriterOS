@@ -3,7 +3,7 @@ import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
-import { parseMention, parseOpenSwarmCommand, getDefaultPersona, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -596,9 +596,7 @@ export default function App() {
 
     // Step 2: parse @mention
     const mentionResult = parseMention(text)
-    const personaId = mentionResult
-      ? mentionResult.personaId
-      : getDefaultPersona(shellState.activeTab, shellState.storyBibleSection, text)
+    const personaId = mentionResult ? mentionResult.personaId : 'writingPartner'
     const messageToSend = mentionResult ? mentionResult.strippedText : text
     const capabilityKind = classifyPersonaCapability({ personaId, message: messageToSend })
 
