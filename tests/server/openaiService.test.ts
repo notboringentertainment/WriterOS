@@ -602,7 +602,7 @@ describe('createContextSummary — surface awareness', () => {
     nextRecommendedAction: 'answer_next_question' as const,
   }
 
-  it('renders a SURFACE AWARENESS block naming the surface and the next question', () => {
+  it('renders a SURFACE AWARENESS block with the surface and the next question', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'sam')
     expect(summary).not.toContain('SURFACE AWARENESS')
 
@@ -614,10 +614,27 @@ describe('createContextSummary — surface awareness', () => {
     expect(withSurface).toContain('0/2')
   })
 
+  it('renders the ordered question deck so ordinal question requests are answerable', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+
+    expect(withSurface).toContain('QUESTION DECK ORDER')
+    expect(withSurface).toContain('1. [unanswered] Who are we following? - Name the person or group whose choices drive the story.')
+    expect(withSurface).toContain('2. [unanswered] What truth is the story testing? - A rough theme is enough.')
+    expect(withSurface).toContain('If the writer asks for an ordinal question')
+  })
+
   it('carries the grounding instruction inside the surface block (not in unconditional rules)', () => {
     const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
     // The instruction tells the agent to ground "what's next here" in the named question.
-    expect(withSurface.toLowerCase()).toMatch(/ground|name the question|the writer is on/)
+    expect(withSurface.toLowerCase()).toMatch(/ground|question deck order|current app surface/)
+  })
+
+  it('tells agents to use surface awareness quietly unless location is asked for', () => {
+    const withSurface = createContextSummary({ ...populatedStoryMemory(), surface: intakeSurface }, 'sam')
+    const lower = withSurface.toLowerCase()
+
+    expect(lower).toContain('do not open by announcing')
+    expect(lower).toContain('mention the surface name only')
   })
 
   it('authorizes the agent to treat the surface block as real app state and forbids denial', () => {
