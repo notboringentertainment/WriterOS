@@ -1,5 +1,6 @@
 import type { ProjectFormat } from './projectFormat'
 import type { SurfaceAwareness } from './surfaceAwareness'
+import type { WorkspaceLocation } from './workspaceLocation'
 
 export type EntryState =
   | 'blank_slate'
@@ -80,6 +81,7 @@ export interface StoryMemory {
   // Surface Awareness Contract: which page the writer is on + the next unanswered question.
   // Optional — absent for callers that do not supply it (output stays unchanged).
   surface?: SurfaceAwareness
+  location?: WorkspaceLocation
   characters: Record<string, Character>
   outline: {
     acts: number
