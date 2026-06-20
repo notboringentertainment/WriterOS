@@ -449,6 +449,9 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
 
 type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'treatment' | 'scenes' | 'storyBible';
 
+const DEFAULT_PERSONA_MAX_TOKENS = 800;
+const MORGAN_SHOWRUNNER_MAX_TOKENS = 1600;
+
 const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'treatment', 'scenes', 'storyBible'];
 
 const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
@@ -648,6 +651,10 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   return allBlocks.join('\n\n') || 'No structured project details yet.';
 }
 
+function maxTokensForPersona(persona: Persona): number {
+  return persona.id === 'writingPartner' ? MORGAN_SHOWRUNNER_MAX_TOKENS : DEFAULT_PERSONA_MAX_TOKENS;
+}
+
 function sourceLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
   if (!input.sources.length) return '- None supplied'
   return input.sources
@@ -811,6 +818,10 @@ export function createPersonaSystemPrompt(
   voiceProfile?: VoiceProfileDocument
 ): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
+    const isMorgan = persona.id === 'writingPartner';
+    const identityLine = isMorgan
+      ? 'You are Morgan, the Showrunner for WriterOS. You are a first-class creative operator: host, triage partner, synthesis engine, and big-picture creative director for the whole project.'
+      : `You are ${persona.name}, a ${persona.role}. ${persona.personality}.`;
     // When a completed Voice Profile is present, the literal house-stance register
     // replaces the default warm line and a focused profile subset is appended.
     // When absent, output is byte-identical to before (no profile branch).
@@ -820,7 +831,7 @@ export function createPersonaSystemPrompt(
     const voiceProfileBlock = voiceProfile
       ? `\n\nWRITER VOICE PROFILE (the writer's craft identity — honor it; do not quote it back):\n${renderVoiceProfileSubset(voiceProfile)}`
       : '';
-    const basePrompt = `You are ${persona.name}, a ${persona.role}. ${persona.personality}.
+    const basePrompt = `${identityLine}
 
 YOUR PERSONALITY TRAITS:
 ${stanceLine}
@@ -851,6 +862,24 @@ EXPERTISE-SPECIFIC GUIDELINES:`;
 
     // Add persona-specific expertise
     switch (persona.id) {
+      case 'writingPartner':
+        return `${basePrompt}
+MORGAN OPERATING CONTRACT:
+- Own the Morgan host lane: synthesize across Script, Synopsis, Outline, Treatment, Story Bible, Workspace Location, Surface Awareness, and the writer's Voice Profile when provided.
+- Be a showrunner, not a passive router. Give a useful showrunner-level read first when the request is broad, then recommend Sam, Casey, Oliver, Maya, Zoe, or Alex only when their specialist lane is clearly the better next move.
+- Triage the work honestly: name the central creative problem, the tradeoff, and the next best move.
+- Keep the writing-first boundary: no silent edits, no claims that you changed project state, and no promises of background work. Advice and strategy only unless a real WriterOS control exists in the app.
+- Treat app context as structured state, not screen vision. Never claim to see pixels or unlisted fields.
+- When the writer is vague, ask one precise question after giving the best current read.
+
+RESPONSE STYLE: Calm, decisive, and specific. Like a showrunner who can hold the whole room in her head without crowding the writer's voice.
+
+IMPORTANT: Respond with JSON in this format:
+{
+  "message": "Your response (roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move)",
+  "suggestions": ["0-3 specific next actions, only when useful"]
+}`;
+
       case 'sam':
         return `${basePrompt}
 - Help craft compelling loglines (20-35 words, protagonist + conflict + stakes)
@@ -995,7 +1024,7 @@ export class OpenAIService {
         systemPrompt,
         messages,
         temperature: 0.7,
-        maxTokens: 800,
+        maxTokens: maxTokensForPersona(persona),
       });
       
       try {
