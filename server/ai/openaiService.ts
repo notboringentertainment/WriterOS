@@ -4,6 +4,7 @@ import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
+import { runMorgan, buildReachInventory, renderReachContract } from "./morganRuntime";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -815,7 +816,8 @@ export function createPersonaSystemPrompt(
   userProfile: AssessmentProfile,
   storyMemory: StoryMemory,
   userMessage: string,
-  voiceProfile?: VoiceProfileDocument
+  voiceProfile?: VoiceProfileDocument,
+  responseMode: 'json' | 'tool' = 'json'
 ): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
     const isMorgan = persona.id === 'writingPartner';
@@ -874,11 +876,13 @@ MORGAN OPERATING CONTRACT:
 
 RESPONSE STYLE: Calm, decisive, and specific. Like a showrunner who can hold the whole room in her head without crowding the writer's voice.
 
-IMPORTANT: Respond with JSON in this format:
+${responseMode === 'tool'
+  ? `IMPORTANT: When you have what you need, you MUST finish by calling the respond_to_writer tool with { message, suggestions }. Aim for roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move. Do not answer in plain text — the respond_to_writer call is how the writer receives your answer.`
+  : `IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move)",
   "suggestions": ["0-3 specific next actions, only when useful"]
-}`;
+}`}`;
 
       case 'sam':
         return `${basePrompt}
@@ -1009,8 +1013,23 @@ export class OpenAIService {
     voiceProfile?: VoiceProfileDocument
   ): Promise<PersonaResponse> {
     try {
+      // Morgan runs on the Claude-native tool-loop runtime, not the single-shot
+      // path. She no longer falls into the hollow JSON fallback below.
+      if (persona.id === 'writingPartner') {
+        const inventory = buildReachInventory(storyMemory);
+        const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool');
+        const systemPrompt = `${renderReachContract(inventory)}\n\n${toolPrompt}`;
+        const result = await runMorgan({
+          systemPrompt,
+          userMessage,
+          history: conversationHistory,
+          inventory,
+        });
+        return { message: result.message, suggestions: result.suggestions };
+      }
+
       const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
-      
+
       const messages: ModelMessage[] = [
         ...conversationHistory.slice(-6).map(msg => ({
           role: msg.role === 'user' ? 'user' as const : 'assistant' as const,

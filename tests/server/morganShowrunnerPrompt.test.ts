@@ -14,7 +14,15 @@ vi.mock('../../server/ai/modelProvider', () => ({
   }),
 }))
 
+// Morgan now runs on the Claude-native runtime, not the single-shot provider.
+vi.mock('../../server/ai/morganRuntime', () => ({
+  runMorgan: vi.fn(async () => ({ ok: true, message: 'morgan runtime read', suggestions: [], receipts: [], limits: [] })),
+  buildReachInventory: () => ({ canSee: [], cannotSee: [], canDoNow: [], cannotDoYet: [] }),
+  renderReachContract: () => 'MORGAN REACH',
+}))
+
 import { createPersonaSystemPrompt, OpenAIService } from '../../server/ai/openaiService'
+import { runMorgan } from '../../server/ai/morganRuntime'
 import { PERSONAS } from '../../shared/personas'
 import type { AssessmentProfile, StoryMemory } from '../../shared/schema'
 
@@ -132,17 +140,20 @@ describe('Morgan Showrunner prompt', () => {
   })
 })
 
-describe('Morgan response headroom', () => {
-  it('calls the model with more max token headroom for Morgan than for specialists', async () => {
+describe('Morgan routing + specialist headroom', () => {
+  it('delegates Morgan to the Claude runtime and keeps specialists on the single-shot provider at 800 tokens', async () => {
     const service = new OpenAIService()
     const profile = userProfile()
     const memory = storyMemory()
 
-    await service.generatePersonaResponse(PERSONAS.writingPartner, 'Give me a showrunner read.', profile, memory, [])
+    const morgan = await service.generatePersonaResponse(PERSONAS.writingPartner, 'Give me a showrunner read.', profile, memory, [])
     await service.generatePersonaResponse(PERSONAS.sam, 'Help with the logline.', profile, memory, [])
 
-    expect(providerCalls).toHaveLength(2)
-    expect(providerCalls[0].maxTokens).toBeGreaterThan(providerCalls[1].maxTokens ?? 0)
-    expect(providerCalls[1].maxTokens).toBe(800)
+    // Morgan goes through the runtime, never the single-shot provider.
+    expect(runMorgan).toHaveBeenCalledTimes(1)
+    expect(morgan.message).toBe('morgan runtime read')
+    // Only the specialist hits the provider, at the specialist default headroom.
+    expect(providerCalls).toHaveLength(1)
+    expect(providerCalls[0].maxTokens).toBe(800)
   })
 })
