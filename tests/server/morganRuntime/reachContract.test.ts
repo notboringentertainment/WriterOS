@@ -21,7 +21,7 @@ describe('reach inventory', () => {
   })
 
   it('omits unpopulated surfaces from canSee (no false claims)', () => {
-    const inv = buildReachInventory(base({ project: { title: '', genre: '', format: '', logline: '' } }))
+    const inv = buildReachInventory(base({ project: { title: '', genre: '', format: 'feature', logline: '' } }))
     expect(inv.canSee.join(' ')).not.toMatch(/logline/i)
   })
 
