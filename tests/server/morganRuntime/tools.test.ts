@@ -38,6 +38,24 @@ describe('morgan tools', () => {
     }
   })
 
+  it('enforces the advertised 0-3 suggestions contract in the schema (maxItems 3, non-empty items)', () => {
+    const respond = MORGAN_TOOLS.find(t => t.name === RESPOND_TOOL_NAME)!
+    const sug = (respond.input_schema as { properties: { suggestions: Record<string, unknown> } }).properties.suggestions
+    expect(sug.maxItems).toBe(3)
+    expect((sug.items as { minLength?: number }).minLength).toBe(1)
+  })
+
+  it('normalizes suggestions at runtime: trims, drops blanks, caps at 3', () => {
+    const out = dispatchTool(
+      { id: 't', name: RESPOND_TOOL_NAME, input: { message: 'ok', suggestions: ['  a  ', '', '   ', 'b', 'c', 'd'] } },
+      { inventory },
+    )
+    expect(out.kind).toBe('final')
+    if (out.kind === 'final') {
+      expect(out.result.suggestions).toEqual(['a', 'b', 'c'])
+    }
+  })
+
   it('rejects respond_to_writer with a blank message as an error outcome (not a hollow pass-through)', () => {
     const out = dispatchTool({ id: 't3', name: RESPOND_TOOL_NAME, input: { message: '' } }, { inventory })
     expect(out.kind).toBe('error')

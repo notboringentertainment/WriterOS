@@ -23,7 +23,12 @@ export const MORGAN_TOOLS: ToolSpec[] = [
       type: 'object',
       properties: {
         message: { type: 'string', description: 'Your answer to the writer.' },
-        suggestions: { type: 'array', items: { type: 'string' }, description: '0-3 concrete next actions, only when useful.' },
+        suggestions: {
+          type: 'array',
+          items: { type: 'string', minLength: 1 },
+          maxItems: 3,
+          description: '0-3 concrete next actions, only when useful.',
+        },
       },
       required: ['message'],
       additionalProperties: false,
@@ -35,8 +40,13 @@ interface DispatchContext {
   inventory: ReachInventory;
 }
 
+// Clean a model-supplied string array: keep strings, trim, drop blanks.
 const asStringArray = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === 'string').map((s) => s.trim()).filter((s) => s.length > 0)
+    : [];
+
+const MAX_SUGGESTIONS = 3;
 
 export function dispatchTool(use: ToolUse, ctx: DispatchContext): DispatchOutcome {
   if (use.name === READ_CONTEXT_TOOL_NAME) {
@@ -53,7 +63,7 @@ export function dispatchTool(use: ToolUse, ctx: DispatchContext): DispatchOutcom
       kind: 'final',
       result: {
         message,
-        suggestions: asStringArray(input.suggestions),
+        suggestions: asStringArray(input.suggestions).slice(0, MAX_SUGGESTIONS),
         ok: true,
       },
     };
