@@ -11,9 +11,10 @@ export interface ReachInventory {
 export interface MorganRuntimeResult {
   message: string;
   suggestions: string[];
-  receipts: string[]; // M1: always [] (no specialist/web yet) — rides for M2
-  limits: string[]; // honest "cannot do yet" surfaced when relevant
   ok: boolean; // false on honest-error paths
+  // NOTE: receipts/limits intentionally absent in M1 — there is no response path
+  // or render surface for them yet. They return in M2 alongside askSpecialist +
+  // the "consulted specialists" receipt UI, wired end-to-end rather than dangling.
 }
 
 export interface ToolSpec {

@@ -24,8 +24,13 @@ export function assistantTurn(content: unknown): unknown {
   return { role: 'assistant', content };
 }
 
-export function toolResultTurn(toolUseId: string, content: string): unknown {
-  return { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content }] };
+// Anthropic requires ALL tool_results for one assistant turn to arrive in a
+// SINGLE user message. Pass every non-terminal result from the turn at once.
+export function toolResultsTurn(results: Array<{ toolUseId: string; content: string }>): unknown {
+  return {
+    role: 'user',
+    content: results.map((r) => ({ type: 'tool_result', tool_use_id: r.toolUseId, content: r.content })),
+  };
 }
 
 export async function sendToolTurn(input: {

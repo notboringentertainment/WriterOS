@@ -24,8 +24,6 @@ export const MORGAN_TOOLS: ToolSpec[] = [
       properties: {
         message: { type: 'string', description: 'Your answer to the writer.' },
         suggestions: { type: 'array', items: { type: 'string' }, description: '0-3 concrete next actions, only when useful.' },
-        receipts: { type: 'array', items: { type: 'string' }, description: 'Sources/consultations behind this answer (none in M1).' },
-        limits: { type: 'array', items: { type: 'string' }, description: 'Honest limits relevant to this answer.' },
       },
       required: ['message'],
       additionalProperties: false,
@@ -56,8 +54,6 @@ export function dispatchTool(use: ToolUse, ctx: DispatchContext): DispatchOutcom
       result: {
         message,
         suggestions: asStringArray(input.suggestions),
-        receipts: [],
-        limits: asStringArray(input.limits),
         ok: true,
       },
     };

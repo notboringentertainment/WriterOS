@@ -7,7 +7,7 @@ import {
   sendToolTurn,
   userTurn,
   assistantTurn,
-  toolResultTurn,
+  toolResultsTurn,
 } from './anthropicToolClient';
 import { MORGAN_TOOLS, dispatchTool } from './tools';
 import type { MorganRuntimeResult, RunMorganInput } from './types';
@@ -17,8 +17,6 @@ const MAX_ITERS = 4;
 const honestError = (message: string): MorganRuntimeResult => ({
   message,
   suggestions: [],
-  receipts: [],
-  limits: [],
   ok: false,
 });
 
@@ -49,18 +47,22 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
       return null; // model answered without the terminal tool — malformed for our contract
     }
 
-    let continued = false;
-    for (const use of turn.toolUses) {
-      const outcome = dispatchTool(use, { inventory: input.inventory });
-      if (outcome.kind === 'final') {
-        return outcome.result;
-      }
-      // continue | error → feed the tool result back and loop again
-      messages.push(assistantTurn(turn.assistantContent));
-      messages.push(toolResultTurn(outcome.toolUseId, outcome.content));
-      continued = true;
+    const outcomes = turn.toolUses.map((use) => dispatchTool(use, { inventory: input.inventory }));
+
+    // If the model delivered a final answer this turn, that's the response —
+    // return it even if it also called read tools alongside.
+    const final = outcomes.find((o) => o.kind === 'final');
+    if (final && final.kind === 'final') {
+      return final.result;
     }
-    if (!continued) return null;
+
+    // Anthropic contract: one assistant message with all tool_use blocks, then
+    // ONE user message carrying every matching tool_result.
+    const results = outcomes
+      .filter((o): o is Extract<typeof o, { kind: 'continue' | 'error' }> => o.kind !== 'final')
+      .map((o) => ({ toolUseId: o.toolUseId, content: o.content }));
+    messages.push(assistantTurn(turn.assistantContent));
+    messages.push(toolResultsTurn(results));
   }
 
   return null; // exhausted iterations without a terminal tool

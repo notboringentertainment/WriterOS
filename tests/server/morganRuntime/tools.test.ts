@@ -11,6 +11,12 @@ describe('morgan tools', () => {
     for (const t of MORGAN_TOOLS) expect(t.input_schema).toHaveProperty('type', 'object')
   })
 
+  it('respond_to_writer advertises only fields the M1 response path actually carries (no dead receipts/limits)', () => {
+    const respond = MORGAN_TOOLS.find(t => t.name === RESPOND_TOOL_NAME)!
+    const props = Object.keys((respond.input_schema as { properties: Record<string, unknown> }).properties).sort()
+    expect(props).toEqual(['message', 'suggestions'])
+  })
+
   it('dispatches readProjectContext to a continue outcome carrying the inventory', () => {
     const out = dispatchTool({ id: 't1', name: READ_CONTEXT_TOOL_NAME, input: {} }, { inventory })
     expect(out.kind).toBe('continue')
@@ -27,7 +33,8 @@ describe('morgan tools', () => {
       expect(out.result.message).toBe('Here is the read.')
       expect(out.result.suggestions).toEqual(['next'])
       expect(out.result.ok).toBe(true)
-      expect(out.result.receipts).toEqual([])
+      expect(out.result).not.toHaveProperty('receipts')
+      expect(out.result).not.toHaveProperty('limits')
     }
   })
 

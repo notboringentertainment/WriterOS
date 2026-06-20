@@ -16,7 +16,7 @@ vi.mock('../../server/ai/modelProvider', () => ({
 
 // Morgan now runs on the Claude-native runtime, not the single-shot provider.
 vi.mock('../../server/ai/morganRuntime', () => ({
-  runMorgan: vi.fn(async () => ({ ok: true, message: 'morgan runtime read', suggestions: [], receipts: [], limits: [] })),
+  runMorgan: vi.fn(async () => ({ ok: true, message: 'morgan runtime read', suggestions: [] })),
   buildReachInventory: () => ({ canSee: [], cannotSee: [], canDoNow: [], cannotDoYet: [] }),
   renderReachContract: () => 'MORGAN REACH',
 }))

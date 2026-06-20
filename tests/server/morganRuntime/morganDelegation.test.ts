@@ -38,7 +38,7 @@ beforeEach(() => { runMorgan.mockReset(); providerCalls.length = 0 })
 
 describe('Morgan delegation', () => {
   it('routes Morgan through the runtime, not the single-shot provider', async () => {
-    runMorgan.mockResolvedValue({ ok: true, message: 'runtime read', suggestions: ['x'], receipts: [], limits: [] })
+    runMorgan.mockResolvedValue({ ok: true, message: 'runtime read', suggestions: ['x'] })
     const r = await new OpenAIService().generatePersonaResponse(PERSONAS.writingPartner, 'reach?', userProfile(), storyMemory(), [])
     expect(runMorgan).toHaveBeenCalledTimes(1)
     expect(r.message).toBe('runtime read')
