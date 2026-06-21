@@ -69,7 +69,8 @@ describe('runMorgan loop', () => {
     expect(assistantCount).toBe(1)
     const toolResultTurns = secondCallMessages.filter((m) => m.role === 'user' && Array.isArray(m.content))
     expect(toolResultTurns).toHaveLength(1)
-    const ids = (toolResultTurns[0].content as Array<{ tool_use_id: string }>).map((c) => c.tool_use_id).sort()
+    // order (NOT sorted) must match turn.toolUses — guards Promise.all ordering under async dispatch
+    const ids = (toolResultTurns[0].content as Array<{ tool_use_id: string }>).map((c) => c.tool_use_id)
     expect(ids).toEqual(['a', 'b'])
   })
 

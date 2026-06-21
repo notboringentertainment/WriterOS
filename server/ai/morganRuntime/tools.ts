@@ -2,7 +2,7 @@
 // M1 surface: one read tool (readProjectContext) + one terminal tool (respond_to_writer).
 // M2 adds askSpecialist here; the loop/client/prompt/route need no change.
 
-import type { DispatchOutcome, ReachInventory, ToolSpec, ToolUse } from './types';
+import type { DispatchOutcome, ReachInventory, RuntimeDeps, ToolSpec, ToolUse } from './types';
 
 export const READ_CONTEXT_TOOL_NAME = 'readProjectContext';
 export const RESPOND_TOOL_NAME = 'respond_to_writer';
@@ -38,6 +38,7 @@ export const MORGAN_TOOLS: ToolSpec[] = [
 
 interface DispatchContext {
   inventory: ReachInventory;
+  deps?: RuntimeDeps; // injected runtime capabilities; askSpecialist (Task 4) consumes this
 }
 
 // Clean a model-supplied string array: keep strings, trim, drop blanks.
@@ -48,7 +49,7 @@ const asStringArray = (v: unknown): string[] =>
 
 const MAX_SUGGESTIONS = 3;
 
-export function dispatchTool(use: ToolUse, ctx: DispatchContext): DispatchOutcome {
+export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<DispatchOutcome> {
   if (use.name === READ_CONTEXT_TOOL_NAME) {
     return { kind: 'continue', toolUseId: use.id, content: JSON.stringify(ctx.inventory) };
   }

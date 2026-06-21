@@ -47,7 +47,10 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
       return null; // model answered without the terminal tool — malformed for our contract
     }
 
-    const outcomes = turn.toolUses.map((use) => dispatchTool(use, { inventory: input.inventory }));
+    // Promise.all preserves array order → the assistant/tool_result batching below
+    // stays matched to turn.toolUses (the P1 history contract).
+    const ctx = { inventory: input.inventory, deps: input.deps };
+    const outcomes = await Promise.all(turn.toolUses.map((use) => dispatchTool(use, ctx)));
 
     // If the model delivered a final answer this turn, that's the response —
     // return it even if it also called read tools alongside.

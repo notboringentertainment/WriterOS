@@ -17,8 +17,8 @@ describe('morgan tools', () => {
     expect(props).toEqual(['message', 'suggestions'])
   })
 
-  it('dispatches readProjectContext to a continue outcome carrying the inventory', () => {
-    const out = dispatchTool({ id: 't1', name: READ_CONTEXT_TOOL_NAME, input: {} }, { inventory })
+  it('dispatches readProjectContext to a continue outcome carrying the inventory', async () => {
+    const out = await dispatchTool({ id: 't1', name: READ_CONTEXT_TOOL_NAME, input: {} }, { inventory })
     expect(out.kind).toBe('continue')
     if (out.kind === 'continue') {
       expect(out.toolUseId).toBe('t1')
@@ -26,8 +26,8 @@ describe('morgan tools', () => {
     }
   })
 
-  it('dispatches a valid respond_to_writer to a final result', () => {
-    const out = dispatchTool({ id: 't2', name: RESPOND_TOOL_NAME, input: { message: 'Here is the read.', suggestions: ['next'] } }, { inventory })
+  it('dispatches a valid respond_to_writer to a final result', async () => {
+    const out = await dispatchTool({ id: 't2', name: RESPOND_TOOL_NAME, input: { message: 'Here is the read.', suggestions: ['next'] } }, { inventory })
     expect(out.kind).toBe('final')
     if (out.kind === 'final') {
       expect(out.result.message).toBe('Here is the read.')
@@ -45,8 +45,8 @@ describe('morgan tools', () => {
     expect((sug.items as { minLength?: number }).minLength).toBe(1)
   })
 
-  it('normalizes suggestions at runtime: trims, drops blanks, caps at 3', () => {
-    const out = dispatchTool(
+  it('normalizes suggestions at runtime: trims, drops blanks, caps at 3', async () => {
+    const out = await dispatchTool(
       { id: 't', name: RESPOND_TOOL_NAME, input: { message: 'ok', suggestions: ['  a  ', '', '   ', 'b', 'c', 'd'] } },
       { inventory },
     )
@@ -56,13 +56,19 @@ describe('morgan tools', () => {
     }
   })
 
-  it('rejects respond_to_writer with a blank message as an error outcome (not a hollow pass-through)', () => {
-    const out = dispatchTool({ id: 't3', name: RESPOND_TOOL_NAME, input: { message: '' } }, { inventory })
+  it('rejects respond_to_writer with a blank message as an error outcome (not a hollow pass-through)', async () => {
+    const out = await dispatchTool({ id: 't3', name: RESPOND_TOOL_NAME, input: { message: '' } }, { inventory })
     expect(out.kind).toBe('error')
   })
 
-  it('returns an error outcome for an unknown tool', () => {
-    const out = dispatchTool({ id: 't4', name: 'askSpecialist', input: {} }, { inventory })
+  it('returns an error outcome for an unknown tool', async () => {
+    const out = await dispatchTool({ id: 't4', name: 'askSpecialist', input: {} }, { inventory })
     expect(out.kind).toBe('error')
+  })
+
+  it('dispatchTool is async (returns a Promise that resolves to the outcome)', async () => {
+    const p = dispatchTool({ id: 't', name: READ_CONTEXT_TOOL_NAME, input: {} }, { inventory })
+    expect(p).toBeInstanceOf(Promise)
+    expect((await p).kind).toBe('continue')
   })
 })
