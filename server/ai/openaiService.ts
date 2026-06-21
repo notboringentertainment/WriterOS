@@ -182,7 +182,6 @@ export function parseSynthesisResponse(raw: string): VoiceProfileDocument {
 export interface PersonaResponse {
   message: string;
   suggestions?: string[];
-  storyUpdates?: Partial<StoryMemory>;
 }
 
 const PLAIN_TEXT_PERSONA_RESPONSE_RULES = `OUTPUT FORMAT RULES:
@@ -451,7 +450,6 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
 type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'treatment' | 'scenes' | 'storyBible';
 
 const DEFAULT_PERSONA_MAX_TOKENS = 800;
-const MORGAN_SHOWRUNNER_MAX_TOKENS = 1600;
 
 const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'treatment', 'scenes', 'storyBible'];
 
@@ -650,10 +648,6 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   const allBlocks = leadingBlocks.length ? [...leadingBlocks, ...orderedBlocks] : orderedBlocks;
 
   return allBlocks.join('\n\n') || 'No structured project details yet.';
-}
-
-function maxTokensForPersona(persona: Persona): number {
-  return persona.id === 'writingPartner' ? MORGAN_SHOWRUNNER_MAX_TOKENS : DEFAULT_PERSONA_MAX_TOKENS;
 }
 
 function sourceLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
@@ -897,10 +891,7 @@ RESPONSE STYLE: Like a mentor who's pitched 100 scripts to studios. Warm but bus
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 precise questions, provide 1 concrete next step, use market-savvy phrasing, optionally suggest comparable titles)",
-  "suggestions": ["2-3 specific actionable suggestions"],
-  "storyUpdates": {
-    "project": {"field": "updated_value"} // only include if user provided new information about title, genre, logline, etc.
-  }
+  "suggestions": ["2-3 specific actionable suggestions"]
 }`;
 
       case 'casey':
@@ -916,10 +907,7 @@ RESPONSE STYLE: Like a method actor who lives inside characters' heads. Intuitiv
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 deep psychological questions, provide intuitive character insights)",
-  "suggestions": ["2-3 character development suggestions"],
-  "storyUpdates": {
-    "characters": {"characterName": {"field": "updated_value"}} // only if user provides character info
-  }
+  "suggestions": ["2-3 character development suggestions"]
 }`;
 
       case 'oliver':
@@ -935,10 +923,7 @@ RESPONSE STYLE: Like a seasoned story editor who spots issues while inspiring cr
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 structural questions, provide concrete story guidance)",
-  "suggestions": ["2-3 structural improvements"],
-  "storyUpdates": {
-    "outline": {"beats": []} // only if user provides plot/structure info
-  }
+  "suggestions": ["2-3 structural improvements"]
 }`;
 
       case 'maya':
@@ -954,10 +939,7 @@ RESPONSE STYLE: Like a former actor who can slip into any character's voice. Int
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on voice and dialogue craft, ask about character speech patterns)",
-  "suggestions": ["2-3 dialogue improvement techniques"],
-  "storyUpdates": {
-    "dialogue": {"samples": "example dialogue"} // only if user provides dialogue to work on
-  }
+  "suggestions": ["2-3 dialogue improvement techniques"]
 }`;
 
       case 'zoe':
@@ -973,10 +955,7 @@ RESPONSE STYLE: Like a fantasy author who's built dozens of consistent worlds. D
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on world consistency and immersion, ask about setting details)",
-  "suggestions": ["2-3 world-building improvements"],
-  "storyUpdates": {
-    "worldRules": {"setting": "world details"} // only if user provides world information
-  }
+  "suggestions": ["2-3 world-building improvements"]
 }`;
 
       case 'alex':
@@ -992,10 +971,7 @@ RESPONSE STYLE: Like an encouraging writing coach who's been through every creat
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on writing process and momentum, ask about current challenges)",
-  "suggestions": ["2-3 practical writing strategies"],
-  "storyUpdates": {
-    "decisions": [{"type": "process", "decision": "writing habit change"}] // only if user commits to process changes
-  }
+  "suggestions": ["2-3 practical writing strategies"]
 }`;
 
       default:
@@ -1043,15 +1019,14 @@ export class OpenAIService {
         systemPrompt,
         messages,
         temperature: 0.7,
-        maxTokens: maxTokensForPersona(persona),
+        maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
       });
-      
+
       try {
         const parsedResponse = parseJsonObject(rawContent);
         return {
           message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
           suggestions: parsedResponse.suggestions || [],
-          storyUpdates: parsedResponse.storyUpdates
         };
       } catch (parseError) {
         // Fallback if JSON parsing fails
@@ -1066,45 +1041,6 @@ export class OpenAIService {
         message: `I'm having trouble connecting right now, ${userProfile.writerName}. Let me try to help based on what we've discussed so far.`
       };
     }
-  }
-
-  private async extractStoryUpdates(
-    persona: Persona,
-    userMessage: string,
-    aiResponse: string,
-    currentStory: StoryMemory
-  ): Promise<Partial<StoryMemory> | undefined> {
-    // Simple extraction based on keywords - in a full implementation, this could use a separate AI call
-    const updates: Partial<StoryMemory> = {};
-    let hasUpdates = false;
-
-    // Extract potential title updates
-    const titleMatch = userMessage.match(/(?:title|called|name).*?["']([^"']+)["']/i) || 
-                      aiResponse.match(/(?:title|called|name).*?["']([^"']+)["']/i);
-    if (titleMatch && !currentStory.project.title) {
-      updates.project = { ...currentStory.project, title: titleMatch[1] };
-      hasUpdates = true;
-    }
-
-    // Extract potential genre updates
-    const genreMatch = userMessage.match(/(?:genre|type).*?(thriller|romance|horror|comedy|drama|sci-fi|fantasy|mystery)/i);
-    if (genreMatch && !currentStory.project.genre) {
-      if (!updates.project) updates.project = { ...currentStory.project };
-      updates.project.genre = genreMatch[1];
-      hasUpdates = true;
-    }
-
-    // For Sam specifically, look for logline/synopsis content
-    if (persona.id === 'sam') {
-      const loglineIndicators = /(?:logline|pitch|one[- ]line|elevator pitch)/i;
-      if (loglineIndicators.test(userMessage) || loglineIndicators.test(aiResponse)) {
-        // Mark that logline work is in progress
-        if (!updates.project) updates.project = { ...currentStory.project };
-        hasUpdates = true;
-      }
-    }
-
-    return hasUpdates ? updates : undefined;
   }
 
   async generateSynopsisAssistance(
