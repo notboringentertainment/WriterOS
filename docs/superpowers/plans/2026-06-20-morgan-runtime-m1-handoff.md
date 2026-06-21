@@ -4,13 +4,13 @@
 
 ## TL;DR
 
-Morgan was a single-shot `prompt → JSON.parse → hollow fallback` chatbot. **M1 moved her onto a Claude-native tool loop.** Built TDD, two independent reviews passed (Codex + CodeRabbit), all findings fixed, gate green, **Ben confirmed it works live with a real `ANTHROPIC_API_KEY`.** Sitting on a **draft PR #44** awaiting his decision to mark ready / merge.
+Morgan was a single-shot `prompt → JSON.parse → hollow fallback` chatbot. **M1 moved her onto a Claude-native tool loop.** Built TDD, two independent reviews passed (Codex + CodeRabbit), all findings fixed, gate green, **Ben confirmed it works live with a real `ANTHROPIC_API_KEY`.** PR #44 merged to `main`; follow-up cleanup PR #45 removed stale single-shot/Morgan dead code. M2 has not started.
 
 ## Current state (verified this session)
 
-- **Branch:** `feat/morgan-runtime-m1` (8 commits ahead of `main`), working tree clean.
-- **PR:** #44, **draft**, OPEN, MERGEABLE. https://github.com/notboringentertainment/WriterOS/pull/44
-- **Gate:** `npm run check` clean · `npm run test:run` **1373 passed (134 files)** · `npm run build` clean (pre-existing Vite chunk-size warning only).
+- **Merged PRs:** #44 (Morgan Runtime M1) merged at `cd44284`; #45 (dead-code cleanup) merged at `3e31192`.
+- **Branch state:** `main` is the source of truth; `feat/morgan-runtime-m1` and `cleanup/morgan-dead-code` were deleted/pruned after merge.
+- **Gate:** `npm run check` clean · `npm run test:run` **1373 passed (134 files)** · `npm run build` clean (pre-existing Vite chunk-size warning only) on merged `main` after PR #45.
 - **Live:** Ben added `ANTHROPIC_API_KEY` and reports Morgan working. No automated live-API test in the suite (all mocked) — Ben's manual confirmation is the live signal.
 
 ## What shipped
@@ -41,9 +41,10 @@ Wiring: `server/ai/openaiService.ts` — `generatePersonaResponse` branches `if 
 ## Standout findings / lurking issues for the next window
 
 1. **THE THREE-MORGAN PROBLEM (biggest lurking issue).** There are still multiple Morgan paths: the new `/api/wp-chat` runtime, AND a separate `/swarm` synthesis path (Zoe/OpenSwarm bridge). M2's `askSpecialist` must live in the ONE canonical `/api/wp-chat` runtime; `/swarm` should become a tool-behind-Morgan or a retired bridge after parity — **never a second Morgan identity.** Decision made, not yet executed.
-2. **Dead code Morgan no longer hits:** `maxTokensForPersona` still has a `writingPartner → 1600` branch that's now unreachable (Morgan returns before it; the runtime sets its own 1600 in `anthropicToolClient`). Also the old `storyUpdates` / `extractStoryUpdates` path in `openaiService.ts`/`routes.ts` is still dead (the *other* showrunner plan flagged removing it as a prerequisite to draft-editing). Neither is an error; both are cleanup candidates.
+2. **Dead-code lurker resolved in PR #45:** the unreachable Morgan token branch, stale `storyUpdates` response plumbing, and unused `extractStoryUpdates` path were removed from `openaiService.ts`.
 3. **Streaming vs `messages.create`:** the runtime uses non-streaming `messages.create`. Fine for M1's short turns (1600 tokens). But the repo already hit `APIConnectionTimeoutError` on long non-streaming Anthropic calls (see memory `reference_anthropic_streaming_timeout` / PR #31). **M2 multi-specialist synthesis could be long → revisit streaming inside the tool loop** before it bites.
-4. **`readProjectContext` is partly redundant in M1** — Morgan already gets full context in the system prompt; the tool mainly exists to exercise the dispatcher so M2 is a drop-in. Reach inventory is BOTH injected in the prompt and available via the tool.
+4. **Async dispatcher seam still untouched:** `askSpecialist` remains a forward marker only. `dispatchTool` is still synchronous/pure today; the clean prerequisite for M2 is an async/injected tool seam before adding specialist calls.
+5. **`readProjectContext` is partly redundant in M1** — Morgan already gets full context in the system prompt; the tool mainly exists to exercise the dispatcher so M2 is a drop-in. Reach inventory is BOTH injected in the prompt and available via the tool.
 
 ## What's next — M2 (the real "writing room" moment)
 
@@ -53,8 +54,8 @@ Add an `askSpecialist` tool to `MORGAN_TOOLS` + a `dispatchTool` case that progr
 
 - **M1 plan/contract:** `docs/superpowers/plans/2026-06-20-morgan-runtime-m1.md` (this milestone).
 - **Bigger arc:** `docs/superpowers/plans/2026-06-19-morgan-showrunner-workspace.md` — lives on branch `docs/morgan-showrunner-workspace-plan` (NOT main). 8-slice showrunner plan incl. draft-patch flow with approve-before-edit safety. M1 here is the runtime foundation that the bigger plan assumed but didn't build. The two relate: M1 = the tool-loop the showrunner plan needs underneath.
-- Memory: `project_morgan_runtime_m1.md` (auto-loads via MEMORY.md).
+- Memory note: `project_morgan_runtime_m1.md` should say M1 is merged, PR #45 cleanup is merged, and M2/async seam work has not started.
 
 ## Immediate next action for the new window
 
-Ask Ben: flip PR #44 draft → ready (and merge), or hold? Nothing is blocking on the engineering side — it's his call plus whatever he found in the live 4-question check.
+Start from clean `main`. Next code slice should be the async/injected tool seam prerequisite for M2, or a deliberate M2 plan for `askSpecialist`; do not assume any M2 implementation exists yet.
