@@ -80,4 +80,68 @@ describe('runMorgan loop', () => {
     expect(r.ok).toBe(false)
     expect(r.message).not.toMatch(/here to help/i)
   })
+
+  const toolResultsOf = (callIndex: number) => {
+    const messages = sendToolTurn.mock.calls[callIndex][0].messages as Array<{ role: string; content: unknown }>
+    return messages
+      .filter((m) => m.role === 'user' && Array.isArray(m.content))
+      .flatMap((m) => m.content as Array<{ tool_use_id: string; content: string }>)
+  }
+
+  it('FULL LOOP: askSpecialist routes through the injected dep, the read is fed back, then respond ends', async () => {
+    const calls: string[] = []
+    const deps = { callSpecialist: async ({ specialistId, question }: { specialistId: string; question: string }) => { calls.push(`${specialistId}:${question}`); return { message: 'ZOE_READ' } } }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }], toolUses: [{ id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'logic?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'SYNTH', suggestions: ['x'] } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(calls).toEqual(['zoe:logic?'])
+    expect(toolResultsOf(1).some((c) => c.content === 'ZOE_READ')).toBe(true)
+    expect(r.message).toBe('SYNTH')
+    expect(r.suggestions).toEqual(['x'])
+  })
+
+  it('PARALLEL GUARD: two askSpecialist calls in one turn execute neither and error both one-at-a-time', async () => {
+    const deps = { callSpecialist: async () => { throw new Error('should not be called') } }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }, { type: 'tool_use', id: 's' }], toolUses: [
+        { id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'a' } },
+        { id: 's', name: 'askSpecialist', input: { specialistId: 'sam', question: 'b' } },
+      ] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'done' } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    const guarded = toolResultsOf(1).filter((c) => c.tool_use_id === 'z' || c.tool_use_id === 's')
+    expect(guarded).toHaveLength(2)
+    expect(guarded.every((c) => /one specialist at a time/i.test(c.content))).toBe(true)
+    expect(r.message).toBe('done')
+  })
+
+  it('PARALLEL GUARD: one askSpecialist + one readProjectContext run both (a single specialist is allowed)', async () => {
+    let depCalls = 0
+    const deps = { callSpecialist: async () => { depCalls++; return { message: 'ZOE_READ' } } }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }, { type: 'tool_use', id: 'c' }], toolUses: [
+        { id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'a' } },
+        { id: 'c', name: 'readProjectContext', input: {} },
+      ] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'done' } }] })
+    await runMorgan({ ...inputBase, deps })
+    expect(depCalls).toBe(1)
+    expect(toolResultsOf(1).map((c) => c.tool_use_id).sort()).toEqual(['c', 'z'])
+  })
+
+  it('PREMATURE FINAL GUARD: askSpecialist + respond_to_writer in one turn does not return the early final', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'ZOE_READ' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }, { type: 'tool_use', id: 'e' }], toolUses: [
+        { id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'a' } },
+        { id: 'e', name: 'respond_to_writer', input: { message: 'EARLY' } },
+      ] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'AFTER' } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(r.message).toBe('AFTER')
+    const results = toolResultsOf(1)
+    expect(results.some((c) => c.content === 'ZOE_READ')).toBe(true) // specialist read fed back
+    expect(results.some((c) => c.tool_use_id === 'e')).toBe(true) // premature respond got a nudge result
+  })
 })
