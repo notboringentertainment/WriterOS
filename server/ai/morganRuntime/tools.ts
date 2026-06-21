@@ -2,10 +2,12 @@
 // M1 surface: one read tool (readProjectContext) + one terminal tool (respond_to_writer).
 // M2 adds askSpecialist here; the loop/client/prompt/route need no change.
 
+import { CALLABLE_SPECIALIST_IDS, isCallableSpecialist } from '../../../shared/personas';
 import type { DispatchOutcome, ReachInventory, RuntimeDeps, ToolSpec, ToolUse } from './types';
 
 export const READ_CONTEXT_TOOL_NAME = 'readProjectContext';
 export const RESPOND_TOOL_NAME = 'respond_to_writer';
+export const ASK_SPECIALIST_TOOL_NAME = 'askSpecialist';
 
 export const MORGAN_TOOLS: ToolSpec[] = [
   {
@@ -31,6 +33,25 @@ export const MORGAN_TOOLS: ToolSpec[] = [
         },
       },
       required: ['message'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: ASK_SPECIALIST_TOOL_NAME,
+    description:
+      'Consult ONE WriterOS room specialist to get their actual read, then synthesize it yourself. ' +
+      'Use only when a specialist lane is clearly the better source. One specialist per call.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        specialistId: {
+          type: 'string',
+          enum: [...CALLABLE_SPECIALIST_IDS],
+          description: 'Which specialist to consult.',
+        },
+        question: { type: 'string', minLength: 1, description: 'The focused question for that specialist.' },
+      },
+      required: ['specialistId', 'question'],
       additionalProperties: false,
     },
   },
@@ -68,6 +89,28 @@ export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<
         ok: true,
       },
     };
+  }
+
+  if (use.name === ASK_SPECIALIST_TOOL_NAME) {
+    const input = (use.input ?? {}) as Record<string, unknown>;
+    const specialistId = typeof input.specialistId === 'string' ? input.specialistId : '';
+    const question = typeof input.question === 'string' ? input.question.trim() : '';
+    if (!question) {
+      return { kind: 'error', toolUseId: use.id, content: 'askSpecialist requires a non-empty question.' };
+    }
+    // isCallableSpecialist excludes writingPartner (Morgan never calls herself) and unknown ids.
+    if (!isCallableSpecialist(specialistId)) {
+      return { kind: 'error', toolUseId: use.id, content: `askSpecialist: ${specialistId || '(none)'} is not a callable specialist.` };
+    }
+    if (!ctx.deps?.callSpecialist) {
+      return { kind: 'error', toolUseId: use.id, content: 'askSpecialist is not wired in this context.' };
+    }
+    try {
+      const answer = await ctx.deps.callSpecialist({ specialistId, question });
+      return { kind: 'continue', toolUseId: use.id, content: answer.message };
+    } catch {
+      return { kind: 'error', toolUseId: use.id, content: `askSpecialist: could not reach ${specialistId}.` };
+    }
   }
 
   return { kind: 'error', toolUseId: use.id, content: `unknown tool: ${use.name}` };
