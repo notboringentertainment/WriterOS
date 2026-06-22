@@ -141,6 +141,60 @@ describe('runMorgan loop', () => {
     expect(r.suggestions).toEqual(['mine'])
   })
 
+  it('PROVENANCE GUARD: rejects specialist attribution when no specialist was consulted in this run', async () => {
+    sendToolTurn
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [{ type: 'tool_use', id: 'fake' }],
+        toolUses: [{ id: 'fake', name: 'respond_to_writer', input: { message: "Casey's read is strong: Ace is built from denial." } }],
+      })
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [],
+        toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "I haven't asked Casey about Ace yet. My read is that Ace is built from denial." } }],
+      })
+    const r = await runMorgan(inputBase)
+    expect(r.message).toMatch(/haven't asked Casey/)
+    expect(r.message).not.toMatch(/^Casey's read is strong/)
+    const results = toolResultsOf(1)
+    expect(results.some((c) => c.tool_use_id === 'fake' && /not consulted Casey/i.test(c.content))).toBe(true)
+  })
+
+  it('PROVENANCE GUARD: allows attribution to the specialist actually consulted in this run', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'CASEY_READ' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'c' }], toolUses: [{ id: 'c', name: 'askSpecialist', input: { specialistId: 'casey', question: 'Ace?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "Casey's read is that Ace is built from denial." } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(r.message).toBe("Casey's read is that Ace is built from denial.")
+  })
+
+  it('PROVENANCE GUARD: rejects attribution to an unconsulted specialist even when another specialist was consulted', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'ZOE_READ' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }], toolUses: [{ id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'world?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'fake' }], toolUses: [{ id: 'fake', name: 'respond_to_writer', input: { message: "Casey named Ace's contradiction as denial versus loyalty." } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "Zoe's read is useful for the rules; I haven't asked Casey about Ace yet." } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(r.message).toMatch(/Zoe's read/)
+    expect(r.message).toMatch(/haven't asked Casey/)
+    const results = toolResultsOf(2)
+    expect(results.some((c) => c.tool_use_id === 'fake' && /not consulted Casey/i.test(c.content))).toBe(true)
+  })
+
+  it('PROVENANCE GUARD: still allows recommending a specialist without claiming their read', async () => {
+    sendToolTurn.mockResolvedValueOnce({
+      stopReason: 'tool_use',
+      text: '',
+      assistantContent: [],
+      toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'Casey is the right specialist to ask next for the psychology.' } }],
+    })
+    const r = await runMorgan(inputBase)
+    expect(r.message).toBe('Casey is the right specialist to ask next for the psychology.')
+  })
+
   it('PREMATURE FINAL GUARD: askSpecialist + respond_to_writer in one turn does not return the early final', async () => {
     const deps = { callSpecialist: async () => ({ message: 'ZOE_READ' }) }
     sendToolTurn

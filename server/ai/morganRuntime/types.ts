@@ -31,9 +31,15 @@ export interface ToolUse {
   input: unknown;
 }
 
+export interface SpecialistConsultTrace {
+  specialistId: SpecialistId;
+  question: string;
+  message: string;
+}
+
 // Outcome of dispatching one tool_use.
 export type DispatchOutcome =
-  | { kind: 'continue'; toolUseId: string; content: string } // read tool → feed result back
+  | { kind: 'continue'; toolUseId: string; content: string; consult?: SpecialistConsultTrace } // read/consult tool → feed result back
   | { kind: 'final'; result: MorganRuntimeResult } // respond_to_writer → stop
   | { kind: 'error'; toolUseId: string; content: string }; // bad tool input → feed error back
 

@@ -136,6 +136,21 @@ describe('Morgan Showrunner prompt', () => {
     expect(prompt).toMatch(/synthesi[sz]/i)
   })
 
+  it('tool-mode Morgan prompt protects writer-supplied material from fake specialist attribution', () => {
+    const prompt = createPersonaSystemPrompt(
+      PERSONAS.writingPartner,
+      userProfile(),
+      storyMemory(),
+      'Here is new backstory for Ace.',
+      undefined,
+      'tool',
+    )
+    expect(prompt).toMatch(/new material/i)
+    expect(prompt).toMatch(/writer/i)
+    expect(prompt).toMatch(/do not credit it to a specialist/i)
+    expect(prompt).toMatch(/consult that specialist again/i)
+  })
+
   it('keeps Morgan grounded in the full project context sections', () => {
     const prompt = createPersonaSystemPrompt(
       PERSONAS.writingPartner,

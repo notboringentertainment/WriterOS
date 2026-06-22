@@ -107,7 +107,12 @@ export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<
     }
     try {
       const answer = await ctx.deps.callSpecialist({ specialistId, question });
-      return { kind: 'continue', toolUseId: use.id, content: answer.message };
+      return {
+        kind: 'continue',
+        toolUseId: use.id,
+        content: answer.message,
+        consult: { specialistId, question, message: answer.message },
+      };
     } catch {
       return { kind: 'error', toolUseId: use.id, content: `askSpecialist: could not reach ${specialistId}.` };
     }

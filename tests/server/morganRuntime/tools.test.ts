@@ -77,6 +77,7 @@ describe('morgan tools', () => {
     if (out.kind === 'continue') {
       expect(out.toolUseId).toBe('a1')
       expect(out.content).toMatch(/read from zoe/)
+      expect(out.consult).toEqual({ specialistId: 'zoe', question: 'world logic?', message: 'read from zoe' })
     }
   })
 

@@ -10,7 +10,9 @@ import {
   toolResultsTurn,
 } from './anthropicToolClient';
 import { MORGAN_TOOLS, dispatchTool, ASK_SPECIALIST_TOOL_NAME, RESPOND_TOOL_NAME } from './tools';
-import type { DispatchOutcome, MorganRuntimeResult, RunMorganInput } from './types';
+import { CALLABLE_SPECIALIST_IDS, PERSONAS } from '../../../shared/personas';
+import type { DispatchOutcome, MorganRuntimeResult, RunMorganInput, SpecialistConsultTrace } from './types';
+import type { SpecialistId } from '../../../shared/personas';
 
 const MAX_ITERS = 4;
 
@@ -18,6 +20,35 @@ const ONE_AT_A_TIME =
   'Consult one specialist at a time — re-issue a single askSpecialist call.';
 const PREMATURE_FINAL =
   'You called respond_to_writer before seeing the specialist answer. Wait for the askSpecialist result, then call respond_to_writer with your synthesized answer.';
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const ATTRIBUTION_PATTERNS = [
+  (name: string) => String.raw`\b(?:I|we|Morgan)\s+(?:asked|consulted|called|checked with|brought in)\s+${name}\b`,
+  (name: string) => String.raw`\b${name}'s\s+(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\b`,
+  (name: string) =>
+    String.raw`\b${name}\s+(?:said|says|thinks|feels|flagged|named|noted|left|identified|pointed out|called|framed|landed on|reads|sees|would say|would call|would frame|would flag)\b`,
+];
+
+function unverifiedSpecialistAttributions(
+  message: string,
+  consultLedger: Map<SpecialistId, SpecialistConsultTrace>,
+): SpecialistId[] {
+  return CALLABLE_SPECIALIST_IDS.filter((id) => {
+    if (consultLedger.has(id)) return false;
+    const name = escapeRegExp(PERSONAS[id].name);
+    return ATTRIBUTION_PATTERNS.some((pattern) => new RegExp(pattern(name), 'i').test(message));
+  });
+}
+
+function attributionError(ids: SpecialistId[]): string {
+  const names = ids.map((id) => PERSONAS[id].name).join(', ');
+  return (
+    `You have not consulted ${names} in this Morgan run. ` +
+    `Do not attribute reads, questions, notes, or claims to ${names}. ` +
+    'Either call askSpecialist for the relevant specialist now, or answer in Morgan\'s voice and credit the writer\'s material to the writer.'
+  );
+}
 
 const honestError = (message: string): MorganRuntimeResult => ({
   message,
@@ -44,6 +75,7 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
     userTurn(input.userMessage),
     ...extraSeed,
   ];
+  const consultLedger = new Map<SpecialistId, SpecialistConsultTrace>();
 
   for (let i = 0; i < MAX_ITERS; i++) {
     const turn = await sendToolTurn({ system: input.systemPrompt, messages, tools: MORGAN_TOOLS });
@@ -71,11 +103,19 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
 
     const final = outcomes.find((o): o is Extract<DispatchOutcome, { kind: 'final' }> => o.kind === 'final');
     const consulted = turn.toolUses.some((u) => u.name === ASK_SPECIALIST_TOOL_NAME);
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'continue' && outcome.consult) {
+        consultLedger.set(outcome.consult.specialistId, outcome.consult);
+      }
+    }
+    const attributionViolation = final && !consulted
+      ? unverifiedSpecialistAttributions(final.result.message, consultLedger)
+      : [];
 
     // Accept a final ONLY when no specialist was consulted in the same turn. A
     // respond_to_writer issued alongside askSpecialist is premature — the model
     // hasn't seen the specialist's read yet, so we feed the read back and re-ask.
-    if (final && !consulted) {
+    if (final && !consulted && attributionViolation.length === 0) {
       return final.result;
     }
 
@@ -89,6 +129,10 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
     if (final && consulted) {
       const respondUse = turn.toolUses.find((u) => u.name === RESPOND_TOOL_NAME);
       if (respondUse) results.push({ toolUseId: respondUse.id, content: PREMATURE_FINAL });
+    }
+    if (final && !consulted && attributionViolation.length > 0) {
+      const respondUse = turn.toolUses.find((u) => u.name === RESPOND_TOOL_NAME);
+      if (respondUse) results.push({ toolUseId: respondUse.id, content: attributionError(attributionViolation) });
     }
     messages.push(assistantTurn(turn.assistantContent));
     messages.push(toolResultsTurn(results));
