@@ -130,6 +130,17 @@ describe('runMorgan loop', () => {
     expect(toolResultsOf(1).map((c) => c.tool_use_id).sort()).toEqual(['c', 'z'])
   })
 
+  it('SYNTHESIS: never raw-passes the specialist read — only respond_to_writer reaches the writer, suggestions are Morgan\'s', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'RAW_SPECIALIST_TEXT' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }], toolUses: [{ id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'a' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'SYNTH', suggestions: ['mine'] } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(r.message).toBe('SYNTH')
+    expect(r.message).not.toContain('RAW_SPECIALIST_TEXT')
+    expect(r.suggestions).toEqual(['mine'])
+  })
+
   it('PREMATURE FINAL GUARD: askSpecialist + respond_to_writer in one turn does not return the early final', async () => {
     const deps = { callSpecialist: async () => ({ message: 'ZOE_READ' }) }
     sendToolTurn
