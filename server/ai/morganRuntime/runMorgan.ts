@@ -25,19 +25,20 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 const ATTRIBUTION_PATTERNS = [
   (name: string) => String.raw`\b(?:I|we|Morgan)\s+(?:asked|consulted|called|checked with|brought in)\s+${name}\b`,
+  (name: string) => String.raw`\b(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\s+from\s+${name}\b`,
   (name: string) => String.raw`\b${name}'s\s+(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\b`,
-  (name: string) =>
-    String.raw`\b${name}\s+(?:said|says|thinks|feels|flagged|named|noted|left|identified|pointed out|called|framed|landed on|reads|sees|would say|would call|would frame|would flag)\b`,
+  (name: string) => String.raw`\b${name}\s+(?:came back with|returned with|reported back with|gave me)\b`,
 ];
 
 function unverifiedSpecialistAttributions(
-  message: string,
+  result: MorganRuntimeResult,
   consultLedger: Map<SpecialistId, SpecialistConsultTrace>,
 ): SpecialistId[] {
+  const text = [result.message, ...result.suggestions].join('\n');
   return CALLABLE_SPECIALIST_IDS.filter((id) => {
     if (consultLedger.has(id)) return false;
     const name = escapeRegExp(PERSONAS[id].name);
-    return ATTRIBUTION_PATTERNS.some((pattern) => new RegExp(pattern(name), 'i').test(message));
+    return ATTRIBUTION_PATTERNS.some((pattern) => new RegExp(pattern(name), 'i').test(text));
   });
 }
 
@@ -109,7 +110,7 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
       }
     }
     const attributionViolation = final && !consulted
-      ? unverifiedSpecialistAttributions(final.result.message, consultLedger)
+      ? unverifiedSpecialistAttributions(final.result, consultLedger)
       : [];
 
     // Accept a final ONLY when no specialist was consulted in the same turn. A
