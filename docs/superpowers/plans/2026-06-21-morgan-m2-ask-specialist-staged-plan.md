@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status: PLANNED ONLY.** No M2 code has started. No branch, no commits yet. Revises Codex draft `2026-06-21-morgan-m2-ask-specialist.md` after repo inspection. Do not implement until Ben says proceed.
+> **Status: IMPLEMENTED ON `feat/morgan-m2-ask-specialist`; PR NOT CREATED YET.** This file is retained as the staged implementation plan. Tasks 1-8 are complete and verified by automated gates plus Ben's live clean-context checks; Task 9 remains push/open draft PR and CodeRabbit hold after Ben explicitly says to proceed.
 
 **Goal:** Let Morgan call exactly one existing WriterOS specialist (Sam, Casey, Oliver, Maya, Zoe, Alex) per tool call through the existing persona service, then synthesize that specialist's read back to the writer — without raw pass-through.
 

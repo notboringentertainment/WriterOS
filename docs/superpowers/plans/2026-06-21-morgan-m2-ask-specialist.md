@@ -1,6 +1,6 @@
 # Morgan M2 - Ask Specialist TDD Plan
 
-> Status: drafted only. No M2 implementation has started.
+> Status: implementation complete on `feat/morgan-m2-ask-specialist`; PR not created yet. Retained as the original TDD plan. Next step, after Ben says so, is push/open a draft PR and hold for CodeRabbit.
 
 ## Milestone And PR
 
@@ -41,9 +41,9 @@ M1 shipped the Claude-native Morgan tool loop with two tools:
 - `readProjectContext`
 - `respond_to_writer`
 
-Morgan currently says she cannot call specialists directly. That is correct today.
+Before M2, Morgan said she could not call specialists directly. That was correct for M1.
 
-The shipped reach contract treats the six specialists as one room capability:
+The M1 reach contract treated the six specialists as one room capability:
 - Morgan can recommend which specialist to visit.
 - Morgan cannot yet call specialists directly to get their actual read.
 
