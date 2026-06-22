@@ -4,6 +4,7 @@
 
 import { CALLABLE_SPECIALIST_IDS, isCallableSpecialist } from '../../../shared/personas';
 import type { DispatchOutcome, ReachInventory, RuntimeDeps, ToolSpec, ToolUse } from './types';
+import type { TraceSink } from './trace';
 
 export const READ_CONTEXT_TOOL_NAME = 'readProjectContext';
 export const RESPOND_TOOL_NAME = 'respond_to_writer';
@@ -60,6 +61,9 @@ export const MORGAN_TOOLS: ToolSpec[] = [
 interface DispatchContext {
   inventory: ReachInventory;
   deps?: RuntimeDeps; // injected runtime capabilities; askSpecialist (Task 4) consumes this
+  // Observability (Slice 1). Optional so existing call sites/tests need no ctx.
+  runId?: string;
+  trace?: TraceSink;
 }
 
 // Clean a model-supplied string array: keep strings, trim, drop blanks.
@@ -105,8 +109,18 @@ export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<
     if (!ctx.deps?.callSpecialist) {
       return { kind: 'error', toolUseId: use.id, content: 'askSpecialist is not wired in this context.' };
     }
+    const runId = ctx.runId ?? '';
+    ctx.trace?.({ kind: 'askSpecialist.started', runId, specialistId, question });
+    const startedAt = Date.now();
     try {
       const answer = await ctx.deps.callSpecialist({ specialistId, question });
+      ctx.trace?.({
+        kind: 'askSpecialist.ok',
+        runId,
+        specialistId,
+        durationMs: Date.now() - startedAt,
+        chars: answer.message.length,
+      });
       return {
         kind: 'continue',
         toolUseId: use.id,
@@ -114,6 +128,13 @@ export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<
         consult: { specialistId, question, message: answer.message },
       };
     } catch {
+      ctx.trace?.({
+        kind: 'askSpecialist.error',
+        runId,
+        specialistId,
+        durationMs: Date.now() - startedAt,
+        reason: `could not reach ${specialistId}`,
+      });
       return { kind: 'error', toolUseId: use.id, content: `askSpecialist: could not reach ${specialistId}.` };
     }
   }

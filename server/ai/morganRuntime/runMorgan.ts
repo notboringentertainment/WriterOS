@@ -11,7 +11,9 @@ import {
 } from './anthropicToolClient';
 import { MORGAN_TOOLS, dispatchTool, ASK_SPECIALIST_TOOL_NAME, RESPOND_TOOL_NAME } from './tools';
 import { CALLABLE_SPECIALIST_IDS, PERSONAS } from '../../../shared/personas';
+import { createRunId, resolveTraceSink } from './trace';
 import type { DispatchOutcome, MorganRuntimeResult, RunMorganInput, SpecialistConsultTrace } from './types';
+import type { TraceSink } from './trace';
 import type { SpecialistId } from '../../../shared/personas';
 
 const MAX_ITERS = 4;
@@ -70,7 +72,12 @@ const THREW_MESSAGE =
 
 // Run the tool loop once. Returns a result, or null if no terminal tool was
 // reached (the caller decides whether to retry or error honestly).
-async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<MorganRuntimeResult | null> {
+async function runLoop(
+  input: RunMorganInput,
+  extraSeed: unknown[],
+  runId: string,
+  trace: TraceSink,
+): Promise<MorganRuntimeResult | null> {
   const messages: unknown[] = [
     ...input.history.map((m) => (m.role === 'assistant' ? assistantTurn(m.content) : userTurn(m.content))),
     userTurn(input.userMessage),
@@ -92,7 +99,7 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
 
     // Promise.all preserves array order → the assistant/tool_result batching below
     // stays matched to turn.toolUses (the P1 history contract).
-    const ctx = { inventory: input.inventory, deps: input.deps };
+    const ctx = { inventory: input.inventory, deps: input.deps, runId, trace };
     const outcomes = await Promise.all(
       turn.toolUses.map((use): Promise<DispatchOutcome> => {
         if (askCount > 1 && use.name === ASK_SPECIALIST_TOOL_NAME) {
@@ -117,6 +124,11 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
     // respond_to_writer issued alongside askSpecialist is premature — the model
     // hasn't seen the specialist's read yet, so we feed the read back and re-ask.
     if (final && !consulted && attributionViolation.length === 0) {
+      // Only a meaningful guard pass when a consult actually happened this run —
+      // a plain direct answer has nothing to attribute, so it emits no guard event.
+      if (consultLedger.size > 0) {
+        trace({ kind: 'guard.attribution', runId, status: 'passed', specialists: [...consultLedger.keys()] });
+      }
       return final.result;
     }
 
@@ -132,6 +144,7 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
       if (respondUse) results.push({ toolUseId: respondUse.id, content: PREMATURE_FINAL });
     }
     if (final && !consulted && attributionViolation.length > 0) {
+      trace({ kind: 'guard.attribution', runId, status: 'blocked', specialists: attributionViolation });
       const respondUse = turn.toolUses.find((u) => u.name === RESPOND_TOOL_NAME);
       if (respondUse) results.push({ toolUseId: respondUse.id, content: attributionError(attributionViolation) });
     }
@@ -143,23 +156,36 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
 }
 
 export async function runMorgan(input: RunMorganInput): Promise<MorganRuntimeResult> {
+  const runId = input.runId ?? createRunId();
+  const trace = resolveTraceSink(input.trace);
+  trace({ kind: 'run.started', runId, personaId: input.personaId ?? 'writingPartner' });
+
   if (!isAnthropicConfigured()) {
+    trace({ kind: 'final.failed', runId, reason: 'not_configured' });
     return honestError(NOT_CONFIGURED_MESSAGE);
   }
 
   try {
-    const first = await runLoop(input, []);
-    if (first) return first;
+    const first = await runLoop(input, [], runId, trace);
+    if (first) {
+      trace({ kind: 'final.accepted', runId });
+      return first;
+    }
 
     // Retry once with an explicit repair nudge.
     const retry = await runLoop(input, [
       userTurn('You must finish by calling the respond_to_writer tool with your answer. Do not answer in plain text.'),
-    ]);
-    if (retry) return retry;
+    ], runId, trace);
+    if (retry) {
+      trace({ kind: 'final.accepted', runId });
+      return retry;
+    }
 
+    trace({ kind: 'final.failed', runId, reason: 'malformed' });
     return honestError(MALFORMED_MESSAGE);
   } catch (error) {
     console.error('Morgan runtime error:', error);
+    trace({ kind: 'final.failed', runId, reason: 'threw' });
     return honestError(THREW_MESSAGE);
   }
 }

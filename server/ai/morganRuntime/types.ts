@@ -2,6 +2,7 @@
 // One responsibility: the types every runtime module agrees on. No logic here.
 
 import type { SpecialistId } from '../../../shared/personas';
+import type { TraceSink } from './trace';
 
 export interface ReachInventory {
   canSee: string[]; // derived from populated StoryMemory fields — never claimed unless real
@@ -70,4 +71,9 @@ export interface RunMorganInput {
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   inventory: ReachInventory;
   deps?: RuntimeDeps;
+  // Observability (Slice 1). Optional: tests inject a collector; production
+  // leaves them unset and gets a default console sink + generated runId.
+  trace?: TraceSink;
+  runId?: string;
+  personaId?: string;
 }

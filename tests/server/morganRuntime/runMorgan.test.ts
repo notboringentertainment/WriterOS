@@ -10,6 +10,7 @@ vi.mock('../../../server/ai/morganRuntime/anthropicToolClient', async (orig) => 
 
 import { runMorgan } from '../../../server/ai/morganRuntime/runMorgan'
 import type { ReachInventory } from '../../../server/ai/morganRuntime/types'
+import type { MorganTraceEvent } from '../../../server/ai/morganRuntime/trace'
 
 const inv: ReachInventory = { canSee: ['logline'], cannotSee: ['pixels'], canDoNow: ['read'], cannotDoYet: ['edit'] }
 const inputBase = { systemPrompt: 'SYS', userMessage: 'hi', history: [], inventory: inv }
@@ -228,6 +229,93 @@ describe('runMorgan loop', () => {
     })
     const r = await runMorgan(inputBase)
     expect(r.message).toBe('Casey is the right specialist to ask next for the psychology.')
+  })
+
+  // ── Slice 1: local trace observability ────────────────────────────────────
+  // Proves the operator can verify a live turn from injected trace events
+  // without scraping console output. Same events feed the dev terminal sink.
+  const collectTrace = () => {
+    const events: MorganTraceEvent[] = []
+    return { events, trace: (e: MorganTraceEvent) => { events.push(e) } }
+  }
+  const kinds = (events: MorganTraceEvent[]) => events.map((e) => e.kind)
+
+  it('TRACE: a Morgan run emits a run-start event with persona', async () => {
+    sendToolTurn.mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'b', name: 'respond_to_writer', input: { message: 'hi back' } }] })
+    const { events, trace } = collectTrace()
+    await runMorgan({ ...inputBase, trace })
+    const start = events.find((e) => e.kind === 'run.started')
+    expect(start).toMatchObject({ kind: 'run.started', personaId: 'writingPartner' })
+    expect((start as { runId: string }).runId).toMatch(/^morgan_/)
+  })
+
+  it('TRACE: a successful askSpecialist emits start + ok sharing the run runId', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'CASEY_READ_TEXT' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'c' }], toolUses: [{ id: 'c', name: 'askSpecialist', input: { specialistId: 'casey', question: 'Ace backstory?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "Casey's read: denial." } }] })
+    const { events, trace } = collectTrace()
+    await runMorgan({ ...inputBase, deps, trace })
+
+    const runId = (events.find((e) => e.kind === 'run.started') as { runId: string }).runId
+    const started = events.find((e) => e.kind === 'askSpecialist.started') as Extract<MorganTraceEvent, { kind: 'askSpecialist.started' }>
+    const ok = events.find((e) => e.kind === 'askSpecialist.ok') as Extract<MorganTraceEvent, { kind: 'askSpecialist.ok' }>
+    expect(started).toMatchObject({ specialistId: 'casey', question: 'Ace backstory?', runId })
+    expect(ok).toMatchObject({ specialistId: 'casey', runId })
+    expect(ok.chars).toBe('CASEY_READ_TEXT'.length)
+    expect(ok.durationMs).toBeGreaterThanOrEqual(0)
+    // ok proves the consult; no raw specialist text is carried in the trace
+    expect(JSON.stringify(events)).not.toContain('CASEY_READ_TEXT')
+    expect(kinds(events)).toContain('guard.attribution')
+    expect(kinds(events)).toContain('final.accepted')
+  })
+
+  it('TRACE: a failed askSpecialist emits an error event (still same runId)', async () => {
+    const deps = { callSpecialist: async () => { throw new Error('network boom') } }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'z' }], toolUses: [{ id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'rules?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'I could not reach Zoe; here is my own read.' } }] })
+    const { events, trace } = collectTrace()
+    await runMorgan({ ...inputBase, deps, trace })
+
+    const runId = (events.find((e) => e.kind === 'run.started') as { runId: string }).runId
+    const err = events.find((e) => e.kind === 'askSpecialist.error') as Extract<MorganTraceEvent, { kind: 'askSpecialist.error' }>
+    expect(err).toMatchObject({ specialistId: 'zoe', runId })
+    expect(err.reason).toMatch(/zoe/i)
+    expect(kinds(events)).not.toContain('askSpecialist.ok')
+  })
+
+  it('TRACE: an attribution guard block emits a guard blocked event', async () => {
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'fake' }], toolUses: [{ id: 'fake', name: 'respond_to_writer', input: { message: "Casey's read is that Ace is built from denial." } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "I haven't asked Casey yet. My read: denial." } }] })
+    const { events, trace } = collectTrace()
+    await runMorgan({ ...inputBase, trace })
+
+    const blocked = events.find((e) => e.kind === 'guard.attribution' && e.status === 'blocked') as Extract<MorganTraceEvent, { kind: 'guard.attribution' }>
+    expect(blocked).toBeTruthy()
+    expect(blocked.specialists).toContain('casey')
+    expect(kinds(events)).toContain('final.accepted')
+  })
+
+  it('TRACE: a direct Morgan answer emits final accepted and no consult/guard events', async () => {
+    sendToolTurn.mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'My own read, no specialist needed.' } }] })
+    const { events, trace } = collectTrace()
+    await runMorgan({ ...inputBase, trace })
+
+    expect(kinds(events)).toEqual(['run.started', 'final.accepted'])
+    expect(kinds(events)).not.toContain('askSpecialist.started')
+    expect(kinds(events)).not.toContain('guard.attribution')
+  })
+
+  it('TRACE: a failed-closed run (no terminal tool) emits final failed', async () => {
+    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: 'plain text', assistantContent: [], toolUses: [] })
+    const { events, trace } = collectTrace()
+    const r = await runMorgan({ ...inputBase, trace })
+    expect(r.ok).toBe(false)
+    const failed = events.find((e) => e.kind === 'final.failed') as Extract<MorganTraceEvent, { kind: 'final.failed' }>
+    expect(failed).toMatchObject({ reason: 'malformed' })
+    expect(kinds(events)).not.toContain('final.accepted')
   })
 
   it('PREMATURE FINAL GUARD: askSpecialist + respond_to_writer in one turn does not return the early final', async () => {
