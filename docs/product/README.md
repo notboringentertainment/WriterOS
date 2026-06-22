@@ -43,6 +43,7 @@ This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script r
 - `docs/product/structured-writing-surfaces-prd.md` remains canonical for the document taxonomy, `ProjectState.documents` direction, migration discipline, and the long-term surface suite. Where it conflicts with newer surface-specific PRDs, the newer format/story-coach decisions win.
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
 - `docs/product/writer-voice-profile-prd.md` remains current for writer-scoped profile work. Voice Profile is not project format, Story Bible canon, or project memory.
+- `docs/product/agent-observability-provenance-prd.md` is canonical for under-the-hood agent traceability, admin/debug consult visibility, guardrail provenance, and the source-aware foundation future agent memory must use. It was created after Morgan M2 exposed that functional tool use is not enough if operators cannot verify what happened.
 - `docs/product/persona-capability-layer-prd.md` and `docs/product/persona-capability-phase2-plan.md` remain current for persona capability routing and bounded OpenSwarm use.
 - `docs/product/agent-workflow-prd.md` remains useful for persona roles and transcript boundaries, but older context-pack examples must be read through the project-format and document-state updates.
 - `docs/product/project-identity-script-context-prd.md` remains useful for title identity and script retrieval. Its remaining future work is mostly tracked in `writeros-future-work-prd.md`.
@@ -81,3 +82,4 @@ Before more code, keep the product docs aligned in this order:
 | App Home, screenplay import, and storage | `docs/product/app-home-import-storage-prd.md` | Canonical PRD written; required before Home, `.fdx` import, or shipped-app storage implementation |
 | Script workflow polish | `docs/product/script-workflow-polish-prd.md` | Approved next PRD scope; implement only after app foundation path |
 | Agent context migration from legacy mirrors to `documents.*` | `docs/product/agent-workflow-prd.md` plus surface-specific PRDs | Update whenever a surface changes source of truth |
+| Agent observability, consult traces, guardrail provenance, and future memory source records | `docs/product/agent-observability-provenance-prd.md` | Foundational Ultraplan PRD written after Morgan M2; first recommended slice is local Morgan trace logs |
