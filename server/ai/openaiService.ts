@@ -1,10 +1,10 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
-import { buildRoomAwarenessBlock } from "@shared/personas";
+import { buildRoomAwarenessBlock, PERSONAS } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
-import { runMorgan, buildReachInventory, renderReachContract } from "./morganRuntime";
+import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps } from "./morganRuntime";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -995,11 +995,21 @@ export class OpenAIService {
         const inventory = buildReachInventory(storyMemory);
         const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool');
         const systemPrompt = `${renderReachContract(inventory)}\n\n${toolPrompt}`;
+        // Specialist caller: reuse the existing single-shot persona path. Specialists
+        // are never `writingPartner`, so this never re-enters runMorgan (no recursion).
+        // History is empty for this M2 slice — each consult is a clean, stateless read.
+        const deps: RuntimeDeps = {
+          callSpecialist: async ({ specialistId, question }) => {
+            const res = await this.generatePersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
+            return { message: res.message };
+          },
+        };
         const result = await runMorgan({
           systemPrompt,
           userMessage,
           history: conversationHistory,
           inventory,
+          deps,
         });
         return { message: result.message, suggestions: result.suggestions };
       }

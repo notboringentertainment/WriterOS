@@ -52,6 +52,20 @@ describe('Morgan delegation', () => {
     expect(providerCalls).toHaveLength(1)
   })
 
+  it('passes a callSpecialist dep into runMorgan that routes a specialist through the single-shot persona path (no recursion)', async () => {
+    runMorgan.mockResolvedValue({ ok: true, message: 'runtime read', suggestions: [] })
+    await new OpenAIService().generatePersonaResponse(PERSONAS.writingPartner, 'reach?', userProfile(), storyMemory(), [])
+
+    const deps = runMorgan.mock.calls[0][0].deps
+    expect(typeof deps?.callSpecialist).toBe('function')
+
+    const ans = await deps.callSpecialist({ specialistId: 'casey', question: 'arc?' })
+    expect(ans.message).toBe('specialist')          // single-shot provider's reply, unwrapped to { message }
+    expect(providerCalls).toHaveLength(1)            // specialist used the single-shot provider...
+    expect(providerCalls[0]).toMatch(/Respond with JSON/i) // ...with a specialist prompt, not Morgan's tool prompt
+    expect(runMorgan).toHaveBeenCalledTimes(1)       // no re-entry into the runtime (no recursion)
+  })
+
   it('tool-mode Morgan prompt instructs respond_to_writer and drops the JSON closer; json-mode unchanged', () => {
     const toolP = createPersonaSystemPrompt(PERSONAS.writingPartner, userProfile(), storyMemory(), 'hi', undefined, 'tool')
     expect(toolP).toMatch(/respond_to_writer/)
