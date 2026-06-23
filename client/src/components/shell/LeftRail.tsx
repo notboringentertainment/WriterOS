@@ -151,6 +151,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
+    // Bound the rail to its container's height. Without this the rail grows to
+    // fit its content, so the inner transcript never overflows — the outer
+    // .zone-tele scrolls instead, and the auto-scroll effect (which targets the
+    // transcript) becomes a no-op. Binding height makes the transcript the real
+    // scroll container so new messages scroll into view.
+    height: '100%',
+    minHeight: 0,
     transition: 'width var(--rail-transition)',
     overflow: 'hidden',
     position: 'relative',
