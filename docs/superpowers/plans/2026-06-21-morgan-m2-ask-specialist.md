@@ -1,14 +1,15 @@
 # Morgan M2 - Ask Specialist TDD Plan
 
-> Status: implementation complete on `feat/morgan-m2-ask-specialist`; PR not created yet. Retained as the original TDD plan. Next step, after Ben says so, is push/open a draft PR and hold for CodeRabbit.
+> Status: implementation complete on `feat/morgan-m2-ask-specialist`; draft PR #47 is open. Retained as the original TDD plan.
 
 ## Milestone And PR
 
 - Milestone: **Morgan M2 - Ask Specialist**
-- Pull request: **not created yet**
-- Expected future PR: the next PR opened for this M2 work; GitHub will assign the number
+- Pull request: **PR #47**
 - Prior milestone: **Morgan M1 - Runtime Foundation**
 - Prior PR: **PR #44**, already merged
+
+Note: this condensed TDD plan parallels `docs/superpowers/plans/2026-06-21-morgan-m2-ask-specialist-staged-plan.md`; task numbers are aligned by content rather than by label.
 
 ## Plain Meaning
 

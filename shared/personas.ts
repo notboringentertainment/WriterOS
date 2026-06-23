@@ -133,6 +133,7 @@ ROOM ROUTING RULES:
 // askSpecialist tool enum and the reach contract both derive from this list.
 export const CALLABLE_SPECIALIST_IDS = ['sam', 'casey', 'oliver', 'maya', 'zoe', 'alex'] as const;
 export type SpecialistId = (typeof CALLABLE_SPECIALIST_IDS)[number];
+/** True only for specialists Morgan may call via askSpecialist. */
 export function isCallableSpecialist(id: string): id is SpecialistId {
   return (CALLABLE_SPECIALIST_IDS as readonly string[]).includes(id);
 }

@@ -281,7 +281,7 @@ describe('runMorgan loop', () => {
     const runId = (events.find((e) => e.kind === 'run.started') as { runId: string }).runId
     const err = events.find((e) => e.kind === 'askSpecialist.error') as Extract<MorganTraceEvent, { kind: 'askSpecialist.error' }>
     expect(err).toMatchObject({ specialistId: 'zoe', runId })
-    expect(err.reason).toMatch(/zoe/i)
+    expect(err.reason).toBe('network boom')
     expect(kinds(events)).not.toContain('askSpecialist.ok')
   })
 

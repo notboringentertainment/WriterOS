@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status: IMPLEMENTED ON `feat/morgan-m2-ask-specialist`; PR NOT CREATED YET.** This file is retained as the staged implementation plan. Tasks 1-8 are complete and verified by automated gates plus Ben's live clean-context checks; Task 9 remains push/open draft PR and CodeRabbit hold after Ben explicitly says to proceed.
+> **Status: IMPLEMENTED ON `feat/morgan-m2-ask-specialist`; draft PR #47 is open.** This file is retained as the staged implementation plan. Tasks 1-8 are complete and verified by automated gates plus Ben's live clean-context checks; Task 9 is now the CodeRabbit follow-up and no-merge hold.
 
 **Goal:** Let Morgan call exactly one existing WriterOS specialist (Sam, Casey, Oliver, Maya, Zoe, Alex) per tool call through the existing persona service, then synthesize that specialist's read back to the writer — without raw pass-through.
 
@@ -560,6 +560,7 @@ const specialistNames = CALLABLE_SPECIALIST_IDS.map((id) => PERSONAS[id].name).j
 
 ## Open questions for Codex review
 
-1. **Registry location:** `shared/personas.ts` vs. a runtime-local list. I put it in `shared` so tool enum + reach contract + caller share one truth; `morganRuntime` imports only the id list/type/guard (data, not the `PERSONAS` record or model logic). Acceptable, or keep the runtime decoupled from `shared` entirely?
+1. **Registry location:** resolved in implementation as `shared/personas.ts`, so the tool enum, reach contract, and caller share one truth. `morganRuntime` imports only the id list/type/guard (data, not the `PERSONAS` record or model logic).
 2. **Specialist history:** `[]` for this slice. Confirm Morgan should not pass any conversation context into the specialist call yet (keeps the consult clean/stateless).
 3. **Attribution wording:** prompt-guided ("I asked Zoe — …") and not enforced by code. Agree that attribution is a prompt concern, while *no-raw-passthrough* is the structural guarantee?
+4. **Trace model drift:** resolved for Slice 1 by documenting that local trace logs use the Morgan-specific `MorganTraceEvent` union, while `docs/product/agent-observability-provenance-prd.md` keeps the generic trace schema as Slice 3 future work.

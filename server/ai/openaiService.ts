@@ -1000,7 +1000,9 @@ export class OpenAIService {
         // History is empty for this M2 slice — each consult is a clean, stateless read.
         const deps: RuntimeDeps = {
           callSpecialist: async ({ specialistId, question }) => {
-            const res = await this.generatePersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
+            // Use the single-shot helper directly so provider failures propagate
+            // to askSpecialist.error instead of being converted into fallback prose.
+            const res = await this.generateSingleShotPersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
             return { message: res.message };
           },
         };
@@ -1014,41 +1016,52 @@ export class OpenAIService {
         return { message: result.message, suggestions: result.suggestions };
       }
 
-      const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
-
-      const messages: ModelMessage[] = [
-        ...conversationHistory.slice(-6).map(msg => ({
-          role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-          content: msg.content
-        })),
-        { role: 'user', content: userMessage }
-      ];
-
-      const provider = createModelProvider();
-      const rawContent = await provider.generateResponse({
-        systemPrompt,
-        messages,
-        temperature: 0.7,
-        maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
-      });
-
-      try {
-        const parsedResponse = parseJsonObject(rawContent);
-        return {
-          message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
-          suggestions: parsedResponse.suggestions || [],
-        };
-      } catch (parseError) {
-        // Fallback if JSON parsing fails
-        return {
-          message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
-          suggestions: []
-        };
-      }
+      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile);
     } catch (error) {
       console.error('AI provider error:', error);
       return {
         message: `I'm having trouble connecting right now, ${userProfile.writerName}. Let me try to help based on what we've discussed so far.`
+      };
+    }
+  }
+
+  private async generateSingleShotPersonaResponse(
+    persona: Persona,
+    userMessage: string,
+    userProfile: AssessmentProfile,
+    storyMemory: StoryMemory,
+    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
+    voiceProfile?: VoiceProfileDocument
+  ): Promise<PersonaResponse> {
+    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
+
+    const messages: ModelMessage[] = [
+      ...conversationHistory.slice(-6).map(msg => ({
+        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: msg.content
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    const provider = createModelProvider();
+    const rawContent = await provider.generateResponse({
+      systemPrompt,
+      messages,
+      temperature: 0.7,
+      maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
+    });
+
+    try {
+      const parsedResponse = parseJsonObject(rawContent);
+      return {
+        message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
+        suggestions: parsedResponse.suggestions || [],
+      };
+    } catch (parseError) {
+      // Fallback if JSON parsing fails
+      return {
+        message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
+        suggestions: []
       };
     }
   }

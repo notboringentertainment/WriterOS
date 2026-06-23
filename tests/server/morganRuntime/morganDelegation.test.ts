@@ -8,12 +8,16 @@ vi.mock('../../../server/ai/morganRuntime', () => ({
   renderReachContract: () => 'MORGAN REACH: can see logline',
 }))
 
-const { providerCalls } = vi.hoisted(() => ({ providerCalls: [] as string[] }))
+const { providerCalls, providerFailure } = vi.hoisted(() => ({
+  providerCalls: [] as string[],
+  providerFailure: { error: null as Error | null },
+}))
 vi.mock('../../../server/ai/modelProvider', () => ({
   createModelProvider: () => ({
     name: 't', model: 't', isConfigured: () => true,
     generateResponse: vi.fn(async (i: { systemPrompt: string }) => {
       providerCalls.push(i.systemPrompt)
+      if (providerFailure.error) throw providerFailure.error
       return JSON.stringify({ message: 'specialist', suggestions: [] })
     }),
   }),
@@ -34,7 +38,7 @@ function storyMemory(): StoryMemory {
   }
 }
 
-beforeEach(() => { runMorgan.mockReset(); providerCalls.length = 0 })
+beforeEach(() => { runMorgan.mockReset(); providerCalls.length = 0; providerFailure.error = null })
 
 describe('Morgan delegation', () => {
   it('routes Morgan through the runtime, not the single-shot provider', async () => {
@@ -64,6 +68,25 @@ describe('Morgan delegation', () => {
     expect(providerCalls).toHaveLength(1)            // specialist used the single-shot provider...
     expect(providerCalls[0]).toMatch(/Respond with JSON/i) // ...with a specialist prompt, not Morgan's tool prompt
     expect(runMorgan).toHaveBeenCalledTimes(1)       // no re-entry into the runtime (no recursion)
+  })
+
+  it('callSpecialist lets provider failures reject instead of becoming a fake successful consult', async () => {
+    runMorgan.mockResolvedValue({ ok: true, message: 'runtime read', suggestions: [] })
+    await new OpenAIService().generatePersonaResponse(PERSONAS.writingPartner, 'reach?', userProfile(), storyMemory(), [])
+
+    const deps = runMorgan.mock.calls[0][0].deps
+    providerFailure.error = new Error('provider down')
+
+    await expect(deps.callSpecialist({ specialistId: 'casey', question: 'arc?' })).rejects.toThrow('provider down')
+    expect(providerCalls).toHaveLength(1)
+    expect(runMorgan).toHaveBeenCalledTimes(1)
+  })
+
+  it('public specialist chat still keeps the existing fallback behavior on provider failure', async () => {
+    providerFailure.error = new Error('provider down')
+    const r = await new OpenAIService().generatePersonaResponse(PERSONAS.sam, 'logline?', userProfile(), storyMemory(), [])
+    expect(r.message).toMatch(/having trouble connecting/i)
+    expect(providerCalls).toHaveLength(1)
   })
 
   it('tool-mode Morgan prompt instructs respond_to_writer and drops the JSON closer; json-mode unchanged', () => {

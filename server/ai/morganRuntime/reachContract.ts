@@ -13,6 +13,7 @@ const filled = (v: unknown): boolean => typeof v === 'string' && v.trim().length
 // contract copy can never drift from the askSpecialist tool enum.
 const SPECIALIST_NAMES = CALLABLE_SPECIALIST_IDS.map((id) => PERSONAS[id].name).join(', ');
 
+/** Build Morgan's honest capability inventory from the current StoryMemory packet. */
 export function buildReachInventory(memory: StoryMemory): ReachInventory {
   const canSee: string[] = [];
   const p = memory.project ?? ({} as StoryMemory['project']);
@@ -65,6 +66,7 @@ export function buildReachInventory(memory: StoryMemory): ReachInventory {
   return { canSee, cannotSee, canDoNow, cannotDoYet };
 }
 
+/** Render Morgan's capability inventory as prompt text for the tool-loop runtime. */
 export function renderReachContract(inv: ReachInventory): string {
   const section = (label: string, items: string[]) => `${label}:\n${items.map((i) => `- ${i}`).join('\n')}`;
   return [

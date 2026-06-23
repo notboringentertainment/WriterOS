@@ -74,6 +74,13 @@ const asStringArray = (v: unknown): string[] =>
 
 const MAX_SUGGESTIONS = 3;
 
+function specialistFailureReason(error: unknown, specialistId: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) return error.message.trim();
+  if (typeof error === 'string' && error.trim().length > 0) return error.trim();
+  return `could not reach ${specialistId}`;
+}
+
+/** Dispatch one Morgan tool_use into a model-visible result or final response. */
 export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<DispatchOutcome> {
   if (use.name === READ_CONTEXT_TOOL_NAME) {
     return { kind: 'continue', toolUseId: use.id, content: JSON.stringify(ctx.inventory) };
@@ -127,13 +134,14 @@ export async function dispatchTool(use: ToolUse, ctx: DispatchContext): Promise<
         content: answer.message,
         consult: { specialistId, question, message: answer.message },
       };
-    } catch {
+    } catch (error) {
+      const reason = specialistFailureReason(error, specialistId);
       ctx.trace?.({
         kind: 'askSpecialist.error',
         runId,
         specialistId,
         durationMs: Date.now() - startedAt,
-        reason: `could not reach ${specialistId}`,
+        reason,
       });
       return { kind: 'error', toolUseId: use.id, content: `askSpecialist: could not reach ${specialistId}.` };
     }

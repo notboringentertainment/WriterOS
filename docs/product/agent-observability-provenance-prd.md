@@ -15,17 +15,17 @@ That closes the functional M2 bug, but it does not give the operator a reliable 
 
 > Did Morgan actually call Casey, what did she ask, and what happened?
 
-This PRD owns that larger problem. It is not a user-facing receipt UI PRD. It is an under-the-hood traceability, admin diagnostics, and future memory-provenance foundation for all WriterOS agents and capabilities.
+This PRD owns that larger problem. It is not a user-facing receipt UI PRD. It is an under-the-hood traceability, admin diagnostics, and future memory-provenance plan.
 
 ## Product Position
 
-M2 is functionally complete once specialist attribution is protected by runtime state.
+M2 is functionally complete once specialist attribution is protected by runtime state and local trace logs can prove what happened in a Morgan run.
 
-This PRD is the next foundation beneath stronger multi-agent workflows:
+This PRD is scoped by slices:
 
-- M2: Morgan can consult one existing specialist and cannot fabricate source-anchored specialist attribution.
-- Observability: WriterOS can prove, inspect, debug, and eventually persist what agents and tools actually did.
-- Later memory: WriterOS agents can learn from interaction because memories carry source, confidence, scope, and confirmation state.
+- Slice 1 closes the Morgan M2 trust loop: Morgan can consult one existing specialist, cannot fabricate source-anchored specialist attribution, and emits local Morgan-specific trace logs for the consult path.
+- Slices 2-3 turn that local proof into optional debug metadata and a shared agent trace schema.
+- Slices 4-5 are the later foundation for persisted diagnostics and source-aware agent memory across WriterOS agents and capabilities.
 
 Do not smuggle this PRD into M2 as "one more fix." Build it as its own architecture layer with a clear operator/admin contract.
 
@@ -63,13 +63,9 @@ The Morgan M2 fabrication incident exposed the pattern:
 
 ## Non-Goals
 
-- No writer-facing consult receipt UI in this PRD.
-- No visible transcript redesign.
-- No durable cross-agent memory implementation.
-- No autonomous multi-agent orchestration.
-- No analytics dashboard in the first slice.
-- No raw prompt exposure to normal users.
-- No storage of sensitive trace payloads without an explicit retention/privacy decision.
+This PRD excludes writer-facing consult receipts, visible transcript redesign, durable cross-agent memory, autonomous multi-agent orchestration, and analytics dashboards in Slice 1.
+
+Raw prompt exposure for normal users remains out of scope. Sensitive trace payload storage is deferred until WriterOS has an explicit retention and privacy decision.
 
 ## Core Principle
 
@@ -108,7 +104,24 @@ Recommended event categories:
 | `agent.final.failed` | Runtime failed closed or exhausted retries |
 | `memory.candidate.created` | Future phase: source-aware memory candidate was generated |
 
-### Minimal Event Shape
+### Slice 1 Morgan Event Shape
+
+Slice 1 intentionally uses a small Morgan-specific discriminated union, implemented as `MorganTraceEvent` in `server/ai/morganRuntime/trace.ts`. It has no generic timestamp, turn id, or payload fields because the first slice only needs local terminal proof:
+
+```ts
+type MorganTraceEvent =
+  | { kind: 'run.started'; runId: string; personaId: string }
+  | { kind: 'askSpecialist.started'; runId: string; specialistId: string; question: string }
+  | { kind: 'askSpecialist.ok'; runId: string; specialistId: string; durationMs: number; chars: number }
+  | { kind: 'askSpecialist.error'; runId: string; specialistId: string; durationMs: number; reason: string }
+  | { kind: 'guard.attribution'; runId: string; status: 'passed' | 'blocked'; specialists: string[] }
+  | { kind: 'final.accepted'; runId: string }
+  | { kind: 'final.failed'; runId: string; reason: string };
+```
+
+### Future Shared Event Shape
+
+Slice 3 should generalize the Morgan-specific shape into a shared agent-aware schema. That future schema can add broader fields such as timestamp, turn id, persona id, and payload once multiple agents and capabilities need the same trace contract:
 
 ```ts
 interface AgentTraceEvent {
@@ -123,7 +136,7 @@ interface AgentTraceEvent {
 }
 ```
 
-### Specialist Consult Event Shape
+### Future Specialist Consult Event Shape
 
 ```ts
 interface SpecialistConsultTraceEvent {
@@ -139,7 +152,7 @@ interface SpecialistConsultTraceEvent {
 }
 ```
 
-`responsePreview` should be truncated and admin-only. Raw full specialist output may be stored later, but only after a retention/privacy decision.
+`responsePreview` should be truncated and admin-only. Raw full specialist output may be stored in a future phase, but only after an explicit retention/privacy decision.
 
 ## Admin Visibility Model
 
@@ -254,6 +267,8 @@ Scope:
 - no API shape change
 - no UI change
 - no persistence
+
+Note: Slice 1 uses the simplified Morgan-specific `MorganTraceEvent` model above. Slice 3 will generalize this into a broader agent-aware schema for reuse across capabilities.
 
 Acceptance:
 

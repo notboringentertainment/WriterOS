@@ -107,6 +107,17 @@ describe('morgan tools', () => {
     expect(out.kind).toBe('error')
   })
 
+  it('askSpecialist: traces the underlying dependency failure reason', async () => {
+    const events: Array<{ kind: string; reason?: string }> = []
+    const depsThrow = { callSpecialist: async () => { throw new Error('provider down') } }
+    const out = await dispatchTool(
+      { id: 'a7', name: ASK_SPECIALIST_TOOL_NAME, input: { specialistId: 'sam', question: 'ok' } },
+      { inventory, deps: depsThrow, runId: 'morgan_test', trace: (event) => events.push(event) },
+    )
+    expect(out.kind).toBe('error')
+    expect(events.find((event) => event.kind === 'askSpecialist.error')).toMatchObject({ reason: 'provider down' })
+  })
+
   it('dispatchTool is async (returns a Promise that resolves to the outcome)', async () => {
     const p = dispatchTool({ id: 't', name: READ_CONTEXT_TOOL_NAME, input: {} }, { inventory })
     expect(p).toBeInstanceOf(Promise)

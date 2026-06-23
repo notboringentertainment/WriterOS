@@ -24,6 +24,7 @@ const DEFAULT_PREVIEW_MAX = 160;
 
 // Keep previews short and single-line so trace output stays grep-friendly and
 // never dumps raw specialist creative material into the terminal.
+/** Return a truncated, single-line preview suitable for local trace output. */
 export function truncatePreview(value: string, max = DEFAULT_PREVIEW_MAX): string {
   const flat = value.replace(/\s*[\r\n]+\s*/g, ' ').trim();
   if (flat.length <= max) return flat;
@@ -36,11 +37,13 @@ function quotedPreview(value: string): string {
 
 // morgan_<random> — enough entropy to correlate one browser turn with terminal
 // logs without colliding across concurrent runs.
+/** Create a correlation id for one Morgan runtime invocation. */
 export function createRunId(): string {
   return `morgan_${randomBytes(5).toString('hex')}`;
 }
 
 // Render one event as a single structured, grep-by-runId/specialist/guard line.
+/** Format a Morgan trace event as one stable, grep-friendly terminal line. */
 export function formatTraceLine(event: MorganTraceEvent): string {
   const head = `[morgan] run=${event.runId}`;
   switch (event.kind) {
@@ -76,6 +79,7 @@ const noopTraceSink: TraceSink = () => {};
 //   MORGAN_TRACE=off  → always silent
 //   MORGAN_TRACE=<any other value> → always log
 //   unset → log unless NODE_ENV==='test'
+/** Choose the injected sink or the environment-controlled default trace sink. */
 export function resolveTraceSink(injected?: TraceSink): TraceSink {
   if (injected) return injected;
   const flag = process.env.MORGAN_TRACE;
