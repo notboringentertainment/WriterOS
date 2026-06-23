@@ -196,6 +196,58 @@ describe('runMorgan loop', () => {
     expect(r.message).toBe('Maya feels betrayed when Sam said he would leave, Alex sees it coming, and Casey returned to the room.')
   })
 
+  it('PROVENANCE GUARD: rejects source-anchored "According to Casey" attribution when not consulted', async () => {
+    sendToolTurn
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [{ type: 'tool_use', id: 'fake' }],
+        toolUses: [{ id: 'fake', name: 'respond_to_writer', input: { message: 'According to Casey, Ace is built from denial.' } }],
+      })
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [],
+        toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "I haven't asked Casey about Ace yet. My read is that Ace is built from denial." } }],
+      })
+    const r = await runMorgan(inputBase)
+    expect(r.message).toMatch(/haven't asked Casey/)
+    expect(r.message).not.toMatch(/^According to Casey/)
+    const results = toolResultsOf(1)
+    expect(results.some((c) => c.tool_use_id === 'fake' && /not consulted Casey/i.test(c.content))).toBe(true)
+  })
+
+  it('PROVENANCE GUARD: rejects source-anchored "Per Casey" attribution when not consulted', async () => {
+    sendToolTurn
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [{ type: 'tool_use', id: 'fake' }],
+        toolUses: [{ id: 'fake', name: 'respond_to_writer', input: { message: 'Per Casey, Ace reads as denial over loyalty.' } }],
+      })
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [],
+        toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "I haven't asked Casey about Ace yet. My own read is denial over loyalty." } }],
+      })
+    const r = await runMorgan(inputBase)
+    expect(r.message).toMatch(/haven't asked Casey/)
+    const results = toolResultsOf(1)
+    expect(results.some((c) => c.tool_use_id === 'fake' && /not consulted Casey/i.test(c.content))).toBe(true)
+  })
+
+  it('PROVENANCE GUARD: allows bare "Casey says" character prose (no source anchor) without blocking', async () => {
+    sendToolTurn.mockResolvedValueOnce({
+      stopReason: 'tool_use',
+      text: '',
+      assistantContent: [],
+      toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "In the scene, Casey says she's leaving and Maya thinks it's a bluff." } }],
+    })
+    const r = await runMorgan(inputBase)
+    expect(r.message).toBe("In the scene, Casey says she's leaving and Maya thinks it's a bluff.")
+  })
+
   it('PROVENANCE GUARD: rejects unconsulted specialist attribution inside suggestions', async () => {
     sendToolTurn
       .mockResolvedValueOnce({

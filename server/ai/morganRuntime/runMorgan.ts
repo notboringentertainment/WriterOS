@@ -30,6 +30,12 @@ const ATTRIBUTION_PATTERNS = [
   (name: string) => String.raw`\b(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\s+from\s+${name}\b`,
   (name: string) => String.raw`\b${name}'s\s+(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\b`,
   (name: string) => String.raw`\b${name}\s+(?:came back with|returned with|reported back with|gave me)\b`,
+  // Source-anchored attribution openers. "According to/per X" frames X as the
+  // source of a claim, so it must be backed by a real consult. Low false-positive
+  // risk: screenplay prose rarely narrates a character with these openers, unlike
+  // bare "X says/thinks/feels" which was deliberately dropped (collides with
+  // same-named characters). See agent-observability-provenance-prd.md.
+  (name: string) => String.raw`\b(?:according to|per)\s+${name}\b`,
 ];
 
 function unverifiedSpecialistAttributions(
