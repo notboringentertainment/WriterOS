@@ -4,10 +4,16 @@
 // failure mode: a surface only appears in canSee when its field is actually populated.
 
 import type { StoryMemory } from '../../../shared/schema';
+import { CALLABLE_SPECIALIST_IDS, PERSONAS } from '../../../shared/personas';
 import type { ReachInventory } from './types';
 
 const filled = (v: unknown): boolean => typeof v === 'string' && v.trim().length > 0;
 
+// Display names derived from the single callable-specialist registry, so the reach
+// contract copy can never drift from the askSpecialist tool enum.
+const SPECIALIST_NAMES = CALLABLE_SPECIALIST_IDS.map((id) => PERSONAS[id].name).join(', ');
+
+/** Build Morgan's honest capability inventory from the current StoryMemory packet. */
 export function buildReachInventory(memory: StoryMemory): ReachInventory {
   const canSee: string[] = [];
   const p = memory.project ?? ({} as StoryMemory['project']);
@@ -47,11 +53,12 @@ export function buildReachInventory(memory: StoryMemory): ReachInventory {
     'read and synthesize the project context above',
     'answer film, reference, and general questions from my own knowledge',
     'give you a showrunner-level read: name the central problem, the tradeoff, the next move',
-    'recommend which specialist (Sam, Casey, Oliver, Maya, Zoe, Alex) is the right next visit',
+    `recommend which specialist (${SPECIALIST_NAMES}) is the right next visit`,
+    `consult one specialist at a time (${SPECIALIST_NAMES}) to get their actual read, then synthesize it for you`,
   ];
 
   const cannotDoYet = [
-    'call the specialists directly to get their actual read (coming soon)',
+    'consult more than one specialist at once (no parallel room orchestration yet)',
     'edit or rewrite your draft',
     'look things up on the live web',
   ];
@@ -59,6 +66,7 @@ export function buildReachInventory(memory: StoryMemory): ReachInventory {
   return { canSee, cannotSee, canDoNow, cannotDoYet };
 }
 
+/** Render Morgan's capability inventory as prompt text for the tool-loop runtime. */
 export function renderReachContract(inv: ReachInventory): string {
   const section = (label: string, items: string[]) => `${label}:\n${items.map((i) => `- ${i}`).join('\n')}`;
   return [

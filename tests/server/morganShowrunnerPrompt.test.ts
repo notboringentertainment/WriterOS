@@ -122,6 +122,35 @@ describe('Morgan Showrunner prompt', () => {
     expect(samPrompt).not.toContain('MORGAN OPERATING CONTRACT')
   })
 
+  it('tool-mode Morgan prompt instructs askSpecialist use, attribution, and synthesis', () => {
+    const prompt = createPersonaSystemPrompt(
+      PERSONAS.writingPartner,
+      userProfile(),
+      storyMemory(),
+      'Give me a showrunner read.',
+      undefined,
+      'tool',
+    )
+    expect(prompt).toMatch(/askSpecialist/)
+    expect(prompt).toMatch(/attribut/i)
+    expect(prompt).toMatch(/synthesi[sz]/i)
+  })
+
+  it('tool-mode Morgan prompt protects writer-supplied material from fake specialist attribution', () => {
+    const prompt = createPersonaSystemPrompt(
+      PERSONAS.writingPartner,
+      userProfile(),
+      storyMemory(),
+      'Here is new backstory for Ace.',
+      undefined,
+      'tool',
+    )
+    expect(prompt).toMatch(/new material/i)
+    expect(prompt).toMatch(/writer/i)
+    expect(prompt).toMatch(/do not credit it to a specialist/i)
+    expect(prompt).toMatch(/consult that specialist again/i)
+  })
+
   it('keeps Morgan grounded in the full project context sections', () => {
     const prompt = createPersonaSystemPrompt(
       PERSONAS.writingPartner,

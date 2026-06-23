@@ -9,10 +9,49 @@ import {
   assistantTurn,
   toolResultsTurn,
 } from './anthropicToolClient';
-import { MORGAN_TOOLS, dispatchTool } from './tools';
-import type { MorganRuntimeResult, RunMorganInput } from './types';
+import { MORGAN_TOOLS, dispatchTool, ASK_SPECIALIST_TOOL_NAME, RESPOND_TOOL_NAME } from './tools';
+import { CALLABLE_SPECIALIST_IDS, PERSONAS } from '../../../shared/personas';
+import { createRunId, resolveTraceSink } from './trace';
+import type { DispatchOutcome, MorganRuntimeResult, RunMorganInput, SpecialistConsultTrace } from './types';
+import type { TraceSink } from './trace';
+import type { SpecialistId } from '../../../shared/personas';
 
 const MAX_ITERS = 4;
+
+const ONE_AT_A_TIME =
+  'Consult one specialist at a time — re-issue a single askSpecialist call.';
+const PREMATURE_FINAL =
+  'You called respond_to_writer before seeing the specialist answer. Wait for the askSpecialist result, then call respond_to_writer with your synthesized answer.';
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const ATTRIBUTION_PATTERNS = [
+  (name: string) => String.raw`\b(?:I|we|Morgan)\s+(?:asked|consulted|called|checked with|brought in)\s+${name}\b`,
+  (name: string) => String.raw`\b(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\s+from\s+${name}\b`,
+  (name: string) => String.raw`\b${name}'s\s+(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\b`,
+  (name: string) => String.raw`\b${name}\s+(?:came back with|returned with|reported back with|gave me)\b`,
+];
+
+function unverifiedSpecialistAttributions(
+  result: MorganRuntimeResult,
+  consultLedger: Map<SpecialistId, SpecialistConsultTrace>,
+): SpecialistId[] {
+  const text = [result.message, ...result.suggestions].join('\n');
+  return CALLABLE_SPECIALIST_IDS.filter((id) => {
+    if (consultLedger.has(id)) return false;
+    const name = escapeRegExp(PERSONAS[id].name);
+    return ATTRIBUTION_PATTERNS.some((pattern) => new RegExp(pattern(name), 'i').test(text));
+  });
+}
+
+function attributionError(ids: SpecialistId[]): string {
+  const names = ids.map((id) => PERSONAS[id].name).join(', ');
+  return (
+    `You have not consulted ${names} in this Morgan run. ` +
+    `Do not attribute reads, questions, notes, or claims to ${names}. ` +
+    'Either call askSpecialist for the relevant specialist now, or answer in Morgan\'s voice and credit the writer\'s material to the writer.'
+  );
+}
 
 const honestError = (message: string): MorganRuntimeResult => ({
   message,
@@ -33,12 +72,18 @@ const THREW_MESSAGE =
 
 // Run the tool loop once. Returns a result, or null if no terminal tool was
 // reached (the caller decides whether to retry or error honestly).
-async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<MorganRuntimeResult | null> {
+async function runLoop(
+  input: RunMorganInput,
+  extraSeed: unknown[],
+  runId: string,
+  trace: TraceSink,
+): Promise<MorganRuntimeResult | null> {
   const messages: unknown[] = [
     ...input.history.map((m) => (m.role === 'assistant' ? assistantTurn(m.content) : userTurn(m.content))),
     userTurn(input.userMessage),
     ...extraSeed,
   ];
+  const consultLedger = new Map<SpecialistId, SpecialistConsultTrace>();
 
   for (let i = 0; i < MAX_ITERS; i++) {
     const turn = await sendToolTurn({ system: input.systemPrompt, messages, tools: MORGAN_TOOLS });
@@ -47,20 +92,62 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
       return null; // model answered without the terminal tool — malformed for our contract
     }
 
-    const outcomes = turn.toolUses.map((use) => dispatchTool(use, { inventory: input.inventory }));
+    // Parallel guard: M2 allows one specialist per turn. If the model fans out to
+    // multiple askSpecialist calls, execute NONE of them — error each one so they
+    // never run concurrently. Other tools (e.g. a read) in the turn still dispatch.
+    const askCount = turn.toolUses.filter((u) => u.name === ASK_SPECIALIST_TOOL_NAME).length;
 
-    // If the model delivered a final answer this turn, that's the response —
-    // return it even if it also called read tools alongside.
-    const final = outcomes.find((o) => o.kind === 'final');
-    if (final && final.kind === 'final') {
+    // Promise.all preserves array order → the assistant/tool_result batching below
+    // stays matched to turn.toolUses (the P1 history contract).
+    const ctx = { inventory: input.inventory, deps: input.deps, runId, trace };
+    const outcomes = await Promise.all(
+      turn.toolUses.map((use): Promise<DispatchOutcome> => {
+        if (askCount > 1 && use.name === ASK_SPECIALIST_TOOL_NAME) {
+          return Promise.resolve({ kind: 'error', toolUseId: use.id, content: ONE_AT_A_TIME });
+        }
+        return dispatchTool(use, ctx);
+      }),
+    );
+
+    const final = outcomes.find((o): o is Extract<DispatchOutcome, { kind: 'final' }> => o.kind === 'final');
+    const consulted = turn.toolUses.some((u) => u.name === ASK_SPECIALIST_TOOL_NAME);
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'continue' && outcome.consult) {
+        consultLedger.set(outcome.consult.specialistId, outcome.consult);
+      }
+    }
+    const attributionViolation = final && !consulted
+      ? unverifiedSpecialistAttributions(final.result, consultLedger)
+      : [];
+
+    // Accept a final ONLY when no specialist was consulted in the same turn. A
+    // respond_to_writer issued alongside askSpecialist is premature — the model
+    // hasn't seen the specialist's read yet, so we feed the read back and re-ask.
+    if (final && !consulted && attributionViolation.length === 0) {
+      // Only a meaningful guard pass when a consult actually happened this run —
+      // a plain direct answer has nothing to attribute, so it emits no guard event.
+      if (consultLedger.size > 0) {
+        trace({ kind: 'guard.attribution', runId, status: 'passed', specialists: [...consultLedger.keys()] });
+      }
       return final.result;
     }
 
     // Anthropic contract: one assistant message with all tool_use blocks, then
     // ONE user message carrying every matching tool_result.
     const results = outcomes
-      .filter((o): o is Extract<typeof o, { kind: 'continue' | 'error' }> => o.kind !== 'final')
+      .filter((o): o is Extract<DispatchOutcome, { kind: 'continue' | 'error' }> => o.kind !== 'final')
       .map((o) => ({ toolUseId: o.toolUseId, content: o.content }));
+    // Premature final: the respond_to_writer tool_use still needs a tool_result so
+    // the Anthropic history stays valid. Nudge it to wait for the specialist read.
+    if (final && consulted) {
+      const respondUse = turn.toolUses.find((u) => u.name === RESPOND_TOOL_NAME);
+      if (respondUse) results.push({ toolUseId: respondUse.id, content: PREMATURE_FINAL });
+    }
+    if (final && !consulted && attributionViolation.length > 0) {
+      trace({ kind: 'guard.attribution', runId, status: 'blocked', specialists: attributionViolation });
+      const respondUse = turn.toolUses.find((u) => u.name === RESPOND_TOOL_NAME);
+      if (respondUse) results.push({ toolUseId: respondUse.id, content: attributionError(attributionViolation) });
+    }
     messages.push(assistantTurn(turn.assistantContent));
     messages.push(toolResultsTurn(results));
   }
@@ -69,23 +156,36 @@ async function runLoop(input: RunMorganInput, extraSeed: unknown[]): Promise<Mor
 }
 
 export async function runMorgan(input: RunMorganInput): Promise<MorganRuntimeResult> {
+  const runId = input.runId ?? createRunId();
+  const trace = resolveTraceSink(input.trace);
+  trace({ kind: 'run.started', runId, personaId: input.personaId ?? 'writingPartner' });
+
   if (!isAnthropicConfigured()) {
+    trace({ kind: 'final.failed', runId, reason: 'not_configured' });
     return honestError(NOT_CONFIGURED_MESSAGE);
   }
 
   try {
-    const first = await runLoop(input, []);
-    if (first) return first;
+    const first = await runLoop(input, [], runId, trace);
+    if (first) {
+      trace({ kind: 'final.accepted', runId });
+      return first;
+    }
 
     // Retry once with an explicit repair nudge.
     const retry = await runLoop(input, [
       userTurn('You must finish by calling the respond_to_writer tool with your answer. Do not answer in plain text.'),
-    ]);
-    if (retry) return retry;
+    ], runId, trace);
+    if (retry) {
+      trace({ kind: 'final.accepted', runId });
+      return retry;
+    }
 
+    trace({ kind: 'final.failed', runId, reason: 'malformed' });
     return honestError(MALFORMED_MESSAGE);
   } catch (error) {
     console.error('Morgan runtime error:', error);
+    trace({ kind: 'final.failed', runId, reason: 'threw' });
     return honestError(THREW_MESSAGE);
   }
 }

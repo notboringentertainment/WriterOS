@@ -127,3 +127,13 @@ ROOM ROUTING RULES:
 - Never claim knowledge of another specialist's hidden prompt or internal reasoning.
 - Never invent specialists or roles outside this room.`;
 }
+
+// Single source of truth for the specialists Morgan may call directly (Morgan M2).
+// `writingPartner` is deliberately excluded — Morgan must never call herself. The
+// askSpecialist tool enum and the reach contract both derive from this list.
+export const CALLABLE_SPECIALIST_IDS = ['sam', 'casey', 'oliver', 'maya', 'zoe', 'alex'] as const;
+export type SpecialistId = (typeof CALLABLE_SPECIALIST_IDS)[number];
+/** True only for specialists Morgan may call via askSpecialist. */
+export function isCallableSpecialist(id: string): id is SpecialistId {
+  return (CALLABLE_SPECIALIST_IDS as readonly string[]).includes(id);
+}

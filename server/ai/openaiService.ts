@@ -1,10 +1,10 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
-import { buildRoomAwarenessBlock } from "@shared/personas";
+import { buildRoomAwarenessBlock, PERSONAS } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
-import { runMorgan, buildReachInventory, renderReachContract } from "./morganRuntime";
+import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps } from "./morganRuntime";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -871,7 +871,7 @@ MORGAN OPERATING CONTRACT:
 RESPONSE STYLE: Calm, decisive, and specific. Like a showrunner who can hold the whole room in her head without crowding the writer's voice.
 
 ${responseMode === 'tool'
-  ? `IMPORTANT: When you have what you need, you MUST finish by calling the respond_to_writer tool with { message, suggestions }. Aim for roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move. Do not answer in plain text — the respond_to_writer call is how the writer receives your answer.`
+  ? `IMPORTANT: When you have what you need, you MUST finish by calling the respond_to_writer tool with { message, suggestions }. Aim for roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move. Do not answer in plain text — the respond_to_writer call is how the writer receives your answer. You may call askSpecialist({ specialistId, question }) to get ONE specialist's actual read when their lane is clearly the better source — one specialist per call, and never alongside respond_to_writer in the same turn. When you do, synthesize their read into your own showrunner answer and attribute it plainly (e.g. "I asked Zoe — her read is …"). Never paste their reply verbatim, and never forward their suggestions; you own the final suggestions. Source boundary: if the writer gives new material after a specialist consult, treat that material as the writer's contribution; do not credit it to a specialist unless you consult that specialist again about the new material.`
   : `IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move)",
@@ -995,50 +995,73 @@ export class OpenAIService {
         const inventory = buildReachInventory(storyMemory);
         const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool');
         const systemPrompt = `${renderReachContract(inventory)}\n\n${toolPrompt}`;
+        // Specialist caller: reuse the existing single-shot persona path. Specialists
+        // are never `writingPartner`, so this never re-enters runMorgan (no recursion).
+        // History is empty for this M2 slice — each consult is a clean, stateless read.
+        const deps: RuntimeDeps = {
+          callSpecialist: async ({ specialistId, question }) => {
+            // Use the single-shot helper directly so provider failures propagate
+            // to askSpecialist.error instead of being converted into fallback prose.
+            const res = await this.generateSingleShotPersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
+            return { message: res.message };
+          },
+        };
         const result = await runMorgan({
           systemPrompt,
           userMessage,
           history: conversationHistory,
           inventory,
+          deps,
         });
         return { message: result.message, suggestions: result.suggestions };
       }
 
-      const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
-
-      const messages: ModelMessage[] = [
-        ...conversationHistory.slice(-6).map(msg => ({
-          role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-          content: msg.content
-        })),
-        { role: 'user', content: userMessage }
-      ];
-
-      const provider = createModelProvider();
-      const rawContent = await provider.generateResponse({
-        systemPrompt,
-        messages,
-        temperature: 0.7,
-        maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
-      });
-
-      try {
-        const parsedResponse = parseJsonObject(rawContent);
-        return {
-          message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
-          suggestions: parsedResponse.suggestions || [],
-        };
-      } catch (parseError) {
-        // Fallback if JSON parsing fails
-        return {
-          message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
-          suggestions: []
-        };
-      }
+      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile);
     } catch (error) {
       console.error('AI provider error:', error);
       return {
         message: `I'm having trouble connecting right now, ${userProfile.writerName}. Let me try to help based on what we've discussed so far.`
+      };
+    }
+  }
+
+  private async generateSingleShotPersonaResponse(
+    persona: Persona,
+    userMessage: string,
+    userProfile: AssessmentProfile,
+    storyMemory: StoryMemory,
+    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
+    voiceProfile?: VoiceProfileDocument
+  ): Promise<PersonaResponse> {
+    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
+
+    const messages: ModelMessage[] = [
+      ...conversationHistory.slice(-6).map(msg => ({
+        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: msg.content
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    const provider = createModelProvider();
+    const rawContent = await provider.generateResponse({
+      systemPrompt,
+      messages,
+      temperature: 0.7,
+      maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
+    });
+
+    try {
+      const parsedResponse = parseJsonObject(rawContent);
+      return {
+        message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
+        suggestions: parsedResponse.suggestions || [],
+      };
+    } catch (parseError) {
+      // Fallback if JSON parsing fails
+      return {
+        message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
+        suggestions: []
       };
     }
   }
