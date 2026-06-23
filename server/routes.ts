@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { OpenAIService } from "./ai/openaiService";
+import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
+import { isDebugApiEnabled } from "./ai/morganRuntime";
 import { PERSONAS } from "@shared/personas";
 import { z } from "zod";
 import type { StoryMemory } from "@shared/schema";
@@ -847,6 +848,22 @@ Script context:
 ${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
 }
 
+// Build the HTTP body for a PersonaResponse, gating admin/debug trace metadata.
+// `debug` is included ONLY when MORGAN_DEBUG_API=on AND the runtime produced it.
+// EVERY persona-chat adapter (/api/chat, /api/wp-chat) must route through this so
+// debug never leaks from any surface by default. The default contract stays
+// { message, suggestions }.
+function personaResponseBody(response: PersonaResponse) {
+  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug'] } = {
+    message: response.message,
+    suggestions: response.suggestions,
+  };
+  if (isDebugApiEnabled() && response.debug) {
+    body.debug = response.debug;
+  }
+  return body;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Chat with persona
   app.post("/api/chat", async (req, res) => {
@@ -866,10 +883,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.conversationHistory
       );
 
-      res.json(response);
+      res.json(personaResponseBody(response));
     } catch (error) {
       console.error("Chat error:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to process chat message",
         message: "I'm having trouble connecting right now. Please try again in a moment."
       });
@@ -982,7 +999,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.voiceProfile
       );
 
-      res.json({ message: response.message, suggestions: response.suggestions });
+      res.json(personaResponseBody(response));
     } catch (error) {
       console.error("WP chat error:", error);
       res.status(500).json({

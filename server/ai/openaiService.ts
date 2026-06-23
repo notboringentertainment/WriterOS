@@ -4,7 +4,7 @@ import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
-import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps } from "./morganRuntime";
+import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps, type RunDebug } from "./morganRuntime";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -182,6 +182,9 @@ export function parseSynthesisResponse(raw: string): VoiceProfileDocument {
 export interface PersonaResponse {
   message: string;
   suggestions?: string[];
+  // Slice 2 observability: Morgan's derived run debug summary. Present only on
+  // the Morgan (writingPartner) path; the /api/wp-chat layer gates exposure.
+  debug?: RunDebug;
 }
 
 const PLAIN_TEXT_PERSONA_RESPONSE_RULES = `OUTPUT FORMAT RULES:
@@ -1013,7 +1016,7 @@ export class OpenAIService {
           inventory,
           deps,
         });
-        return { message: result.message, suggestions: result.suggestions };
+        return { message: result.message, suggestions: result.suggestions, debug: result.debug };
       }
 
       return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile);

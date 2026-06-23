@@ -548,3 +548,129 @@ describe('/api/wp-chat voice profile pass-through', () => {
     }
   })
 })
+
+describe('/api/wp-chat debug metadata gating (Slice 2)', () => {
+  const sampleDebug = {
+    runId: 'morgan_test',
+    consults: [{ specialistId: 'casey', question: 'Ace?', status: 'ok' as const, durationMs: 12 }],
+    guardrails: [{ name: 'specialist_attribution', status: 'passed' as const }],
+  }
+
+  afterEach(() => {
+    delete process.env.MORGAN_DEBUG_API
+  })
+
+  it('omits debug from the response by default (flag off), keeping the contract { message, suggestions }', async () => {
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'writingPartner',
+        message: 'Hi Morgan',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      expect(response.status).toBe(200)
+      expect(response.json.message).toBe('Morgan response.')
+      expect(response.json.debug).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('includes debug when MORGAN_DEBUG_API=on', async () => {
+    process.env.MORGAN_DEBUG_API = 'on'
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'writingPartner',
+        message: 'Hi Morgan',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      expect(response.status).toBe(200)
+      expect(response.json.debug).toEqual(sampleDebug)
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('/api/chat debug metadata gating (Slice 2)', () => {
+  const sampleDebug = {
+    runId: 'morgan_test',
+    consults: [{ specialistId: 'casey', question: 'Ace?', status: 'ok' as const, durationMs: 12 }],
+    guardrails: [{ name: 'specialist_attribution', status: 'passed' as const }],
+  }
+  const profile = {
+    entryState: 'idea_only' as const,
+    existingWork: [],
+    immediateNeed: 'help',
+    feedbackStyle: 'direct' as const,
+    writerName: 'Ben',
+  }
+  const chatPayload = {
+    personaId: 'writingPartner',
+    message: 'Hi Morgan',
+    userProfile: profile,
+    storyMemory: {
+      project: {},
+      characters: {},
+      outline: { acts: 3, beats: [] },
+      worldRules: {},
+      dialogue: {},
+      userProfile: profile,
+      decisions: [],
+    },
+    conversationHistory: [],
+  }
+
+  afterEach(() => {
+    delete process.env.MORGAN_DEBUG_API
+  })
+
+  it('omits debug from /api/chat by default, even for the Morgan persona', async () => {
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/chat', chatPayload)
+      expect(response.status).toBe(200)
+      expect(response.json.message).toBe('Morgan response.')
+      expect(response.json.debug).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('includes debug on /api/chat when MORGAN_DEBUG_API=on', async () => {
+    process.env.MORGAN_DEBUG_API = 'on'
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/chat', chatPayload)
+      expect(response.status).toBe(200)
+      expect(response.json.debug).toEqual(sampleDebug)
+    } finally {
+      server.close()
+    }
+  })
+})
