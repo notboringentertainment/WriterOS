@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { PERSONAS } from '@shared/personas'
 import type { AgentId, ProjectState } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
@@ -54,9 +54,18 @@ export function WritersRoom({
 }: WritersRoomProps) {
   const [selectedId, setSelectedId] = useState<SpecialistId>('oliver')
   const [inputText, setInputText] = useState('')
+  const transcriptRef = useRef<HTMLDivElement>(null)
 
   const persona = PERSONAS[selectedId]
   const transcript = projectState.agents[selectedId].transcript
+
+  // Auto-scroll the specialist transcript to the latest message — on new
+  // messages and when switching specialists (which swaps the whole transcript).
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
+    }
+  }, [transcript.length, selectedId])
   const contextSummary = getContextSummary(selectedId, projectState)
   const docked = mode === 'dock'
   const canSend = inputText.trim().length > 0
@@ -127,7 +136,7 @@ export function WritersRoom({
             </button>
           )}
         </div>
-        <div style={styles.transcript}>
+        <div ref={transcriptRef} style={styles.transcript}>
           {transcript.length === 0 ? (
             <p style={styles.emptyState}>Start a conversation with {persona.name}…</p>
           ) : (
