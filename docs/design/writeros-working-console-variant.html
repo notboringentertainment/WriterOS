@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Working Surface · Context Console (Phase 0 · Comparison Variant)</title>
+<!--
+  PHASE 0 COMPARISON VARIANT — the WORKING surface in the context-console grammar.
+  Sibling to writeros-working-surface.html (the 3-column "Cursor for writers" layout) and to
+  writeros-context-console-variant.html (the intake in this same grammar). NOT a replacement.
+
+  Question under test: on the daily document-building screen, does exposing context state
+  THEATRICALLY — a floating instrument that reads the work out loud — beat the quiet 3-column chrome?
+
+  The three original columns are re-cast in the borrowed grammar (structure only, no Pi branding):
+    left project tree  →  floating terminal CONTEXT CONSOLE (work state: surface, slot, facts, signals, pending)
+    center editor      →  warm-paper DOCUMENT, a lit sheet floating on the dark gridded field
+    right chat rail    →  large editorial AGENT READBACK — Sam speaks at scale, not in cramped bubbles
+
+  Preserved from WriterOS: canonical tokens (new-ui-plan §1), persona accents (Sam = synopsis),
+  the gated-diff edit contract (nothing mutates until Accept), the story linter (flags route + clear),
+  earned structure, and the voice signals carried over from the Voice-Profile intake — so the
+  proposed Need edit visibly reasons from the writer's own profile. Content = real prose (dark thriller).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,320..440&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:        hsl(220 14% 7%);
+    --bg-deep:   hsl(220 16% 5%);
+    --rail:      hsl(220 14% 8.5%);
+    --rail-2:    hsl(220 13% 11%);
+    --surface:   hsl(220 13% 12%);
+    --border:    hsl(220 13% 16%);
+    --border-2:  hsl(220 13% 22%);
+
+    --paper:     hsl(36 9% 9.5%);
+    --paper-hi:  hsl(38 11% 12.5%);
+    --ink:       hsl(40 14% 87%);
+    --ink-soft:  hsl(40 10% 64%);
+
+    --fg:        hsl(220 10% 86%);
+    --fg-muted:  hsl(220 10% 52%);
+    --fg-subtle: hsl(220 10% 34%);
+
+    --amber:     hsl(38 90% 68%);   --amber-dim: hsl(38 55% 44%);
+    --sam:       hsl(45 100% 75%);  /* this surface's host */
+    --oliver:    hsl(120 38% 64%);
+    --casey:     hsl(200 100% 75%);
+    --maya:      hsl(330 80% 75%);
+    --zoe:       hsl(270 70% 75%);
+    --alex:      hsl(15 80% 70%);
+
+    --ok:        hsl(120 40% 62%);
+    --del:       hsl(6 52% 60%);
+
+    --serif: "Fraunces", Georgia, serif;
+    --read:  "Newsreader", Georgia, serif;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+
+    --spot:  var(--sam);   /* this surface's live hue */
+    --ease:  cubic-bezier(.16,.84,.28,1);
+    --slow:  cubic-bezier(.65,.02,.16,1);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg); color:var(--fg); font-family:var(--read); overflow:hidden;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  ::selection{ background:color-mix(in oklab, var(--sam) 28%, transparent); }
+
+  /* ── gridded field ───────────────────────────────────────────────── */
+  .field{ position:fixed; inset:0; z-index:0; overflow:hidden; isolation:isolate; }
+  .field .grid{
+    position:absolute; inset:-2px;
+    background-image:
+      linear-gradient(to right,  color-mix(in oklab, var(--fg) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--fg) 5%, transparent) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(135% 125% at 50% 46%, #000 42%, transparent 88%);
+    -webkit-mask-image:radial-gradient(135% 125% at 50% 46%, #000 42%, transparent 88%);
+  }
+  .field .bloom{
+    position:absolute; inset:-25%;
+    background:radial-gradient(46% 46% at var(--spot-x,50%) var(--spot-y,44%),
+      color-mix(in oklab, var(--spot) 16%, transparent) 0%,
+      color-mix(in oklab, var(--spot) 6%, transparent) 38%, transparent 64%);
+    transition:background 1.6s var(--slow); z-index:-1;
+  }
+  .field .vignette{ position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(125% 125% at 50% 40%, transparent 50%, var(--bg-deep) 100%); }
+  .grain{ position:fixed; inset:-120%; z-index:90; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 6s steps(6) infinite; }
+  @keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-5%,3%)}50%{transform:translate(4%,-6%)}75%{transform:translate(-4%,5%)}100%{transform:translate(0,0)}}
+
+  /* ── ribbon ──────────────────────────────────────────────────────── */
+  .ribbon{ position:fixed; top:0; left:0; right:0; z-index:50; height:30px; display:flex; align-items:center; gap:14px; padding:0 18px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle);
+    background:linear-gradient(to bottom, var(--bg-deep), transparent); pointer-events:none; }
+  .ribbon b{ color:var(--fg-muted); font-weight:500; }
+  .ribbon .spacer{ flex:1; }
+  .ribbon .crumb{ color:var(--fg-subtle); text-transform:none; letter-spacing:.04em; font-size:11px; }
+  .ribbon .crumb b{ color:var(--fg-muted); }
+  .ribbon .tag{ color:var(--spot); }
+
+  /* ── shell: console | paper | readback, centered ─────────────────── */
+  .shell{ position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+    gap:clamp(28px,2.6vw,52px); padding:52px clamp(28px,3vw,56px) 40px; }
+
+  /* ════ CONTEXT CONSOLE ════ */
+  .console{ z-index:40; flex:none; align-self:center; width:clamp(360px,25vw,432px); max-height:84vh; display:flex; flex-direction:column;
+    background:color-mix(in oklab, var(--rail) 90%, transparent); border:1px solid var(--border); border-radius:12px;
+    box-shadow:0 1px 0 0 color-mix(in oklab, var(--fg) 6%, transparent) inset, 0 40px 90px -30px #000, 0 0 0 1px color-mix(in oklab, var(--spot) 14%, transparent);
+    backdrop-filter:blur(7px) saturate(1.1); overflow:hidden;
+    opacity:0; transform:translateX(-16px); transition:opacity 1s var(--ease), transform 1s var(--ease); }
+  .console.on{ opacity:1; transform:none; }
+  .console .bar{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-bottom:1px solid var(--border);
+    background:linear-gradient(to bottom, color-mix(in oklab,var(--rail-2) 90%,transparent), transparent);
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--fg-muted); }
+  .console .bar .lamps{ display:flex; gap:6px; margin-right:4px; }
+  .console .bar .lamps i{ width:9px; height:9px; border-radius:50%; background:var(--border-2); }
+  .console .bar .lamps i:first-child{ background:color-mix(in oklab,var(--spot) 70%, var(--border-2)); }
+  .console .bar .path{ color:var(--fg-subtle); } .console .bar .path b{ color:var(--fg-muted); font-weight:500; }
+  .console .bar .live{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; color:var(--spot); font-size:9.5px; letter-spacing:.2em; }
+  .console .bar .live::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; box-shadow:0 0 9px 1px currentColor; animation:pulse 1.8s var(--ease) infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .console .body{ padding:4px 0 10px; overflow-y:auto; scrollbar-width:thin; }
+  .console .body::-webkit-scrollbar{ width:8px; } .console .body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:8px; }
+  .grp{ padding:12px 16px 4px; }
+  .grp > .k{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+  .grp > .k::after{ content:""; flex:1; height:1px; background:var(--border); }
+  .kv{ display:flex; gap:10px; align-items:baseline; padding:3px 0; font-family:var(--mono); font-size:11.5px; line-height:1.5; }
+  .kv .kk{ color:var(--fg-subtle); min-width:64px; } .kv .vv{ color:var(--fg); flex:1; } .kv .vv.accent{ color:var(--spot); }
+  .who-chip{ display:inline-flex; align-items:center; gap:8px; }
+  .who-chip .d{ width:7px; height:7px; border-radius:50%; background:var(--spot); box-shadow:0 0 8px 0 var(--spot); }
+  .who-chip .rl{ color:var(--fg-subtle); }
+  .slotpill{ display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:10.5px; color:var(--spot);
+    border:1px solid color-mix(in oklab,var(--spot) 40%, transparent); border-radius:5px; padding:2px 8px; }
+  .slotpill .pd{ width:5px; height:5px; border-radius:50%; background:var(--spot); }
+
+  .stack{ display:flex; flex-direction:column; gap:7px; }
+  .fact{ font-family:var(--mono); font-size:11px; line-height:1.5; color:var(--fg); padding:7px 10px; border:1px solid var(--border); border-radius:6px;
+    background:color-mix(in oklab, var(--surface) 60%, transparent); border-left:2px solid var(--border-2);
+    opacity:0; transform:translateY(8px); transition:opacity .7s var(--ease), transform .7s var(--ease), border-color .6s; }
+  .fact.on{ opacity:1; transform:none; }
+  .fact.new{ border-left-color:var(--ok); }
+  .fact .ft{ color:var(--fg-subtle); font-size:9px; letter-spacing:.18em; text-transform:uppercase; display:block; margin-bottom:4px; }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .chip{ font-family:var(--mono); font-size:10px; letter-spacing:.04em; color:var(--fg-muted); padding:4px 9px; border:1px solid var(--border-2); border-radius:999px;
+    background:color-mix(in oklab, var(--surface) 50%, transparent); opacity:0; transform:scale(.9);
+    transition:opacity .5s var(--ease), transform .5s var(--ease), color .5s, border-color .5s; }
+  .chip.on{ opacity:1; transform:none; }
+  .chip.hot{ color:var(--spot); border-color:color-mix(in oklab,var(--spot) 55%, var(--border-2)); box-shadow:0 0 0 3px color-mix(in oklab,var(--spot) 9%, transparent); }
+
+  .todo{ display:flex; align-items:flex-start; gap:9px; padding:5px 0; font-family:var(--mono); font-size:11px; line-height:1.5; color:var(--fg-muted); transition:color .6s var(--ease), opacity .6s; }
+  .todo .box{ flex:none; width:13px; height:13px; border:1px solid var(--border-2); border-radius:3px; margin-top:2px; display:grid; place-items:center; font-size:9px; color:transparent; transition:all .5s var(--ease); }
+  .todo .sig{ font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber); border:1px solid var(--amber-dim); border-radius:3px; padding:1px 5px; flex:none; margin-top:1px; }
+  .todo .sig.struct{ color:var(--oliver); border-color:var(--oliver-dim,hsl(120 24% 42%)); }
+  .todo .sig.gate{ color:var(--sam); border-color:color-mix(in oklab,var(--sam) 45%,transparent); }
+  .todo.active{ color:var(--fg); } .todo.active .box{ border-color:var(--spot); box-shadow:0 0 0 3px color-mix(in oklab,var(--spot) 12%, transparent); }
+  .todo.done{ color:var(--fg-subtle); } .todo.done .box{ background:color-mix(in oklab,var(--ok) 30%, transparent); border-color:var(--ok); color:var(--ok); }
+  .todo.done .t{ text-decoration:line-through; text-decoration-color:var(--border-2); }
+  .todo.gone{ opacity:0; height:0; padding:0; overflow:hidden; }
+  .todo .route{ color:var(--fg-subtle); }
+  .todo.pop{ opacity:0; transform:translateY(6px); animation:popin .6s var(--ease) forwards; }
+  @keyframes popin{ to{opacity:1; transform:none} }
+
+  .console .foot{ padding:11px 16px; border-top:1px solid var(--border); font-family:var(--mono); font-size:9.5px; line-height:1.6; letter-spacing:.04em; color:var(--fg-subtle); }
+  .console .foot b{ color:var(--sam); font-weight:500; }
+
+  /* ════ WARM-PAPER DOCUMENT ════ */
+  .paper{ z-index:30; flex:1 1 auto; min-width:0; align-self:center; width:min(600px,100%); max-height:86vh; overflow-y:auto;
+    border-radius:14px; border:1px solid var(--border-2); position:relative;
+    background:radial-gradient(120% 60% at 50% -6%, var(--paper-hi), var(--paper) 50%);
+    box-shadow:0 50px 120px -36px #000, 0 0 0 1px color-mix(in oklab,#000 40%,transparent);
+    opacity:0; transform:translateY(14px); transition:opacity 1s var(--ease), transform 1s var(--ease); }
+  .paper.on{ opacity:1; transform:none; }
+  .paper-inner{ padding:38px 46px 0; }
+  .doc-head{ margin-bottom:30px; }
+  .doc-head h1{ font-family:var(--serif); font-weight:300; font-size:32px; letter-spacing:-.015em; color:var(--ink); }
+  .doc-head .meta{ margin-top:9px; font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--fg-subtle); display:flex; gap:14px; align-items:center; }
+  .doc-head .meta .draft{ color:var(--amber-dim); }
+  .doc-head .rule{ margin-top:20px; height:1px; background:linear-gradient(90deg, var(--border-2), transparent); }
+
+  .slot{ padding:18px 0 20px; border-bottom:1px solid color-mix(in oklab,var(--border) 60%, transparent); opacity:0; transform:translateY(10px); }
+  .slot.in{ opacity:1; transform:none; transition:opacity .8s var(--ease), transform .8s var(--ease); }
+  .slot .lab{ font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle); display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+  .slot .lab .n{ color:var(--fg-muted); }
+  .slot .body{ font-family:var(--read); font-weight:330; font-size:18px; line-height:1.6; color:var(--ink); }
+  .slot .body em{ font-style:italic; color:var(--ink-soft); }
+  .tag{ font-family:var(--mono); font-size:8.5px; letter-spacing:.18em; padding:2px 7px; border-radius:3px; text-transform:uppercase; }
+  .tag.thin{ color:var(--amber); border:1px solid var(--amber-dim); }
+  .tag.empty{ color:var(--fg-subtle); border:1px solid var(--border-2); }
+  .tag.edit{ color:var(--sam); border:1px solid color-mix(in oklab,var(--sam) 45%, transparent); }
+  .slot.is-empty .body{ color:var(--fg-subtle); font-style:italic; }
+  .slot.is-empty .body::before{ content:"⌑  "; color:var(--border-2); font-style:normal; }
+  .slot.is-thin{ border-left:2px solid var(--amber-dim); margin-left:-16px; padding-left:14px; }
+  .slot.active-slot{ border-left:2px solid var(--sam); margin-left:-16px; padding-left:14px; background:linear-gradient(90deg, color-mix(in oklab,var(--sam) 6%,transparent), transparent 60%); border-radius:2px; }
+
+  /* gated diff */
+  .diff .del{ display:block; color:var(--del); text-decoration:line-through; text-decoration-color:color-mix(in oklab,var(--del) 60%,transparent); opacity:.6; margin-bottom:8px; }
+  .diff .ins{ display:block; background:color-mix(in oklab, var(--sam) 13%, transparent); box-shadow:inset 2px 0 0 var(--sam); padding:7px 12px; border-radius:2px; color:var(--ink);
+    animation:insland .7s var(--ease); }
+  @keyframes insland{ from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:none} }
+  .diff-ctrl{ margin-top:14px; display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:10px; letter-spacing:.1em; }
+  .diff-ctrl .src{ color:var(--fg-subtle); text-transform:uppercase; letter-spacing:.18em; margin-right:4px; }
+  .btn{ display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:4px; cursor:pointer; border:1px solid var(--border-2); color:var(--fg-muted); background:transparent;
+    font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; transition:all .25s var(--ease); }
+  .btn.accept:hover{ color:var(--ok); border-color:var(--ok); background:color-mix(in oklab,var(--ok) 10%,transparent); }
+  .btn.reject:hover{ color:var(--del); border-color:var(--del); }
+  .settled .body{ animation:flash 1.4s var(--ease); }
+  @keyframes flash{ 0%{background:color-mix(in oklab,var(--ok) 18%,transparent)} 100%{background:transparent} }
+
+  /* linter strip inside the sheet */
+  .linter{ position:sticky; bottom:0; margin:0 -46px; padding:13px 46px; background:linear-gradient(0deg, var(--paper) 72%, transparent); border-top:1px solid var(--border); backdrop-filter:blur(4px); }
+  .linter .ttl{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:9px; display:flex; align-items:center; gap:8px; }
+  .linter .flags{ display:flex; flex-direction:column; gap:7px; }
+  .flag{ display:flex; align-items:baseline; gap:11px; font-family:var(--read); font-size:13.5px; color:var(--ink-soft); transition:opacity .6s var(--ease), transform .6s var(--ease); }
+  .flag .sig{ font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber); border:1px solid var(--amber-dim); border-radius:3px; padding:2px 6px; flex:none; position:relative; top:-1px; }
+  .flag.resolved{ opacity:0; transform:translateX(-8px); }
+
+  /* ════ AGENT READBACK — Sam at scale ════ */
+  .readback{ z-index:35; flex:none; align-self:center; width:clamp(320px,23vw,400px); display:flex; flex-direction:column;
+    opacity:0; transform:translateX(16px); transition:opacity 1s var(--ease), transform 1s var(--ease); }
+  .readback.on{ opacity:1; transform:none; }
+  .rb-plate{ display:flex; align-items:baseline; gap:13px; margin-bottom:22px; }
+  .rb-plate .role{ font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase; color:var(--sam); }
+  .rb-plate .nm{ font-family:var(--serif); font-weight:300; font-size:26px; color:var(--fg); }
+  .rb-plate .bar{ flex:1; height:1px; background:linear-gradient(90deg, color-mix(in oklab,var(--sam) 60%,transparent), transparent); align-self:center; }
+
+  .rb-says{ font-family:var(--read); font-weight:300; font-size:clamp(20px,1.6vw,25px); line-height:1.42; color:var(--fg); max-width:24ch;
+    opacity:0; transform:translateY(12px); filter:blur(4px); }
+  .rb-says.on{ opacity:1; transform:none; filter:none; transition:opacity 1.1s var(--ease), transform 1.1s var(--ease), filter 1.1s var(--ease); }
+  .rb-says em{ font-style:italic; color:var(--sam); }
+
+  .rb-prop{ margin-top:28px; padding-top:22px; border-top:1px solid var(--border); opacity:0; transform:translateY(10px); }
+  .rb-prop.on{ opacity:1; transform:none; transition:opacity .9s var(--ease), transform .9s var(--ease); }
+  .rb-prop .plab{ font-family:var(--mono); font-size:9px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:12px; display:flex; align-items:center; gap:9px; }
+  .rb-prop .plab .arrow{ color:var(--sam); }
+  .rb-prop .new{ font-family:var(--read); font-weight:330; font-size:18.5px; line-height:1.5; color:var(--ink);
+    border-left:2px solid var(--sam); padding-left:14px; background:color-mix(in oklab,var(--sam) 7%,transparent); padding-top:8px; padding-bottom:8px; border-radius:2px; }
+  .rb-prop .new em{ font-style:italic; color:var(--sam); }
+  .rb-prop .align{ margin-top:14px; font-family:var(--mono); font-size:9.5px; line-height:1.6; letter-spacing:.04em; color:var(--fg-subtle); }
+  .rb-prop .align b{ color:var(--sam); font-weight:500; }
+
+  .rb-acts{ margin-top:24px; display:flex; gap:12px; opacity:0; transform:translateY(8px); }
+  .rb-acts.on{ opacity:1; transform:none; transition:opacity .7s var(--ease) .2s, transform .7s var(--ease) .2s; }
+  .bigbtn{ flex:1; display:inline-flex; align-items:center; justify-content:center; gap:9px; padding:14px 16px; border-radius:9px; cursor:pointer;
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; background:transparent; transition:all .25s var(--ease); }
+  .bigbtn.accept{ border:1px solid color-mix(in oklab,var(--ok) 55%,var(--border-2)); color:var(--ok); }
+  .bigbtn.accept:hover{ background:color-mix(in oklab,var(--ok) 14%,transparent); box-shadow:0 0 0 4px color-mix(in oklab,var(--ok) 10%,transparent); }
+  .bigbtn.reject{ border:1px solid var(--border-2); color:var(--fg-muted); }
+  .bigbtn.reject:hover{ color:var(--del); border-color:var(--del); }
+
+  .rb-done{ margin-top:24px; font-family:var(--read); font-style:italic; font-size:19px; color:var(--fg-muted); opacity:0; transition:opacity 1s var(--ease); }
+  .rb-done.on{ opacity:1; }
+  .rb-done .mk{ font-family:var(--mono); font-style:normal; color:var(--ok); }
+
+  /* ── opening card ─────────────────────────────────────────────────── */
+  .curtain{ position:fixed; inset:0; z-index:80; background:var(--bg-deep); display:grid; place-items:center; transition:opacity 1.6s var(--ease); }
+  .curtain.lift{ opacity:0; pointer-events:none; }
+  .curtain .ttl{ text-align:center; max-width:560px; padding:0 24px; }
+  .curtain .k{ font-family:var(--mono); font-size:11px; letter-spacing:.4em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:22px; opacity:0; animation:fadeIn 1.4s var(--ease) .3s forwards; }
+  .curtain h1{ font-family:var(--serif); font-weight:300; font-size:clamp(32px,5.5vw,52px); letter-spacing:-.02em; color:var(--fg); opacity:0; animation:rise2 1.6s var(--ease) .7s forwards; }
+  .curtain p{ margin-top:20px; font-family:var(--read); font-size:16px; line-height:1.6; color:var(--fg-muted); opacity:0; animation:fadeIn 1.4s var(--ease) 1.2s forwards; }
+  .curtain .go{ margin-top:38px; font-family:var(--mono); font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-muted); cursor:pointer; opacity:0; animation:fadeIn 1.3s var(--ease) 1.7s forwards; transition:color .3s; }
+  .curtain .go:hover{ color:var(--sam); }
+  .curtain .go .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 8px; margin-left:6px; }
+  @keyframes fadeIn{ to{opacity:1} }
+  @keyframes rise2{ from{opacity:0; transform:translateY(12px)} to{opacity:1; transform:none} }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; } ::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:5px; border:2px solid transparent; background-clip:content-box; } ::-webkit-scrollbar-track{ background:transparent; }
+
+  @media (max-width:1320px){ .readback{ display:none; } .shell{ gap:32px; } }
+  @media (max-width:980px){ .console{ width:clamp(300px,42vw,360px); } }
+  @media (prefers-reduced-motion:reduce){ *{ animation-duration:.01ms !important; transition-duration:.2s !important; } .grain{ animation:none; } }
+</style>
+</head>
+<body>
+
+  <div class="field" aria-hidden="true">
+    <div class="grid"></div><div class="bloom"></div><div class="vignette"></div>
+  </div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="ribbon" aria-hidden="true">
+    <b>WriterOS</b> · Phase 0 · Comparison Variant — Working Surface
+    <span class="spacer"></span>
+    <span class="crumb"><b>The Fixer’s Debt</b> / Synopsis</span>
+    <span class="spacer"></span>
+    <span>Context exposed: <span class="tag" style="border:none;padding:0">theatrical</span></span>
+  </div>
+
+  <!-- opening card -->
+  <div class="curtain" id="curtain">
+    <div class="ttl">
+      <div class="k">Working Surface · Synopsis · Console Variant</div>
+      <h1>The room edits with you.</h1>
+      <p>Same gated-diff workflow, different posture. The document is a lit sheet on the desk. The console reads the work out loud — the slot in play, the facts it’s grounding on, the voice signals steering the edit. Sam proposes at full scale; nothing changes until you accept.</p>
+      <div class="go" id="begin">Open the document <span class="key">↵</span></div>
+    </div>
+  </div>
+
+  <div class="shell">
+
+    <!-- ════ CONTEXT CONSOLE ════ -->
+    <aside class="console" id="console" aria-label="Context console">
+      <div class="bar">
+        <span class="lamps"><i></i><i></i><i></i></span>
+        <span class="path"><b>writeros</b>://synopsis/the-fixers-debt</span>
+        <span class="live">LIVE</span>
+      </div>
+      <div class="body">
+
+        <div class="grp">
+          <div class="k">Surface</div>
+          <div class="kv"><span class="kk">project</span><span class="vv">The Fixer’s Debt <span style="color:var(--fg-subtle)">· Feature</span></span></div>
+          <div class="kv"><span class="kk">document</span><span class="vv accent">Synopsis · House Format</span></div>
+          <div class="kv"><span class="kk">host</span><span class="vv"><span class="who-chip"><span class="d"></span>Sam <span class="rl">· Synopsis</span></span></span></div>
+          <div class="kv"><span class="kk">slot</span><span class="vv"><span class="slotpill" id="c-slot"><span class="pd"></span>Need · thin</span></span></div>
+        </div>
+
+        <div class="grp">
+          <div class="k">Story facts <span id="c-facts-n" style="color:var(--fg-subtle)"></span></div>
+          <div class="stack" id="c-facts"></div>
+        </div>
+
+        <div class="grp">
+          <div class="k">Voice signals <span style="color:var(--fg-subtle)">· from profile</span></div>
+          <div class="chips" id="c-signals"></div>
+        </div>
+
+        <div class="grp">
+          <div class="k">Pending · structure &amp; linter <span id="c-todo-n" style="color:var(--fg-subtle)"></span></div>
+          <div id="c-todos">
+            <div class="todo active" data-todo="need">
+              <span class="sig">Craft</span>
+              <span class="t">Want and Need nearly identical — internal need underwritten <span class="route">→ Sam</span></span>
+            </div>
+            <div class="todo" data-todo="escal">
+              <span class="sig struct">Struct</span>
+              <span class="t">Escalation slot empty — second-act turn not on the page <span class="route">→ Oliver</span></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="foot">
+        <b>gated.</b> the AI proposes — the document does not change until you accept. structure stays earned: empty slots are named, never auto-filled.
+      </div>
+    </aside>
+
+    <!-- ════ WARM-PAPER DOCUMENT ════ -->
+    <section class="paper" id="paper">
+      <div class="paper-inner">
+        <div class="doc-head">
+          <h1>Synopsis</h1>
+          <div class="meta"><span class="draft">● Draft in progress</span><span>House Format · 9 slots · 2 empty</span></div>
+          <div class="rule"></div>
+        </div>
+
+        <div class="slot" id="slot-logline">
+          <div class="lab"><span class="n">Logline</span></div>
+          <div class="body">A high-end Hollywood fixer who makes other people’s catastrophes disappear is blackmailed by a centuries-old vampire into burying the one body he can’t — <em>his own</em>.</div>
+        </div>
+
+        <div class="slot" id="slot-want">
+          <div class="lab"><span class="n">Protagonist’s Want</span></div>
+          <div class="body">Ace wants the 2009 recording back and a clean exit — no trace, no debt, the way he vanishes everyone else’s worst night.</div>
+        </div>
+
+        <div class="slot" id="slot-need">
+          <div class="lab"><span class="n">Need</span> <span class="tag thin" id="need-tag">Thin · unconfirmed</span></div>
+          <div class="body" id="need-body">To finally come clean about 2009 and stop running.</div>
+          <div id="need-ctrl"></div>
+        </div>
+
+        <div class="slot" id="slot-world">
+          <div class="lab"><span class="n">World</span></div>
+          <div class="body">Private-client crisis management in the canyons above Sunset — NDAs, burner ecosystems, a rolodex of judges and tame coroners. Beneath it runs an older economy: the ones who never die, and the favors they keep on the books for centuries.</div>
+        </div>
+
+        <div class="slot" id="slot-incite">
+          <div class="lab"><span class="n">Inciting Incident</span></div>
+          <div class="body">A routine cleanup — a dead girl in a producer’s infinity pool — goes wrong when the body sits up and asks for a towel. Sebastian was never the casualty. He hands Ace a 2009 recording, a name, and a deadline.</div>
+        </div>
+
+        <div class="slot is-empty" id="slot-escal">
+          <div class="lab"><span class="n">Escalation</span> <span class="tag empty">Empty</span></div>
+          <div class="body">How does Sebastian turn the screw past money — what does he take that Ace can’t buy back?</div>
+        </div>
+
+        <div class="slot is-thin" id="slot-crisis">
+          <div class="lab"><span class="n">Crisis</span> <span class="tag thin">Thin · unconfirmed</span></div>
+          <div class="body">Ace burns his own rolodex — every protected secret he’s ever held — to reach the one thing older than Sebastian.</div>
+        </div>
+
+        <div class="slot" id="slot-ending">
+          <div class="lab"><span class="n">Ending</span> <span class="tag thin">Provisional</span></div>
+          <div class="body">He doesn’t get clean. He gets <em>seen</em> — and lets the tape play.</div>
+        </div>
+
+        <div class="slot is-empty" id="slot-theme">
+          <div class="lab"><span class="n">Theme</span> <span class="tag empty">Empty</span></div>
+          <div class="body">What does a man who erases everyone owe the one truth he’s buried?</div>
+        </div>
+
+        <div class="linter">
+          <div class="ttl"><span style="color:var(--amber)">⚑</span> Story Problems · <span id="lint-n">2</span></div>
+          <div class="flags">
+            <div class="flag" id="flag-need"><span class="sig">Craft</span> <span>Want and Need are nearly identical — the internal need may be underwritten.</span></div>
+            <div class="flag"><span class="sig">Structure</span> <span>Escalation slot is empty — the second-act turn isn’t on the page yet.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ AGENT READBACK — Sam at scale ════ -->
+    <aside class="readback" id="readback" aria-label="Agent readback">
+      <div class="rb-plate"><span class="role">Synopsis</span><span class="nm">Sam</span><span class="bar"></span></div>
+      <div class="rb-says" id="rb-says">
+        The inciting incident lands. But your <em>Need</em> is just your Want wearing a coat — both say “come clean.” What does Ace lose if he <em>wins</em>?
+      </div>
+      <div class="rb-prop" id="rb-prop">
+        <div class="plab"><span class="arrow">↳</span> proposed edit · Need slot</div>
+        <div class="new">To be <em>known</em> by his daughter as the man he actually is — not the cover story he built to keep her safe.</div>
+        <div class="align">aligned to voice signal <b>interiority · being known</b> — the profile says you write toward being seen, not toward confession.</div>
+      </div>
+      <div class="rb-acts" id="rb-acts">
+        <button class="bigbtn accept" id="rb-accept">✓ Accept</button>
+        <button class="bigbtn reject" id="rb-reject">✕ Reject</button>
+      </div>
+      <div class="rb-done" id="rb-done"></div>
+    </aside>
+
+  </div>
+
+<script>
+(() => {
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const root = document.documentElement;
+
+  // ── console writers ──
+  const elFacts = document.getElementById('c-facts');
+  const elFactsN = document.getElementById('c-facts-n');
+  const elSignals = document.getElementById('c-signals');
+
+  // grounding facts the edit reasons over (real synopsis content)
+  const FACTS = [
+    { label:'want', text:'the 2009 recording back + a clean, traceless exit' },
+    { label:'world', text:'Ace vanishes everyone’s worst night for a living' },
+    { label:'relationship', text:'his daughter knows only the cover story' },
+  ];
+  // voice signals carried from the Voice-Profile intake
+  const SIGNALS = ['interiority', 'being known', 'the cost of loyalty', 'who pays'];
+
+  let factN = 0;
+  function addFact(f, isNew){
+    factN++; elFactsN.textContent = '· ' + factN;
+    const el = document.createElement('div');
+    el.className = 'fact' + (isNew ? ' new' : '');
+    el.innerHTML = `<span class="ft">${f.label}</span>${f.text}`;
+    elFacts.appendChild(el);
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('on')));
+    return el;
+  }
+  async function addSignals(list){
+    for (const s of list){
+      const c = document.createElement('span'); c.className='chip'; c.textContent = s; c.dataset.sig = s;
+      elSignals.appendChild(c);
+      requestAnimationFrame(() => requestAnimationFrame(() => c.classList.add('on')));
+      await wait(110);
+    }
+  }
+  function hotSignal(name){ const c = elSignals.querySelector(`[data-sig="${name}"]`); if (c) c.classList.add('hot'); }
+
+  // ── paper reveal ──
+  const slots = ['slot-logline','slot-want','slot-need','slot-world','slot-incite','slot-escal','slot-crisis','slot-ending','slot-theme'];
+  async function revealSlots(){
+    for (const id of slots){ document.getElementById(id).classList.add('in'); await wait(85); }
+  }
+
+  // ── the gated diff lands on the Need slot ──
+  const needBody = document.getElementById('need-body');
+  const needCtrl = document.getElementById('need-ctrl');
+  const needTag  = document.getElementById('need-tag');
+  const needSlot = document.getElementById('slot-need');
+  const OLD = `To finally come clean about 2009 and stop running.`;
+  const NEW = `To be <em>known</em> by his daughter as the man he actually is — not the cover story he built to keep her safe.`;
+
+  function landDiff(){
+    needSlot.classList.add('active-slot');
+    needTag.className = 'tag edit'; needTag.textContent = 'Sam · proposed edit';
+    needBody.classList.add('diff');
+    needBody.innerHTML = `<span class="del">${OLD}</span><span class="ins">${NEW}</span>`;
+    needCtrl.className = 'diff-ctrl';
+    needCtrl.innerHTML = `<span class="src">in-place edit</span>
+      <button class="btn accept" id="need-accept">✓ Accept</button>
+      <button class="btn reject" id="need-reject">✕ Reject</button>`;
+    document.getElementById('c-slot').innerHTML = `<span class="pd"></span>Need · editing`;
+    // mirror in console pending
+    const pend = document.createElement('div');
+    pend.className = 'todo active pop'; pend.id = 'todo-gate';
+    pend.innerHTML = `<span class="sig gate">Gate</span><span class="t">edit staged on <b style="color:var(--sam);font-weight:500">Need</b> — awaiting your accept</span>`;
+    document.getElementById('c-todos').prepend(pend);
+    document.getElementById('need-accept').addEventListener('click', accept);
+    document.getElementById('need-reject').addEventListener('click', reject);
+  }
+
+  function accept(){
+    needBody.classList.remove('diff'); needBody.innerHTML = NEW;
+    needTag.className = 'tag'; needTag.textContent = 'updated'; needTag.style.color='var(--ok)'; needTag.style.borderColor='var(--ok)';
+    needSlot.classList.add('settled'); needSlot.classList.remove('active-slot','is-thin');
+    needCtrl.innerHTML = '';
+    settle('accepted');
+  }
+  function reject(){
+    needBody.classList.remove('diff'); needBody.innerHTML = OLD;
+    needTag.className='tag thin'; needTag.textContent='unchanged'; needTag.style.color=''; needTag.style.borderColor='';
+    needSlot.classList.remove('active-slot');
+    needCtrl.innerHTML = '';
+    settle('kept');
+  }
+
+  function settle(state){
+    document.getElementById('c-slot').innerHTML = `<span class="pd"></span>Need · ${state==='accepted'?'set':'thin'}`;
+    // console pending: gate resolves
+    const gate = document.getElementById('todo-gate');
+    if (gate){ if (state==='accepted'){ gate.classList.add('done'); gate.querySelector('.t').innerHTML = 'edit accepted on <b style="color:var(--ok);font-weight:500">Need</b>'; }
+               else { gate.classList.add('gone'); } }
+    if (state==='accepted'){
+      // craft linter clears — the loop closes
+      const t = document.querySelector('.todo[data-todo="need"]'); t.classList.remove('active'); t.classList.add('done');
+      t.querySelector('.t').innerHTML = 'internal need now distinct from Want <span class="route">→ resolved</span>';
+      const flag = document.getElementById('flag-need'); flag.classList.add('resolved');
+      setTimeout(() => { document.getElementById('lint-n').textContent = '1'; }, 650);
+      // a new grounded fact enters context
+      addFact({ label:'need', text:'to be known by his daughter — not to confess' }, true);
+      hotSignal('being known'); hotSignal('interiority');
+    }
+    // readback collapses to a confirmation
+    document.getElementById('rb-prop').classList.remove('on');
+    document.getElementById('rb-acts').classList.remove('on');
+    const done = document.getElementById('rb-done');
+    done.innerHTML = state==='accepted'
+      ? `Need rewritten. The spine holds. <span class="mk">✓</span>`
+      : `Kept as written — I’ll leave it. <span class="mk" style="color:var(--fg-subtle)">—</span>`;
+    setTimeout(() => done.classList.add('on'), 200);
+  }
+
+  // ── choreography ──
+  async function run(){
+    document.getElementById('console').classList.add('on');
+    document.getElementById('paper').classList.add('on');
+    await revealSlots();
+
+    // console fills with grounding context
+    for (const f of FACTS){ addFact(f, false); await wait(180); }
+    await addSignals(SIGNALS);
+    document.getElementById('c-todo-n').textContent = '· 2';
+
+    // Sam speaks at scale
+    await wait(400);
+    document.getElementById('readback').classList.add('on');
+    await wait(250);
+    document.getElementById('rb-says').classList.add('on');
+    await wait(1400);
+
+    // the proposal: diff lands on paper + readback shows the new line + big accept/reject
+    landDiff();
+    document.getElementById('rb-prop').classList.add('on');
+    await wait(500);
+    document.getElementById('rb-acts').classList.add('on');
+
+    // wire the big readback buttons to the same gated actions
+    document.getElementById('rb-accept').addEventListener('click', () => { accept(); needSlot.scrollIntoView({behavior:'smooth',block:'center'}); });
+    document.getElementById('rb-reject').addEventListener('click', () => { reject(); });
+  }
+
+  const begin = () => {
+    document.getElementById('curtain').classList.add('lift');
+    document.removeEventListener('keydown', onBegin);
+    setTimeout(run, 700);
+  };
+  const onBegin = (e) => { if (e.key==='Enter') begin(); };
+  document.getElementById('begin').addEventListener('click', begin);
+  document.addEventListener('keydown', onBegin);
+})();
+</script>
+</body>
+</html>

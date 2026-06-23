@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Writers' Room — Vertical Slice (Phase 0)</title>
+<!--
+  APPROVAL ARTIFACT — docs/plans/voice-profile-room.md §11 Phase 0
+  Three beats, two contrasting agents, one authored handoff, one readback.
+  Morgan, the Showrunner (writingPartner / amber, warm serif) → Oliver (structure / green, austere mono) → Readback.
+  Elicitation is REAL: questions are the §4 domains; the readback assembles the writer's own words.
+  The other five agents are replication once this pattern is approved.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,300..420&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* canonical tokens — client/src/index.css */
+    --bg:        hsl(220 13% 9%);
+    --bg-deep:   hsl(220 16% 5%);
+    --surface:   hsl(220 13% 12%);
+    --fg:        hsl(220 10% 88%);
+    --fg-muted:  hsl(220 10% 50%);
+    --fg-subtle: hsl(220 10% 33%);
+    /* persona accents — shared/personas.ts → index.css */
+    --host:      hsl(38 90% 68%);   /* writingPartner / --wp-amber */
+    --host-dim:  hsl(38 60% 45%);
+    --oliver:    hsl(120 38% 64%);  /* persona-outline, cooled toward blueprint */
+    --oliver-dim:hsl(120 22% 40%);
+    --sam:       hsl(45 100% 75%);
+    --casey:     hsl(200 100% 75%);
+    --maya:      hsl(330 80% 75%);
+    --zoe:       hsl(270 70% 75%);
+    --alex:      hsl(15 80% 70%);
+
+    --serif: "Fraunces", Georgia, serif;
+    --read:  "Newsreader", Georgia, serif;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+
+    --spot: var(--host);          /* the spotlight hue; transitions on handoff */
+    --ease: cubic-bezier(.16,.84,.28,1);
+    --slow: cubic-bezier(.65,.02,.16,1);  /* the focus-push curve */
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg-deep);
+    color:var(--fg);
+    font-family:var(--read);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ── atmosphere: spotlight, vignette, film grain ───────────────── */
+  .stage{
+    position:fixed; inset:0;
+    display:grid; place-items:center;
+    isolation:isolate;
+  }
+  /* spotlight pool, hue follows --spot, slides on handoff */
+  .stage::before{
+    content:""; position:absolute; inset:-20%;
+    background:
+      radial-gradient(60% 55% at var(--spot-x,42%) 40%,
+        color-mix(in oklab, var(--spot) 22%, transparent) 0%,
+        color-mix(in oklab, var(--spot) 7%, transparent) 34%,
+        transparent 66%);
+    transition: background 1.9s var(--slow);
+    z-index:-3;
+  }
+  /* vignette */
+  .stage::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(120% 120% at 50% 42%, transparent 52%, var(--bg-deep) 100%);
+    z-index:-2;
+  }
+  /* film grain */
+  .grain{
+    position:fixed; inset:-120%; z-index:60; pointer-events:none;
+    opacity:.05; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 5.6s steps(6) infinite;
+  }
+  @keyframes grain{
+    0%{transform:translate(0,0)} 16%{transform:translate(-6%,4%)}
+    33%{transform:translate(4%,-7%)} 50%{transform:translate(-5%,6%)}
+    66%{transform:translate(7%,2%)} 83%{transform:translate(-3%,-5%)} 100%{transform:translate(0,0)}
+  }
+
+  /* ── the roster of seven, sensed at the edge ───────────────────── */
+  .roster{
+    position:fixed; top:50%; left:38px; transform:translateY(-50%);
+    z-index:40; display:flex; flex-direction:column; gap:18px;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.18em;
+    opacity:0; animation:fadeIn 2.4s var(--ease) .8s forwards;
+  }
+  .who{ display:flex; align-items:center; gap:11px; color:var(--fg-subtle);
+        text-transform:uppercase; transition:color .8s var(--ease), opacity .8s; }
+  .who .dot{ width:6px; height:6px; border-radius:50%; background:currentColor;
+        box-shadow:0 0 0 0 transparent; transition:box-shadow .8s var(--ease), transform .8s var(--ease); flex:none; }
+  .who[data-k="host"]{ color:var(--host-dim); }
+  .who[data-k="oliver"]{ color:var(--oliver-dim); }
+  .who.live{ color:var(--spot); }
+  .who.live .dot{ box-shadow:0 0 14px 2px color-mix(in oklab, currentColor 80%, transparent); transform:scale(1.5); }
+  .who.met{ opacity:.55; }
+  .who.met .craft::after{ content:" · met"; color:var(--fg-subtle); }
+  /* hover reveals area of expertise — unfurls rightward into the void */
+  .who{ cursor:default; }
+  .who .label{ display:inline-flex; align-items:baseline; }
+  .who .craft{
+    display:inline-block; max-width:0; opacity:0; overflow:hidden; white-space:nowrap;
+    font-size:9px; letter-spacing:.16em; color:var(--fg-muted);
+    transition:max-width .55s var(--ease), opacity .45s var(--ease), margin-left .55s var(--ease);
+  }
+  .who .craft i{ font-style:normal; color:var(--fg-subtle); padding:0 6px 0 2px; }
+  .who:hover .craft{ max-width:220px; opacity:.85; margin-left:2px; }
+  .who[data-k="host"]:hover{ color:var(--host); }
+  .who[data-k="oliver"]:hover{ color:var(--oliver); }
+
+  /* ── act indicator ─────────────────────────────────────────────── */
+  .acts{
+    position:fixed; top:34px; left:50%; transform:translateX(-50%);
+    z-index:40; display:flex; gap:26px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.34em; text-transform:uppercase;
+    color:var(--fg-subtle);
+    opacity:0; animation:fadeIn 2s var(--ease) 1.1s forwards;
+  }
+  .acts b{ font-weight:400; transition:color .7s var(--ease); position:relative; }
+  .acts b.on{ color:var(--fg); }
+  .acts b.on::before{ content:""; position:absolute; left:-13px; top:50%; width:6px; height:1px;
+      background:var(--spot); transform:translateY(-50%); }
+
+  /* ── theatre: two stacked acts that cross-focus ────────────────── */
+  .theatre{ position:relative; width:min(720px, 84vw); min-height:62vh;
+            display:grid; transition:opacity 1.2s var(--ease); }
+  .act{
+    grid-area:1/1; display:flex; flex-direction:column; justify-content:center;
+    transition:
+      opacity 1.7s var(--slow),
+      filter 1.7s var(--slow),
+      transform 1.7s var(--slow);
+    will-change:opacity, filter, transform;
+  }
+  /* host starts present; oliver pre-staged out of focus, behind */
+  .act--oliver{ opacity:0; filter:blur(16px); transform:scale(1.06) translateY(14px); pointer-events:none; }
+
+  /* nameplate */
+  .plate{ display:flex; align-items:baseline; gap:16px; margin-bottom:30px;
+          opacity:0; transform:translateY(8px); animation:rise 1.3s var(--ease) forwards; }
+  .plate .nm{ font-family:var(--serif); font-weight:300; font-size:30px; letter-spacing:-.01em; color:var(--fg); }
+  .act--oliver .plate .nm{ font-family:var(--mono); font-weight:400; font-size:22px;
+          letter-spacing:.06em; text-transform:uppercase; }
+  .plate .role{ font-family:var(--mono); font-size:10.5px; letter-spacing:.26em; text-transform:uppercase; }
+  .act--host .plate .role{ color:var(--host); }
+  .act--oliver .plate .role{ color:var(--oliver); }
+  .plate .bar{ flex:1; height:1px; background:linear-gradient(90deg, color-mix(in oklab,var(--spot) 60%,transparent), transparent); align-self:center; }
+
+  /* transcript: q/a builds as a conversation */
+  .thread{ display:flex; flex-direction:column; gap:8px; }
+  .turn{ opacity:0; transform:translateY(14px);
+         transition:opacity 1.1s var(--ease), transform 1.1s var(--ease), filter 1.1s var(--ease); filter:blur(3px); }
+  .turn.show{ opacity:1; transform:none; filter:none; }
+  .turn.past{ opacity:.4; }
+  .turn.past .ask{ font-size:15px; }
+
+  .ask{ font-family:var(--read); font-weight:300; font-size:24px; line-height:1.42; color:var(--fg);
+        margin-bottom:14px; max-width:38ch; }
+  .act--host .ask em{ font-style:italic; color:var(--host); font-weight:380; }
+  .act--oliver .ask{ font-family:var(--mono); font-weight:300; font-size:18px; line-height:1.62;
+        letter-spacing:.005em; max-width:46ch; color:color-mix(in oklab, var(--fg) 92%, var(--oliver)); }
+  .act--oliver .ask em{ font-style:normal; color:var(--oliver); border-bottom:1px solid var(--oliver-dim); padding-bottom:1px; }
+
+  /* the ink input */
+  .field{ position:relative; max-width:46ch; }
+  .field textarea{
+    width:100%; background:transparent; border:none; resize:none; overflow:hidden;
+    color:var(--fg); font-family:var(--read); font-weight:380; font-size:21px; line-height:1.5;
+    padding:6px 0 12px; outline:none; caret-color:var(--spot);
+  }
+  .act--oliver .field textarea{ font-family:var(--mono); font-weight:300; font-size:16px; line-height:1.7; }
+  .field::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+      background:var(--fg-subtle); transform:scaleX(.5); transform-origin:left; transition:transform .6s var(--ease), background .4s; }
+  .field:focus-within::after{ transform:scaleX(1); background:var(--spot); }
+  .field .ph{ position:absolute; left:0; top:6px; pointer-events:none; color:var(--fg-subtle);
+      font-style:italic; font-size:21px; transition:opacity .4s; }
+  .act--oliver .field .ph{ font-style:normal; font-size:16px; font-family:var(--mono); }
+  .field.filled .ph{ opacity:0; }
+
+  /* a turn, once answered, freezes as ink */
+  .said{ font-family:var(--read); font-weight:380; font-size:21px; line-height:1.5; color:color-mix(in oklab,var(--fg) 86%, var(--spot));
+         font-style:italic; max-width:46ch; }
+  .act--oliver .said{ font-family:var(--mono); font-style:normal; font-size:16px; line-height:1.7; }
+
+  /* continue cue */
+  .cue{ margin-top:34px; font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+        color:var(--fg-muted); display:flex; align-items:center; gap:12px; cursor:pointer;
+        opacity:0; transform:translateY(6px); transition:opacity .7s var(--ease) .25s, transform .7s var(--ease) .25s, color .3s; user-select:none; }
+  .cue.show{ opacity:1; transform:none; }
+  .cue:hover{ color:var(--spot); }
+  .cue .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 7px; font-size:10px; color:var(--fg-muted); transition:border-color .3s,color .3s; }
+  .cue:hover .key{ border-color:var(--spot); color:var(--spot); }
+
+  /* host's handoff line — authored beat */
+  .handoff{ margin-top:6px; font-family:var(--serif); font-weight:300; font-style:italic; font-size:23px;
+            line-height:1.4; color:var(--host); max-width:34ch; opacity:0; transform:translateY(10px);
+            transition:opacity 1.4s var(--ease), transform 1.4s var(--ease); }
+  .handoff.show{ opacity:1; transform:none; }
+  .handoff .sub{ display:block; margin-top:10px; font-family:var(--mono); font-style:normal;
+            font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--oliver); }
+
+  /* ── readback ──────────────────────────────────────────────────── */
+  .readback{ position:fixed; inset:0; z-index:30; display:grid; place-items:center;
+             opacity:0; pointer-events:none; transition:opacity 1.6s var(--ease); }
+  .readback.show{ opacity:1; pointer-events:auto; }
+  .doc{ width:min(640px,86vw); }
+  .doc .lede{ font-family:var(--mono); font-size:11px; letter-spacing:.3em; text-transform:uppercase;
+        color:var(--fg-muted); margin-bottom:40px; opacity:0; }
+  .doc .lede.on{ opacity:1; transition:opacity 1.3s var(--ease); }
+
+  .line{ opacity:0; transform:translateY(16px); filter:blur(4px);
+         transition:opacity 1.3s var(--ease), transform 1.3s var(--ease), filter 1.3s var(--ease);
+         margin-bottom:30px; }
+  .line.on{ opacity:1; transform:none; filter:none; }
+  .line .lab{ font-family:var(--mono); font-size:10px; letter-spacing:.24em; text-transform:uppercase;
+        color:var(--fg-subtle); display:block; margin-bottom:9px; }
+  .line .val{ font-family:var(--read); font-weight:300; font-size:23px; line-height:1.46; color:var(--fg); }
+  .line .val.q{ font-style:italic; color:color-mix(in oklab,var(--fg) 84%,var(--host)); }
+  .line.struct .lab{ color:var(--oliver-dim); }
+  .line.struct .val{ font-family:var(--mono); font-weight:300; font-size:18px; line-height:1.6; color:color-mix(in oklab,var(--fg) 90%,var(--oliver)); }
+
+  .archetype{ margin:46px 0 38px; opacity:0; transform:translateY(20px);
+        transition:opacity 1.8s var(--ease), transform 1.8s var(--ease); }
+  .archetype.on{ opacity:1; transform:none; }
+  .archetype .pre{ font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:14px; }
+  .archetype .nm{ font-family:var(--serif); font-weight:300; font-size:clamp(30px,5vw,46px); line-height:1.05;
+        letter-spacing:-.015em;
+        background:linear-gradient(100deg, var(--host), color-mix(in oklab,var(--host) 40%, var(--oliver)) 60%, var(--oliver));
+        -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+  .affirm{ display:inline-flex; align-items:center; gap:14px; cursor:pointer;
+        font-family:var(--read); font-style:italic; font-size:19px; color:var(--fg-muted);
+        opacity:0; transition:opacity 1.4s var(--ease), color .4s; }
+  .affirm.on{ opacity:1; }
+  .affirm:hover{ color:var(--fg); }
+  .affirm .mk{ font-family:var(--mono); font-style:normal; font-size:18px; color:var(--host); transition:transform .5s var(--ease); }
+  .affirm:hover .mk{ transform:translateX(5px); }
+
+  /* ── opening title card ────────────────────────────────────────── */
+  .curtain{ position:fixed; inset:0; z-index:80; background:var(--bg-deep);
+        display:grid; place-items:center; transition:opacity 1.8s var(--ease); }
+  .curtain.lift{ opacity:0; pointer-events:none; }
+  .curtain .ttl{ text-align:center; }
+  .curtain .k{ font-family:var(--mono); font-size:11px; letter-spacing:.4em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:22px;
+        opacity:0; animation:fadeIn 1.6s var(--ease) .4s forwards; }
+  .curtain h1{ font-family:var(--serif); font-weight:300; font-size:clamp(34px,6vw,60px); letter-spacing:-.02em; color:var(--fg);
+        opacity:0; animation:rise 1.8s var(--ease) .8s forwards; }
+  .curtain .go{ margin-top:40px; font-family:var(--mono); font-size:11px; letter-spacing:.24em; text-transform:uppercase;
+        color:var(--fg-muted); cursor:pointer; opacity:0; animation:fadeIn 1.4s var(--ease) 1.8s forwards; transition:color .3s; }
+  .curtain .go:hover{ color:var(--host); }
+  .curtain .go .key{ border:1px solid var(--fg-subtle); border-radius:4px; padding:3px 8px; margin-left:6px; }
+
+  @keyframes fadeIn{ to{opacity:1} }
+  @keyframes rise{ from{opacity:0; transform:translateY(12px)} to{opacity:1; transform:none} }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.01ms !important; transition-duration:.18s !important; }
+    .grain{ animation:none; }
+  }
+</style>
+</head>
+<body data-beat="curtain">
+
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- opening card -->
+  <div class="curtain" id="curtain">
+    <div class="ttl">
+      <div class="k">The Writers' Room · Voice Profile Intake</div>
+      <h1>Meet the room.</h1>
+      <div class="go" id="begin">Enter <span class="key">↵</span></div>
+    </div>
+  </div>
+
+  <!-- roster of seven, sensed at the edge -->
+  <nav class="roster" aria-hidden="true">
+    <div class="who live" data-k="host"><span class="dot"></span><span class="label">Morgan<span class="craft"><i>—</i>Showrunner</span></span></div>
+    <div class="who" data-k="sam" style="color:var(--sam)"><span class="dot"></span><span class="label">Sam<span class="craft"><i>—</i>Synopsis &amp; Pitch</span></span></div>
+    <div class="who" data-k="casey" style="color:var(--casey)"><span class="dot"></span><span class="label">Casey<span class="craft"><i>—</i>Character</span></span></div>
+    <div class="who" data-k="maya" style="color:var(--maya)"><span class="dot"></span><span class="label">Maya<span class="craft"><i>—</i>Dialogue &amp; Voice</span></span></div>
+    <div class="who" data-k="oliver"><span class="dot"></span><span class="label">Oliver<span class="craft"><i>—</i>Structure</span></span></div>
+    <div class="who" data-k="zoe" style="color:var(--zoe)"><span class="dot"></span><span class="label">Zoe<span class="craft"><i>—</i>World-Building</span></span></div>
+    <div class="who" data-k="alex" style="color:var(--alex)"><span class="dot"></span><span class="label">Alex<span class="craft"><i>—</i>Process &amp; Drafts</span></span></div>
+  </nav>
+
+  <div class="acts" aria-hidden="true">
+    <b data-act="enter" class="on">I · Enter</b>
+    <b data-act="oliver">II · Oliver</b>
+    <b data-act="readback">III · Readback</b>
+  </div>
+
+  <main class="stage">
+    <div class="theatre" id="theatre">
+
+      <!-- ACT I — HOST -->
+      <section class="act act--host" id="act-host">
+        <div class="plate">
+          <span class="role">Showrunner</span>
+          <span class="nm">Morgan</span>
+          <span class="bar"></span>
+        </div>
+        <div class="thread" id="host-thread"></div>
+      </section>
+
+      <!-- ACT II — OLIVER -->
+      <section class="act act--oliver" id="act-oliver">
+        <div class="plate">
+          <span class="role">Story Structure Editor</span>
+          <span class="nm">Oliver</span>
+          <span class="bar"></span>
+        </div>
+        <div class="thread" id="oliver-thread"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ACT III — READBACK -->
+  <section class="readback" id="readback">
+    <div class="doc">
+      <div class="lede" id="rb-lede">Here's the writer we think you are.</div>
+      <div class="line" data-rb="why">
+        <span class="lab">Why you write — the core</span>
+        <div class="val q" id="rb-why"></div>
+      </div>
+      <div class="line" data-rb="themes">
+        <span class="lab">What you keep circling — recurring themes</span>
+        <div class="val" id="rb-themes"></div>
+      </div>
+      <div class="line struct" data-rb="ending">
+        <span class="lab">On endings — structural instinct</span>
+        <div class="val" id="rb-ending"></div>
+      </div>
+      <div class="line struct" data-rb="rule">
+        <span class="lab">The rule you hold &amp; the one you break</span>
+        <div class="val" id="rb-rule"></div>
+      </div>
+      <div class="archetype" id="rb-arch">
+        <div class="pre">The room names you</div>
+        <div class="nm" id="rb-arch-nm">The Patient Architect</div>
+      </div>
+      <div class="affirm" id="rb-affirm">Yes — that's the writer. <span class="mk">⤷</span></div>
+    </div>
+  </section>
+
+<script>
+(() => {
+  const body = document.body;
+  const setSpot = (hue) => document.documentElement.style.setProperty('--spot', hue);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  // ── REAL elicitation — domains per docs/plans/voice-profile-room.md §4 ──
+  // Morgan / Showrunner (writingPartner): inward why, recurring themes  →  coreStatement, storytellingDNA.recurringThemes
+  // Oliver: endings, structural principles               →  storytellingDNA.principles
+  const HOST = [
+    { ask: `Before any craft — <em>why do you write?</em> Not what. Why.`,
+      ph: `because the silence had to be answered with something…`,
+      val: `because some part of me only makes sense once it's on the page` },
+    { ask: `And the thing you keep <em>circling back to</em> — across everything you've made — what is it?`,
+      ph: `people who stay when leaving would be easier…`,
+      val: `the cost of loyalty, and who pays it` },
+  ];
+  const OLIVER = [
+    { ask: `When you imagine the end of a story — do you <em>know it before you start</em>, or write toward something you can't yet see?`,
+      ph: `I write toward a feeling, not a scene…`,
+      val: `I never know the scene — only the temperature of the last frame` },
+    { ask: `Name one structural rule you <em>believe in</em> — and the one you <em>love to break</em>.`,
+      ph: `believe: earn every turn. break: the tidy resolution…`,
+      val: `Believe: every act break costs the hero something. Break: the third act should resolve` },
+  ];
+
+  const captured = {}; // the real answers → flow into the readback
+
+  // ── beat helpers ──
+  const acts = document.querySelectorAll('.acts b');
+  const setAct = (k) => acts.forEach(b => b.classList.toggle('on', b.dataset.act === k));
+  const roster = document.querySelectorAll('.roster .who');
+  const setLive = (k) => roster.forEach(w => {
+    w.classList.toggle('live', w.dataset.k === k);
+  });
+  const setMet  = (k) => roster.forEach(w => { if (w.dataset.k === k) w.classList.add('met'); });
+
+  // build one Q→A turn inside a thread; returns a promise that resolves on submit
+  function ask(threadEl, q, isOliver){
+    return new Promise(resolve => {
+      const turn = document.createElement('div');
+      turn.className = 'turn';
+      turn.innerHTML = `
+        <div class="ask">${q.ask}</div>
+        <div class="field">
+          <div class="ph">${q.ph}</div>
+          <textarea rows="1" spellcheck="false"></textarea>
+        </div>
+        <div class="cue"><span class="key">↵</span> continue</div>`;
+      threadEl.appendChild(turn);
+      requestAnimationFrame(() => requestAnimationFrame(() => turn.classList.add('show')));
+
+      const ta  = turn.querySelector('textarea');
+      const fld = turn.querySelector('.field');
+      const cue = turn.querySelector('.cue');
+      const autosize = () => { ta.style.height='auto'; ta.style.height = ta.scrollHeight+'px'; };
+      ta.addEventListener('input', () => {
+        autosize();
+        fld.classList.toggle('filled', ta.value.length > 0);
+        cue.classList.toggle('show', ta.value.trim().length > 0);
+      });
+      setTimeout(() => ta.focus(), 700);
+
+      const commit = () => {
+        const answer = ta.value.trim() || q.val;          // mockup fallback keeps the reveal whole
+        // freeze the turn as ink
+        turn.innerHTML = `
+          <div class="ask">${q.ask}</div>
+          <div class="said">${escapeHtml(answer)}</div>`;
+        turn.classList.add('past','show');
+        cue.remove?.();
+        resolve(answer);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey){
+          e.preventDefault();
+          if ((ta.value.trim().length>0) || true){ ta.removeEventListener('keydown', onKey); commit(); }
+        }
+      };
+      ta.addEventListener('keydown', onKey);
+      cue.addEventListener('click', () => { ta.removeEventListener('keydown', onKey); commit(); });
+    });
+  }
+
+  function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+  // a standalone "continue" cue appended to a thread; resolves on click/enter
+  function gate(threadEl, label){
+    return new Promise(resolve => {
+      const cue = document.createElement('div');
+      cue.className = 'cue show';
+      cue.innerHTML = `<span class="key">↵</span> ${label}`;
+      threadEl.appendChild(cue);
+      const go = () => { document.removeEventListener('keydown', onKey); cue.remove(); resolve(); };
+      const onKey = (e) => { if (e.key === 'Enter'){ e.preventDefault(); go(); } };
+      document.addEventListener('keydown', onKey);
+      cue.addEventListener('click', go);
+    });
+  }
+
+  // ── THE CHOREOGRAPHY ──────────────────────────────────────────────
+  async function run(){
+    const hostThread = document.getElementById('host-thread');
+    const olThread   = document.getElementById('oliver-thread');
+
+    // ACT I — the host draws out the why (warm, amber, serif)
+    body.dataset.beat = 'enter';
+    setSpot(css('--host')); setAct('enter'); setLive('host');
+    captured.why    = await ask(hostThread, HOST[0]);
+    captured.themes = await ask(hostThread, HOST[1]);
+
+    // HANDOFF — authored line, then the slow focus push
+    const ho = document.createElement('div');
+    ho.className = 'handoff';
+    ho.innerHTML = `That's not a structure note — that's a spine.
+        <span class="sub">Oliver's going to want to hear that ↓</span>`;
+    hostThread.appendChild(ho);
+    requestAnimationFrame(() => requestAnimationFrame(() => ho.classList.add('show')));
+    await gate(hostThread, 'hand the room to Oliver');
+
+    // the push: spotlight slides amber→green, host recedes into blur, Oliver pulls into focus
+    document.documentElement.style.setProperty('--spot-x','58%');
+    setSpot(css('--oliver'));
+    setMet('host'); setLive('oliver'); setAct('oliver');
+    document.getElementById('act-host').style.opacity = '0';
+    document.getElementById('act-host').style.filter = 'blur(14px)';
+    document.getElementById('act-host').style.transform = 'scale(.94) translateY(-10px)';
+    const ol = document.getElementById('act-oliver');
+    ol.style.opacity = '1'; ol.style.filter = 'none'; ol.style.transform = 'none'; ol.style.pointerEvents = 'auto';
+    await wait(1750);
+
+    // ACT II — Oliver (austere, green, mono)
+    body.dataset.beat = 'oliver';
+    captured.ending = await ask(olThread, OLIVER[0], true);
+    captured.rule   = await ask(olThread, OLIVER[1], true);
+    await gate(olThread, 'see who the room found');
+
+    // ACT III — READBACK: the profile assembles from the writer's own words
+    body.dataset.beat = 'readback';
+    setAct('readback'); setMet('oliver'); setLive('');
+    document.getElementById('theatre').style.opacity = '0';
+    await wait(700);
+
+    fill('rb-why', captured.why);
+    fill('rb-themes', captured.themes);
+    fill('rb-ending', captured.ending);
+    fill('rb-rule', captured.rule);
+    document.getElementById('rb-arch-nm').textContent = nameArchetype(captured);
+
+    const rb = document.getElementById('readback');
+    rb.classList.add('show');
+    // staggered assembly — emotional, not a form submit
+    await reveal('rb-lede', 250);
+    await revealEl(document.querySelector('[data-rb="why"]'), 700);
+    await revealEl(document.querySelector('[data-rb="themes"]'), 650);
+    await revealEl(document.querySelector('[data-rb="ending"]'), 650);
+    await revealEl(document.querySelector('[data-rb="rule"]'), 650);
+    await reveal('rb-arch', 850);
+    await revealEl(document.getElementById('rb-affirm'), 700);
+
+    document.getElementById('rb-affirm').addEventListener('click', () => {
+      document.getElementById('rb-affirm').innerHTML =
+        `Saved. <span class="mk" style="color:var(--oliver)">✓</span>`;
+    });
+  }
+
+  function fill(id, text){ document.getElementById(id).textContent = '“' + text + '”'; }
+  function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
+  async function reveal(id, ms){ document.getElementById(id).classList.add('on'); await wait(ms); }
+  async function revealEl(el, ms){ el.classList.add('on'); await wait(ms); }
+
+  // lightweight synthesis-flavored archetype naming (mockup — real synthesis is server-side §6)
+  function nameArchetype(c){
+    const t = (c.ending + ' ' + c.rule + ' ' + c.why + ' ' + c.themes).toLowerCase();
+    if (t.includes('feel') || t.includes('temperature') || t.includes('frame'))
+      return 'The Architect of the Last Frame';
+    if (t.includes('cost') || t.includes('loyal') || t.includes('stay'))
+      return 'The Keeper of What It Costs';
+    if (t.includes('break') || t.includes('resolve'))
+      return 'The One Who Refuses the Tidy End';
+    return 'The Patient Architect';
+  }
+
+  // ── ignition ──
+  const begin = () => {
+    document.getElementById('curtain').classList.add('lift');
+    document.removeEventListener('keydown', onBegin);
+    setTimeout(run, 900);
+  };
+  const onBegin = (e) => { if (e.key === 'Enter') begin(); };
+  document.getElementById('begin').addEventListener('click', begin);
+  document.addEventListener('keydown', onBegin);
+})();
+</script>
+</body>
+</html>

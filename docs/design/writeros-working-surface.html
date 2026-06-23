@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Working Surface (Synopsis)</title>
+<!--
+  WORKING SURFACE — the daily document-building screen. NOT the Writers' Room intake (separate mockup).
+  "The Cursor of writing apps": artifact-centric, not conversation-centric.
+    file tree → story-doc tree · editor → living document · chat panel → elicitation rail (Sam)
+    inline diff → gated slot edits · problems panel → story-problems linter
+  Authored loop on screen: linter flags weak Need → Sam elicits it in the rail → proposes the fix
+    → it lands as a gated diff in the Need slot, awaiting Accept/Reject.
+  Palette = canonical client/src/index.css. Content = real prose (dark thriller).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,320..440&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* canonical tokens — client/src/index.css */
+    --bg:        hsl(220 14% 7%);
+    --rail:      hsl(220 14% 8.5%);
+    --rail-2:    hsl(220 13% 11%);
+    --border:    hsl(220 13% 16%);
+    --border-2:  hsl(220 13% 22%);
+    --fg:        hsl(220 10% 86%);
+    --fg-muted:  hsl(220 10% 52%);
+    --fg-subtle: hsl(220 10% 34%);
+    /* the page — paper-and-ink, warmed a hair off the cold chrome */
+    --paper:     hsl(36 9% 9.5%);
+    --paper-hi:  hsl(38 11% 12.5%);
+    --ink:       hsl(40 14% 87%);
+    --ink-soft:  hsl(40 10% 64%);
+    /* accents — shared/personas.ts → index.css */
+    --amber:     hsl(38 90% 68%);   /* app accent / writingPartner */
+    --amber-dim: hsl(38 55% 44%);
+    --sam:       hsl(45 100% 75%);  /* the rail's persona */
+    --ok:        hsl(120 40% 62%);  /* accept (oliver/outline green) */
+    --del:       hsl(6 52% 60%);    /* diff deletion / reject */
+    --casey:     hsl(200 100% 75%);
+    --maya:      hsl(330 80% 75%);
+    --zoe:       hsl(270 70% 75%);
+    --alex:      hsl(15 80% 70%);
+
+    --serif: "Fraunces", Georgia, serif;
+    --read:  "Newsreader", Georgia, serif;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+    --ease: cubic-bezier(.16,.84,.28,1);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:var(--read); overflow:hidden;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  ::selection{ background:color-mix(in oklab, var(--amber) 30%, transparent); }
+
+  /* film grain — shared with the room slice for family resemblance */
+  .grain{ position:fixed; inset:-120%; z-index:90; pointer-events:none; opacity:.035; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 6s steps(6) infinite; }
+  @keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-5%,3%)}50%{transform:translate(4%,-6%)}75%{transform:translate(-4%,5%)}100%{transform:translate(0,0)}}
+
+  /* ── shell ──────────────────────────────────────────────────────── */
+  .app{ display:grid; grid-template-columns:266px minmax(0,1fr) 360px; grid-template-rows:46px 1fr; height:100vh; }
+
+  header{ grid-column:1/-1; display:flex; align-items:center; gap:22px; padding:0 20px;
+    background:var(--rail); border-bottom:1px solid var(--border);
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em; }
+  header .brand{ color:var(--amber); letter-spacing:.18em; text-transform:uppercase; font-weight:500; }
+  header .crumb{ color:var(--fg-muted); display:flex; gap:9px; }
+  header .crumb b{ font-weight:400; color:var(--fg); }
+  header .crumb span{ color:var(--fg-subtle); }
+  header .status{ margin-left:auto; color:var(--fg-subtle); display:flex; align-items:center; gap:8px; }
+  header .status .pip{ width:5px; height:5px; border-radius:50%; background:var(--ok); box-shadow:0 0 7px var(--ok); }
+
+  /* ── LEFT — project tree, slim & quiet ──────────────────────────── */
+  .tree{ background:var(--rail); border-right:1px solid var(--border); padding:22px 0; overflow-y:auto;
+    font-family:var(--mono); font-size:12px; }
+  .tree .proj{ padding:0 20px 18px; color:var(--fg); letter-spacing:.02em; display:flex; align-items:center; gap:9px; }
+  .tree .proj .mark{ color:var(--amber-dim); }
+  .tree .grp{ padding:16px 20px 7px; font-size:9.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); }
+  .tree a{ display:flex; align-items:center; gap:10px; padding:6px 20px; color:var(--fg-muted); text-decoration:none;
+    border-left:2px solid transparent; transition:color .25s, background .25s, border-color .25s; }
+  .tree a .ic{ color:var(--fg-subtle); width:13px; text-align:center; transition:color .25s; }
+  .tree a:hover{ color:var(--fg); background:color-mix(in oklab, var(--rail-2) 70%, transparent); }
+  .tree a.sel{ color:var(--fg); border-left-color:var(--amber); background:color-mix(in oklab, var(--amber) 7%, transparent); }
+  .tree a.sel .ic{ color:var(--amber); }
+  .tree a .ch{ color:currentColor; }            /* character dots colored per persona feel */
+  .tree .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .tree .fmt-chip{ margin-left:9px; font-size:8px; letter-spacing:.14em; text-transform:uppercase; color:var(--amber);
+    border:1px solid var(--amber-dim); border-radius:3px; padding:1px 5px; }
+
+  /* collapsible structure spine — Acts › Sequences › Scenes › Beats */
+  .fold{ }
+  .fold summary{ list-style:none; display:flex; align-items:center; gap:8px; padding:5px 16px; cursor:pointer;
+    color:var(--fg-muted); user-select:none; transition:color .2s, background .2s; }
+  .fold summary::-webkit-details-marker{ display:none; }
+  .fold summary::marker{ content:""; }
+  .fold summary:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .tw{ width:0; height:0; flex:none; border-left:4px solid var(--fg-subtle); border-top:3px solid transparent;
+    border-bottom:3px solid transparent; transition:transform .2s var(--ease); }
+  details[open] > summary .tw{ transform:rotate(90deg); }
+  .ct{ margin-left:auto; font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--fg-subtle); }
+  .kids{ margin-left:14px; border-left:1px solid var(--border); }
+  .leaf{ display:flex; align-items:center; gap:9px; padding:5px 16px 5px 14px; text-decoration:none; cursor:pointer;
+    color:var(--fg-muted); font-size:11.5px; transition:color .2s, background .2s; }
+  .leaf:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .leaf i{ color:var(--fg-subtle); }
+  .leaf.empty, .leaf.empty i{ color:var(--fg-subtle); font-style:italic; }
+  .sic{ color:var(--fg-subtle); font-size:10px; flex:none; }
+  .bd{ width:6px; height:6px; border-radius:50%; border:1px solid var(--fg-subtle); flex:none; }
+  .bd.ok{ background:var(--ok); border-color:var(--ok); box-shadow:0 0 5px color-mix(in oklab,var(--ok) 60%,transparent); }
+  .bd.thin{ background:var(--amber); border-color:var(--amber); }
+
+  /* ── CENTER — the living document, the stage ────────────────────── */
+  .doc-wrap{ position:relative; overflow-y:auto; background:
+      radial-gradient(120% 70% at 50% -8%, var(--paper-hi), var(--paper) 46%, var(--bg) 130%); }
+  .doc-wrap::before{ content:""; position:absolute; inset:0; pointer-events:none;
+      box-shadow:inset 0 0 140px 0 rgba(0,0,0,.5); }
+  .doc{ max-width:660px; margin:0 auto; padding:46px 40px 120px; position:relative; z-index:1; }
+
+  .doc-head{ margin-bottom:40px; }
+  .doc-head h1{ font-family:var(--serif); font-weight:300; font-size:34px; letter-spacing:-.015em; color:var(--ink); }
+  .doc-head .meta{ margin-top:9px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--fg-subtle);
+    display:flex; gap:14px; align-items:center; }
+  .doc-head .meta .draft{ color:var(--amber-dim); }
+  .doc-head .rule{ margin-top:22px; height:1px; background:linear-gradient(90deg, var(--border-2), transparent); }
+
+  /* a slot */
+  .slot{ padding:20px 0 22px; border-bottom:1px solid color-mix(in oklab,var(--border) 60%, transparent);
+    opacity:0; transform:translateY(10px); animation:rise .9s var(--ease) forwards; }
+  @keyframes rise{ to{opacity:1; transform:none} }
+  .slot .lab{ font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-subtle);
+    display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .slot .lab .n{ color:var(--fg-muted); }
+  .slot .body{ font-family:var(--read); font-weight:330; font-size:18.5px; line-height:1.6; color:var(--ink); }
+  .slot .body em{ font-style:italic; color:var(--ink-soft); }
+
+  /* status tags on the label row */
+  .tag{ font-family:var(--mono); font-size:8.5px; letter-spacing:.18em; padding:2px 7px; border-radius:3px; text-transform:uppercase; }
+  .tag.thin{ color:var(--amber); border:1px solid var(--amber-dim); }
+  .tag.empty{ color:var(--fg-subtle); border:1px solid var(--border-2); }
+  .tag.edit{ color:var(--sam); border:1px solid color-mix(in oklab,var(--sam) 45%, transparent); }
+
+  /* empty slot — ghosted placeholder prompt */
+  .slot.is-empty .body{ color:var(--fg-subtle); font-style:italic; }
+  .slot.is-empty .body::before{ content:"⌑  "; color:var(--border-2); font-style:normal; }
+  .slot.is-empty{ position:relative; }
+  .slot.is-empty .lab .n{ color:var(--fg-subtle); }
+
+  /* thin / unconfirmed — hairline amber spine */
+  .slot.is-thin{ border-left:2px solid var(--amber-dim); margin-left:-16px; padding-left:14px; }
+
+  /* ── inline diff (gated edit) on the Need slot ──────────────────── */
+  .diff .del{ display:block; color:var(--del); text-decoration:line-through; text-decoration-color:color-mix(in oklab,var(--del) 60%,transparent);
+    opacity:.6; margin-bottom:8px; }
+  .diff .ins{ display:block; background:color-mix(in oklab, var(--sam) 13%, transparent);
+    box-shadow:inset 2px 0 0 var(--sam); padding:7px 12px; border-radius:2px; color:var(--ink); }
+  .diff-ctrl{ margin-top:14px; display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:10px; letter-spacing:.1em; }
+  .diff-ctrl .src{ color:var(--fg-subtle); text-transform:uppercase; letter-spacing:.18em; margin-right:4px; }
+  .btn{ display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:4px; cursor:pointer;
+    border:1px solid var(--border-2); color:var(--fg-muted); background:transparent; font-family:var(--mono); font-size:10px;
+    letter-spacing:.12em; text-transform:uppercase; transition:all .25s var(--ease); }
+  .btn.accept:hover{ color:var(--ok); border-color:var(--ok); background:color-mix(in oklab,var(--ok) 10%,transparent); }
+  .btn.reject:hover{ color:var(--del); border-color:var(--del); }
+  .settled .body{ animation:flash 1.4s var(--ease); }
+  @keyframes flash{ 0%{background:color-mix(in oklab,var(--ok) 18%,transparent)} 100%{background:transparent} }
+
+  /* ── story-problems linter — thin strip along the document ──────── */
+  .linter{ position:sticky; bottom:0; margin:0 -40px; padding:13px 40px;
+    background:linear-gradient(0deg, var(--rail) 70%, transparent);
+    border-top:1px solid var(--border); backdrop-filter:blur(4px); z-index:2; }
+  .linter .ttl{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:9px;
+    display:flex; align-items:center; gap:8px; }
+  .linter .flags{ display:flex; flex-direction:column; gap:7px; }
+  .flag{ display:flex; align-items:baseline; gap:11px; font-family:var(--read); font-size:14px; color:var(--ink-soft);
+    transition:opacity .6s var(--ease), transform .6s var(--ease); }
+  .flag .sig{ font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber);
+    border:1px solid var(--amber-dim); border-radius:3px; padding:2px 6px; flex:none; position:relative; top:-1px; }
+  .flag.resolved{ opacity:0; transform:translateX(-8px); }
+
+  /* ── RIGHT — the conversation rail, small & quiet ───────────────── */
+  .rail{ background:var(--rail); border-left:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+
+  /* structure panel — surface-aware + format-aware scaffold */
+  .struct{ display:flex; flex-direction:column; max-height:48%; border-bottom:1px solid var(--border); }
+  .struct-head{ padding:15px 18px 11px; }
+  .struct-head .row{ display:flex; align-items:center; gap:10px; }
+  .struct-head .t{ font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--fg-muted); }
+  .struct-head .surface{ margin-top:5px; font-family:var(--read); font-style:italic; font-size:12.5px; color:var(--fg-subtle); }
+  .fmt{ margin-left:auto; display:flex; border:1px solid var(--border-2); border-radius:6px; overflow:hidden;
+    font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+  .fmt button{ background:transparent; border:none; color:var(--fg-subtle); padding:5px 10px; cursor:pointer; transition:all .25s var(--ease); }
+  .fmt button.on{ background:color-mix(in oklab,var(--amber) 16%,transparent); color:var(--amber); }
+  .beats{ overflow-y:auto; padding:2px 0 12px; }
+  .fmt-view[hidden]{ display:none; }
+  .fmt-view{ animation:rise .45s var(--ease); }
+  .beats .grp{ padding:13px 18px 7px; font-family:var(--mono); font-size:9px; letter-spacing:.24em; text-transform:uppercase;
+    color:var(--fg-subtle); display:flex; align-items:center; gap:9px; }
+  .beats .grp::after{ content:""; flex:1; height:1px; background:var(--border); }
+  .beat{ display:flex; align-items:center; gap:11px; padding:6px 18px; cursor:pointer; color:var(--ink-soft);
+    font-family:var(--read); font-size:14px; transition:background .2s, color .2s; }
+  .beat:hover{ background:color-mix(in oklab,var(--rail-2) 70%,transparent); color:var(--fg); }
+  .beat .s{ width:7px; height:7px; border-radius:50%; flex:none; border:1px solid var(--fg-subtle); }
+  .beat.ok .s{ background:var(--ok); border-color:var(--ok); box-shadow:0 0 6px color-mix(in oklab,var(--ok) 70%,transparent); }
+  .beat.thin .s{ background:var(--amber); border-color:var(--amber); }
+  .beat.empty{ color:var(--fg-subtle); } .beat.empty .s{ border-style:dashed; background:transparent; }
+  .beat .meta{ margin-left:auto; font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--fg-subtle); }
+  .chat{ flex:1; min-height:0; display:flex; flex-direction:column; }
+  .slot.flash-ping{ animation:ping 1.3s var(--ease); }
+  @keyframes ping{ 0%{background:color-mix(in oklab,var(--amber) 16%,transparent)} 100%{background:transparent} }
+
+  .rail .head{ padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:11px; }
+  .rail .head .av{ width:9px; height:9px; border-radius:50%; background:var(--sam); box-shadow:0 0 9px var(--sam); flex:none; }
+  .rail .head .nm{ font-family:var(--serif); font-weight:300; font-size:17px; color:var(--fg); }
+  .rail .head .role{ font-family:var(--mono); font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--sam); margin-left:auto; }
+  .log{ flex:1; overflow-y:auto; padding:22px 20px; display:flex; flex-direction:column; gap:22px; }
+  .msg{ opacity:0; transform:translateY(8px); animation:rise .8s var(--ease) forwards; }
+  .msg .by{ font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:7px; }
+  .msg.ai .by{ color:var(--sam); }
+  .msg .txt{ font-family:var(--read); font-size:14.5px; line-height:1.55; color:var(--ink-soft); }
+  .msg.ai .txt{ color:var(--fg); padding-left:12px; border-left:1px solid color-mix(in oklab,var(--sam) 40%,transparent); }
+  .msg .txt em{ color:var(--sam); font-style:italic; }
+  .msg.propose .txt{ border-left-color:var(--sam); }
+  .msg .pill{ margin-top:11px; display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:9px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--sam); border:1px solid color-mix(in oklab,var(--sam) 40%,transparent);
+    border-radius:4px; padding:5px 10px; cursor:pointer; transition:all .25s; }
+  .msg .pill:hover{ background:color-mix(in oklab,var(--sam) 12%,transparent); }
+  .msg .pill.done{ color:var(--ok); border-color:var(--ok); pointer-events:none; }
+
+  .composer{ border-top:1px solid var(--border); padding:14px 18px; display:flex; align-items:flex-end; gap:10px; }
+  .composer textarea{ flex:1; background:var(--rail-2); border:1px solid var(--border); border-radius:7px; resize:none; overflow:hidden;
+    color:var(--fg); font-family:var(--read); font-size:14px; line-height:1.45; padding:10px 12px; outline:none; transition:border-color .25s; }
+  .composer textarea::placeholder{ color:var(--fg-subtle); font-style:italic; }
+  .composer textarea:focus{ border-color:var(--amber-dim); }
+  .composer .send{ width:34px; height:34px; flex:none; border-radius:7px; border:1px solid var(--border-2); background:transparent;
+    color:var(--fg-muted); cursor:pointer; font-size:14px; transition:all .25s; }
+  .composer .send:hover{ color:var(--amber); border-color:var(--amber-dim); }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:5px; border:2px solid transparent; background-clip:content-box; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+
+  @media (prefers-reduced-motion:reduce){ *{ animation-duration:.01ms !important; } .grain{ animation:none; } }
+</style>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="app">
+
+    <header>
+      <span class="brand">WriterOS</span>
+      <div class="crumb"><b>The Fixer's Debt</b><span>/</span>Documents<span>/</span><b>Synopsis</b></div>
+      <div class="status"><span class="pip"></span>Draft · autosaved 12:04</div>
+    </header>
+
+    <!-- LEFT — project spine: documents + collapsible structure (Acts › Sequences › Scenes › Beats) -->
+    <nav class="tree">
+      <div class="proj"><span class="mark">◆</span> The Fixer's Debt <span class="fmt-chip">Feature</span></div>
+
+      <div class="grp">Documents</div>
+      <a href="#"><span class="ic">❧</span> Story Bible</a>
+      <a href="#" class="sel"><span class="ic">▤</span> Synopsis</a>
+      <a href="#"><span class="ic">≣</span> Outline</a>
+
+      <div class="grp">Synopsis · Spine</div>
+      <a class="leaf slotnav" data-slot="slot-logline"><span class="bd ok"></span>Logline</a>
+      <a class="leaf slotnav" data-slot="slot-want"><span class="bd ok"></span>Protagonist's Want</a>
+      <a class="leaf slotnav" data-slot="slot-need"><span class="bd ok"></span>Need <span class="ct" style="color:var(--sam)">edit</span></a>
+      <a class="leaf slotnav" data-slot="slot-world"><span class="bd ok"></span>World</a>
+      <a class="leaf slotnav" data-slot="slot-incite"><span class="bd ok"></span>Inciting Incident</a>
+      <a class="leaf slotnav empty" data-slot="slot-escal"><span class="bd"></span>Escalation <span class="ct">empty</span></a>
+      <a class="leaf slotnav" data-slot="slot-crisis"><span class="bd thin"></span>Crisis <span class="ct">thin</span></a>
+      <a class="leaf slotnav" data-slot="slot-ending"><span class="bd thin"></span>Ending <span class="ct">prov</span></a>
+      <a class="leaf slotnav empty" data-slot="slot-theme"><span class="bd"></span>Theme <span class="ct">empty</span></a>
+
+      <div class="grp">Characters</div>
+      <a href="#" style="color:var(--amber)"><span class="dot ch"></span> Ace</a>
+      <a href="#" style="color:var(--maya)"><span class="dot ch"></span> Sebastian</a>
+      <a href="#" style="color:var(--zoe)"><span class="dot ch"></span> Ghost</a>
+      <a href="#" style="color:var(--casey)"><span class="dot ch"></span> Ivy</a>
+    </nav>
+
+    <!-- CENTER — living document -->
+    <section class="doc-wrap">
+      <article class="doc">
+        <div class="doc-head">
+          <h1>Synopsis</h1>
+          <div class="meta"><span class="draft">● Draft in progress</span><span>House Format · 9 slots · 2 empty</span></div>
+          <div class="rule"></div>
+        </div>
+
+        <!-- LOGLINE -->
+        <div class="slot" id="slot-logline" style="animation-delay:.05s">
+          <div class="lab"><span class="n">Logline</span></div>
+          <div class="body">A high-end Hollywood fixer who makes other people's catastrophes disappear is blackmailed by a centuries-old vampire into burying the one body he can't — <em>his own</em>.</div>
+        </div>
+
+        <!-- PROTAGONIST'S WANT -->
+        <div class="slot" id="slot-want" style="animation-delay:.12s">
+          <div class="lab"><span class="n">Protagonist's Want</span></div>
+          <div class="body">Ace wants the 2009 recording back and a clean exit — no trace, no debt, the way he vanishes everyone else's worst night.</div>
+        </div>
+
+        <!-- NEED — live gated diff -->
+        <div class="slot" id="slot-need" style="animation-delay:.19s">
+          <div class="lab"><span class="n">Need</span> <span class="tag edit" id="need-tag">Sam · proposed edit</span></div>
+          <div class="body diff" id="need-body">
+            <span class="del">To finally come clean about 2009 and stop running.</span>
+            <span class="ins">To be <em>known</em> by his daughter as the man he actually is — not the cover story he built to keep her safe.</span>
+          </div>
+          <div class="diff-ctrl" id="need-ctrl">
+            <span class="src">in-place edit</span>
+            <button class="btn accept" id="need-accept">✓ Accept</button>
+            <button class="btn reject" id="need-reject">✕ Reject</button>
+          </div>
+        </div>
+
+        <!-- WORLD -->
+        <div class="slot" id="slot-world" style="animation-delay:.26s">
+          <div class="lab"><span class="n">World</span></div>
+          <div class="body">Private-client crisis management in the canyons above Sunset — NDAs, burner ecosystems, a rolodex of judges and tame coroners. Beneath it runs an older economy: the ones who never die, and the favors they keep on the books for centuries.</div>
+        </div>
+
+        <!-- INCITING INCIDENT -->
+        <div class="slot" id="slot-incite" style="animation-delay:.33s">
+          <div class="lab"><span class="n">Inciting Incident</span></div>
+          <div class="body">A routine cleanup — a dead girl in a producer's infinity pool — goes wrong when the body sits up and asks for a towel. Sebastian was never the casualty. He hands Ace a 2009 recording, a name, and a deadline.</div>
+        </div>
+
+        <!-- ESCALATION — empty -->
+        <div class="slot is-empty" id="slot-escal" style="animation-delay:.40s">
+          <div class="lab"><span class="n">Escalation</span> <span class="tag empty">Empty</span></div>
+          <div class="body">How does Sebastian turn the screw past money — what does he take that Ace can't buy back?</div>
+        </div>
+
+        <!-- CRISIS — thin / unconfirmed -->
+        <div class="slot is-thin" id="slot-crisis" style="animation-delay:.47s">
+          <div class="lab"><span class="n">Crisis</span> <span class="tag thin">Thin · unconfirmed</span></div>
+          <div class="body">Ace burns his own rolodex — every protected secret he's ever held — to reach the one thing older than Sebastian.</div>
+        </div>
+
+        <!-- ENDING -->
+        <div class="slot" id="slot-ending" style="animation-delay:.54s">
+          <div class="lab"><span class="n">Ending</span> <span class="tag thin">Provisional</span></div>
+          <div class="body">He doesn't get clean. He gets <em>seen</em> — and lets the tape play.</div>
+        </div>
+
+        <!-- THEME — empty -->
+        <div class="slot is-empty" id="slot-theme" style="animation-delay:.61s">
+          <div class="lab"><span class="n">Theme</span> <span class="tag empty">Empty</span></div>
+          <div class="body">What does a man who erases everyone owe the one truth he's buried?</div>
+        </div>
+
+        <!-- LINTER -->
+        <div class="linter">
+          <div class="ttl"><span style="color:var(--amber)">⚑</span> Story Problems · 2</div>
+          <div class="flags">
+            <div class="flag" id="flag-need"><span class="sig">Craft</span> <span>Want and Need are nearly identical — the internal need may be underwritten.</span></div>
+            <div class="flag"><span class="sig">Structure</span> <span>Escalation slot is empty — the second-act turn isn't on the page yet.</span></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- RIGHT — the elicitation rail (Sam), small & quiet -->
+    <aside class="rail">
+      <section class="chat">
+      <div class="head"><span class="av"></span><span class="nm">Sam</span><span class="role">Synopsis</span></div>
+      <div class="log" id="log">
+        <div class="msg ai" style="animation-delay:.2s">
+          <div class="by">Sam</div>
+          <div class="txt">The inciting incident lands — the body sitting up is a good hard cut. But your <em>Need</em> is just your Want wearing a coat. Both say "come clean." What does Ace lose if he <em>wins</em>?</div>
+        </div>
+        <div class="msg you" style="animation-delay:.45s">
+          <div class="by">Ben</div>
+          <div class="txt">If he buries it clean, he stays a ghost. Nobody ever knows him — not really. Even his daughter only knows the cover story.</div>
+        </div>
+        <div class="msg ai propose" style="animation-delay:.7s">
+          <div class="by">Sam</div>
+          <div class="txt">There it is. The Need isn't "come clean" — it's <em>to be known by her</em>. That's the engine under the whole thing. I've staged it in the Need slot →</div>
+          <div class="pill" id="jump">◑ Review edit in document</div>
+        </div>
+      </div>
+      <div class="composer">
+        <textarea id="say" rows="1" placeholder="Answer Sam…" spellcheck="false"></textarea>
+        <button class="send" id="send">↑</button>
+      </div>
+      </section>
+    </aside>
+
+  </div>
+
+<script>
+(() => {
+  const need = {
+    body:  document.getElementById('need-body'),
+    ctrl:  document.getElementById('need-ctrl'),
+    tag:   document.getElementById('need-tag'),
+    slot:  document.getElementById('slot-need'),
+    flag:  document.getElementById('flag-need'),
+    pill:  document.getElementById('jump'),
+  };
+  const NEW = `To be <em>known</em> by his daughter as the man he actually is — not the cover story he built to keep her safe.`;
+  const OLD = `To finally come clean about 2009 and stop running.`;
+
+  function accept(){
+    need.body.classList.remove('diff');
+    need.body.innerHTML = NEW;
+    settle('accepted');
+    need.flag.classList.add('resolved');           // the linter clears — the loop closes
+    setTimeout(() => { const f = need.flag; f.parentElement && (document.querySelector('.linter .ttl').lastChild.textContent = ' Story Problems · 1'); }, 650);
+  }
+  function reject(){
+    need.body.classList.remove('diff');
+    need.body.innerHTML = OLD;
+    settle('kept');
+  }
+  function settle(state){
+    need.ctrl.remove();
+    need.tag.textContent = state === 'accepted' ? 'updated' : 'unchanged';
+    need.tag.style.color = state === 'accepted' ? 'var(--ok)' : 'var(--fg-subtle)';
+    need.tag.style.borderColor = state === 'accepted' ? 'var(--ok)' : 'var(--border-2)';
+    need.slot.classList.add('settled');
+    if (need.pill){ need.pill.classList.add('done'); need.pill.textContent = state === 'accepted' ? '✓ Edit accepted' : '✕ Edit rejected'; }
+  }
+
+  document.getElementById('need-accept').addEventListener('click', accept);
+  document.getElementById('need-reject').addEventListener('click', reject);
+  need.pill.addEventListener('click', () => need.slot.scrollIntoView({behavior:'smooth', block:'center'}));
+
+  // composer — appends the writer's line (mockup; no synthetic AI reply)
+  const say = document.getElementById('say'), log = document.getElementById('log');
+  const grow = () => { say.style.height='auto'; say.style.height=say.scrollHeight+'px'; };
+  say.addEventListener('input', grow);
+  function send(){
+    const v = say.value.trim(); if(!v) return;
+    const m = document.createElement('div');
+    m.className='msg you'; m.style.animationDelay='0s';
+    m.innerHTML = `<div class="by">Ben</div><div class="txt"></div>`;
+    m.querySelector('.txt').textContent = v;
+    log.appendChild(m); say.value=''; grow(); log.scrollTop = log.scrollHeight;
+  }
+  document.getElementById('send').addEventListener('click', send);
+  say.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+
+  // left spine → jump to + ping the slot in the document
+  document.querySelectorAll('.slotnav[data-slot]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const el = document.getElementById(a.dataset.slot); if(!el) return;
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+      el.classList.remove('flash-ping'); void el.offsetWidth; el.classList.add('flash-ping');
+    });
+  });
+})();
+</script>
+</body>
+</html>

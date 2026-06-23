@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WriterOS — Working Surface (Outline)</title>
+<!--
+  OUTLINE SURFACE — same working surface, different altitude.
+  The spine reads BEATS, not slots: structure is EARNED, not pre-printed.
+    · one emergent Sequence 1 (the writer grouped it) + loose, unsequenced beats below — no Act folders.
+    · the elicitation persona is OLIVER (Structure), not Sam — the rail follows the surface.
+    · gated structural action: Oliver proposes grouping loose beats into Sequence 2; the writer accepts.
+  Contrast with writeros-working-surface.html (Synopsis → 9 slots, Sam). Palette = canonical index.css.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Newsreader:ital,opsz,wght@0,6..72,300..500;1,6..72,320..440&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:hsl(220 14% 7%); --rail:hsl(220 14% 8.5%); --rail-2:hsl(220 13% 11%);
+    --border:hsl(220 13% 16%); --border-2:hsl(220 13% 22%);
+    --fg:hsl(220 10% 86%); --fg-muted:hsl(220 10% 52%); --fg-subtle:hsl(220 10% 34%);
+    --paper:hsl(36 9% 9.5%); --paper-hi:hsl(38 11% 12.5%); --ink:hsl(40 14% 87%); --ink-soft:hsl(40 10% 64%);
+    --amber:hsl(38 90% 68%); --amber-dim:hsl(38 55% 44%);
+    --oliver:hsl(120 38% 64%); --oliver-dim:hsl(120 24% 42%);   /* this surface's persona */
+    --ok:hsl(120 40% 62%); --del:hsl(6 52% 60%);
+    --maya:hsl(330 80% 75%); --zoe:hsl(270 70% 75%); --casey:hsl(200 100% 75%);
+    --serif:"Fraunces",Georgia,serif; --read:"Newsreader",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --ease:cubic-bezier(.16,.84,.28,1);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--fg); font-family:var(--read); overflow:hidden;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  ::selection{ background:color-mix(in oklab,var(--oliver) 30%,transparent); }
+
+  .grain{ position:fixed; inset:-120%; z-index:90; pointer-events:none; opacity:.035; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 6s steps(6) infinite; }
+  @keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-5%,3%)}50%{transform:translate(4%,-6%)}75%{transform:translate(-4%,5%)}100%{transform:translate(0,0)}}
+
+  .app{ display:grid; grid-template-columns:266px minmax(0,1fr) 360px; grid-template-rows:46px 1fr; height:100vh; }
+
+  header{ grid-column:1/-1; display:flex; align-items:center; gap:22px; padding:0 20px; background:var(--rail);
+    border-bottom:1px solid var(--border); font-family:var(--mono); font-size:11px; letter-spacing:.04em; }
+  header .brand{ color:var(--amber); letter-spacing:.18em; text-transform:uppercase; font-weight:500; }
+  header .crumb{ color:var(--fg-muted); display:flex; gap:9px; }
+  header .crumb b{ font-weight:400; color:var(--fg); } header .crumb span{ color:var(--fg-subtle); }
+  header .status{ margin-left:auto; color:var(--fg-subtle); display:flex; align-items:center; gap:8px; }
+  header .status .pip{ width:5px; height:5px; border-radius:50%; background:var(--ok); box-shadow:0 0 7px var(--ok); }
+
+  /* ── LEFT — spine reads BEATS ───────────────────────────────────── */
+  .tree{ background:var(--rail); border-right:1px solid var(--border); padding:22px 0; overflow-y:auto; font-family:var(--mono); font-size:12px; }
+  .tree .proj{ padding:0 20px 18px; color:var(--fg); display:flex; align-items:center; gap:9px; }
+  .tree .proj .mark{ color:var(--amber-dim); }
+  .tree .fmt-chip{ margin-left:9px; font-size:8px; letter-spacing:.14em; text-transform:uppercase; color:var(--amber);
+    border:1px solid var(--amber-dim); border-radius:3px; padding:1px 5px; }
+  .tree .grp{ padding:16px 20px 7px; font-size:9.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--fg-subtle); }
+  .tree a{ display:flex; align-items:center; gap:10px; padding:6px 20px; color:var(--fg-muted); text-decoration:none;
+    border-left:2px solid transparent; transition:color .25s, background .25s, border-color .25s; }
+  .tree a .ic{ color:var(--fg-subtle); width:13px; text-align:center; }
+  .tree a:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 70%,transparent); }
+  .tree a.sel{ color:var(--fg); border-left-color:var(--amber); background:color-mix(in oklab,var(--amber) 7%,transparent); }
+  .tree a.sel .ic{ color:var(--amber); }
+  .tree .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  .fold summary{ list-style:none; display:flex; align-items:center; gap:8px; padding:5px 16px; cursor:pointer;
+    color:var(--fg-muted); user-select:none; transition:color .2s, background .2s; }
+  .fold summary::-webkit-details-marker{ display:none; } .fold summary::marker{ content:""; }
+  .fold summary:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .tw{ width:0; height:0; flex:none; border-left:4px solid var(--fg-subtle); border-top:3px solid transparent;
+    border-bottom:3px solid transparent; transition:transform .2s var(--ease); }
+  details[open] > summary .tw{ transform:rotate(90deg); }
+  .ct{ margin-left:auto; font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--fg-subtle); }
+  .kids{ margin-left:14px; border-left:1px solid var(--border); }
+  .leaf{ display:flex; align-items:center; gap:9px; padding:5px 16px 5px 14px; text-decoration:none; cursor:pointer;
+    color:var(--fg-muted); font-size:11.5px; transition:color .2s, background .2s; }
+  .leaf:hover{ color:var(--fg); background:color-mix(in oklab,var(--rail-2) 60%,transparent); }
+  .leaf i{ color:var(--fg-subtle); }
+  .leaf.empty, .leaf.empty i{ color:var(--fg-subtle); font-style:italic; }
+  .bd{ width:6px; height:6px; border-radius:50%; border:1px solid var(--fg-subtle); flex:none; }
+  .bd.ok{ background:var(--ok); border-color:var(--ok); box-shadow:0 0 5px color-mix(in oklab,var(--ok) 60%,transparent); }
+  .bd.thin{ background:var(--amber); border-color:var(--amber); }
+  .loose-note{ padding:9px 20px 4px; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--fg-subtle);
+    display:flex; align-items:center; gap:8px; }
+  .loose-note::after{ content:""; flex:1; height:1px; background:var(--border); }
+  .hint{ padding:10px 20px 0; font-family:var(--read); font-style:italic; font-size:11px; color:var(--fg-subtle); }
+
+  /* ── CENTER — the outline: beats, loosely held ──────────────────── */
+  .doc-wrap{ position:relative; overflow-y:auto; background:
+      radial-gradient(120% 70% at 50% -8%, var(--paper-hi), var(--paper) 46%, var(--bg) 130%); }
+  .doc-wrap::before{ content:""; position:absolute; inset:0; pointer-events:none; box-shadow:inset 0 0 140px 0 rgba(0,0,0,.5); }
+  .doc{ max-width:680px; margin:0 auto; padding:46px 40px 120px; position:relative; z-index:1; }
+  .doc-head{ margin-bottom:34px; }
+  .doc-head h1{ font-family:var(--serif); font-weight:300; font-size:34px; letter-spacing:-.015em; color:var(--ink); }
+  .doc-head .meta{ margin-top:9px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--fg-subtle); display:flex; gap:14px; }
+  .doc-head .meta .draft{ color:var(--amber-dim); }
+  .doc-head .rule{ margin-top:22px; height:1px; background:linear-gradient(90deg,var(--border-2),transparent); }
+
+  /* a sequence — an EARNED group */
+  .seq{ margin:26px 0; }
+  .seq-h{ display:flex; align-items:baseline; gap:12px; font-family:var(--mono); font-size:10.5px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--oliver); margin-bottom:14px; }
+  .seq-h .ct{ color:var(--fg-subtle); margin-left:0; }
+  .seq-h .bar{ flex:1; height:1px; background:linear-gradient(90deg,color-mix(in oklab,var(--oliver) 50%,transparent),transparent); align-self:center; }
+  .seq.grouped .seq-body, .seq-body{ border-left:1px solid color-mix(in oklab,var(--oliver) 35%,transparent); margin-left:3px; padding-left:18px; }
+
+  /* a beat card */
+  .card{ display:flex; gap:16px; padding:14px 0; border-bottom:1px solid color-mix(in oklab,var(--border) 55%,transparent);
+    opacity:0; transform:translateY(8px); animation:rise .8s var(--ease) forwards; }
+  @keyframes rise{ to{opacity:1; transform:none} }
+  .card .h{ font-family:var(--mono); font-size:10px; color:var(--fg-subtle); padding-top:5px; width:26px; flex:none;
+    display:flex; align-items:flex-start; gap:6px; }
+  .card .h .d{ width:7px; height:7px; border-radius:50%; border:1px solid var(--fg-subtle); margin-top:4px; }
+  .card.ok .h .d{ background:var(--ok); border-color:var(--ok); box-shadow:0 0 6px color-mix(in oklab,var(--ok) 60%,transparent); }
+  .card.thin .h .d{ background:var(--amber); border-color:var(--amber); }
+  .card .bt{ font-family:var(--read); font-weight:330; font-size:18px; line-height:1.55; color:var(--ink); }
+  .card .slug{ display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--fg-subtle); margin-bottom:6px; }
+  .card.empty .bt{ color:var(--fg-subtle); font-style:italic; }
+  .card.empty .bt::before{ content:"⌑  "; color:var(--border-2); font-style:normal; }
+
+  .loose-head{ margin:38px 0 6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.24em; text-transform:uppercase;
+    color:var(--fg-subtle); display:flex; align-items:center; gap:11px; }
+  .loose-head .tagq{ color:var(--amber); border:1px solid var(--amber-dim); border-radius:3px; padding:2px 7px; font-size:8px; letter-spacing:.14em; }
+  .loose-head .bar{ flex:1; height:1px; background:var(--border); }
+  .loose-sub{ font-family:var(--read); font-style:italic; font-size:13px; color:var(--fg-subtle); margin-bottom:6px; }
+
+  #seq2-h{ overflow:hidden; max-height:0; opacity:0; transition:max-height .7s var(--ease), opacity .6s var(--ease), margin .7s var(--ease); margin:0; }
+  #seq2-h.show{ max-height:40px; opacity:1; margin-bottom:14px; }
+  #loose-group.grouped{ border-left:1px solid color-mix(in oklab,var(--oliver) 35%,transparent); margin-left:3px; padding-left:18px;
+    transition:padding .6s var(--ease), border-color .6s; }
+  .flash{ animation:flash 1.5s var(--ease); }
+  @keyframes flash{ 0%{background:color-mix(in oklab,var(--oliver) 16%,transparent)} 100%{background:transparent} }
+
+  /* linter */
+  .linter{ position:sticky; bottom:0; margin:0 -40px; padding:13px 40px; background:linear-gradient(0deg,var(--rail) 70%,transparent);
+    border-top:1px solid var(--border); backdrop-filter:blur(4px); z-index:2; }
+  .linter .ttl{ font-family:var(--mono); font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:9px; display:flex; gap:8px; }
+  .flags{ display:flex; flex-direction:column; gap:7px; }
+  .flag{ display:flex; align-items:baseline; gap:11px; font-family:var(--read); font-size:14px; color:var(--ink-soft);
+    transition:opacity .6s var(--ease), transform .6s var(--ease); }
+  .flag .sig{ font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber);
+    border:1px solid var(--amber-dim); border-radius:3px; padding:2px 6px; flex:none; position:relative; top:-1px; }
+  .flag.resolved{ opacity:0; transform:translateX(-8px); }
+
+  /* ── RIGHT — Oliver ─────────────────────────────────────────────── */
+  .rail{ background:var(--rail); border-left:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+  .rail .head{ padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:11px; }
+  .rail .head .av{ width:9px; height:9px; border-radius:50%; background:var(--oliver); box-shadow:0 0 9px var(--oliver); flex:none; }
+  .rail .head .nm{ font-family:var(--serif); font-weight:300; font-size:17px; color:var(--fg); }
+  .rail .head .role{ font-family:var(--mono); font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--oliver); margin-left:auto; }
+  .log{ flex:1; overflow-y:auto; padding:22px 20px; display:flex; flex-direction:column; gap:22px; }
+  .msg{ opacity:0; transform:translateY(8px); animation:rise .8s var(--ease) forwards; }
+  .msg .by{ font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--fg-subtle); margin-bottom:7px; }
+  .msg.ai .by{ color:var(--oliver); }
+  .msg .txt{ font-family:var(--read); font-size:14.5px; line-height:1.55; color:var(--ink-soft); }
+  .msg.ai .txt{ color:var(--fg); padding-left:12px; border-left:1px solid color-mix(in oklab,var(--oliver) 40%,transparent); }
+  .msg .txt em{ color:var(--oliver); font-style:italic; }
+  .pill{ margin-top:11px; display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:9px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--oliver); border:1px solid color-mix(in oklab,var(--oliver) 40%,transparent);
+    border-radius:4px; padding:6px 11px; cursor:pointer; transition:all .25s; }
+  .pill:hover{ background:color-mix(in oklab,var(--oliver) 12%,transparent); }
+  .pill.done{ color:var(--ok); border-color:var(--ok); pointer-events:none; }
+  .composer{ border-top:1px solid var(--border); padding:14px 18px; display:flex; align-items:flex-end; gap:10px; }
+  .composer textarea{ flex:1; background:var(--rail-2); border:1px solid var(--border); border-radius:7px; resize:none; overflow:hidden;
+    color:var(--fg); font-family:var(--read); font-size:14px; line-height:1.45; padding:10px 12px; outline:none; transition:border-color .25s; }
+  .composer textarea::placeholder{ color:var(--fg-subtle); font-style:italic; }
+  .composer textarea:focus{ border-color:var(--oliver-dim); }
+  .composer .send{ width:34px; height:34px; flex:none; border-radius:7px; border:1px solid var(--border-2); background:transparent;
+    color:var(--fg-muted); cursor:pointer; font-size:14px; transition:all .25s; }
+  .composer .send:hover{ color:var(--oliver); border-color:var(--oliver-dim); }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:5px; border:2px solid transparent; background-clip:content-box; }
+  @media (prefers-reduced-motion:reduce){ *{ animation-duration:.01ms !important; } .grain{ animation:none; } }
+</style>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="app">
+
+    <header>
+      <span class="brand">WriterOS</span>
+      <div class="crumb"><b>The Fixer's Debt</b><span>/</span>Documents<span>/</span><b>Outline</b></div>
+      <div class="status"><span class="pip"></span>Draft · autosaved 12:21</div>
+    </header>
+
+    <!-- LEFT — spine reads beats; structure is only as deep as the work has earned -->
+    <nav class="tree">
+      <div class="proj"><span class="mark">◆</span> The Fixer's Debt <span class="fmt-chip">Feature</span></div>
+
+      <div class="grp">Documents</div>
+      <a href="#"><span class="ic">❧</span> Story Bible</a>
+      <a href="#"><span class="ic">▤</span> Synopsis</a>
+      <a href="#" class="sel"><span class="ic">≣</span> Outline</a>
+
+      <div class="grp">Outline · Beats</div>
+      <details class="fold" open>
+        <summary><span class="tw"></span> Sequence 1 · The Cleanup <span class="ct">3 beats</span></summary>
+        <div class="kids">
+          <a class="leaf" data-card="c1"><span class="bd ok"></span>Ace's craft</a>
+          <a class="leaf" data-card="c2"><span class="bd ok"></span>The pool job</a>
+          <a class="leaf" data-card="c3"><span class="bd ok"></span>Sebastian's offer</a>
+        </div>
+      </details>
+
+      <div class="loose-note">Unsequenced · 4</div>
+      <a class="leaf" data-card="c4"><span class="bd ok"></span>The recording plays</a>
+      <a class="leaf" data-card="c5"><span class="bd thin"></span>Call to Ghost</a>
+      <a class="leaf" data-card="c6"><span class="bd ok"></span>Can't be cleaned</a>
+      <a class="leaf empty" data-card="c7"><span class="bd"></span><i>Ivy enters</i></a>
+
+      <div class="hint">Structure deepens as you group — acts aren't drawn until the beats earn them.</div>
+    </nav>
+
+    <!-- CENTER — the outline -->
+    <section class="doc-wrap">
+      <article class="doc">
+        <div class="doc-head">
+          <h1>Outline</h1>
+          <div class="meta"><span class="draft">● Draft in progress</span><span>7 beats · 1 sequence formed · 4 loose</span></div>
+          <div class="rule"></div>
+        </div>
+
+        <!-- the one earned sequence -->
+        <div class="seq">
+          <div class="seq-h">Sequence 1 · The Cleanup <span class="ct">3 beats</span><span class="bar"></span></div>
+          <div class="seq-body">
+            <div class="card ok" id="c1" style="animation-delay:.05s">
+              <div class="h">1<span class="d"></span></div>
+              <div class="bt"><span class="slug">Int. A Burning Reputation — Night</span>Ace dismantles a scandal in real time — we learn his craft, his calm, and his one rule: leave no trace.</div>
+            </div>
+            <div class="card ok" id="c2" style="animation-delay:.11s">
+              <div class="h">2<span class="d"></span></div>
+              <div class="bt"><span class="slug">Int. Producer's Pool House — Night</span>The pool job. A dead girl, a panicking client. Routine — until the body sits up and asks for a towel.</div>
+            </div>
+            <div class="card ok" id="c3" style="animation-delay:.17s">
+              <div class="h">3<span class="d"></span></div>
+              <div class="bt"><span class="slug">Ext. Infinity Pool — Night</span>Sebastian's offer. Never a victim — a client. He hands Ace a 2009 recording and a deadline.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- the loose beats — not yet a sequence, definitely not an act -->
+        <div class="loose-head">Unsequenced <span class="tagq">3 may belong together</span><span class="bar"></span></div>
+        <div class="loose-sub">Beats you've captured but haven't placed. Group them when they tell you to — not before.</div>
+
+        <div id="loose-group">
+          <div class="seq-h" id="seq2-h">Sequence 2 · The Realization <span class="ct">forming</span><span class="bar"></span></div>
+          <div class="card ok" id="c4" style="animation-delay:.23s">
+            <div class="h">4<span class="d"></span></div>
+            <div class="bt">Ace plays the recording alone. We watch his face, never the screen.</div>
+          </div>
+          <div class="card thin" id="c5" style="animation-delay:.29s">
+            <div class="h">5<span class="d"></span></div>
+            <div class="bt">He calls Ghost — who else has a copy? <em style="color:var(--amber)">(thin — does Ghost trust him?)</em></div>
+          </div>
+          <div class="card ok" id="c6" style="animation-delay:.35s">
+            <div class="h">6<span class="d"></span></div>
+            <div class="bt">The realization: this is the one job he can't make disappear.</div>
+          </div>
+        </div>
+
+        <div class="card empty" id="c7" style="animation-delay:.41s">
+          <div class="h">7<span class="d"></span></div>
+          <div class="bt">Ivy enters — leverage, or the only person left who knows the real him?</div>
+        </div>
+
+        <!-- linter — structure-flavored -->
+        <div class="linter">
+          <div class="ttl"><span style="color:var(--amber)">⚑</span> Story Problems · 2</div>
+          <div class="flags">
+            <div class="flag" id="flag-loose"><span class="sig">Structure</span> <span>3 beats are unsequenced — they may be hiding your first act break.</span></div>
+            <div class="flag"><span class="sig">Craft</span> <span>Beat 5 (Ghost) is thin — the relationship isn't on the page yet.</span></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- RIGHT — Oliver, the structure persona -->
+    <aside class="rail">
+      <section class="chat" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+        <div class="head"><span class="av"></span><span class="nm">Oliver</span><span class="role">Structure</span></div>
+        <div class="log" id="log">
+          <div class="msg ai" style="animation-delay:.2s">
+            <div class="by">Oliver</div>
+            <div class="txt">Sequence 1 is clean — craft, job, offer. But the three beats after it are floating. Do they belong together, or is that your <em>act break</em> hiding in plain sight?</div>
+          </div>
+          <div class="msg you" style="animation-delay:.45s">
+            <div class="by">Ben</div>
+            <div class="txt">The recording, the call to Ghost, him realizing he can't clean this — that's all one move. Ace understanding he's the body this time.</div>
+          </div>
+          <div class="msg ai" style="animation-delay:.7s">
+            <div class="by">Oliver</div>
+            <div class="txt">Then that's a sequence, not loose change. Call it <em>The Realization</em>. I'll group those three — you'll still own the act break.</div>
+            <div class="pill" id="group-btn">⊞ Group beats 4–6 into Sequence 2</div>
+          </div>
+        </div>
+        <div class="composer">
+          <textarea id="say" rows="1" placeholder="Answer Oliver…" spellcheck="false"></textarea>
+          <button class="send" id="send">↑</button>
+        </div>
+      </section>
+    </aside>
+
+  </div>
+
+<script>
+(() => {
+  // gated STRUCTURAL action — group loose beats into a sequence (structure earned, writer-approved)
+  const btn = document.getElementById('group-btn');
+  btn.addEventListener('click', () => {
+    document.getElementById('seq2-h').classList.add('show');
+    document.getElementById('loose-group').classList.add('grouped');
+    ['c4','c5','c6'].forEach(id => { const el=document.getElementById(id); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); });
+    document.getElementById('flag-loose').classList.add('resolved');
+    setTimeout(() => { document.querySelector('.linter .ttl').lastChild.textContent = ' Story Problems · 1'; }, 650);
+    document.querySelector('.doc-head .meta span:last-child').textContent = '7 beats · 2 sequences formed · 1 loose';
+    btn.classList.add('done'); btn.textContent = '✓ Grouped into Sequence 2';
+  });
+
+  // left spine beat → ping the card
+  document.querySelectorAll('.leaf[data-card]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const el = document.getElementById(a.dataset.card); if(!el) return;
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    });
+  });
+
+  // composer
+  const say = document.getElementById('say'), log = document.getElementById('log');
+  const grow = () => { say.style.height='auto'; say.style.height=say.scrollHeight+'px'; };
+  say.addEventListener('input', grow);
+  function send(){
+    const v = say.value.trim(); if(!v) return;
+    const m = document.createElement('div'); m.className='msg you';
+    m.innerHTML = `<div class="by">Ben</div><div class="txt"></div>`;
+    m.querySelector('.txt').textContent = v;
+    log.appendChild(m); say.value=''; grow(); log.scrollTop = log.scrollHeight;
+  }
+  document.getElementById('send').addEventListener('click', send);
+  say.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+})();
+</script>
+</body>
+</html>
