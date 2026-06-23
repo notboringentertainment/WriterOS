@@ -5,12 +5,15 @@ import {
   createRunId,
   consoleTraceSink,
   resolveTraceSink,
+  deriveRunDebug,
+  isDebugApiEnabled,
   type MorganTraceEvent,
 } from '../../../server/ai/morganRuntime/trace'
 
 afterEach(() => {
   vi.restoreAllMocks()
   delete process.env.MORGAN_TRACE
+  delete process.env.MORGAN_DEBUG_API
 })
 
 describe('truncatePreview', () => {
@@ -94,5 +97,80 @@ describe('resolveTraceSink', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     resolveTraceSink(undefined)({ kind: 'final.accepted', runId: 'r' })
     expect(spy).toHaveBeenCalled()
+  })
+})
+
+describe('deriveRunDebug', () => {
+  it('summarizes a successful consult: pairs the started question with the ok status/duration', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'run.started', runId: 'morgan_x', personaId: 'writingPartner' },
+      { kind: 'askSpecialist.started', runId: 'morgan_x', specialistId: 'casey', question: 'What about Ace?' },
+      { kind: 'askSpecialist.ok', runId: 'morgan_x', specialistId: 'casey', durationMs: 1842, chars: 921 },
+      { kind: 'guard.attribution', runId: 'morgan_x', status: 'passed', specialists: ['casey'] },
+      { kind: 'final.accepted', runId: 'morgan_x' },
+    ]
+    expect(deriveRunDebug('morgan_x', events)).toEqual({
+      runId: 'morgan_x',
+      consults: [{ specialistId: 'casey', question: 'What about Ace?', status: 'ok', durationMs: 1842 }],
+      guardrails: [{ name: 'specialist_attribution', status: 'passed' }],
+    })
+  })
+
+  it('summarizes a failed consult as status error with its duration', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'askSpecialist.started', runId: 'r', specialistId: 'casey', question: 'Ace?' },
+      { kind: 'askSpecialist.error', runId: 'r', specialistId: 'casey', durationMs: 5, reason: 'boom' },
+    ]
+    expect(deriveRunDebug('r', events).consults).toEqual([
+      { specialistId: 'casey', question: 'Ace?', status: 'error', durationMs: 5 },
+    ])
+  })
+
+  it('maps a blocked attribution guard into the guardrails list', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'guard.attribution', runId: 'r', status: 'blocked', specialists: ['casey'] },
+    ]
+    expect(deriveRunDebug('r', events).guardrails).toEqual([
+      { name: 'specialist_attribution', status: 'blocked' },
+    ])
+  })
+
+  it('does not reuse a consumed question for a later terminal event lacking a fresh start', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'askSpecialist.started', runId: 'r', specialistId: 'casey', question: 'Q1' },
+      { kind: 'askSpecialist.ok', runId: 'r', specialistId: 'casey', durationMs: 1, chars: 1 },
+      { kind: 'askSpecialist.error', runId: 'r', specialistId: 'casey', durationMs: 2, reason: 'x' },
+    ]
+    const consults = deriveRunDebug('r', events).consults
+    expect(consults[0].question).toBe('Q1')
+    expect(consults[1].question).toBe('')
+  })
+
+  it('returns empty consults and guardrails for a direct answer (no consult/guard events)', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'run.started', runId: 'r', personaId: 'writingPartner' },
+      { kind: 'final.accepted', runId: 'r' },
+    ]
+    expect(deriveRunDebug('r', events)).toEqual({ runId: 'r', consults: [], guardrails: [] })
+  })
+
+  it('truncates a long consult question so debug never carries raw bulk prose', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'askSpecialist.started', runId: 'r', specialistId: 'casey', question: 'q'.repeat(400) },
+      { kind: 'askSpecialist.ok', runId: 'r', specialistId: 'casey', durationMs: 1, chars: 1 },
+    ]
+    expect(deriveRunDebug('r', events).consults[0].question.length).toBeLessThan(400)
+  })
+})
+
+describe('isDebugApiEnabled', () => {
+  it('is off by default', () => {
+    expect(isDebugApiEnabled()).toBe(false)
+  })
+  it('is on only when MORGAN_DEBUG_API is exactly "on"', () => {
+    process.env.MORGAN_DEBUG_API = 'on'
+    expect(isDebugApiEnabled()).toBe(true)
+    process.env.MORGAN_DEBUG_API = '1'
+    expect(isDebugApiEnabled()).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 // One responsibility: the types every runtime module agrees on. No logic here.
 
 import type { SpecialistId } from '../../../shared/personas';
-import type { TraceSink } from './trace';
+import type { TraceSink, RunDebug } from './trace';
 
 export interface ReachInventory {
   canSee: string[]; // derived from populated StoryMemory fields — never claimed unless real
@@ -15,6 +15,9 @@ export interface MorganRuntimeResult {
   message: string;
   suggestions: string[];
   ok: boolean; // false on honest-error paths
+  // Slice 2 observability: the derived, admin-only debug summary for this run.
+  // Always populated by runMorgan; the API layer gates whether it is exposed.
+  debug?: RunDebug;
   // NOTE: receipts/limits intentionally absent in M1 — there is no response path
   // or render surface for them yet. They return in M2 alongside askSpecialist +
   // the "consulted specialists" receipt UI, wired end-to-end rather than dangling.

@@ -283,6 +283,25 @@ describe('runMorgan loop', () => {
     expect(r.message).toBe('Casey is the right specialist to ask next for the psychology.')
   })
 
+  // ── Slice 2: derived debug metadata on the runtime result ─────────────────
+  it('SLICE 2 DEBUG: result.debug summarizes a successful consult', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'CASEY_READ' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [{ type: 'tool_use', id: 'c' }], toolUses: [{ id: 'c', name: 'askSpecialist', input: { specialistId: 'casey', question: 'Ace?' } }] })
+      .mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: "Casey's read is that Ace is built from denial." } }] })
+    const r = await runMorgan({ ...inputBase, deps })
+    expect(r.debug?.runId).toMatch(/^morgan_/)
+    expect(r.debug?.consults).toEqual([{ specialistId: 'casey', question: 'Ace?', status: 'ok', durationMs: expect.any(Number) }])
+    expect(r.debug?.guardrails).toContainEqual({ name: 'specialist_attribution', status: 'passed' })
+  })
+
+  it('SLICE 2 DEBUG: a direct answer has empty consults and guardrails', async () => {
+    sendToolTurn.mockResolvedValueOnce({ stopReason: 'tool_use', text: '', assistantContent: [], toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'A direct answer in Morgan voice.' } }] })
+    const r = await runMorgan(inputBase)
+    expect(r.debug?.consults).toEqual([])
+    expect(r.debug?.guardrails).toEqual([])
+  })
+
   // ── Slice 1: local trace observability ────────────────────────────────────
   // Proves the operator can verify a live turn from injected trace events
   // without scraping console output. Same events feed the dev terminal sink.
