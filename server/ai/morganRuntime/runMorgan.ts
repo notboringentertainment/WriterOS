@@ -11,9 +11,9 @@ import {
 } from './anthropicToolClient';
 import { MORGAN_TOOLS, dispatchTool, ASK_SPECIALIST_TOOL_NAME, RESPOND_TOOL_NAME } from './tools';
 import { CALLABLE_SPECIALIST_IDS, PERSONAS } from '../../../shared/personas';
-import { createRunId, resolveTraceSink } from './trace';
+import { createRunId, resolveTraceSink, deriveRunDebug } from './trace';
 import type { DispatchOutcome, MorganRuntimeResult, RunMorganInput, SpecialistConsultTrace } from './types';
-import type { TraceSink } from './trace';
+import type { TraceSink, MorganTraceEvent } from './trace';
 import type { SpecialistId } from '../../../shared/personas';
 
 const MAX_ITERS = 4;
@@ -163,19 +163,34 @@ async function runLoop(
 
 export async function runMorgan(input: RunMorganInput): Promise<MorganRuntimeResult> {
   const runId = input.runId ?? createRunId();
-  const trace = resolveTraceSink(input.trace);
+  // Tee the trace: collect every event for the derived debug summary AND forward
+  // to the resolved sink (console in dev, injected collector in tests). The
+  // collected events are the raw material; deriveRunDebug is the stable view.
+  const collected: MorganTraceEvent[] = [];
+  const sink = resolveTraceSink(input.trace);
+  const trace: TraceSink = (event) => {
+    collected.push(event);
+    sink(event);
+  };
+  // Attach the debug summary to every terminal result, success or honest-error,
+  // so the API layer always has it available to expose (when enabled).
+  const withDebug = (result: MorganRuntimeResult): MorganRuntimeResult => ({
+    ...result,
+    debug: deriveRunDebug(runId, collected),
+  });
+
   trace({ kind: 'run.started', runId, personaId: input.personaId ?? 'writingPartner' });
 
   if (!isAnthropicConfigured()) {
     trace({ kind: 'final.failed', runId, reason: 'not_configured' });
-    return honestError(NOT_CONFIGURED_MESSAGE);
+    return withDebug(honestError(NOT_CONFIGURED_MESSAGE));
   }
 
   try {
     const first = await runLoop(input, [], runId, trace);
     if (first) {
       trace({ kind: 'final.accepted', runId });
-      return first;
+      return withDebug(first);
     }
 
     // Retry once with an explicit repair nudge.
@@ -184,14 +199,14 @@ export async function runMorgan(input: RunMorganInput): Promise<MorganRuntimeRes
     ], runId, trace);
     if (retry) {
       trace({ kind: 'final.accepted', runId });
-      return retry;
+      return withDebug(retry);
     }
 
     trace({ kind: 'final.failed', runId, reason: 'malformed' });
-    return honestError(MALFORMED_MESSAGE);
+    return withDebug(honestError(MALFORMED_MESSAGE));
   } catch (error) {
     console.error('Morgan runtime error:', error);
     trace({ kind: 'final.failed', runId, reason: 'threw' });
-    return honestError(THREW_MESSAGE);
+    return withDebug(honestError(THREW_MESSAGE));
   }
 }

@@ -87,3 +87,54 @@ export function resolveTraceSink(injected?: TraceSink): TraceSink {
   if (flag) return consoleTraceSink;
   return process.env.NODE_ENV === 'test' ? noopTraceSink : consoleTraceSink;
 }
+
+// ── Slice 2: admin/debug summary derived from trace events ──────────────────
+// A stable, agent-neutral *view* of a run — NOT the raw event union. Future
+// internal event-schema changes (Slice 3) can reshape MorganTraceEvent without
+// breaking this API contract, because the API exposes RunDebug, not events.
+export interface RunDebug {
+  runId: string;
+  consults: Array<{ specialistId: string; question: string; status: 'ok' | 'error'; durationMs: number }>;
+  guardrails: Array<{ name: string; status: 'passed' | 'blocked' }>;
+}
+
+// Collapse one run's trace events into the debug summary. Pairs each consult's
+// question (from the started event) with its terminal status/duration, and maps
+// attribution guard outcomes into named guardrail entries. Questions are
+// truncated so debug never carries raw bulk prose.
+/** Derive the admin/debug summary for a run from its emitted trace events. */
+export function deriveRunDebug(runId: string, events: MorganTraceEvent[]): RunDebug {
+  const consults: RunDebug['consults'] = [];
+  const guardrails: RunDebug['guardrails'] = [];
+  const pendingQuestion = new Map<string, string>();
+  for (const event of events) {
+    switch (event.kind) {
+      case 'askSpecialist.started':
+        pendingQuestion.set(event.specialistId, event.question);
+        break;
+      case 'askSpecialist.ok':
+      case 'askSpecialist.error':
+        consults.push({
+          specialistId: event.specialistId,
+          question: truncatePreview(pendingQuestion.get(event.specialistId) ?? ''),
+          status: event.kind === 'askSpecialist.ok' ? 'ok' : 'error',
+          durationMs: event.durationMs,
+        });
+        break;
+      case 'guard.attribution':
+        guardrails.push({ name: 'specialist_attribution', status: event.status });
+        break;
+      default:
+        break;
+    }
+  }
+  return { runId, consults, guardrails };
+}
+
+// API debug-metadata gate. Off by default; the trace summary is exposed on
+// /api/wp-chat only when MORGAN_DEBUG_API is exactly "on". Separate from
+// MORGAN_TRACE (terminal logs) so admins can enable API debug independently.
+/** Whether /api/wp-chat should expose RunDebug metadata. Default off. */
+export function isDebugApiEnabled(): boolean {
+  return process.env.MORGAN_DEBUG_API === 'on';
+}
