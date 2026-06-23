@@ -135,6 +135,17 @@ describe('deriveRunDebug', () => {
     ])
   })
 
+  it('does not reuse a consumed question for a later terminal event lacking a fresh start', () => {
+    const events: MorganTraceEvent[] = [
+      { kind: 'askSpecialist.started', runId: 'r', specialistId: 'casey', question: 'Q1' },
+      { kind: 'askSpecialist.ok', runId: 'r', specialistId: 'casey', durationMs: 1, chars: 1 },
+      { kind: 'askSpecialist.error', runId: 'r', specialistId: 'casey', durationMs: 2, reason: 'x' },
+    ]
+    const consults = deriveRunDebug('r', events).consults
+    expect(consults[0].question).toBe('Q1')
+    expect(consults[1].question).toBe('')
+  })
+
   it('returns empty consults and guardrails for a direct answer (no consult/guard events)', () => {
     const events: MorganTraceEvent[] = [
       { kind: 'run.started', runId: 'r', personaId: 'writingPartner' },

@@ -113,14 +113,19 @@ export function deriveRunDebug(runId: string, events: MorganTraceEvent[]): RunDe
         pendingQuestion.set(event.specialistId, event.question);
         break;
       case 'askSpecialist.ok':
-      case 'askSpecialist.error':
+      case 'askSpecialist.error': {
+        // Consume the pending question so it pairs with exactly this terminal
+        // event — a later terminal without a fresh start must not reuse it.
+        const question = pendingQuestion.get(event.specialistId) ?? '';
+        pendingQuestion.delete(event.specialistId);
         consults.push({
           specialistId: event.specialistId,
-          question: truncatePreview(pendingQuestion.get(event.specialistId) ?? ''),
+          question: truncatePreview(question),
           status: event.kind === 'askSpecialist.ok' ? 'ok' : 'error',
           durationMs: event.durationMs,
         });
         break;
+      }
       case 'guard.attribution':
         guardrails.push({ name: 'specialist_attribution', status: event.status });
         break;
@@ -131,10 +136,11 @@ export function deriveRunDebug(runId: string, events: MorganTraceEvent[]): RunDe
   return { runId, consults, guardrails };
 }
 
-// API debug-metadata gate. Off by default; the trace summary is exposed on
-// /api/wp-chat only when MORGAN_DEBUG_API is exactly "on". Separate from
-// MORGAN_TRACE (terminal logs) so admins can enable API debug independently.
-/** Whether /api/wp-chat should expose RunDebug metadata. Default off. */
+// API debug-metadata gate. Off by default; the trace summary is exposed on the
+// persona-chat adapters (/api/chat and /api/wp-chat) only when MORGAN_DEBUG_API
+// is exactly "on". Separate from MORGAN_TRACE (terminal logs) so admins can
+// enable API debug independently.
+/** Whether the persona-chat API should expose RunDebug metadata. Default off. */
 export function isDebugApiEnabled(): boolean {
   return process.env.MORGAN_DEBUG_API === 'on';
 }
