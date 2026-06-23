@@ -1,8 +1,8 @@
 # WriterOS Agent Observability And Provenance Ultraplan PRD
 
-**Date:** 2026-06-22
-**Status:** Foundational PRD; build only after review
-**Branch context:** `feat/morgan-m2-ask-specialist`
+**Date:** 2026-06-22 (Slice 1 status updated 2026-06-23)
+**Status:** Foundational PRD. Slice 1 shipped; Slices 2-5 build only after review.
+**Branch context:** Slice 1 merged to `main` via PR #47 (`7f84e03`), branch `feat/morgan-m2-ask-specialist`. Slices 2-5 unstarted.
 **Related docs:** `docs/product/agent-workflow-prd.md`, `docs/product/persona-capability-layer-prd.md`, `docs/product/writer-voice-profile-prd.md`, `docs/superpowers/plans/2026-06-21-morgan-m2-ask-specialist-staged-plan.md`
 
 ## Summary
@@ -255,7 +255,9 @@ M2 remains the functional specialist-consult milestone. Its runtime consult ledg
 
 ## Suggested Implementation Slices
 
-### Slice 1: Local Morgan Trace Logs
+### Slice 1: Local Morgan Trace Logs — ✅ DONE (PR #47)
+
+Shipped 2026-06-23. Landed in `server/ai/morganRuntime/trace.ts` (event model, `createRunId`, `formatTraceLine`, env-gated `resolveTraceSink`), wired into `server/ai/morganRuntime/runMorgan.ts` (emits `run.started`, `askSpecialist.*`, `guard.attribution`, `final.accepted/failed`), covered by `tests/server/morganRuntime/trace.test.ts`. Commits `55a2e18` + review fix `8df8a6c`. Trace defaults to console in dev, silent under `NODE_ENV=test`, forced/off via `MORGAN_TRACE`. No API, UI, or persistence change — as scoped.
 
 Goal: make Morgan M2 live testing verifiable from the dev terminal.
 
