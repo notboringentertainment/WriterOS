@@ -1,0 +1,25 @@
+# Normalize line endings: store LF in the repo, check out LF everywhere.
+# Prevents Mac/Windows CRLF churn and corruption when editing across machines.
+* text=auto eol=lf
+
+# Shell scripts must stay LF regardless of platform.
+*.sh text eol=lf
+
+# Windows-only scripts keep CRLF so they run natively on Windows.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files: never touch, never diff.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.fdx binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
