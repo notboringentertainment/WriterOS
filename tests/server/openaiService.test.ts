@@ -273,6 +273,48 @@ describe('createContextSummary', () => {
     expect(summary.indexOf('TREATMENT:')).toBeLessThan(summary.indexOf('OUTLINE BEATS:'))
   })
 
+  it('keeps authored Treatment available to PRD-backed advisor contexts', () => {
+    const memory = storyMemory({
+      project: {
+        treatment: 'Opening: Sara ends a night shift as the silent emergency line rings.',
+      },
+      characters: {
+        sara: {
+          id: 'sara',
+          name: 'Sara',
+          role: 'Medic',
+        },
+      },
+      outline: {
+        acts: 3,
+        beats: [{ id: 'turn', act: 1, description: 'First turn: Sara answers the impossible call.' }],
+      },
+      script: {
+        sceneHeadings: ['INT. SWITCHBOARD ROOM - NIGHT'],
+      },
+      worldRules: {
+        setting: 'A privatized emergency network under civic strain.',
+      },
+    })
+
+    for (const personaId of ['writingPartner', 'sam', 'oliver', 'maya', 'zoe', 'alex']) {
+      const summary = createContextSummary(memory, personaId)
+      expect(summary).toContain('TREATMENT:')
+      expect(summary).toContain('Opening: Sara ends a night shift')
+    }
+
+    const oliver = createContextSummary(memory, 'oliver')
+    expect(oliver.indexOf('OUTLINE BEATS:')).toBeLessThan(oliver.indexOf('TREATMENT:'))
+
+    const maya = createContextSummary(memory, 'maya')
+    expect(maya.indexOf('SCRIPT SCENES:')).toBeLessThan(maya.indexOf('TREATMENT:'))
+
+    const zoe = createContextSummary(memory, 'zoe')
+    expect(zoe.indexOf('STORY BIBLE:')).toBeLessThan(zoe.indexOf('TREATMENT:'))
+    expect(zoe).toContain('OUTLINE BEATS:')
+    expect(zoe.indexOf('TREATMENT:')).toBeLessThan(zoe.indexOf('OUTLINE BEATS:'))
+  })
+
   it('uses the balanced context order for unknown personas', () => {
     const summary = createContextSummary(populatedStoryMemory(), 'unknown')
 

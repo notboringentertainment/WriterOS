@@ -590,6 +590,29 @@ export interface LegacyProjectSlice {
   storyBible: ProjectState['storyBible']
 }
 
+export function documentStoryBibleToLegacy(content: StoryBibleDocumentContent): ProjectState['storyBible'] {
+  const characters: Character[] = content.characters.map(c => ({
+    id: c.id,
+    name: c.name,
+    role: c.role,
+    wound: c.flaw,
+    want: c.want,
+    need: c.need,
+    arc: c.arc,
+  }))
+
+  return {
+    characters,
+    world: {
+      setting: content.premiseAndWorld.premise,
+      toneAnchors: content.toneAndStyle.comps.join(', '),
+      voiceNotes: content.toneAndStyle.dialogueStyle,
+    },
+    themes: content.onePagePitch.whyThisMatters,
+    rules: content.premiseAndWorld.worldRules,
+  }
+}
+
 export function documentsToLegacy(
   docs: ProjectDocuments,
   options: { outlineFormat?: ProjectFormat } = {},
@@ -650,25 +673,7 @@ export function documentsToLegacy(
     beats,
   }
 
-  const characters: Character[] = docs.storyBible.content.characters.map(c => ({
-    id: c.id,
-    name: c.name,
-    role: c.role,
-    wound: c.flaw,
-    want: c.want,
-    need: c.need,
-    arc: c.arc,
-  }))
-  const storyBible: ProjectState['storyBible'] = {
-    characters,
-    world: {
-      setting: docs.storyBible.content.premiseAndWorld.premise,
-      toneAnchors: docs.storyBible.content.toneAndStyle.comps.join(', '),
-      voiceNotes: docs.storyBible.content.toneAndStyle.dialogueStyle,
-    },
-    themes: docs.storyBible.content.onePagePitch.whyThisMatters,
-    rules: docs.storyBible.content.premiseAndWorld.worldRules,
-  }
+  const storyBible = documentStoryBibleToLegacy(docs.storyBible.content)
 
   return { synopsis, outline, storyBible }
 }
