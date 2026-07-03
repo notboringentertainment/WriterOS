@@ -1,25 +1,87 @@
-# CODING AGENTS: READ THIS FIRST
+# WriterOS
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+WriterOS is a professional screenwriting application with an integrated AI writing studio. The app is writing-first: the screenplay editor, structured story documents, and project state are the core experience; AI agents support the writer through the Writing Partner rail and Writer's Room.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+## What Is In This Repo
 
-## What you should do — IMPORTANT
+This branch is a clean transplant of the useful WriterOS product work into the GitHub `WriterOS` repo. It intentionally avoids the older Replit/Drizzle/Neon scaffold that existed in a separate local copy.
 
-**Read the chat transcripts first.** There are 1 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+Primary app code:
 
-**Find the primary design file under `project/` and read it top to bottom.** The chat transcripts will tell you which file the user was last iterating on. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+```text
+client/
+  src/components/shell/      Top bar, left Writing Partner rail, shell layout
+  src/components/writing/    Script, Synopsis, Outline, Story Bible, Writer's Room
+  src/lib/                   ProjectState, screenplay logic, shell state, WP routing
+server/
+  routes.ts                  Minimal Express API, including /api/wp-chat
+  ai/openaiService.ts        OpenAI persona service
+shared/
+  personas.ts                Writing Partner and specialist personas
+  schema.ts                  Shared TypeScript types only, no database ORM
+tests/
+  components/ and lib/       Vitest coverage for the app shell, editor, state, routing
+docs/superpowers/
+  specs/ and plans/          Product specs and implementation plans
+```
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+## Local Development
 
-## About the design files
+Install dependencies:
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+```bash
+npm install
+```
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+Run the app:
 
-## Bundle contents
+```bash
+npm run dev
+```
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `Writer OS` project files (HTML prototypes, assets, components)
+This starts the full local development stack:
+
+- WriterOS on `127.0.0.1:5177`
+- OpenSwarm on `127.0.0.1:8080` when `/Users/ben/OpenSwarm` is present
+
+Use `npm run dev:status` to check whether both services are already running.
+
+The WriterOS app-only server is still available with:
+
+```bash
+npm run dev:writeros
+```
+
+Override WriterOS with `PORT` or `HOST` if needed. If OpenSwarm lives somewhere other than `/Users/ben/OpenSwarm`, set `OPENSWARM_DIR=/path/to/OpenSwarm`.
+
+AI chat requires:
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+Without the key, the server still starts and `/api/health` reports `ai: false`.
+
+## Verification
+
+```bash
+npm run test:run
+npm run check
+npm run build
+```
+
+## Architecture Notes
+
+- `ProjectState` persists locally in `localStorage`.
+- Writing Partner rail transcript lives at `projectState.agents.writingPartner.transcript`.
+- Writer's Room specialist transcripts live at `projectState.agents[id].transcript`.
+- These transcript stores do not duplicate or merge.
+- `writingPartner` is a host persona for the rail, not a Writer's Room specialist.
+- `/api/wp-chat` is a thin adapter over the existing OpenAI persona service.
+
+## Intentional Non-Goals For This Branch
+
+- No Supabase or Postgres persistence.
+- No Replit runtime configuration.
+- No Drizzle/Neon/auth/session scaffold.
+- No production auth.

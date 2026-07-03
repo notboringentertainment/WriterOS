@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FDX context-preservation fixture gate.
+  Parser work must keep these screenplay semantics intact.
+-->
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Scene Heading">
+      <Text>INT. PALACE ATRIUM - NIGHT</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>Damascus rain ticks against geometric glass. Brass lanterns throw honey light across carved cedar screens.</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>PRINCE KHALID AL-MANSOUR. Late 20s. Effortlessly poised. Born into privilege, wrapped in silk and tradition. A tailored bisht draped over his shoulders. A bespoke Patek Philippe Grandmaster flashing beneath his sleeve. </Text>
+      <Text>His half-smile hints at mischief. His eyes cut sharper.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>PRINCE KHALID AL-MANSOUR</Text>
+    </Paragraph>
+    <Paragraph Type="Parenthetical">
+      <Text>(quietly, to the guard)</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>The city has a memory. Tonight it remembers us.</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>A call to prayer bends through hidden speakers &amp; over the security monitors.</Text>
+    </Paragraph>
+    <Paragraph Type="Transition">
+      <Text>CUT TO:</Text>
+    </Paragraph>
+    <Paragraph Type="Scene Heading">
+      <Text>EXT. OLD CITY CHECKPOINT - DAWN</Text>
+    </Paragraph>
+    <Paragraph Type="Shot">
+      <Text>A drone tilts above the checkpoint, its lens fogged by desert cold.</Text>
+    </Paragraph>
+    <Paragraph Type="General">
+      <Text>The checkpoint gates answer with a hydraulic groan.</Text>
+    </Paragraph>
+    <Paragraph Type="New Act">
+      <Text>The old district forbids armed drones past the gate.</Text>
+    </Paragraph>
+  </Content>
+</FinalDraft>

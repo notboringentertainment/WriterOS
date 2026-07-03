@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<!--
+  Dirty spacing fixture excerpted from the FDX that produced the scene-heading gap screenshots.
+  SceneArcBeats contains nested metadata Paragraph nodes that must not become script blocks.
+-->
+<FinalDraft DocumentType="Script" Template="No" Version="6">
+  <Content>
+    <Paragraph Type="Action" id="9361a098-ac38-46c0-8ddc-16544a5e1fed">
+      <Text>A beat.</Text>
+    </Paragraph>
+    <Paragraph Type="Character" id="a398d60d-e7af-43d3-9a88-c72331db721e">
+      <Text>DANTE (O.S.) </Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue" id="3f52554f-b58c-454e-a211-27b2f399c82a">
+      <Text>Roger that.</Text>
+    </Paragraph>
+    <Paragraph Type="Scene Heading" id="226962b1-ce12-4692-a249-93d58641008c">
+      <SceneProperties Length="2 6/8" Page="8" Title="">
+        <SceneArcBeats>
+          <CharacterArcBeat Name="DANTE">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="ISAIAH">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="MAN">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="MAYA">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="PRINCE KHALID">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="VOICE">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+          <CharacterArcBeat Name="ZALMAI">
+            <Paragraph Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="0.00" OutlineLevel="0" RightIndent="1.39" SpaceBefore="0" Spacing="1" StartsNewPage="No"/>
+          </CharacterArcBeat>
+        </SceneArcBeats>
+      </SceneProperties>
+      <Text>INT. BALLROOM - later</Text>
+    </Paragraph>
+    <Paragraph Type="Action" id="c5da507c-9137-4221-9aee-3396e7add9fc">
+      <Text>The glamorous event is in full swing. ISAIAH moves with a sense of purpose, his eyes never resting as he scans for any potential threats.</Text>
+    </Paragraph>
+  </Content>
+</FinalDraft>

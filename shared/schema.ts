@@ -1,0 +1,111 @@
+import type { ProjectFormat } from './projectFormat'
+import type { SurfaceAwareness } from './surfaceAwareness'
+import type { WorkspaceLocation } from './workspaceLocation'
+
+export type EntryState =
+  | 'blank_slate'
+  | 'idea_only'
+  | 'outline_complete'
+  | 'pages_written_stuck'
+  | 'draft_complete_lost'
+  | 'revision_mode'
+
+export type FeedbackStyle = 'direct' | 'gentle' | 'detailed'
+
+export interface AssessmentProfile {
+  entryState: EntryState
+  existingWork: string[]
+  immediateNeed: string
+  feedbackStyle: FeedbackStyle
+  writerName: string
+  toolCalibration?: Record<string, unknown>
+}
+
+export interface Character {
+  id: string
+  name: string
+  role: string
+  backstory?: string
+  motivation?: string
+  arc?: string
+}
+
+export interface StoryBeat {
+  id: string
+  act: number
+  description: string
+  purpose?: string
+}
+
+export interface ScriptScene {
+  id: string
+  heading: string
+  index: number
+}
+
+export interface StoryMemory {
+  project: {
+    title?: string
+    genre?: string
+    // WriterOS project format is intentionally narrowed to the V1 project-wide modes.
+    format?: ProjectFormat
+    logline?: string
+    synopsis?: string
+    synopsisSections?: Record<string, string>
+    treatment?: string
+    themes?: string
+  }
+  script?: {
+    excerpt?: string
+    sceneHeadings?: string[]
+    dialogueSnippets?: string[]
+    actionSnippets?: string[]
+    characterNames?: string[]
+    facts?: {
+      rebuiltAt: string
+      characters: Array<{ label: string; count: number }>
+      locations: Array<{ label: string; count: number }>
+      times: Array<{ label: string; count: number }>
+    }
+    excerptWordCount?: number
+    excerptWordLimit?: number
+    excerptTruncated?: boolean
+    totalWordCount?: number
+    estimatedPageCount?: number
+    sceneCount?: number
+    contextReason?: string
+    contextLabel?: string
+    pageRange?: { start: number; end: number }
+    selectedText?: string
+  }
+  // Surface Awareness Contract: which page the writer is on + the next unanswered question.
+  // Optional — absent for callers that do not supply it (output stays unchanged).
+  surface?: SurfaceAwareness
+  location?: WorkspaceLocation
+  characters: Record<string, Character>
+  outline: {
+    acts: number
+    beats: StoryBeat[]
+    scenes?: ScriptScene[]
+  }
+  worldRules: {
+    setting?: string
+    toneAnchors?: string
+    rules?: string
+    magicSystem?: string
+    technology?: string
+  }
+  dialogue: {
+    samples?: string[]
+    characterVoices?: Record<string, string>
+    voiceNotes?: string
+  }
+  userProfile: AssessmentProfile
+  decisions: Array<{
+    what: string
+    why: string
+    when: string
+  }>
+}
+
+export type { Persona } from './personas'

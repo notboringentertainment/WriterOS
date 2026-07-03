@@ -1,45 +1,58 @@
 # WriterOS — Claude Code Context
 
-A personality-driven, multi-agent writing studio. Six specialist agents (Sam, Casey, Oliver, Maya, Zoe, Marcus) coordinated by a Triage agent, sharing one ProjectState.
+This repo is now the clean WriterOS app, not the original Claude Design prototype bundle.
 
-## Repo status
+WriterOS is a writing-first studio for screenplay drafting, story structure, and AI-assisted development work. The script editor and structured writing surfaces are the primary product experience; agent chat exists to support the writing, not to replace it.
 
-This repo is a **Claude Design handoff bundle**, not yet a built app. The prototype in `project/` is the visual + interaction spec. The real application is being built fresh in `src/` using Vite + React.
+## Current Shape
 
-- `project/` — the HTML/CSS/JS prototype. Read to understand **what** to build. Do not port its structure directly.
-- `chats/` — design conversation transcripts. The "why" behind decisions. Read once when starting on a new area.
-- `src/` — the real app. Target architecture below.
-- `docs/HANDOFF.md` — phase-by-phase roadmap. Read per phase, not per session.
+- React + Vite frontend under `client/`
+- Minimal Express server under `server/`
+- Shared persona and story-memory types under `shared/`
+- Specs and plans under `docs/superpowers/`
+- Tests under `tests/`
 
-## Target architecture (honor this contract)
+## Operating Rules
 
-```
-src/
-  lib/
-    state.mock.js   canonical ProjectState shape (replace with live feed in Phase 1)
-    bridge.js       ONLY outbound-call surface; MockBridge → WSBridge
-    store.js        subscribe/select/mutate; UI never fetches directly
-    schema.js       runtime validation for every mutation (Phase 1)
-  ui/
-    frame.jsx             TopBar + LeftNav + RightDrawer
-    screens-mission.jsx   Mission Control, Triage, Tasks, Handoffs
-    screens-knowledge.jsx Hive Mind, Structure, Cast, World, Scenes, AgentWorkbench
-    screens-system.jsx    State Inspector, Future Modules, Settings
-```
+1. Think before coding. State assumptions when they affect implementation choices.
+2. If scope or intent is meaningfully ambiguous, present the options before implementing.
+3. Convert tasks into verifiable goals. Know what success looks like before changing code.
+4. Keep changes surgical. Touch only the files needed for the requested behavior.
+5. Avoid unrelated refactors, formatting churn, and feature creep. Report incidental issues instead of fixing them unless asked.
+6. Never run destructive or irreversible commands without explicit permission, including `git push --force`, `git reset --hard`, branch merges, and broad file deletion.
 
-UI reads state via `useStore(selector)`, writes via `window.WOS.store.actions.*`. Nothing else. All networking lives in `lib/bridge.js`.
+## Important Constraints
 
-## Hard rules
+1. Preserve the writing-first product direction. The script editor and structured documents are the primary app surface.
+2. Keep Writing Partner and Writer's Room transcripts separate:
+   - `agents.writingPartner.transcript` is only for the left rail host conversation.
+   - `agents.sam/casey/oliver/maya/zoe/alex.transcript` are only for Writer's Room specialist sessions.
+3. Do not reintroduce Replit, Drizzle, Neon, Passport, or session scaffold unless the user explicitly asks for a backend persistence project.
+4. Keep `/api/wp-chat` a thin adapter over `OpenAIService.generatePersonaResponse`.
+5. Do not use stale scaffold-era files, including `CLAUDE 2.md` or old Replit/prototype handoff files, as product or architecture guidance.
 
-1. **UI never touches `lib/bridge.js` directly.** If a new mutation is needed, add an action in `store.js`.
-2. **Agents cannot write outside their declared scope.** `agent.writes` is a permission boundary, not documentation.
-3. **Shared information lives in ProjectState.** No side channels between agents.
-4. **Memory classes are not interchangeable.** `canon` is immutable except by Zoe. `pinned` requires user approval to delete. Never conflate.
-5. **Triage is the only router.** Specialists file handoffs; they do not invoke each other.
+## Product Direction Source Of Truth
 
-## Working style
+Before product or surface implementation work, read `docs/product/README.md`.
 
-- Prototype in `project/` is HTML/CSS/JS. Target is React + Vite. Match visual output, not internal structure.
-- Ambiguous scope? Ask before implementing. Cheaper than rebuilding.
-- Phase roadmap and known debts live in `docs/HANDOFF.md` — load when starting a phase, not every session.
-- No tests yet. Add Vitest once there is a backend worth testing (post-Phase 1).
+That doc defines the current product north star, canonical PRD order, project-format authority, and the plain-language story-assessment standard for Synopsis, Outline, Story Bible, and future Treatment.
+
+## Verification
+
+Run these after meaningful changes:
+
+1. `npm run test:run`
+2. `npm run check`
+3. `npm run build`
+
+For UI changes, visually verify layout and interaction behavior with available browser tooling. Do not rely only on static code inspection when the change affects what the user sees or clicks.
+
+## Useful Entry Points
+
+- `client/src/App.tsx`
+- `client/src/lib/projectState.ts`
+- `client/src/lib/wpRouting.ts`
+- `client/src/components/writing/ScriptTab.tsx`
+- `client/src/components/writing/WritersRoom.tsx`
+- `server/routes.ts`
+- `server/ai/openaiService.ts`

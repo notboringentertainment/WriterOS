@@ -7,9 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/repos"
 
-if ! command -v opensrc >/dev/null 2>&1; then
-  echo "opensrc CLI not found. Install: npm install -g opensrc" >&2
-  exit 1
+if command -v opensrc >/dev/null 2>&1; then
+  OPENSRC=(opensrc)
+else
+  OPENSRC=(npx --yes opensrc)
 fi
 
 if [ "$#" -lt 1 ]; then
@@ -20,13 +21,19 @@ fi
 
 mkdir -p "$DEST"
 
+errors=0
 for spec in "$@"; do
   echo "Fetching $spec ..."
-  opensrc fetch "$spec"
-  SRC="$(opensrc path "$spec")"
+  if ! "${OPENSRC[@]}" fetch "$spec"; then
+    echo "Failed to fetch: $spec" >&2
+    errors=$((errors + 1))
+    continue
+  fi
+  SRC="$("${OPENSRC[@]}" path "$spec")"
   if [ -z "$SRC" ] || [ ! -d "$SRC" ]; then
     echo "Could not resolve path for: $spec" >&2
-    exit 1
+    errors=$((errors + 1))
+    continue
   fi
   SAFE="${spec//\//--}"
   TARGET="$DEST/$SAFE"
@@ -35,5 +42,10 @@ for spec in "$@"; do
   cp -R "$SRC" "$TARGET"
   echo "Vendored → $TARGET"
 done
+
+if [ "$errors" -gt 0 ]; then
+  echo "$errors package(s) failed to vendor." >&2
+  exit 1
+fi
 
 echo "Done. Reference paths under repos/ in Agent prompts."
