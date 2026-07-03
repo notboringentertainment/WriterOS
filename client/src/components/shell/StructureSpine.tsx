@@ -6,10 +6,11 @@ interface StructureSpineProps {
 }
 
 /**
- * Structure Spine — renders the currently active surface's structure only.
- * Display-only this slice: no expand/collapse, no navigation. Scrolls within its region
- * (the .zone-spine wrapper owns the overflow). Honest empty state when a surface has no
- * structure yet — never invents hierarchy.
+ * Surface Map — a static, glanceable map of the active surface's sections.
+ * Display-only by design: non-interactive labels, no expand/collapse, no navigation. Renders
+ * as plain (non-clickable) list items so it never implies an interactive outline/tree. Scrolls
+ * within its region (the .zone-spine wrapper owns the overflow). Honest empty state when a
+ * surface has no structure yet — never invents hierarchy.
  */
 export function StructureSpine({ structure }: StructureSpineProps) {
   return (

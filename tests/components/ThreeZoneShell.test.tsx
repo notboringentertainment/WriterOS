@@ -6,7 +6,7 @@ const slots = {
   spine: <div>SPINE_CONTENT</div>,
   console: <div>CONSOLE_CONTENT</div>,
   paper: <div>PAPER_CONTENT</div>,
-  teleprompter: <div>MORGAN_CONTENT</div>,
+  morgan: <div>MORGAN_CONTENT</div>,
 }
 
 describe('ThreeZoneShell', () => {
@@ -21,8 +21,8 @@ describe('ThreeZoneShell', () => {
   it('keeps Spine and Console as two stacked regions inside one left zone', () => {
     render(<ThreeZoneShell {...slots} />)
     const leftZone = screen.getByLabelText('Structure and state')
-    const spine = within(leftZone).getByLabelText('Structure Spine')
-    const console = within(leftZone).getByLabelText('Context Console')
+    const spine = within(leftZone).getByLabelText('Surface Map')
+    const console = within(leftZone).getByLabelText('Project status')
     // Both regions live inside the single left zone — not separate columns
     expect(spine).toBeInTheDocument()
     expect(console).toBeInTheDocument()
@@ -30,18 +30,26 @@ describe('ThreeZoneShell', () => {
     expect(leftZone).toContainElement(console)
   })
 
-  it('exposes accessible summon buttons for Spine, State, and Morgan', () => {
+  it('exposes accessible summon buttons for Map, Status, and Morgan', () => {
     render(<ThreeZoneShell {...slots} />)
     const summon = screen.getByLabelText('Summon')
-    expect(within(summon).getByRole('button', { name: /spine/i })).toBeInTheDocument()
-    expect(within(summon).getByRole('button', { name: /state/i })).toBeInTheDocument()
+    expect(within(summon).getByRole('button', { name: /map/i })).toBeInTheDocument()
+    expect(within(summon).getByRole('button', { name: /status/i })).toBeInTheDocument()
     expect(within(summon).getByRole('button', { name: /morgan/i })).toBeInTheDocument()
+  })
+
+  it('uses honest labels — no zone or control claims to be a teleprompter', () => {
+    render(<ThreeZoneShell {...slots} />)
+    // The right zone hosts the Morgan rail today; nothing should imply a real teleprompter.
+    expect(screen.queryByLabelText(/teleprompter/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /teleprompter/i })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Morgan')).toBeInTheDocument()
   })
 
   it('opens an accessible overlay when a summon button is clicked', () => {
     render(<ThreeZoneShell {...slots} />)
     const summon = screen.getByLabelText('Summon')
-    fireEvent.click(within(summon).getByRole('button', { name: /spine/i }))
+    fireEvent.click(within(summon).getByRole('button', { name: /map/i }))
     const overlay = screen.getByRole('dialog')
     expect(overlay).toBeInTheDocument()
     expect(within(overlay).getByText('SPINE_CONTENT')).toBeInTheDocument()
@@ -57,7 +65,7 @@ describe('ThreeZoneShell', () => {
 
   it('does not keep summon overlay visible in chromeless mode', () => {
     const { rerender } = render(<ThreeZoneShell {...slots} />)
-    fireEvent.click(within(screen.getByLabelText('Summon')).getByRole('button', { name: /spine/i }))
+    fireEvent.click(within(screen.getByLabelText('Summon')).getByRole('button', { name: /map/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
     rerender(<ThreeZoneShell {...slots} chromeless />)
