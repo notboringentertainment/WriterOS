@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { documentsToLegacy, legacyToDocuments, mirrorSynopsisFromLegacy } from '../../client/src/lib/documentMigration'
+import {
+  documentStoryBibleToLegacy,
+  documentsToLegacy,
+  legacyToDocuments,
+  mirrorSynopsisFromLegacy,
+  storyBibleLegacyToContent,
+} from '../../client/src/lib/documentMigration'
 import {
   createEmptySynopsisContent,
   createEmptySeriesContent,
@@ -187,6 +193,29 @@ describe('documentsToLegacy round-trip', () => {
     const docs = legacyToDocuments(original, now)
     const reverted = documentsToLegacy(docs)
     expect(reverted.storyBible).toEqual(original.storyBible)
+  })
+
+  it('storyBible named helpers preserve legacy fields in both directions', () => {
+    const original = defaultProjectState()
+    original.storyBible.world.setting = 'A flooded signal city'
+    original.storyBible.world.toneAnchors = 'Arrival, Station Eleven'
+    original.storyBible.world.voiceNotes = 'Precise, weary dialogue'
+    original.storyBible.themes = 'Memory survives through rituals'
+    original.storyBible.rules = 'No one can transmit after midnight'
+    original.storyBible.characters.push({
+      id: 'c1',
+      name: 'Mara',
+      role: 'Lead',
+      wound: 'Exile',
+      want: 'Find the missing signal',
+      need: 'Trust the crew',
+      arc: 'Isolation to command',
+    })
+
+    const content = storyBibleLegacyToContent(original.storyBible)
+    const reverted = documentStoryBibleToLegacy(content)
+
+    expect(reverted).toEqual(original.storyBible)
   })
 })
 
