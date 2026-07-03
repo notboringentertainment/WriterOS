@@ -11,6 +11,7 @@ export type StoryBibleInputKind =
   | 'status'
   | 'tone-words'
   | 'characters'
+  | 'locks'
 
 export interface StoryBiblePromptInput {
   path: string
@@ -224,6 +225,14 @@ const SHARED_STORY_BIBLE_PROMPTS: readonly StoryBiblePromptSeed[] = [
     helper: 'Add each major character. Each character gets a small interview.',
     inputs: [{ path: 'characters', kind: 'characters' }],
     documentLabel: 'Characters',
+  },
+  {
+    id: 'locks',
+    groupLabel: 'The locks',
+    question: 'What must always stay true, no matter who touches this story?',
+    helper: 'Hard rules development must never violate. Retire a lock instead of deleting it when it stops being true.',
+    inputs: [{ path: 'locks', kind: 'locks' }],
+    documentLabel: 'Story locks',
   },
 ] as const
 

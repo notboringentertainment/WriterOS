@@ -25,6 +25,10 @@ import {
   SynopsisSeriesCharacterSchema,
   createEmptySeriesContent,
   type SynopsisSeriesContent,
+  StoryLockSchema,
+  StoryLockScopeSchema,
+  StoryLockStatusSchema,
+  type StoryLock,
 } from '../../shared/documents'
 
 describe('SynopsisDocumentContent', () => {
@@ -253,6 +257,7 @@ describe('StoryBibleDocumentContent', () => {
         whatKeepsThePremiseAlive: '',
       },
       episodeOrSequenceMap: [],
+      locks: [],
     }
     expect(StoryBibleDocumentContentSchema.safeParse(populated).success).toBe(true)
   })
@@ -402,6 +407,99 @@ describe('SynopsisSeriesContent', () => {
     expect(SynopsisSeriesCharacterSchema.safeParse(valid).success).toBe(true)
     const bad = { id: 'c1', name: 'N', role: 'R', bio: 'B' }
     expect(SynopsisSeriesCharacterSchema.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('StoryLock', () => {
+  const validLock: StoryLock = {
+    id: 'lock-1',
+    statement: 'The protagonist goes to space in Act 3',
+    scope: 'story',
+    rationale: 'The whole third act depends on the launch.',
+    source: 'Ben, initial pitch',
+    status: 'active',
+    createdAt: '2026-07-02T00:00:00.000Z',
+  }
+
+  it('StoryLockSchema accepts a valid lock', () => {
+    expect(StoryLockSchema.safeParse(validLock).success).toBe(true)
+  })
+
+  it('StoryLockScopeSchema accepts all five scopes and rejects unknown', () => {
+    for (const scope of ['story', 'character', 'world', 'tone', 'ending']) {
+      expect(StoryLockScopeSchema.safeParse(scope).success).toBe(true)
+    }
+    expect(StoryLockScopeSchema.safeParse('plot').success).toBe(false)
+  })
+
+  it('rejects a lock with a bad scope', () => {
+    expect(StoryLockSchema.safeParse({ ...validLock, scope: 'plot' as any }).success).toBe(false)
+  })
+
+  it('StoryLockStatusSchema accepts active and retired, rejects unknown', () => {
+    expect(StoryLockStatusSchema.safeParse('active').success).toBe(true)
+    expect(StoryLockStatusSchema.safeParse('retired').success).toBe(true)
+    expect(StoryLockStatusSchema.safeParse('archived').success).toBe(false)
+  })
+
+  it('rejects a lock with a bad status', () => {
+    expect(StoryLockSchema.safeParse({ ...validLock, status: 'archived' as any }).success).toBe(false)
+  })
+
+  it('rejects a lock missing statement', () => {
+    const { statement: _statement, ...rest } = validLock
+    expect(StoryLockSchema.safeParse(rest).success).toBe(false)
+  })
+})
+
+describe('StoryBibleDocumentContent — locks field', () => {
+  it('createEmptyStoryBibleContent has an empty locks array', () => {
+    expect(createEmptyStoryBibleContent().locks).toEqual([])
+  })
+
+  it('content without a locks field is still Zod-valid and defaults to [] (backward compatible)', () => {
+    const { locks: _locks, ...withoutLocks } = createEmptyStoryBibleContent()
+    const result = StoryBibleDocumentContentSchema.safeParse(withoutLocks)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.locks).toEqual([])
+  })
+
+  it('content with populated locks is Zod-valid', () => {
+    const content = {
+      ...createEmptyStoryBibleContent(),
+      locks: [
+        {
+          id: 'lock-1',
+          statement: 'The ending is bittersweet, never triumphant',
+          scope: 'ending',
+          rationale: '',
+          source: 'writers room 2026-06',
+          status: 'active',
+          createdAt: '2026-07-02T00:00:00.000Z',
+        },
+      ],
+    }
+    expect(StoryBibleDocumentContentSchema.safeParse(content).success).toBe(true)
+  })
+
+  it('content with a bad lock is rejected', () => {
+    const content = {
+      ...createEmptyStoryBibleContent(),
+      locks: [{ id: 'lock-1', statement: 'x' }],
+    }
+    expect(StoryBibleDocumentContentSchema.safeParse(content).success).toBe(false)
+  })
+
+  it('ProjectDocumentsSchema accepts an old-shape package whose storyBible has no locks field (import path)', () => {
+    const docs = createEmptyDocuments()
+    const { locks: _locks, ...storyBibleWithoutLocks } = docs.storyBible.content
+    const oldShape = {
+      ...docs,
+      storyBible: { ...docs.storyBible, content: storyBibleWithoutLocks },
+    }
+    const result = ProjectDocumentsSchema.safeParse(oldShape)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.storyBible.content.locks).toEqual([])
   })
 })
 

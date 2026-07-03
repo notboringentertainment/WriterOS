@@ -49,6 +49,7 @@ interface ShellProps {
   onNewProject?: () => void
   onSaveProject?: () => void
   onDeleteProject?: () => void
+  onExportSeed?: () => void
   railProps: RailProps
   /** Real left-zone content for the workspace. When omitted, a lean placeholder is shown. */
   leftZone?: { structure: SurfaceStructure; state: ConsoleState }
@@ -65,6 +66,7 @@ export function Shell({
   onNewProject,
   onSaveProject,
   onDeleteProject,
+  onExportSeed,
   railProps,
   leftZone,
   children,
@@ -157,6 +159,7 @@ export function Shell({
           onNewProject={onNewProject}
           onSaveProject={onSaveProject}
           onDeleteProject={onDeleteProject}
+          onExportSeed={onExportSeed}
           onHome={openHome}
           onTabChange={setActiveTab}
           onWritersRoom={toggleWritersRoom}

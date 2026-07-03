@@ -3,6 +3,7 @@ import type {
   StoryBibleDocumentContent,
   StoryBibleCharacter,
   StoryBibleStatus,
+  StoryLock,
 } from '@shared/documents'
 import {
   buildStoryBiblePatch,
@@ -11,6 +12,7 @@ import {
   type StoryBiblePromptInput,
 } from '../../../lib/storyBibleDeck'
 import { StoryBibleCharactersEditor } from './StoryBibleCharactersEditor'
+import { StoryBibleLocksEditor } from './StoryBibleLocksEditor'
 
 export interface StoryBibleQuestionCardProps {
   prompt: StoryBiblePromptDef
@@ -204,6 +206,16 @@ function CharactersRow({ input, content, onPatch }: InputRowProps) {
   )
 }
 
+function LocksRow({ input, content, onPatch }: InputRowProps) {
+  const value = readArray<StoryLock>(content, input.path)
+  return (
+    <StoryBibleLocksEditor
+      value={value}
+      onChange={(next) => onPatch(buildStoryBiblePatch(content, input.path, next))}
+    />
+  )
+}
+
 function renderInput(props: InputRowProps): React.ReactNode {
   switch (props.input.kind) {
     case 'text':
@@ -217,6 +229,8 @@ function renderInput(props: InputRowProps): React.ReactNode {
       return <StatusInputRow {...props} />
     case 'characters':
       return <CharactersRow {...props} />
+    case 'locks':
+      return <LocksRow {...props} />
   }
 }
 

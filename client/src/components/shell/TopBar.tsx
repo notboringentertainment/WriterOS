@@ -26,6 +26,7 @@ interface TopBarProps {
   onNewProject?: () => void
   onSaveProject?: () => void
   onDeleteProject?: () => void
+  onExportSeed?: () => void
   onHome?: () => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
@@ -45,6 +46,7 @@ export function TopBar({
   onNewProject,
   onSaveProject,
   onDeleteProject,
+  onExportSeed,
   onHome,
   onTabChange,
   onWritersRoom,
@@ -198,6 +200,7 @@ export function TopBar({
             onSave={handleSaveProject}
             onRename={startTitleEdit}
             onDelete={handleDeleteProject}
+            onExportSeed={onExportSeed}
           />
         )}
 

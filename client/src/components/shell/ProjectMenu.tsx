@@ -4,9 +4,10 @@ interface Props {
   onSave: () => void
   onRename: () => void
   onDelete: () => void
+  onExportSeed?: () => void
 }
 
-export function ProjectMenu({ onSave, onRename, onDelete }: Props) {
+export function ProjectMenu({ onSave, onRename, onDelete, onExportSeed }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -63,6 +64,16 @@ export function ProjectMenu({ onSave, onRename, onDelete }: Props) {
           >
             Rename
           </button>
+          {onExportSeed && (
+            <button
+              type="button"
+              role="menuitem"
+              style={styles.item}
+              onClick={run(onExportSeed)}
+            >
+              Export seed
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
