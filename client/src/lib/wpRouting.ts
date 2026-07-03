@@ -4,7 +4,7 @@ import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectForma
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import type { WorkspaceLocation } from '@shared/workspaceLocation'
-import { normalizeOutlineContent } from './documentMigration'
+import { documentStoryBibleToLegacy, normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
@@ -456,7 +456,7 @@ export function getDefaultPersona(
 export function buildProjectContext(state: ProjectState, userMessage = '', options: ProjectContextOptions = {}): ProjectContext {
   const synopsisSections = state.synopsis.sections
   const synopsisContent = state.documents.synopsis.content
-  const storyBible = state.storyBible
+  const storyBible = documentStoryBibleToLegacy(state.documents.storyBible.content)
   const world = storyBible.world
   const treatmentContent = state.documents.treatment.content
   const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
@@ -533,7 +533,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       format: projectFormat,
       showOverview: activeSeries ? text(activeSeries.showOverview) : '',
     },
-    characters: state.storyBible.characters.map(c => ({
+    characters: storyBible.characters.map(c => ({
       id: text(c.id),
       name: text(c.name),
       role: text(c.role),

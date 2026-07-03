@@ -67,7 +67,7 @@ describe('OpenSwarm Writing Partner prompt', () => {
 
   it('includes completed Voice Profile as a writer-scoped handoff section', () => {
     const state = defaultProjectState()
-    state.storyBible.world.voiceNotes = 'Project-specific: spare, procedural, intimate.'
+    state.documents.storyBible.content.toneAndStyle.dialogueStyle = 'Project-specific: spare, procedural, intimate.'
     state.synopsis.logline = 'A medic must expose a corrupt rescue network before her brother disappears.'
     const midpoint = createOutlineUnit('feature.midpoint')
     midpoint.whatHappens = 'The rescue turns personal when the missing patient is family.'

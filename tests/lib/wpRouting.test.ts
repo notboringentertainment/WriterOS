@@ -12,6 +12,7 @@ import {
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
+import { makeStoryBibleCharacter } from '../helpers/documents'
 
 describe('parseMention', () => {
   it('returns null when no mention', () => {
@@ -234,8 +235,19 @@ describe('buildProjectContext', () => {
   it('maps character details', () => {
     const state = defaultProjectState()
     state.storyBible.characters = [
-      { id: '1', name: 'Alice', role: 'Hero', wound: 'Lost her sister', want: 'Justice', need: 'Mercy', arc: 'Learns restraint' },
-      { id: '2', name: 'Bob', role: 'Mentor', wound: '', want: '', need: '', arc: '' },
+      { id: 'stale', name: 'Stale Legacy', role: 'Ignored', wound: '', want: '', need: '', arc: '' },
+    ]
+    state.documents.storyBible.content.characters = [
+      makeStoryBibleCharacter({
+        id: '1',
+        name: 'Alice',
+        role: 'Hero',
+        flaw: 'Lost her sister',
+        want: 'Justice',
+        need: 'Mercy',
+        arc: 'Learns restraint',
+      }),
+      makeStoryBibleCharacter({ id: '2', name: 'Bob', role: 'Mentor' }),
     ]
     const ctx = buildProjectContext(state)
     expect(ctx.characters).toEqual([
@@ -286,13 +298,18 @@ describe('buildProjectContext', () => {
 
   it('maps world and story bible fields', () => {
     const state = defaultProjectState()
-    state.storyBible.world.setting = 'Near-future Tokyo'
-    state.storyBible.world.toneAnchors = 'Michael Mann meets Arrival'
-    state.storyBible.world.voiceNotes = 'Spare, procedural, intimate'
-    state.storyBible.themes = 'Grief can become civic courage.'
-    state.storyBible.rules = 'Surveillance drones cannot enter temples.'
+    state.storyBible.world.setting = 'Stale legacy setting agents should not see.'
+    state.storyBible.world.toneAnchors = 'Stale legacy comps'
+    state.storyBible.world.voiceNotes = 'Stale legacy voice'
+    state.storyBible.themes = 'Stale legacy theme'
+    state.storyBible.rules = 'Stale legacy rule'
+    state.documents.storyBible.content.premiseAndWorld.premise = 'Near-future Tokyo'
+    state.documents.storyBible.content.toneAndStyle.comps = ['Michael Mann', 'Arrival']
+    state.documents.storyBible.content.toneAndStyle.dialogueStyle = 'Spare, procedural, intimate'
+    state.documents.storyBible.content.onePagePitch.whyThisMatters = 'Grief can become civic courage.'
+    state.documents.storyBible.content.premiseAndWorld.worldRules = 'Surveillance drones cannot enter temples.'
     expect(buildProjectContext(state).world.setting).toBe('Near-future Tokyo')
-    expect(buildProjectContext(state).world.toneAnchors).toBe('Michael Mann meets Arrival')
+    expect(buildProjectContext(state).world.toneAnchors).toBe('Michael Mann, Arrival')
     expect(buildProjectContext(state).storyBible.world.voiceNotes).toBe('Spare, procedural, intimate')
     expect(buildProjectContext(state).storyBible.themes).toBe('Grief can become civic courage.')
     expect(buildProjectContext(state).storyBible.rules).toBe('Surveillance drones cannot enter temples.')

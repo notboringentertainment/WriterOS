@@ -5,6 +5,12 @@ dist/
 !.env.example
 *.local
 
+# opensrc vendored source (local agent context only)
+repos/
+
+# Local MCP secrets — copy from .cursor/mcp.json.example
+.cursor/mcp.json
+
 # Local assistant/session scratch. Durable plans/specs belong under docs/ and should be
 # committed intentionally; handoff scratch should not sit untracked at repo root.
 .claude/
