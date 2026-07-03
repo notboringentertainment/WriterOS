@@ -11,6 +11,7 @@ import {
 import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
 
 export const CURRENT_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'writeros_project_state'
@@ -32,6 +33,16 @@ export interface ScriptScene {
   index: number
 }
 
+export type ProjectSourceImportKind = 'fdx' | 'fountain' | 'plain-text' | 'unknown'
+
+export interface ProjectSourceImportMetadata {
+  kind: ProjectSourceImportKind
+  originalFilename?: string
+  importedAt: string
+  copiedSourcePath?: string
+  rawSource?: string
+}
+
 export interface Beat {
   id: string
   name: string
@@ -50,10 +61,27 @@ export interface Character {
   arc: string
 }
 
+export interface TitlePageMetadata {
+  writtenBy: string
+  basedOn: string
+  contactInfo: string
+  draftLabel: string
+  draftDate: string
+  formatDisplay: string
+}
+
 export interface ProjectState {
   schemaVersion: number
-  meta: { title: string; genre: string; format: ProjectFormat; wordCount: number; pageCount: number }
-  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[] }
+  meta: {
+    title: string
+    genre: string
+    format: ProjectFormat
+    wordCount: number
+    pageCount: number
+    sourceImport: ProjectSourceImportMetadata | null
+    titlePage: TitlePageMetadata
+  }
+  script: { rawHtml: string; scenes: ScriptScene[]; revisionHistory: unknown[]; facts: ScriptFactsCache }
   outline: { beatType: string; beats: Beat[] }
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
@@ -68,6 +96,59 @@ export interface ProjectState {
     alex:   { transcript: TranscriptMessage[]; lastTouched: number | null }
   }
   memory: { decisions: unknown[]; flags: unknown[]; handoffs: unknown[] }
+}
+
+export function defaultTitlePageMetadata(): TitlePageMetadata {
+  return {
+    writtenBy: '',
+    basedOn: '',
+    contactInfo: '',
+    draftLabel: '',
+    draftDate: '',
+    formatDisplay: '',
+  }
+}
+
+function normalizeTitlePageLine(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+}
+
+function normalizeTitlePageBlock(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim()
+}
+
+export function normalizeTitlePageMetadata(value: unknown): TitlePageMetadata {
+  const raw = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {}
+
+  return {
+    writtenBy: normalizeTitlePageBlock(raw.writtenBy),
+    basedOn: normalizeTitlePageBlock(raw.basedOn),
+    contactInfo: normalizeTitlePageBlock(raw.contactInfo),
+    draftLabel: normalizeTitlePageLine(raw.draftLabel),
+    draftDate: normalizeTitlePageLine(raw.draftDate),
+    formatDisplay: normalizeTitlePageLine(raw.formatDisplay),
+  }
+}
+
+export function stripProjectRawSource(state: ProjectState): ProjectState {
+  if (!state.meta.sourceImport?.rawSource) return state
+
+  const { rawSource: _rawSource, ...sourceImport } = state.meta.sourceImport
+  return {
+    ...state,
+    meta: {
+      ...state.meta,
+      sourceImport,
+    },
+  }
 }
 
 const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
@@ -91,8 +172,16 @@ const SAVE_THE_CAT_BEATS: Omit<Beat, 'notes' | 'linkedSceneIds'>[] = [
 export function defaultProjectState(): ProjectState {
   const base = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    meta: { title: '', genre: '', format: 'feature', wordCount: 0, pageCount: 0 },
-    script: { rawHtml: '', scenes: [], revisionHistory: [] },
+    meta: {
+      title: '',
+      genre: '',
+      format: 'feature',
+      wordCount: 0,
+      pageCount: 0,
+      sourceImport: null,
+      titlePage: defaultTitlePageMetadata(),
+    },
+    script: { rawHtml: '', scenes: [], revisionHistory: [], facts: defaultScriptFactsCache() },
     outline: {
       beatType: 'save-the-cat',
       beats: SAVE_THE_CAT_BEATS.map(b => ({ ...b, notes: '', linkedSceneIds: [] })),
@@ -135,6 +224,31 @@ function rawSynopsisHeaderFormat(rawDocuments: unknown): unknown {
   const header = (content as Record<string, unknown>).header
   if (!header || typeof header !== 'object') return undefined
   return (header as Record<string, unknown>).format
+}
+
+function normalizeSourceImport(value: unknown): ProjectSourceImportMetadata | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const kind = raw.kind
+  const importedAt = raw.importedAt
+
+  if (
+    kind !== 'fdx' &&
+    kind !== 'fountain' &&
+    kind !== 'plain-text' &&
+    kind !== 'unknown'
+  ) {
+    return null
+  }
+  if (typeof importedAt !== 'string' || !Number.isFinite(Date.parse(importedAt))) return null
+
+  return {
+    kind,
+    importedAt,
+    ...(typeof raw.originalFilename === 'string' ? { originalFilename: raw.originalFilename } : {}),
+    ...(typeof raw.copiedSourcePath === 'string' ? { copiedSourcePath: raw.copiedSourcePath } : {}),
+    ...(typeof raw.rawSource === 'string' ? { rawSource: raw.rawSource } : {}),
+  }
 }
 
 function syncSynopsisFormatMirror(
@@ -222,6 +336,8 @@ export function migrateState(raw: unknown): ProjectState {
     format: promotedFormat,
     wordCount: typeof rawMeta.wordCount === 'number' ? rawMeta.wordCount : defaults.meta.wordCount,
     pageCount: typeof rawMeta.pageCount === 'number' ? rawMeta.pageCount : defaults.meta.pageCount,
+    sourceImport: normalizeSourceImport(rawMeta.sourceImport),
+    titlePage: normalizeTitlePageMetadata(rawMeta.titlePage),
   }
 
   const rawAgents = state.agents && typeof state.agents === 'object'
@@ -249,6 +365,7 @@ export function migrateState(raw: unknown): ProjectState {
     rawHtml: typeof rawScript.rawHtml === 'string' ? rawScript.rawHtml : '',
     scenes: Array.isArray(rawScript.scenes) ? (rawScript.scenes as ScriptScene[]) : [],
     revisionHistory: Array.isArray(rawScript.revisionHistory) ? rawScript.revisionHistory : [],
+    facts: normalizeScriptFactsCache(rawScript.facts),
   }
 
   if (version < 3 || !rawDocuments || typeof rawDocuments !== 'object') {
@@ -304,12 +421,17 @@ export function migrateState(raw: unknown): ProjectState {
 export function saveProjectState(state: ProjectState): void {
   const projectFormat = normalizeProjectFormat(state.meta.format)
   const mirroredSynopsis = mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis)
-  const stateToSave: ProjectState = {
+  const stateToSave: ProjectState = stripProjectRawSource({
     ...state,
     schemaVersion: CURRENT_SCHEMA_VERSION,
     meta: {
       ...state.meta,
       format: projectFormat,
+      titlePage: normalizeTitlePageMetadata(state.meta.titlePage),
+    },
+    script: {
+      ...state.script,
+      facts: normalizeScriptFactsCache(state.script.facts),
     },
     documents: {
       synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),
@@ -317,7 +439,7 @@ export function saveProjectState(state: ProjectState): void {
       treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
     },
-  }
+  })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
 }
 

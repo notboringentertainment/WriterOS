@@ -1,8 +1,10 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
+import { buildRoomAwarenessBlock, PERSONAS } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
+import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps, type RunDebug } from "./morganRuntime";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -180,7 +182,9 @@ export function parseSynthesisResponse(raw: string): VoiceProfileDocument {
 export interface PersonaResponse {
   message: string;
   suggestions?: string[];
-  storyUpdates?: Partial<StoryMemory>;
+  // Slice 2 observability: Morgan's derived run debug summary. Present only on
+  // the Morgan (writingPartner) path; the /api/wp-chat layer gates exposure.
+  debug?: RunDebug;
 }
 
 const PLAIN_TEXT_PERSONA_RESPONSE_RULES = `OUTPUT FORMAT RULES:
@@ -403,6 +407,15 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
   } else if (sceneCount) {
     lines.push(`- Script: ${sceneCount} scene heading${sceneCount === 1 ? '' : 's'} available; no page excerpt packaged.`);
   }
+  const scriptFacts = storyMemory.script?.facts;
+  if (scriptFacts) {
+    const factCounts = [
+      scriptFacts.characters.length && `${scriptFacts.characters.length} character${scriptFacts.characters.length === 1 ? '' : 's'}`,
+      scriptFacts.locations.length && `${scriptFacts.locations.length} location${scriptFacts.locations.length === 1 ? '' : 's'}`,
+      scriptFacts.times.length && `${scriptFacts.times.length} time marker${scriptFacts.times.length === 1 ? '' : 's'}`,
+    ].filter(Boolean);
+    if (factCounts.length) lines.push(`- Script Facts: ${factCounts.join(', ')} available.`);
+  }
 
   if (storyMemory.outline.beats.length) {
     lines.push(`- Outline: ${storyMemory.outline.beats.length} beat${storyMemory.outline.beats.length === 1 ? '' : 's'} available.`);
@@ -439,6 +452,8 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
 
 type ContextSection = 'brief' | 'synopsis' | 'characters' | 'outline' | 'treatment' | 'scenes' | 'storyBible';
 
+const DEFAULT_PERSONA_MAX_TOKENS = 800;
+
 const DEFAULT_CONTEXT_ORDER: ContextSection[] = ['brief', 'synopsis', 'characters', 'outline', 'treatment', 'scenes', 'storyBible'];
 
 const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
@@ -450,6 +465,92 @@ const PERSONA_CONTEXT_ORDER: Record<string, ContextSection[]> = {
   zoe: ['brief', 'storyBible', 'treatment', 'scenes', 'outline', 'characters'],
   alex: ['brief', 'treatment', 'outline', 'scenes', 'synopsis', 'storyBible', 'characters'],
 };
+
+function formatScriptFactEntries(entries: Array<{ label: string; count: number }>, limit = 12): string {
+  const compacted = entries
+    .filter(entry => filled(entry.label) && entry.count > 0)
+    .map(entry => `${entry.label}${entry.count > 1 ? ` (${entry.count})` : ''}`)
+  if (!compacted.length) return '';
+
+  const visible = compacted.slice(0, limit).join('; ');
+  const extra = compacted.length > limit ? `; +${compacted.length - limit} more` : '';
+  return `${visible}${extra}`;
+}
+
+function formatScriptFactLines(script: StoryMemory['script']): string[] {
+  const facts = script?.facts;
+  if (!facts) return [];
+
+  return [
+    formatScriptFactEntries(facts.characters) && `- Characters: ${formatScriptFactEntries(facts.characters)}`,
+    formatScriptFactEntries(facts.locations) && `- Locations: ${formatScriptFactEntries(facts.locations)}`,
+    formatScriptFactEntries(facts.times) && `- Times: ${formatScriptFactEntries(facts.times)}`,
+  ].filter(filled);
+}
+
+// Renders the Surface Awareness Contract into a context block. Returns '' for absent /
+// 'none' surface so existing prompts stay byte-identical. The grounding instruction lives
+// here (conditional), never in the unconditional persona response rules.
+function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
+  if (!surface || surface.kind !== 'intake') return '';
+  const lines = [
+    `SURFACE AWARENESS (live app state from WriterOS; use silently as grounding unless the writer asks where they are):`,
+    `- Current app surface: ${surface.surfaceTitle} (${surface.format}).`,
+    `- Progress: ${surface.answeredCount}/${surface.totalCount} questions answered.`,
+  ];
+  if (surface.nextQuestion) {
+    const q = surface.nextQuestion;
+    const label = surface.nextRecommendedAction === 'all_answered'
+      ? `- Every question is answered. The first question is "${q.label}" - ${q.helper}`
+      : `- Next unanswered question: "${q.label}" - ${q.helper}`;
+    lines.push(label);
+  }
+  if (surface.questions.length) {
+    lines.push(
+      'QUESTION DECK ORDER:',
+      ...surface.questions.map((question, index) => (
+        `${index + 1}. [${question.status}] ${question.label} - ${question.helper}`
+      )),
+    );
+  }
+  lines.push(
+    `- You DO have this page's structured state from the app. Ground answers in it, but do not open by announcing the surface, page, or location. Mention the surface name only if the writer asks where they are, asks what page/surface this is, or the answer would otherwise be ambiguous. If the writer asks for an ordinal question (for example "second question" or "question 2"), use QUESTION DECK ORDER rather than assuming they mean the next unanswered question. Do NOT say or claim you cannot see, access, or view the page - you have its state. (You still cannot inspect pixels or unlisted fields, so do not invent visual details beyond this data.)`,
+  );
+  return lines.join('\n');
+}
+
+// Renders WorkspaceLocation into a read-only prompt block via fixed provenance templates.
+// The model authors no part of the location claim; it only reads structured app state.
+function renderWorkspaceLocation(location: StoryMemory['location']): string {
+  if (!location || location.sourceKind === 'none' || !location.anchor) return '';
+
+  const surface = location.activeSurface;
+  const label = location.anchor.label;
+  let line = '';
+
+  switch (location.sourceKind) {
+    case 'selected_text':
+      line = `The writer has text selected in the ${surface} editor: "${label}".`;
+      break;
+    case 'editor_cursor':
+      line = `The writer's cursor is in the ${surface} editor at ${label}.`;
+      break;
+    case 'active_section':
+      line = `The writer was last working in the ${label} section of ${surface}. (Last focus - not confirmed current position.)`;
+      break;
+    case 'first_unanswered':
+      line = `No confirmed location on ${surface}. By document completeness, the next unanswered item is "${label}" - inferred from what's filled in, not the writer's actual focus.`;
+      break;
+    default:
+      return '';
+  }
+
+  return [
+    'WORKSPACE LOCATION (where the writer is in the work - read-only app state, not a view of their screen):',
+    `- ${line}`,
+    '- Structured app state only. Do not describe visual appearance or claim to see the page.',
+  ].join('\n');
+}
 
 export function createContextSummary(storyMemory: StoryMemory, personaId = 'writingPartner', userMessage = ''): string {
   const contextOrder = PERSONA_CONTEXT_ORDER[personaId] ?? DEFAULT_CONTEXT_ORDER;
@@ -488,6 +589,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     .slice(0, 8)
     .map(sample => `- ${truncate(sample, 220)}`);
   const scriptCharacterNames = compactList(script?.characterNames ?? []);
+  const scriptFactLines = formatScriptFactLines(script);
   const rawScriptExcerpt = script?.excerpt;
   const scriptExcerpt = filled(rawScriptExcerpt)
     ? `SCRIPT EXCERPT (${script?.excerptWordCount ?? wordCount(rawScriptExcerpt)} words${script?.excerptTruncated ? `, first ${script?.excerptWordLimit ?? 500} words` : ''}):\n${rawScriptExcerpt}`
@@ -505,6 +607,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     scriptContextLine,
     selectedText ? `SELECTED TEXT:\n${truncate(selectedText, 600)}` : '',
     sceneLines.length ? `SCRIPT SCENES:\n${sceneLines.join('\n')}` : '',
+    scriptFactLines.length ? `SCRIPT FACTS:\n${scriptFactLines.join('\n')}` : '',
     scriptCharacterNames ? `SCRIPT CHARACTER NAMES:\n- ${scriptCharacterNames}` : '',
     scriptExcerpt,
     dialogueSamples.length ? `DIALOGUE SAMPLES:\n${dialogueSamples.join('\n')}` : '',
@@ -538,7 +641,16 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
     storyBible: worldLines.length ? `STORY BIBLE:\n${worldLines.join('\n')}` : '',
   };
 
-  return contextOrder.map(section => sectionBlocks[section]).filter(Boolean).join('\n\n') || 'No structured project details yet.';
+  const orderedBlocks = contextOrder.map(section => sectionBlocks[section]).filter(Boolean);
+  // Surface awareness renders FIRST when present (the room the writer is standing in), and
+  // carries its own grounding instruction so no unconditional prompt rule changes. Absent /
+  // 'none' surface emits nothing, keeping existing prompts byte-identical.
+  const surfaceBlock = renderSurfaceAwareness(storyMemory.surface);
+  const locationBlock = renderWorkspaceLocation(storyMemory.location);
+  const leadingBlocks = [surfaceBlock, locationBlock].filter(Boolean);
+  const allBlocks = leadingBlocks.length ? [...leadingBlocks, ...orderedBlocks] : orderedBlocks;
+
+  return allBlocks.join('\n\n') || 'No structured project details yet.';
 }
 
 function sourceLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
@@ -571,9 +683,23 @@ function findingLinesForCapability(input: PersonaCapabilitySynthesisInput): stri
   ].join('\n\n')
 }
 
-function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
-  const profile = input.voiceProfile
-  if (!profile) return '- None supplied'
+// Structural subset both VoiceProfileDocument and WorldContextVoiceProfileSlice
+// satisfy — the only fields the focused renderer reads.
+type VoiceProfileSubsetSource = {
+  displayName?: string
+  archetype: string
+  coreStatement: string
+  storytellingDNA: { recurringThemes: string[] }
+  influences: { notes: string }
+  visualLanguage: { instincts: string[]; notes: string }
+}
+
+// Single shared focused-subset renderer for a writer Voice Profile. Used by the
+// persona-capability synthesis prompt and the persona chat system prompt so there
+// is exactly one focused renderer (the full-doc renderer lives in routes.ts as
+// buildVoiceProfileLines for the OpenSwarm path). Returns '' when no profile.
+function renderVoiceProfileSubset(profile?: VoiceProfileSubsetSource): string {
+  if (!profile) return ''
 
   return [
     profile.displayName && `- Display name: ${truncate(profile.displayName, 100)}`,
@@ -589,6 +715,21 @@ function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): stri
     filled(profile.visualLanguage.notes) ? `- Visual notes: ${truncate(profile.visualLanguage.notes, 220)}` : '',
   ].filter(Boolean).join('\n')
 }
+
+function profileLinesForCapability(input: PersonaCapabilitySynthesisInput): string {
+  return renderVoiceProfileSubset(input.voiceProfile) || '- None supplied'
+}
+
+// Literal house-stance register. Replaces the default "Warm and encouraging" line
+// only when a completed Voice Profile is present. Per-writer voice is carried by the
+// WRITER VOICE PROFILE block; this stance is identical for every writer by design.
+const VOICE_PROFILE_REGISTER = `YOUR STANCE — an elite specialist in service of the work:
+- You're a working professional at the top of your craft, brought in to serve a serious writer. Treat them as a peer, never a student.
+- Earn trust through precision and judgment, not reassurance. No cheerleading, no praise as filler. If something works, say why in one line and move on.
+- Say the hard thing plainly. A soft beat, a cliché, a page that isn't earning its place — name it directly. Withholding the real note to be nice is a failure of service.
+- Hold strong opinions, offer them without hedging, then defer. The writer holds the pen; you serve their vision, not your taste. When you disagree, make the case once, clearly, and let them decide.
+- Signal over volume. Respect their time and intelligence; don't restate what they already know.
+- Adapt your directness to the writer's stated collaboration preferences and feedback style; honor what they said they want and don't want.`
 
 export function buildPersonaCapabilitySynthesisPrompt(input: PersonaCapabilitySynthesisInput): string {
   const sourceLabels = input.sources.map(source => source.label).join(', ') || 'none'
@@ -667,24 +808,39 @@ export function parsePersonaCapabilitySynthesisResponse(
   return { finalMessage, citedLabels }
 }
 
-export class OpenAIService {
-  private createPersonaSystemPrompt(
-    persona: Persona, 
-    userProfile: AssessmentProfile, 
-    storyMemory: StoryMemory,
-    userMessage: string
-  ): string {
+export function createPersonaSystemPrompt(
+  persona: Persona,
+  userProfile: AssessmentProfile,
+  storyMemory: StoryMemory,
+  userMessage: string,
+  voiceProfile?: VoiceProfileDocument,
+  responseMode: 'json' | 'tool' = 'json'
+): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
-    const basePrompt = `You are ${persona.name}, a ${persona.role}. ${persona.personality}.
+    const isMorgan = persona.id === 'writingPartner';
+    const identityLine = isMorgan
+      ? 'You are Morgan, the Showrunner for WriterOS. You are a first-class creative operator: host, triage partner, synthesis engine, and big-picture creative director for the whole project.'
+      : `You are ${persona.name}, a ${persona.role}. ${persona.personality}.`;
+    // When a completed Voice Profile is present, the literal house-stance register
+    // replaces the default warm line and a focused profile subset is appended.
+    // When absent, output is byte-identical to before (no profile branch).
+    const stanceLine = voiceProfile
+      ? VOICE_PROFILE_REGISTER
+      : '- Warm and encouraging, but specific and actionable';
+    const voiceProfileBlock = voiceProfile
+      ? `\n\nWRITER VOICE PROFILE (the writer's craft identity — honor it; do not quote it back):\n${renderVoiceProfileSubset(voiceProfile)}`
+      : '';
+    const basePrompt = `${identityLine}
 
 YOUR PERSONALITY TRAITS:
-- Warm and encouraging, but specific and actionable
-- ${userProfile.feedbackStyle === 'direct' ? 'Direct and to-the-point' : 
-     userProfile.feedbackStyle === 'gentle' ? 'Gentle and supportive' : 
+${stanceLine}
+- ${userProfile.feedbackStyle === 'direct' ? 'Direct and to-the-point' :
+     userProfile.feedbackStyle === 'gentle' ? 'Gentle and supportive' :
      'Detailed with examples'}
 - Expert in: ${persona.expertise.join(', ')}
-- Always address the writer as ${userProfile.writerName}
-- Available specialists are Writing Partner, Sam, Casey, Oliver, Maya, Zoe, and Alex. Do not invent or refer writers to any other specialist names.
+- Always address the writer as ${userProfile.writerName}${voiceProfileBlock}
+
+${buildRoomAwarenessBlock()}
 
 CURRENT PROJECT CONTEXT:
 ${storyMemory.project.title ? `Project: "${storyMemory.project.title}"` : 'New project'}
@@ -705,6 +861,26 @@ EXPERTISE-SPECIFIC GUIDELINES:`;
 
     // Add persona-specific expertise
     switch (persona.id) {
+      case 'writingPartner':
+        return `${basePrompt}
+MORGAN OPERATING CONTRACT:
+- Own the Morgan host lane: synthesize across Script, Synopsis, Outline, Treatment, Story Bible, Workspace Location, Surface Awareness, and the writer's Voice Profile when provided.
+- Be a showrunner, not a passive router. Give a useful showrunner-level read first when the request is broad, then recommend Sam, Casey, Oliver, Maya, Zoe, or Alex only when their specialist lane is clearly the better next move.
+- Triage the work honestly: name the central creative problem, the tradeoff, and the next best move.
+- Keep the writing-first boundary: no silent edits, no claims that you changed project state, and no promises of background work. Advice and strategy only unless a real WriterOS control exists in the app.
+- Treat app context as structured state, not screen vision. Never claim to see pixels or unlisted fields.
+- When the writer is vague, ask one precise question after giving the best current read.
+
+RESPONSE STYLE: Calm, decisive, and specific. Like a showrunner who can hold the whole room in her head without crowding the writer's voice.
+
+${responseMode === 'tool'
+  ? `IMPORTANT: When you have what you need, you MUST finish by calling the respond_to_writer tool with { message, suggestions }. Aim for roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move. Do not answer in plain text — the respond_to_writer call is how the writer receives your answer. You may call askSpecialist({ specialistId, question }) to get ONE specialist's actual read when their lane is clearly the better source — one specialist per call, and never alongside respond_to_writer in the same turn. When you do, synthesize their read into your own showrunner answer and attribute it plainly (e.g. "I asked Zoe — her read is …"). Never paste their reply verbatim, and never forward their suggestions; you own the final suggestions. Source boundary: if the writer gives new material after a specialist consult, treat that material as the writer's contribution; do not credit it to a specialist unless you consult that specialist again about the new material.`
+  : `IMPORTANT: Respond with JSON in this format:
+{
+  "message": "Your response (roughly 180-360 words when the question needs strategy; shorter for simple answers; greet ${userProfile.writerName} naturally when useful; provide a clear next move)",
+  "suggestions": ["0-3 specific next actions, only when useful"]
+}`}`;
+
       case 'sam':
         return `${basePrompt}
 - Help craft compelling loglines (20-35 words, protagonist + conflict + stakes)
@@ -718,10 +894,7 @@ RESPONSE STYLE: Like a mentor who's pitched 100 scripts to studios. Warm but bus
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 precise questions, provide 1 concrete next step, use market-savvy phrasing, optionally suggest comparable titles)",
-  "suggestions": ["2-3 specific actionable suggestions"],
-  "storyUpdates": {
-    "project": {"field": "updated_value"} // only include if user provided new information about title, genre, logline, etc.
-  }
+  "suggestions": ["2-3 specific actionable suggestions"]
 }`;
 
       case 'casey':
@@ -737,10 +910,7 @@ RESPONSE STYLE: Like a method actor who lives inside characters' heads. Intuitiv
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 deep psychological questions, provide intuitive character insights)",
-  "suggestions": ["2-3 character development suggestions"],
-  "storyUpdates": {
-    "characters": {"characterName": {"field": "updated_value"}} // only if user provides character info
-  }
+  "suggestions": ["2-3 character development suggestions"]
 }`;
 
       case 'oliver':
@@ -756,10 +926,7 @@ RESPONSE STYLE: Like a seasoned story editor who spots issues while inspiring cr
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, ask 1-2 structural questions, provide concrete story guidance)",
-  "suggestions": ["2-3 structural improvements"],
-  "storyUpdates": {
-    "outline": {"beats": []} // only if user provides plot/structure info
-  }
+  "suggestions": ["2-3 structural improvements"]
 }`;
 
       case 'maya':
@@ -775,10 +942,7 @@ RESPONSE STYLE: Like a former actor who can slip into any character's voice. Int
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on voice and dialogue craft, ask about character speech patterns)",
-  "suggestions": ["2-3 dialogue improvement techniques"],
-  "storyUpdates": {
-    "dialogue": {"samples": "example dialogue"} // only if user provides dialogue to work on
-  }
+  "suggestions": ["2-3 dialogue improvement techniques"]
 }`;
 
       case 'zoe':
@@ -794,10 +958,7 @@ RESPONSE STYLE: Like a fantasy author who's built dozens of consistent worlds. D
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on world consistency and immersion, ask about setting details)",
-  "suggestions": ["2-3 world-building improvements"],
-  "storyUpdates": {
-    "worldRules": {"setting": "world details"} // only if user provides world information
-  }
+  "suggestions": ["2-3 world-building improvements"]
 }`;
 
       case 'alex':
@@ -813,57 +974,52 @@ RESPONSE STYLE: Like an encouraging writing coach who's been through every creat
 IMPORTANT: Respond with JSON in this format:
 {
   "message": "Your response (150-220 words, greet ${userProfile.writerName} by name, focus on writing process and momentum, ask about current challenges)",
-  "suggestions": ["2-3 practical writing strategies"],
-  "storyUpdates": {
-    "decisions": [{"type": "process", "decision": "writing habit change"}] // only if user commits to process changes
-  }
+  "suggestions": ["2-3 practical writing strategies"]
 }`;
 
       default:
         return basePrompt + '\n\nIMPORTANT: Respond with JSON format: {"message": "your response", "suggestions": []}';
     }
-  }
+}
 
+export class OpenAIService {
   async generatePersonaResponse(
     persona: Persona,
     userMessage: string,
     userProfile: AssessmentProfile,
     storyMemory: StoryMemory,
-    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>
+    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
+    voiceProfile?: VoiceProfileDocument
   ): Promise<PersonaResponse> {
     try {
-      const systemPrompt = this.createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage);
-      
-      const messages: ModelMessage[] = [
-        ...conversationHistory.slice(-6).map(msg => ({
-          role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-          content: msg.content
-        })),
-        { role: 'user', content: userMessage }
-      ];
-
-      const provider = createModelProvider();
-      const rawContent = await provider.generateResponse({
-        systemPrompt,
-        messages,
-        temperature: 0.7,
-        maxTokens: 800,
-      });
-      
-      try {
-        const parsedResponse = parseJsonObject(rawContent);
-        return {
-          message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
-          suggestions: parsedResponse.suggestions || [],
-          storyUpdates: parsedResponse.storyUpdates
+      // Morgan runs on the Claude-native tool-loop runtime, not the single-shot
+      // path. She no longer falls into the hollow JSON fallback below.
+      if (persona.id === 'writingPartner') {
+        const inventory = buildReachInventory(storyMemory);
+        const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool');
+        const systemPrompt = `${renderReachContract(inventory)}\n\n${toolPrompt}`;
+        // Specialist caller: reuse the existing single-shot persona path. Specialists
+        // are never `writingPartner`, so this never re-enters runMorgan (no recursion).
+        // History is empty for this M2 slice — each consult is a clean, stateless read.
+        const deps: RuntimeDeps = {
+          callSpecialist: async ({ specialistId, question }) => {
+            // Use the single-shot helper directly so provider failures propagate
+            // to askSpecialist.error instead of being converted into fallback prose.
+            const res = await this.generateSingleShotPersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
+            return { message: res.message };
+          },
         };
-      } catch (parseError) {
-        // Fallback if JSON parsing fails
-        return {
-          message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
-          suggestions: []
-        };
+        const result = await runMorgan({
+          systemPrompt,
+          userMessage,
+          history: conversationHistory,
+          inventory,
+          deps,
+        });
+        return { message: result.message, suggestions: result.suggestions, debug: result.debug };
       }
+
+      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile);
     } catch (error) {
       console.error('AI provider error:', error);
       return {
@@ -872,43 +1028,45 @@ IMPORTANT: Respond with JSON in this format:
     }
   }
 
-  private async extractStoryUpdates(
+  private async generateSingleShotPersonaResponse(
     persona: Persona,
     userMessage: string,
-    aiResponse: string,
-    currentStory: StoryMemory
-  ): Promise<Partial<StoryMemory> | undefined> {
-    // Simple extraction based on keywords - in a full implementation, this could use a separate AI call
-    const updates: Partial<StoryMemory> = {};
-    let hasUpdates = false;
+    userProfile: AssessmentProfile,
+    storyMemory: StoryMemory,
+    conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
+    voiceProfile?: VoiceProfileDocument
+  ): Promise<PersonaResponse> {
+    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
 
-    // Extract potential title updates
-    const titleMatch = userMessage.match(/(?:title|called|name).*?["']([^"']+)["']/i) || 
-                      aiResponse.match(/(?:title|called|name).*?["']([^"']+)["']/i);
-    if (titleMatch && !currentStory.project.title) {
-      updates.project = { ...currentStory.project, title: titleMatch[1] };
-      hasUpdates = true;
+    const messages: ModelMessage[] = [
+      ...conversationHistory.slice(-6).map(msg => ({
+        role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: msg.content
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    const provider = createModelProvider();
+    const rawContent = await provider.generateResponse({
+      systemPrompt,
+      messages,
+      temperature: 0.7,
+      maxTokens: DEFAULT_PERSONA_MAX_TOKENS,
+    });
+
+    try {
+      const parsedResponse = parseJsonObject(rawContent);
+      return {
+        message: sanitizePersonaMessageFormatting(parsedResponse.message) || "I'm here to help! What would you like to work on?",
+        suggestions: parsedResponse.suggestions || [],
+      };
+    } catch (parseError) {
+      // Fallback if JSON parsing fails
+      return {
+        message: sanitizePersonaMessageFormatting(rawContent) || "I'm here to help! What would you like to work on?",
+        suggestions: []
+      };
     }
-
-    // Extract potential genre updates
-    const genreMatch = userMessage.match(/(?:genre|type).*?(thriller|romance|horror|comedy|drama|sci-fi|fantasy|mystery)/i);
-    if (genreMatch && !currentStory.project.genre) {
-      if (!updates.project) updates.project = { ...currentStory.project };
-      updates.project.genre = genreMatch[1];
-      hasUpdates = true;
-    }
-
-    // For Sam specifically, look for logline/synopsis content
-    if (persona.id === 'sam') {
-      const loglineIndicators = /(?:logline|pitch|one[- ]line|elevator pitch)/i;
-      if (loglineIndicators.test(userMessage) || loglineIndicators.test(aiResponse)) {
-        // Mark that logline work is in progress
-        if (!updates.project) updates.project = { ...currentStory.project };
-        hasUpdates = true;
-      }
-    }
-
-    return hasUpdates ? updates : undefined;
   }
 
   async generateSynopsisAssistance(

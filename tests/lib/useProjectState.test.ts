@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
+import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
 import {
   createEmptySeriesContent,
@@ -24,6 +25,49 @@ describe('useProjectState', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'My Film' }))
     expect(result.current.state.meta.title).toBe('My Film')
+  })
+
+  it('setTitlePageMetadata updates title page fields and persists them', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setTitlePageMetadata({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story by Jonah Reed\nand Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27, 2026',
+      formatDisplay: 'Limited Series',
+    }))
+
+    expect(result.current.state.meta.titlePage).toMatchObject({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story by Jonah Reed\nand Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27, 2026',
+      formatDisplay: 'Limited Series',
+    })
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.meta.titlePage).toMatchObject({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      draftLabel: 'Second Draft',
+    })
+  })
+
+  it('preserves in-progress title page block whitespace while persisting normalized metadata', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setTitlePageMetadata({
+      writtenBy: 'Mara Vale\n',
+      basedOn: '  A story by Jonah Reed  \n',
+    }))
+
+    expect(result.current.state.meta.titlePage.writtenBy).toBe('Mara Vale\n')
+    expect(result.current.state.meta.titlePage.basedOn).toBe('  A story by Jonah Reed  \n')
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.meta.titlePage.writtenBy).toBe('Mara Vale')
+    expect(stored.meta.titlePage.basedOn).toBe('A story by Jonah Reed')
   })
 
   it('setProjectFormat updates the canonical project format', () => {
@@ -154,6 +198,86 @@ describe('useProjectState', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setMeta({ title: 'Untitled Project' }))
     expect(result.current.state.meta.title).toBe('')
+  })
+
+  it('opens an externally loaded project as the active project', () => {
+    const { result } = renderHook(() => useProjectState())
+    const externalState = defaultProjectState()
+    externalState.meta.title = 'Harbor Lights'
+    const externalProject: StoredProject = {
+      id: 'external-project',
+      createdAt: Date.parse('2026-05-01T10:00:00.000Z'),
+      updatedAt: Date.parse('2026-05-02T11:30:00.000Z'),
+      state: externalState,
+    }
+
+    act(() => result.current.openStoredProject(externalProject))
+
+    expect(result.current.activeProjectId).toBe('external-project')
+    expect(result.current.state.meta.title).toBe('Harbor Lights')
+    expect(result.current.activeStoredProject).toMatchObject({
+      id: 'external-project',
+      createdAt: externalProject.createdAt,
+      updatedAt: externalProject.updatedAt,
+    })
+  })
+
+  it('creates a new active project from an imported Final Draft script', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => {
+      result.current.createProjectFromImportedScript({
+        title: 'Imported Pilot',
+        rawHtml: '<p data-element-type="scene-heading">INT. LAB - NIGHT</p>',
+        scenes: [{ id: 'scene-1', heading: 'INT. LAB - NIGHT', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Pilot.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+          rawSource: '<FinalDraft />',
+        },
+      })
+    })
+
+    expect(result.current.state.meta.title).toBe('Imported Pilot')
+    expect(result.current.state.script.scenes).toEqual([
+      { id: 'scene-1', heading: 'INT. LAB - NIGHT', index: 1 },
+    ])
+    expect(result.current.state.meta.sourceImport).toMatchObject({
+      kind: 'fdx',
+      originalFilename: 'Imported Pilot.fdx',
+      rawSource: '<FinalDraft />',
+    })
+    expect(result.current.projects[0].title).toBe('Imported Pilot')
+    expect(localStorage.getItem('writeros_project_state')).not.toContain('<FinalDraft />')
+    expect(localStorage.getItem('writeros_project_library')).not.toContain('<FinalDraft />')
+  })
+
+  it('replaces only the current script from import and preserves an existing project title', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.setMeta({ title: 'Working Title' }))
+    act(() => {
+      result.current.replaceScriptFromImport({
+        title: 'Imported Title',
+        rawHtml: '<p data-element-type="scene-heading">EXT. DOCK - DAWN</p>',
+        scenes: [{ id: 'scene-1', heading: 'EXT. DOCK - DAWN', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Title.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+          rawSource: '<FinalDraft />',
+        },
+      })
+    })
+
+    expect(result.current.state.meta.title).toBe('Working Title')
+    expect(result.current.state.script.rawHtml).toContain('EXT. DOCK - DAWN')
+    expect(result.current.state.meta.sourceImport?.originalFilename).toBe('Imported Title.fdx')
   })
 
   it('clearSynopsis empties every synopsis field and persists the change', () => {
@@ -349,6 +473,68 @@ describe('useProjectState', () => {
     expect(result.current.state.script.scenes).toEqual(scenes)
   })
 
+  it('rebuildScriptFacts stores a timestamped cache from the current script', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript([
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join(''), []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+
+    expect(result.current.state.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+    expect(result.current.state.script.facts.times).toEqual([
+      { label: 'NIGHT', count: 1, blockIndices: [0] },
+    ])
+  })
+
+  it('rebuildScriptFactsFromSnapshot stores live script content and facts together', () => {
+    const { result } = renderHook(() => useProjectState())
+    const scenes: ScriptScene[] = [{ id: 'scene-1', heading: 'INT. ROOM - NIGHT', index: 1 }]
+    const liveRawHtml = [
+      '<p data-element-type="scene-heading">INT. ROOM - NIGHT</p>',
+      '<p data-element-type="character">MAYA</p>',
+    ].join('')
+
+    act(() => result.current.updateScript('<p data-element-type="character">OLD CACHE</p>', []))
+    act(() => result.current.rebuildScriptFactsFromSnapshot(
+      liveRawHtml,
+      scenes,
+      '2026-06-02T10:00:00.000Z'
+    ))
+
+    expect(result.current.state.script.rawHtml).toBe(liveRawHtml)
+    expect(result.current.state.script.scenes).toEqual(scenes)
+    expect(result.current.state.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.script.rawHtml).toBe(liveRawHtml)
+    expect(stored.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [1] },
+    ])
+  })
+
+  it('updateScript does not auto-rebuild an existing script facts cache', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript('<p data-element-type="character">MAYA</p>', []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+    const originalHash = result.current.state.script.facts.contentHash
+
+    act(() => result.current.updateScript('<p data-element-type="character">MARCUS</p>', []))
+
+    expect(result.current.state.script.facts.contentHash).toBe(originalHash)
+    expect(result.current.state.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [0] },
+    ])
+  })
+
   it('updateScript persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.updateScript('<p>persisted</p>', []))
@@ -376,6 +562,57 @@ describe('useProjectState', () => {
     expect(result.current.state.script.rawHtml).toBe('<p data-element-type="action">Keep this page.</p>')
   })
 
+  it('replaceScriptFromImport clears existing script facts cache', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.updateScript('<p data-element-type="character">MAYA</p>', []))
+    act(() => result.current.rebuildScriptFacts('2026-06-02T10:00:00.000Z'))
+    act(() => {
+      result.current.replaceScriptFromImport({
+        title: 'Imported Title',
+        rawHtml: '<p data-element-type="scene-heading">EXT. DOCK - DAWN</p>',
+        scenes: [{ id: 'scene-1', heading: 'EXT. DOCK - DAWN', index: 1 }],
+        wordCount: 4,
+        pageCount: 1,
+        sourceImport: {
+          kind: 'fdx',
+          originalFilename: 'Imported Title.fdx',
+          importedAt: '2026-05-24T00:00:00.000Z',
+        },
+      })
+    })
+
+    expect(result.current.state.script.facts).toMatchObject({
+      rebuiltAt: null,
+      characters: [],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [],
+    })
+  })
+
+  it('createProject from an empty library does not preserve a blank placeholder project', () => {
+    localStorage.setItem('writeros_project_library', '[]')
+    localStorage.removeItem('writeros_active_project_id')
+    const { result } = renderHook(() => useProjectState())
+
+    expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects).toHaveLength(0)
+
+    let createdId = ''
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    expect(createdId).not.toBe('')
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.projects).toHaveLength(1)
+    expect(result.current.storedProjects.map(project => project.id)).toEqual([createdId])
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!)
+    expect(stored.map((project: StoredProject) => project.id)).toEqual([createdId])
+  })
+
   it('addMessage persists to localStorage', () => {
     const { result } = renderHook(() => useProjectState())
     const msg: TranscriptMessage = { id: 'msg3', role: 'user', content: 'persist me', speaker: 'Writer', ts: 3 }
@@ -383,6 +620,82 @@ describe('useProjectState', () => {
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.agents.writingPartner.transcript).toHaveLength(1)
     expect(stored.agents.writingPartner.transcript[0].content).toBe('persist me')
+  })
+
+  it('reloadLibrary picks up out-of-band stored library mutations', () => {
+    const { result } = renderHook(() => useProjectState())
+
+    // Stamp a migrated marker on the active project out-of-band, mirroring
+    // what markProjectsMigrated does. After reloadLibrary the active session
+    // should drop back to "no active project" per loadActiveProjectLibrary's
+    // refusal to activate migrated projects.
+    const activeId = result.current.activeProjectId
+    expect(activeId).not.toBe('')
+
+    const stored = JSON.parse(localStorage.getItem('writeros_project_library')!) as StoredProject[]
+    const mutated = stored.map(project =>
+      project.id === activeId
+        ? {
+            ...project,
+            migratedToFolder: {
+              folderLabel: 'MyDocs',
+              packageName: 'Untitled.writeros',
+              migratedAt: '2026-05-25T00:00:00.000Z',
+            },
+          }
+        : project,
+    )
+    localStorage.setItem('writeros_project_library', JSON.stringify(mutated))
+
+    act(() => result.current.reloadLibrary())
+
+    // Per Decision 3: when the active project is migrated, reload drops the
+    // active session — writer returns to Home.
+    expect(result.current.activeProjectId).toBe('')
+    expect(result.current.projects.find(project => project.id === activeId)).toBeUndefined()
+    // The migrated project remains in the stored projects array so the marker
+    // survives re-reads.
+    expect(result.current.storedProjects.find(p => p.id === activeId)?.migratedToFolder).toEqual({
+      folderLabel: 'MyDocs',
+      packageName: 'Untitled.writeros',
+      migratedAt: '2026-05-25T00:00:00.000Z',
+    })
+  })
+
+  it('markStoredProjectsMigrated hides a folder-backed browser fallback without closing the active session', () => {
+    const { result } = renderHook(() => useProjectState())
+    let createdId = ''
+
+    act(() => {
+      createdId = result.current.createProject().id
+    })
+
+    act(() => {
+      result.current.markStoredProjectsMigrated([{
+        projectId: createdId,
+        folderLabel: 'WriterOS Projects',
+        packageName: 'QA Storage Rename (7bbe52ff).writeros',
+        migratedAt: '2026-05-26T15:15:00.000Z',
+      }])
+    })
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('')
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
+    expect(result.current.activeStoredProject?.migratedToFolder).toEqual({
+      folderLabel: 'WriterOS Projects',
+      packageName: 'QA Storage Rename (7bbe52ff).writeros',
+      migratedAt: '2026-05-26T15:15:00.000Z',
+    })
+
+    act(() => result.current.setMeta({ title: 'QA Storage Rename' }))
+
+    expect(result.current.activeProjectId).toBe(createdId)
+    expect(result.current.state.meta.title).toBe('QA Storage Rename')
+    expect(result.current.activeStoredProject?.migratedToFolder?.packageName).toBe(
+      'QA Storage Rename (7bbe52ff).writeros',
+    )
+    expect(result.current.projects.find(project => project.id === createdId)).toBeUndefined()
   })
 })
 
@@ -661,6 +974,30 @@ describe('useProjectState — setSynopsisViewPreferences', () => {
   })
 })
 
+describe('useProjectState — setTreatmentViewPreferences', () => {
+  it('merges activeView into viewPreferences', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    expect(result.current.state.documents.treatment.viewPreferences?.activeView).toBe('document')
+  })
+
+  it('preserves other view preferences when patching one key', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    act(() => result.current.setTreatmentViewPreferences({ collapsedSections: ['story'] }))
+    const prefs = result.current.state.documents.treatment.viewPreferences
+    expect(prefs?.activeView).toBe('document')
+    expect(prefs?.collapsedSections).toEqual(['story'])
+  })
+
+  it('persists viewPreferences to localStorage', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.treatment.viewPreferences?.activeView).toBe('document')
+  })
+})
+
 describe('useProjectState — clearSynopsis dual reset', () => {
   it('resets state.synopsis to defaultProjectState().synopsis', () => {
     const { result } = renderHook(() => useProjectState())
@@ -756,5 +1093,110 @@ describe('useProjectState — clearSynopsis dual reset', () => {
     const after = result.current.state.documents.synopsis.updatedAt
     expect(after).not.toBe(before)
     expect(typeof after).toBe('string')
+  })
+
+  describe('deleteProjectById (Slice 5a)', () => {
+    it('deletes a non-active project without changing the active project', () => {
+      const { result } = renderHook(() => useProjectState())
+      let secondId = ''
+      act(() => {
+        const created = result.current.createProject()
+        secondId = created.id
+      })
+      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
+      act(() => result.current.switchProject(firstId))
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)).toBeDefined()
+
+      act(() => {
+        result.current.deleteProjectById(secondId)
+      })
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)).toBeUndefined()
+    })
+
+    it('clears active selection when the active project is deleted', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const activeId = result.current.activeProjectId
+
+      act(() => {
+        result.current.deleteProjectById(activeId)
+      })
+
+      expect(result.current.activeProjectId).toBe('')
+      expect(result.current.state.meta.title).toBe('')
+    })
+
+    it('leaves the library empty after deleting the only project', () => {
+      const { result } = renderHook(() => useProjectState())
+      const onlyId = result.current.activeProjectId
+
+      act(() => {
+        result.current.deleteProjectById(onlyId)
+      })
+
+      expect(result.current.projects).toHaveLength(0)
+      expect(result.current.activeProjectId).toBe('')
+    })
+  })
+
+  describe('archive / restore by id (Slice 5a-2)', () => {
+    it('archive sets archivedAt and clears active when archiving the active project', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const activeId = result.current.activeProjectId
+
+      act(() => {
+        result.current.archiveProjectById(activeId)
+      })
+
+      expect(result.current.activeProjectId).toBe('')
+      // Summary should still surface the archived project so Home can show it.
+      const archived = result.current.projects.find(p => p.id === activeId)
+      expect(archived?.archivedAt).toBeTruthy()
+    })
+
+    it('archive of a non-active project leaves the active project alone', () => {
+      const { result } = renderHook(() => useProjectState())
+      let secondId = ''
+      act(() => {
+        const created = result.current.createProject()
+        secondId = created.id
+      })
+      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
+      act(() => result.current.switchProject(firstId))
+
+      act(() => {
+        result.current.archiveProjectById(secondId)
+      })
+
+      expect(result.current.activeProjectId).toBe(firstId)
+      expect(result.current.projects.find(p => p.id === secondId)?.archivedAt).toBeTruthy()
+    })
+
+    it('restore clears archivedAt and does not auto-activate', () => {
+      const { result } = renderHook(() => useProjectState())
+      act(() => {
+        result.current.createProject()
+      })
+      const archivedId = result.current.activeProjectId
+      act(() => result.current.archiveProjectById(archivedId))
+      expect(result.current.activeProjectId).toBe('')
+
+      act(() => {
+        result.current.restoreProjectById(archivedId)
+      })
+
+      expect(result.current.projects.find(p => p.id === archivedId)?.archivedAt).toBeUndefined()
+      // Restore does not silently re-open the project.
+      expect(result.current.activeProjectId).toBe('')
+    })
   })
 })

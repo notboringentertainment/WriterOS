@@ -1,8 +1,8 @@
 # Treatment Surface PRD
 
-**Date:** 2026-05-21
-**Status:** Canonical for Treatment V1 and next Treatment slices
-**Branch context:** `feature/screenplay-editor-core`
+**Date:** 2026-05-22
+**Status:** Canonical for the implemented Treatment surface and next Treatment slices
+**Branch context:** `main` after PR #4 (`Add Treatment Document View`)
 **Related docs:** `docs/product/README.md`, `docs/product/structured-writing-surfaces-prd.md`, `docs/product/project-wide-format-agent-context-prd.md`, `docs/product/outline-story-coach-redesign-prd.md`, `docs/product/agent-workflow-prd.md`, `docs/product/persona-capability-layer-prd.md`, `references/treatment-best-practices-template.md`
 
 > Product alignment note: this PRD formalizes Treatment after the Outline/Treatment split. Treatment is now a first-class writing surface, not a renamed Outline. The former rich Outline story-coach material is copied into Treatment as starter authored material only when Treatment is empty. Outline remains the structural blueprint.
@@ -55,7 +55,7 @@ These decisions are locked for the current Treatment surface.
 | 9 | Story passages are optional focused prose sections. | They let writers add character, place/world, major-turn, sequence, side-thread, or free passages without bloating the main flow. |
 | 10 | Passage template guidance is placeholder text, not authored content. | Inserted passages persist a heading and an empty body. Placeholder prose never exports, never enters agent context, and never counts as writer-authored material. |
 | 11 | Empty passages and characters can be removed immediately; authored ones require confirmation. | Deletion is ergonomic while protecting real content. |
-| 12 | V1 does not add passage reorder, Treatment Document View, QA view, or per-passage auto-routing. | Those are valuable, but not required for the first safe split. |
+| 12 | Treatment Document View is read-only. Passage reorder, QA view, and per-passage auto-routing stay out of the current implemented surface. | Document View gives writers a studio-presentable read without expanding editing behavior or routing complexity. |
 
 ## V1 Writer-Facing Shape
 
@@ -243,9 +243,20 @@ Agents must not mutate Treatment without an explicit user action.
 
 ## Document View
 
-Treatment V1 is the Edit View plus canonical storage, markdown/context serialization, migration, and agent availability.
+Treatment includes a read-only Document View alongside the Edit View.
 
-Treatment Document View is a later slice. It should render:
+View mode is stored in:
+
+```ts
+documents.treatment.viewPreferences.activeView
+```
+
+The shared `DocumentViewToggle` switches between:
+
+- `edit`: guided Treatment Edit View.
+- `document`: polished Treatment Document View.
+
+Treatment Document View renders:
 
 - A clean readable treatment.
 - No form chrome.
@@ -253,9 +264,28 @@ Treatment Document View is a later slice. It should render:
 - No AI production notes mixed into story prose.
 - Professional headings are acceptable in Document View if they make the document clearer.
 
+Current Document View sections:
+
+- Title and metadata when authored.
+- Logline.
+- Promise.
+- Characters.
+- Story, including main flow and authored custom passages.
+- Texture.
+- Last edited date when valid.
+
+Current Document View exclusions:
+
+- Empty fields.
+- Empty template passages.
+- Placeholder text.
+- Open questions.
+- `aiProductionImplications`.
+
+Format display must derive from `ProjectState.meta.format`, not from the Treatment header mirror.
+
 ## Out Of Scope For V1
 
-- Treatment Document View toggle.
 - QA checklist.
 - Passage reorder.
 - Per-passage specialist auto-routing.
@@ -277,6 +307,9 @@ V1 is acceptable when:
 - Authored passages and characters require confirmation before removal.
 - Texture fields are all visible.
 - The phrase "What should it feel like?" is not duplicated across Promise and Texture.
+- Treatment Document View renders clean authored content without edit controls.
+- Treatment Document View excludes placeholders, open questions, and AI production notes.
+- Treatment Document View uses project format authority for displayed format metadata.
 - Alex receives actual authored Treatment context.
 - Casey can receive Treatment character details and actual Outline context for character questions.
 - Full test, typecheck, and build pass.
@@ -301,6 +334,9 @@ Required coverage:
 - Free passage placeholder is empty.
 - Typing into a passage is the only way body text enters Treatment content.
 - Passage and character delete confirmation behavior is covered.
+- Treatment Document View renders authored content.
+- Treatment Document View omits form controls, placeholders, open questions, and AI production notes.
+- Treatment view mode persists through `documents.treatment.viewPreferences.activeView`.
 - `treatmentToMarkdown()` includes authored content and excludes placeholders.
 - `/api/wp-chat` sends authored Treatment context to Alex.
 - Casey route receives Treatment main-character details plus actual Outline content.
@@ -308,27 +344,37 @@ Required coverage:
 
 ## Current Implementation Notes
 
-The current branch already implements most V1 behavior:
+Current `main` implements the Treatment surface:
 
 - `shared/documents.ts` defines Treatment document schemas.
 - `client/src/components/writing/TreatmentTab.tsx` renders Treatment Edit View.
+- `client/src/components/writing/treatment/TreatmentDocumentView.tsx` renders Treatment Document View.
+- `client/src/components/shared/DocumentViewToggle.tsx` owns the shared Edit/Document segmented control.
+- `client/src/lib/useProjectState.ts` persists Treatment view mode through `setTreatmentViewPreferences()`.
 - `client/src/lib/treatmentPassages.ts` owns passage template metadata.
 - `client/src/lib/documentMigration.ts` normalizes Treatment and seeds empty Treatment from pre-v5 Outline content.
 - `server/routes.ts` and `server/ai/openaiService.ts` include Treatment in agent context.
-- Tests cover Treatment UI, migration, markdown, and agent context.
+- Tests cover Treatment UI, Treatment Document View, view preference persistence, migration, markdown, and agent context.
+
+## Clear Path Ahead
+
+The next Treatment work should be chosen from these slices, in this order of prudence:
+
+1. Keep Treatment stable while cross-surface agent context audit work lands.
+2. Add Treatment QA/readiness only when there is a clear checklist contract.
+3. Consider exposing deeper character fields already present in schema: flaw/wound, secret/contradiction, and relationship pressure.
+4. Consider passage reorder after the surface has real usage.
+5. Add persisted passage `kind` only if later routing needs it.
 
 Known follow-ups:
 
-- Add the polished Treatment Document View.
 - Consider exposing the deeper character fields already present in schema: flaw/wound, secret/contradiction, and relationship pressure.
 - Consider adding persisted passage `kind` only if later routing needs it.
 - Consider passage reorder after the surface has real usage.
-- Replace any remaining generic "Additional movement" fallback label with "Additional passage" if product wants "movement" removed from user-visible output.
 
 ## Open Questions
 
-1. Should Treatment Document View ship before or after Outline Document View V2?
-2. Should deeper character fields remain agent/migration fields, or become visible in Treatment V2?
-3. Should passage `specialist` stay catalog-only, or become persisted metadata for routing?
-4. Should AI production implications surface inside Treatment, or stay in a separate production/readiness annex?
-5. Should Treatment eventually support feature/series-specific prose prompts, or should the current shared shape stay format-agnostic?
+1. Should deeper character fields remain agent/migration fields, or become visible in Treatment V2?
+2. Should passage `specialist` stay catalog-only, or become persisted metadata for routing?
+3. Should AI production implications surface inside Treatment, or stay in a separate production/readiness annex?
+4. Should Treatment eventually support feature/series-specific prose prompts, or should the current shared shape stay format-agnostic?

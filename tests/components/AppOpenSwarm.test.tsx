@@ -56,12 +56,13 @@ function makeProfile(): VoiceProfileDocument {
 
 async function sendSwarmMessage() {
   render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
 
-  fireEvent.click(screen.getByTitle('Writing Partner'))
-  fireEvent.change(screen.getByPlaceholderText('Message Writing Partner…'), {
+  fireEvent.click(screen.getByTitle('Morgan'))
+  fireEvent.change(screen.getByPlaceholderText('Message Morgan…'), {
     target: { value: '/swarm review this against my voice' },
   })
-  fireEvent.keyDown(screen.getByPlaceholderText('Message Writing Partner…'), { key: 'Enter' })
+  fireEvent.keyDown(screen.getByPlaceholderText('Message Morgan…'), { key: 'Enter' })
 
   await waitFor(() => {
     expect(fetch).toHaveBeenCalledWith(

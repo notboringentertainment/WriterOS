@@ -7,6 +7,7 @@ import { OpenAIService } from '../../server/ai/openaiService'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { StoryMemory } from '../../shared/schema'
 
 afterEach(() => {
@@ -232,6 +233,442 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       expect(storyMemory.project.treatment).toContain('Opening: Isaiah stays after his shift')
       expect(storyMemory.outline.beats[0].description).toContain('Isaiah answers a rescue call')
       expect(storyMemory.outline.beats[0].description).toContain('The voice knows his private grief')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('passes a Surface Awareness Contract through to StoryMemory when present', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    const surface = {
+      kind: 'intake' as const,
+      surface: 'outline' as const,
+      surfaceTitle: 'Outline',
+      format: 'feature' as const,
+      questions: [{ id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const }],
+      nextQuestion: { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const },
+      selectionSource: 'first_unanswered' as const,
+      answeredCount: 0,
+      totalCount: 1,
+      nextRecommendedAction: 'answer_next_question' as const,
+    }
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's the first question here?",
+        projectContext: { ...buildProjectContext(state), surface },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toEqual(surface)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('passes a valid location through to StoryMemory', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const location = {
+      activeSurface: 'script' as const,
+      sourceKind: 'selected_text' as const,
+      provenance: 'confirmed' as const,
+      anchor: { kind: 'block' as const, stableId: 'block:1', label: 'a selected line' },
+    }
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's selected?",
+        projectContext: { ...buildProjectContext(state), location },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.location).toEqual(location)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('degrades a malformed location to undefined instead of failing the request', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: "What's selected?",
+        projectContext: {
+          ...buildProjectContext(state),
+          location: { activeSurface: 'script', sourceKind: 'confirmed' },
+        },
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.location).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('routes a Writer’s Room specialist (zoe) with surface to a 200, surface intact', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Zoe response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.meta.format = 'feature'
+    const surface = {
+      kind: 'intake' as const,
+      surface: 'outline' as const,
+      surfaceTitle: 'Outline',
+      format: 'feature' as const,
+      questions: [{ id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const }],
+      nextQuestion: { id: 'spine.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' as const },
+      selectionSource: 'first_unanswered' as const,
+      answeredCount: 0,
+      totalCount: 1,
+      nextRecommendedAction: 'answer_next_question' as const,
+    }
+    const { server, port } = await startApp()
+    try {
+      const res = await postJson(port, '/api/wp-chat', {
+        personaId: 'zoe',
+        message: "What's the first question here?",
+        projectContext: { ...buildProjectContext(state), surface },
+        conversationHistory: [],
+      })
+      expect(res.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toEqual(surface)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('NEVER 500s on a malformed surface — degrades to no surface so chat still works', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    // totalCount disagrees with questions.length — exactly the kind of payload that must
+    // not take down the whole chat (symptom 2: connection error from a 500).
+    const badSurface = {
+      kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'feature',
+      questions: [], nextQuestion: null, selectionSource: 'first_unanswered',
+      answeredCount: 9, totalCount: 9, nextRecommendedAction: 'answer_next_question',
+    }
+    const { server, port } = await startApp()
+    try {
+      const res = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Review the synopsis.',
+        projectContext: { ...buildProjectContext(state), surface: badSurface },
+        conversationHistory: [],
+      })
+      expect(res.status).toBe(200) // chat works
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toBeUndefined() // malformed surface dropped, not fatal
+    } finally {
+      server.close()
+    }
+  })
+
+  it('leaves StoryMemory.surface undefined when no surface is sent', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Review the synopsis.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.surface).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('sends current Script Facts through Writer Room specialist context', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Maya response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear it.</p>',
+    ].join('')
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'maya',
+        message: 'Help with this dialogue.',
+        projectContext: buildProjectContext(state, 'Help with this dialogue.'),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.script?.facts).toEqual({
+        rebuiltAt: '2026-06-02T10:00:00.000Z',
+        characters: [{ label: 'ISAIAH', count: 1 }],
+        locations: [{ label: 'INT. SAFEHOUSE - NIGHT', count: 1 }],
+        times: [{ label: 'NIGHT', count: 1 }],
+      })
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('/api/wp-chat voice profile pass-through', () => {
+  function completedVoiceProfile() {
+    return {
+      version: 1,
+      createdAt: '2026-06-14T00:00:00.000Z',
+      updatedAt: '2026-06-14T00:00:00.000Z',
+      displayName: 'Ben',
+      archetype: 'The Moral-Complexity Dramatist',
+      coreStatement: 'Elevated genre with a conscience.',
+      creativeNorthStars: ['Earn every beat'],
+      storytellingDNA: { principles: ['No filler'], recurringThemes: ['loyalty'], notes: '' },
+      influences: { writers: [], directors: [], filmsAndShows: [], scenesAndLines: [], notes: 'Sheridan' },
+      characterInstincts: { drawnTo: [], rejects: [], notes: '' },
+      dialogue: { rules: [], instinctsByMode: '', avoidances: [] },
+      visualLanguage: { instincts: ['negative space'], notes: '' },
+      process: { whenFlowing: '', stuckPatterns: [], supportNeeds: [] },
+      strengths: [],
+      growthEdges: [],
+      collaborationPreferences: { always: [], never: [], feedbackStyle: 'blunt' },
+      alexCoachingNotes: [],
+    }
+  }
+
+  it('forwards a completed voiceProfile as the 6th generatePersonaResponse argument', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+    const profile = completedVoiceProfile()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+        voiceProfile: profile,
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toEqual(profile)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('degrades a malformed voiceProfile to undefined and still returns 200', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+        voiceProfile: { version: 1, archetype: 42 }, // malformed
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('passes undefined when no voiceProfile is sent', async () => {
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'sam',
+        message: 'Help me.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      expect(generateSpy.mock.calls[0][5]).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('/api/wp-chat debug metadata gating (Slice 2)', () => {
+  const sampleDebug = {
+    runId: 'morgan_test',
+    consults: [{ specialistId: 'casey', question: 'Ace?', status: 'ok' as const, durationMs: 12 }],
+    guardrails: [{ name: 'specialist_attribution', status: 'passed' as const }],
+  }
+
+  afterEach(() => {
+    delete process.env.MORGAN_DEBUG_API
+  })
+
+  it('omits debug from the response by default (flag off), keeping the contract { message, suggestions }', async () => {
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'writingPartner',
+        message: 'Hi Morgan',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      expect(response.status).toBe(200)
+      expect(response.json.message).toBe('Morgan response.')
+      expect(response.json.debug).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('includes debug when MORGAN_DEBUG_API=on', async () => {
+    process.env.MORGAN_DEBUG_API = 'on'
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const state = defaultProjectState()
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        personaId: 'writingPartner',
+        message: 'Hi Morgan',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+      expect(response.status).toBe(200)
+      expect(response.json.debug).toEqual(sampleDebug)
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe('/api/chat debug metadata gating (Slice 2)', () => {
+  const sampleDebug = {
+    runId: 'morgan_test',
+    consults: [{ specialistId: 'casey', question: 'Ace?', status: 'ok' as const, durationMs: 12 }],
+    guardrails: [{ name: 'specialist_attribution', status: 'passed' as const }],
+  }
+  const profile = {
+    entryState: 'idea_only' as const,
+    existingWork: [],
+    immediateNeed: 'help',
+    feedbackStyle: 'direct' as const,
+    writerName: 'Ben',
+  }
+  const chatPayload = {
+    personaId: 'writingPartner',
+    message: 'Hi Morgan',
+    userProfile: profile,
+    storyMemory: {
+      project: {},
+      characters: {},
+      outline: { acts: 3, beats: [] },
+      worldRules: {},
+      dialogue: {},
+      userProfile: profile,
+      decisions: [],
+    },
+    conversationHistory: [],
+  }
+
+  afterEach(() => {
+    delete process.env.MORGAN_DEBUG_API
+  })
+
+  it('omits debug from /api/chat by default, even for the Morgan persona', async () => {
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/chat', chatPayload)
+      expect(response.status).toBe(200)
+      expect(response.json.message).toBe('Morgan response.')
+      expect(response.json.debug).toBeUndefined()
+    } finally {
+      server.close()
+    }
+  })
+
+  it('includes debug on /api/chat when MORGAN_DEBUG_API=on', async () => {
+    process.env.MORGAN_DEBUG_API = 'on'
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+      debug: sampleDebug,
+    })
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/chat', chatPayload)
+      expect(response.status).toBe(200)
+      expect(response.json.debug).toEqual(sampleDebug)
     } finally {
       server.close()
     }

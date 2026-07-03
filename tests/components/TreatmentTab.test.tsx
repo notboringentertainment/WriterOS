@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { TreatmentTab } from '../../client/src/components/writing/TreatmentTab'
 import {
   createEmptyTreatmentContent,
@@ -7,9 +8,14 @@ import {
   type AuthoredDocumentState,
   type TreatmentDocumentContent,
 } from '@shared/documents'
+import { syntheticTreatment } from '../fixtures/treatment/syntheticTreatment'
+import { computeTreatmentSourceHash } from '../../shared/compose/treatmentSourceHash'
+import { getTreatmentRecipe } from '../../shared/compose/treatmentRecipe'
+import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION, type ComposedDocument } from '../../shared/compose/types'
 
 function makeDocument(
   override: Partial<TreatmentDocumentContent> = {},
+  viewPreferences?: AuthoredDocumentState<TreatmentDocumentContent>['viewPreferences'],
 ): AuthoredDocumentState<TreatmentDocumentContent> {
   return {
     version: DOCUMENT_SCHEMA_VERSION,
@@ -19,6 +25,7 @@ function makeDocument(
       ...createEmptyTreatmentContent(),
       ...override,
     },
+    viewPreferences,
   }
 }
 
@@ -61,6 +68,57 @@ describe('TreatmentTab', () => {
     expect(screen.getByText('What is the story in one sentence?')).toBeInTheDocument()
     expect(screen.getByText('How does the story open on screen?')).toBeInTheDocument()
     expect(screen.getByText('How does it resolve?')).toBeInTheDocument()
+  })
+
+  it('renders the composed Document View when viewPreferences.activeView is document', () => {
+    const content = createEmptyTreatmentContent()
+    content.logline = 'A medic hears impossible rescue calls.'
+    content.prose.opening = 'Mara ends a night shift as the silent line rings.'
+
+    render(
+      <TreatmentTab
+        document={makeDocument(content, { activeView: 'document' })}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    )
+
+    // Sparse content → below-readiness composer state, not the old stored-answer render.
+    expect(screen.getByText(/add a few more answers before composing your treatment/i)).toBeInTheDocument()
+    expect(screen.queryByText('A medic hears impossible rescue calls.')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('What is the story in one sentence?')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear treatment' })).not.toBeInTheDocument()
+  })
+
+  it('clicking Document fires a view preference patch', () => {
+    const onViewPreferencesPatch = vi.fn()
+    render(
+      <TreatmentTab
+        document={makeDocument()}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={onViewPreferencesPatch}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Document' }))
+
+    expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'document' })
+  })
+
+  it('clicking Edit fires a view preference patch', () => {
+    const onViewPreferencesPatch = vi.fn()
+    render(
+      <TreatmentTab
+        document={makeDocument({}, { activeView: 'document' })}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={onViewPreferencesPatch}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+
+    expect(onViewPreferencesPatch).toHaveBeenCalledWith({ activeView: 'edit' })
   })
 
   it('writes logline edits through the provided content updater', () => {
@@ -284,5 +342,90 @@ describe('TreatmentTab', () => {
     fireEvent.click(collapseButtons[collapseButtons.length - 1])
 
     expect(screen.queryByLabelText('Passage body')).not.toBeInTheDocument()
+  })
+})
+
+describe('TreatmentTab — Document view composition', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  const identity = { title: 'Tidewrack', genre: 'Thriller' }
+
+  function cleanComposed(): ComposedDocument {
+    return {
+      schemaVersion: COMPOSED_SCHEMA_VERSION,
+      generatedAt: '2026-06-12T00:00:00.000Z',
+      model: 'test-model',
+      recipeVersion: getTreatmentRecipe('feature').recipeVersion,
+      composerVersion: COMPOSER_VERSION,
+      sourceHash: computeTreatmentSourceHash(syntheticTreatment, 'feature', identity),
+      format: 'feature',
+      blocks: [
+        { type: 'heading', text: 'Logline' },
+        { type: 'logline', text: 'Mara Voss dives a drowned city and surfaces with proof of murder.', sourceFieldIds: ['logline'] },
+      ],
+      fidelity: { status: 'clean', warnings: [] },
+    }
+  }
+
+  function DocumentHarness() {
+    const [doc, setDoc] = useState<AuthoredDocumentState<TreatmentDocumentContent>>(() => ({
+      ...makeDocument(syntheticTreatment, { activeView: 'document' }),
+    }))
+    return (
+      <TreatmentTab
+        document={doc}
+        projectFormat="feature"
+        identity={identity}
+        onContentChange={vi.fn()}
+        onViewPreferencesPatch={(patch) => setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))}
+        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onClear={vi.fn()}
+      />
+    )
+  }
+
+  it('shows the Compose CTA for a ready treatment and composes on click', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: cleanComposed() }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    const cta = screen.getByRole('button', { name: /compose this treatment/i })
+    expect(cta).toBeEnabled()
+
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText(/Mara Voss dives a drowned city/)).toBeInTheDocument())
+    const [, options] = fetchMock.mock.calls[0]
+    expect(JSON.parse(options.body).surface).toBe('treatment')
+  })
+
+  it('ignores duplicate compose clicks while a request is in flight', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: cleanComposed() }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    const cta = screen.getByRole('button', { name: /compose this treatment/i })
+    fireEvent.click(cta)
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText(/Mara Voss dives a drowned city/)).toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows error/retry when the compose request throws', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this treatment/i }))
+
+    await waitFor(() => expect(screen.getByText(/could not compose/i)).toBeInTheDocument())
+    expect(screen.queryByText('Composing…')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
+
+  it('keeps the Clear button hidden in Document view', () => {
+    render(<DocumentHarness />)
+    expect(screen.queryByRole('button', { name: /clear treatment/i })).not.toBeInTheDocument()
   })
 })

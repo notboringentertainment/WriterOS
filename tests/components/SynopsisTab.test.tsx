@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { SynopsisTab } from '../../client/src/components/writing/SynopsisTab'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
+import { syntheticSynopsisFeature } from '../fixtures/synopsis/syntheticSynopsis'
+import { computeSynopsisSourceHash } from '../../shared/compose/synopsisSourceHash'
+import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
+import type { ComposedDocument } from '../../shared/compose/types'
 
 function makeDocument(
   override: Partial<SynopsisDocumentContent> = {},
@@ -85,7 +90,7 @@ describe('SynopsisTab — page chrome', () => {
     expect(screen.getByTestId('synopsis-story-coach-edit-view')).toBeInTheDocument()
   })
 
-  it('renders DocumentView when viewPreferences.activeView is "document"', () => {
+  it('renders the composed DocumentView when viewPreferences.activeView is "document"', () => {
     const doc = makeDocument({}, { activeView: 'document' })
     render(
       <SynopsisTab
@@ -95,7 +100,8 @@ describe('SynopsisTab — page chrome', () => {
         onClear={vi.fn()}
       />,
     )
-    expect(screen.getByText(/Last edited/)).toBeInTheDocument()
+    // Empty content → below-readiness composer state, not the old stored-answer render.
+    expect(screen.getByText(/add a few more answers before composing your synopsis/i)).toBeInTheDocument()
     expect(screen.queryByTestId('synopsis-story-coach-edit-view')).not.toBeInTheDocument()
   })
 
@@ -320,5 +326,82 @@ describe('SynopsisTab — format authority', () => {
     fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'feature' } })
     expect(onProjectFormatChange).toHaveBeenCalledWith('feature')
     expect(onContentPatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('SynopsisTab — Document View composer', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  const identity = { title: 'Tideline', genre: 'Thriller' }
+  const cleanComposed = (): ComposedDocument => ({
+    schemaVersion: 1, generatedAt: '2026-06-09T00:00:00.000Z', model: 'm',
+    recipeVersion: getSynopsisRecipe('feature').recipeVersion, composerVersion: 1,
+    sourceHash: computeSynopsisSourceHash(syntheticSynopsisFeature, 'feature', identity),
+    format: 'feature',
+    blocks: [
+      { type: 'heading', text: 'Logline' },
+      { type: 'paragraph', text: 'Vera races a rising flood to expose Meridian.', sourceFieldIds: ['logline.text'] },
+    ],
+    fidelity: { status: 'clean', warnings: [] },
+  })
+
+  function DocumentHarness() {
+    const [doc, setDoc] = useState<AuthoredDocumentState<SynopsisDocumentContent>>({
+      ...makeDocument(),
+      content: syntheticSynopsisFeature,
+      viewPreferences: { activeView: 'document' },
+      composed: undefined,
+    })
+    return (
+      <SynopsisTab
+        document={doc}
+        projectFormat="feature"
+        identity={identity}
+        onContentPatch={vi.fn()}
+        onViewPreferencesPatch={(patch) => setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))}
+        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onClear={vi.fn()}
+      />
+    )
+  }
+
+  it('shows the Compose CTA for a ready synopsis and composes on click', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: cleanComposed() }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    const cta = screen.getByRole('button', { name: /compose this synopsis/i })
+    expect(cta).toBeEnabled()
+
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText(/Vera races a rising flood to expose Meridian/)).toBeInTheDocument())
+    const [, options] = fetchMock.mock.calls[0]
+    expect(JSON.parse(options.body).surface).toBe('synopsis')
+  })
+
+  it('ignores duplicate compose clicks while a request is in flight', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: cleanComposed() }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    const cta = screen.getByRole('button', { name: /compose this synopsis/i })
+    fireEvent.click(cta)
+    fireEvent.click(cta)
+
+    await waitFor(() => expect(screen.getByText(/Vera races a rising flood to expose Meridian/)).toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows error/retry when the compose request throws', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    await waitFor(() => expect(screen.getByText(/could not compose/i)).toBeInTheDocument())
+    expect(screen.queryByText('Composing…')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
 })

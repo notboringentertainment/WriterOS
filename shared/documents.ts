@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { ComposedDocumentSchema } from './compose/schemas'
+import type { ComposedDocument } from './compose/types'
 
 export const SynopsisHeaderSchema = z.object({
   title: z.string(),
@@ -524,6 +526,7 @@ export function AuthoredDocumentStateSchema<TContent extends z.ZodTypeAny>(conte
         warnings: z.array(DocumentWarningSchema),
       })
       .optional(),
+    composed: ComposedDocumentSchema.optional(),
   })
 }
 
@@ -537,6 +540,7 @@ export interface AuthoredDocumentState<TContent> {
     lastCheckedAt?: string
     warnings: DocumentWarning[]
   }
+  composed?: ComposedDocument
 }
 
 export const ProjectDocumentsSchema = z.object({
@@ -553,7 +557,7 @@ export interface ProjectDocuments {
   storyBible: AuthoredDocumentState<StoryBibleDocumentContent>
 }
 
-export const DOCUMENT_SCHEMA_VERSION = 1
+export const DOCUMENT_SCHEMA_VERSION = 2
 
 export function createEmptyDocuments(now: () => string = () => new Date().toISOString()): ProjectDocuments {
   const ts = now()

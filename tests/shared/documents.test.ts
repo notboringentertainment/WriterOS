@@ -15,6 +15,7 @@ import {
   AuthoredDocumentStateSchema,
   ProjectDocumentsSchema,
   createEmptyDocuments,
+  DOCUMENT_SCHEMA_VERSION,
   type ProjectDocuments,
   DocumentViewPreferencesSchema,
   SynopsisSeriesContentSchema,
@@ -263,10 +264,10 @@ describe('AuthoredDocumentState wrapper', () => {
     expect(ProjectDocumentsSchema.safeParse(empty).success).toBe(true)
   })
 
-  it('each surface wrapper has version 1 and an updatedAt ISO string', () => {
+  it('each surface wrapper has the current document schema version and an updatedAt ISO string', () => {
     const empty = createEmptyDocuments()
     for (const surface of ['synopsis', 'outline', 'treatment', 'storyBible'] as const) {
-      expect(empty[surface].version).toBe(1)
+      expect(empty[surface].version).toBe(DOCUMENT_SCHEMA_VERSION)
       expect(typeof empty[surface].updatedAt).toBe('string')
       expect(empty[surface].updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     }

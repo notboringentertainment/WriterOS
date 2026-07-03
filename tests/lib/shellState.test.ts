@@ -3,8 +3,9 @@ import { renderHook, act } from '@testing-library/react'
 import { useShellState } from '../../client/src/lib/shellState'
 
 describe('useShellState', () => {
-  it('starts on script tab with panel closed and no focus mode', () => {
+  it('starts on Home with script as the first workspace tab', () => {
     const { result } = renderHook(() => useShellState())
+    expect(result.current.homeActive).toBe(true)
     expect(result.current.activeTab).toBe('script')
     expect(result.current.panelOpen).toBe(false)
     expect(result.current.focusMode).toBe(false)
@@ -25,11 +26,13 @@ describe('useShellState', () => {
     expect(result.current.storyBibleSection).toBe('characters')
   })
 
-  it('setActiveTab switches tab and clears writersRoom', () => {
+  it('setActiveTab switches tab without closing Writer Room', () => {
     const { result } = renderHook(() => useShellState())
+    act(() => result.current.enterWritersRoom())
     act(() => result.current.setActiveTab('synopsis'))
+    expect(result.current.homeActive).toBe(false)
     expect(result.current.activeTab).toBe('synopsis')
-    expect(result.current.writersRoomActive).toBe(false)
+    expect(result.current.writersRoomActive).toBe(true)
   })
 
   it('setActiveTab exits focus mode', () => {
@@ -44,6 +47,7 @@ describe('useShellState', () => {
     act(() => result.current.togglePanel())
     act(() => result.current.toggleFocusMode())
     act(() => result.current.enterWritersRoom())
+    expect(result.current.homeActive).toBe(false)
     expect(result.current.writersRoomActive).toBe(true)
     expect(result.current.panelOpen).toBe(false)
     expect(result.current.focusMode).toBe(false)
@@ -56,6 +60,32 @@ describe('useShellState', () => {
     act(() => result.current.exitWritersRoom())
     expect(result.current.writersRoomActive).toBe(false)
     expect(result.current.activeTab).toBe('outline')
+  })
+
+  it('toggleWritersRoom opens and closes Writer Room explicitly', () => {
+    const { result } = renderHook(() => useShellState())
+    act(() => result.current.togglePanel())
+    act(() => result.current.toggleWritersRoom())
+    expect(result.current.homeActive).toBe(false)
+    expect(result.current.writersRoomActive).toBe(true)
+    expect(result.current.panelOpen).toBe(false)
+
+    act(() => result.current.toggleWritersRoom())
+    expect(result.current.writersRoomActive).toBe(false)
+  })
+
+  it('opens and leaves Home explicitly', () => {
+    const { result } = renderHook(() => useShellState())
+    act(() => result.current.setActiveTab('outline'))
+    expect(result.current.homeActive).toBe(false)
+
+    act(() => result.current.openHome())
+    expect(result.current.homeActive).toBe(true)
+    expect(result.current.writersRoomActive).toBe(false)
+    expect(result.current.focusMode).toBe(false)
+
+    act(() => result.current.openProjectWorkspace())
+    expect(result.current.homeActive).toBe(false)
   })
 
   it('togglePanel flips panel open state', () => {

@@ -61,11 +61,11 @@ export function LeftRail({
     >
       {/* Avatar button — always visible */}
       <button
-        title="Writing Partner"
+        title="Morgan"
         onClick={onToggle}
         style={styles.avatar}
       >
-        <span style={styles.avatarInner}>WP</span>
+        <span style={styles.avatarInner}>M</span>
         {hasProactive && !open && (
           <span style={styles.pulse} aria-hidden="true" />
         )}
@@ -79,7 +79,7 @@ export function LeftRail({
         <div style={styles.panel}>
           <div style={styles.panelHeader}>
             <div style={styles.panelTitleRow}>
-              <span style={styles.panelTitle}>Writing Partner</span>
+              <span style={styles.panelTitle}>Morgan</span>
               {transcript.length > 0 && onClearTranscript && (
                 <button
                   type="button"
@@ -92,7 +92,7 @@ export function LeftRail({
             </div>
             <span style={styles.contextChip}>{projectTitle}</span>
           </div>
-          <div ref={transcriptRef} style={styles.transcript} aria-label="Writing Partner conversation">
+          <div ref={transcriptRef} style={styles.transcript} aria-label="Morgan conversation">
             {transcript.length === 0 && !loading ? (
               <p style={styles.emptyState}>
                 Ask anything about your project, or <code>@Oliver</code>, <code>@Sam</code>, <code>@Maya</code>…
@@ -123,7 +123,7 @@ export function LeftRail({
           <div style={styles.helperHint} aria-label="Active helper">{activeHelperText}</div>
           <div style={styles.inputRow}>
             <textarea
-              placeholder="Message Writing Partner…"
+              placeholder="Message Morgan…"
               style={styles.input}
               rows={2}
               value={inputText}
@@ -151,6 +151,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
+    // Bound the rail to its container's height. Without this the rail grows to
+    // fit its content, so the inner transcript never overflows — the outer
+    // .zone-tele scrolls instead, and the auto-scroll effect (which targets the
+    // transcript) becomes a no-op. Binding height makes the transcript the real
+    // scroll container so new messages scroll into view.
+    height: '100%',
+    minHeight: 0,
     transition: 'width var(--rail-transition)',
     overflow: 'hidden',
     position: 'relative',

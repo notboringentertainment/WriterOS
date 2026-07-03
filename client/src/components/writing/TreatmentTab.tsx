@@ -5,19 +5,32 @@ import type {
   TreatmentMainCharacter,
 } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
+import { DocumentViewToggle } from '../shared/DocumentViewToggle'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
+import { requestTreatmentCompose } from '../../lib/treatmentComposeClient'
+import { TreatmentDocumentView } from './treatment/TreatmentDocumentView'
 import {
   TREATMENT_PASSAGE_TEMPLATES,
   createPassageSection,
   getPassagePlaceholder,
   type TreatmentPassageTemplate,
 } from '../../lib/treatmentPassages'
+import {
+  TREATMENT_OPEN_QUESTION_FIELDS as QUESTION_FIELDS,
+  TREATMENT_PROSE_FIELDS as PROSE_FIELDS,
+  TREATMENT_VISUAL_FIELDS as VISUAL_FIELDS,
+} from '../../lib/treatmentDeck'
 
 interface TreatmentTabProps {
   document: AuthoredDocumentState<TreatmentDocumentContent>
   projectFormat?: ProjectFormat
+  // Optional so existing Edit View tests keep compiling (Synopsis build-reality delta).
+  identity?: ComposeIdentity
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentChange: (updater: (content: TreatmentDocumentContent) => TreatmentDocumentContent) => void
+  onViewPreferencesPatch?: (patch: { activeView?: 'edit' | 'document' }) => void
+  onComposed?: (composed: ComposedDocument) => void
   onClear?: () => void
 }
 
@@ -26,46 +39,6 @@ type ProseField = Exclude<keyof TreatmentDocumentContent['prose'], 'customSectio
 type VisualField = keyof TreatmentDocumentContent['visualAndTonal']
 type QuestionField = keyof TreatmentDocumentContent['openQuestions']
 type CharacterField = keyof TreatmentMainCharacter
-
-const PROSE_FIELDS: Array<{ field: ProseField; question: string; helper: string }> = [
-  {
-    field: 'opening',
-    question: 'How does the story open on screen?',
-    helper: 'Establish the person, world, tone, and first disturbance in present tense.',
-  },
-  {
-    field: 'actOne',
-    question: 'What pulls them into the story?',
-    helper: 'Tell the setup, first choices, conflict, and commitment into the story.',
-  },
-  {
-    field: 'actTwo',
-    question: 'How does the pressure build and turn?',
-    helper: 'Follow escalation, reversals, discoveries, relationship pressure, and collapse.',
-  },
-  {
-    field: 'actThree',
-    question: 'How does it resolve?',
-    helper: 'Tell the final plan, decisive choice, cost, resolution, and last image.',
-  },
-]
-
-const VISUAL_FIELDS: Array<{ field: VisualField; label: string }> = [
-  { field: 'overallTone', label: "What's the atmosphere from scene to scene?" },
-  { field: 'visualWorld', label: 'What does the world look like?' },
-  { field: 'recurringImagesOrMotifs', label: 'What images or motifs keep returning?' },
-  { field: 'musicOrSoundFeeling', label: 'What should it sound like?' },
-  { field: 'pacing', label: 'How should the story move?' },
-  { field: 'genreRules', label: 'What genre promises or rules matter?' },
-  { field: 'compsAndReferences', label: 'What does this remind people of?' },
-]
-
-const QUESTION_FIELDS: Array<{ field: QuestionField; label: string }> = [
-  { field: 'story', label: 'Story decisions still needed' },
-  { field: 'character', label: 'Character decisions still needed' },
-  { field: 'worldOrMythology', label: 'World or mythology decisions still needed' },
-  { field: 'production', label: 'Production decisions still needed' },
-]
 
 function linesToArray(value: string): string[] {
   return value
@@ -116,14 +89,43 @@ function hasTreatmentAnswers(content: TreatmentDocumentContent): boolean {
 export function TreatmentTab({
   document,
   projectFormat = 'feature',
+  identity = { title: '', genre: '' },
   onProjectFormatChange,
   onContentChange,
+  onViewPreferencesPatch,
+  onComposed,
   onClear,
 }: TreatmentTabProps) {
   const content = document.content
+  const activeView = document.viewPreferences?.activeView ?? 'edit'
   const activeFormat = normalizeProjectFormat(projectFormat)
   const canClear = hasTreatmentAnswers(content)
   const [collapsedIds, setCollapsedIds] = React.useState<Set<string>>(() => new Set())
+
+  const [isComposing, setIsComposing] = React.useState(false)
+  const [composeError, setComposeError] = React.useState<string | null>(null)
+  // The double-submit guard lives here in the tab handler, not in the compose client.
+  const isComposingRef = React.useRef(false)
+
+  const handleCompose = React.useCallback(async () => {
+    if (isComposingRef.current) return
+    isComposingRef.current = true
+    setIsComposing(true)
+    setComposeError(null)
+    try {
+      const result = await requestTreatmentCompose({ content, format: activeFormat, identity })
+      if (result.ok) {
+        onComposed?.(result.composed)
+      } else {
+        setComposeError('WriterOS could not compose this document right now.')
+      }
+    } catch {
+      setComposeError('WriterOS could not compose this document right now.')
+    } finally {
+      isComposingRef.current = false
+      setIsComposing(false)
+    }
+  }, [content, activeFormat, identity, onComposed])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {
@@ -253,7 +255,11 @@ export function TreatmentTab({
             onChange={(next) => onProjectFormatChange?.(next)}
             variant="standalone"
           />
-          {onClear && (
+          <DocumentViewToggle
+            value={activeView}
+            onChange={(next) => onViewPreferencesPatch?.({ activeView: next })}
+          />
+          {onClear && activeView === 'edit' && (
             <button
               type="button"
               style={{
@@ -269,237 +275,251 @@ export function TreatmentTab({
         </div>
       </div>
 
-      <section style={styles.card}>
-        <label style={styles.question} htmlFor="treatment-logline">What is the story in one sentence?</label>
-        <p style={styles.helper}>Protagonist, goal, pressure, stakes, and hook.</p>
-        <textarea
-          id="treatment-logline"
-          value={content.logline}
-          onChange={(event) => patchContent({ logline: event.target.value })}
-          style={styles.textarea}
-          rows={3}
-        />
-      </section>
+      {activeView === 'edit' ? (
+        <>
+          <section style={styles.card}>
+            <label style={styles.question} htmlFor="treatment-logline">What is the story in one sentence?</label>
+            <p style={styles.helper}>Protagonist, goal, pressure, stakes, and hook.</p>
+            <textarea
+              id="treatment-logline"
+              value={content.logline}
+              onChange={(event) => patchContent({ logline: event.target.value })}
+              style={styles.textarea}
+              rows={3}
+            />
+          </section>
 
-      <section style={styles.card}>
-        <h3 style={styles.sectionTitle}>The promise</h3>
-        <LabeledTextarea
-          label="What is the premise?"
-          value={content.concept.premise}
-          onChange={(value) => setConceptField('premise', value)}
-        />
-        <LabeledTextarea
-          label="What kind of story is this?"
-          value={content.concept.tone}
-          onChange={(value) => setConceptField('tone', value)}
-        />
-        <LabeledTextarea
-          label="What truth is underneath it?"
-          value={content.concept.theme}
-          onChange={(value) => setConceptField('theme', value)}
-        />
-        <LabeledTextarea
-          label="What should the audience feel by the end?"
-          value={content.concept.emotionalPromise}
-          onChange={(value) => setConceptField('emotionalPromise', value)}
-        />
-      </section>
+          <section style={styles.card}>
+            <h3 style={styles.sectionTitle}>The promise</h3>
+            <LabeledTextarea
+              label="What is the premise?"
+              value={content.concept.premise}
+              onChange={(value) => setConceptField('premise', value)}
+            />
+            <LabeledTextarea
+              label="What kind of story is this?"
+              value={content.concept.tone}
+              onChange={(value) => setConceptField('tone', value)}
+            />
+            <LabeledTextarea
+              label="What truth is underneath it?"
+              value={content.concept.theme}
+              onChange={(value) => setConceptField('theme', value)}
+            />
+            <LabeledTextarea
+              label="What should the audience feel by the end?"
+              value={content.concept.emotionalPromise}
+              onChange={(value) => setConceptField('emotionalPromise', value)}
+            />
+          </section>
 
-      <section style={styles.card}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.sectionTitle}>Who carries it</h3>
-          <button type="button" style={styles.addButton} onClick={addCharacter}>
-            Add character
-          </button>
-        </div>
-        {content.mainCharacters.length === 0 ? (
-          <p style={styles.emptyText}>No treatment characters yet.</p>
-        ) : (
-          content.mainCharacters.map(character => (
-            <div key={character.id} style={styles.characterBlock}>
-              <div style={styles.headingRow}>
-                <input
-                  aria-label="Character name"
-                  value={character.name}
-                  onChange={(event) => setCharacterField(character.id, 'name', event.target.value)}
-                  style={{ ...styles.input, flex: 1 }}
-                  placeholder="Character name"
-                />
-                <button
-                  type="button"
-                  aria-label="Remove character"
-                  style={styles.removeButton}
-                  onClick={() => removeCharacter(character.id)}
-                >
-                  Remove
-                </button>
-              </div>
-              <div style={styles.grid}>
-                <LabeledInput
-                  label="Role"
-                  value={character.role}
-                  onChange={(value) => setCharacterField(character.id, 'role', value)}
-                />
-                <LabeledInput
-                  label="What they want"
-                  value={character.externalWant}
-                  onChange={(value) => setCharacterField(character.id, 'externalWant', value)}
-                />
-                <LabeledInput
-                  label="What they need"
-                  value={character.internalNeed}
-                  onChange={(value) => setCharacterField(character.id, 'internalNeed', value)}
-                />
-                <LabeledInput
-                  label="How they change"
-                  value={character.arc}
-                  onChange={(value) => setCharacterField(character.id, 'arc', value)}
-                />
-              </div>
+          <section style={styles.card}>
+            <div style={styles.sectionHeader}>
+              <h3 style={styles.sectionTitle}>Who carries it</h3>
+              <button type="button" style={styles.addButton} onClick={addCharacter}>
+                Add character
+              </button>
             </div>
-          ))
-        )}
-      </section>
-
-      <section style={styles.stack}>
-        {PROSE_FIELDS.map(item => {
-          const collapsed = collapsedIds.has(item.field)
-          return (
-            <article key={item.field} style={styles.card}>
-              <div style={styles.headingRow}>
-                <label style={{ ...styles.question, flex: 1 }} htmlFor={`treatment-${item.field}`}>
-                  {item.question}
-                </label>
-                <button
-                  type="button"
-                  style={styles.collapseButton}
-                  aria-label={collapsed ? 'Expand' : 'Collapse'}
-                  aria-expanded={!collapsed}
-                  onClick={() => toggleCollapsed(item.field)}
-                >
-                  {collapsed ? 'Expand' : 'Collapse'}
-                </button>
-              </div>
-              {!collapsed && (
-                <>
-                  <p style={styles.helper}>{item.helper}</p>
-                  <textarea
-                    id={`treatment-${item.field}`}
-                    value={content.prose[item.field]}
-                    onChange={(event) => setProseField(item.field, event.target.value)}
-                    style={styles.longTextarea}
-                    rows={8}
-                  />
-                </>
-              )}
-            </article>
-          )
-        })}
-      </section>
-
-      <section style={styles.card}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.sectionTitle}>Story passages</h3>
-          <select
-            aria-label="Add a passage"
-            value=""
-            onChange={(event) => {
-              const template = TREATMENT_PASSAGE_TEMPLATES.find(
-                item => item.id === event.target.value,
-              )
-              if (template) addPassage(template)
-            }}
-            style={styles.picker}
-          >
-            <option value="">Add a passage…</option>
-            {TREATMENT_PASSAGE_TEMPLATES.map(template => (
-              <option key={template.id} value={template.id}>
-                {passageOptionLabel(template)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <p style={styles.helper}>
-          Add focused passages beyond the main flow above — a character&apos;s journey, a place, a
-          major turn.
-        </p>
-        {content.prose.customSections.length === 0 ? (
-          <p style={styles.emptyText}>No story passages yet.</p>
-        ) : (
-          content.prose.customSections.map(section => {
-            const collapsed = collapsedIds.has(section.id)
-            return (
-              <div key={section.id} style={styles.customSection}>
-                <div style={styles.headingRow}>
-                  <input
-                    aria-label="Passage heading"
-                    value={section.heading}
-                    onChange={(event) => setCustomSection(section.id, { heading: event.target.value })}
-                    style={{ ...styles.input, flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    style={styles.collapseButton}
-                    aria-label={collapsed ? 'Expand' : 'Collapse'}
-                    aria-expanded={!collapsed}
-                    onClick={() => toggleCollapsed(section.id)}
-                  >
-                    {collapsed ? 'Expand' : 'Collapse'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Remove passage"
-                    style={styles.removeButton}
-                    onClick={() => removePassage(section.id)}
-                  >
-                    Remove
-                  </button>
+            {content.mainCharacters.length === 0 ? (
+              <p style={styles.emptyText}>No treatment characters yet.</p>
+            ) : (
+              content.mainCharacters.map(character => (
+                <div key={character.id} style={styles.characterBlock}>
+                  <div style={styles.headingRow}>
+                    <input
+                      aria-label="Character name"
+                      value={character.name}
+                      onChange={(event) => setCharacterField(character.id, 'name', event.target.value)}
+                      style={{ ...styles.input, flex: 1 }}
+                      placeholder="Character name"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Remove character"
+                      style={styles.removeButton}
+                      onClick={() => removeCharacter(character.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div style={styles.grid}>
+                    <LabeledInput
+                      label="Role"
+                      value={character.role}
+                      onChange={(value) => setCharacterField(character.id, 'role', value)}
+                    />
+                    <LabeledInput
+                      label="What they want"
+                      value={character.externalWant}
+                      onChange={(value) => setCharacterField(character.id, 'externalWant', value)}
+                    />
+                    <LabeledInput
+                      label="What they need"
+                      value={character.internalNeed}
+                      onChange={(value) => setCharacterField(character.id, 'internalNeed', value)}
+                    />
+                    <LabeledInput
+                      label="How they change"
+                      value={character.arc}
+                      onChange={(value) => setCharacterField(character.id, 'arc', value)}
+                    />
+                  </div>
                 </div>
-                {!collapsed && (
-                  <textarea
-                    aria-label="Passage body"
-                    value={section.body}
-                    onChange={(event) => setCustomSection(section.id, { body: event.target.value })}
-                    placeholder={getPassagePlaceholder(section.heading)}
-                    style={styles.textarea}
-                    rows={5}
-                  />
-                )}
-              </div>
-            )
-          })
-        )}
-      </section>
+              ))
+            )}
+          </section>
 
-      <section style={styles.card}>
-        <h3 style={styles.sectionTitle}>Texture</h3>
-        <div style={styles.grid}>
-          {VISUAL_FIELDS.map(item => (
-            <LabeledTextarea
-              key={item.field}
-              label={item.label}
-              value={content.visualAndTonal[item.field]}
-              onChange={(value) => setVisualField(item.field, value)}
-              rows={3}
-            />
-          ))}
-        </div>
-      </section>
+          <section style={styles.stack}>
+            {PROSE_FIELDS.map(item => {
+              const collapsed = collapsedIds.has(item.field)
+              return (
+                <article key={item.field} style={styles.card}>
+                  <div style={styles.headingRow}>
+                    <label style={{ ...styles.question, flex: 1 }} htmlFor={`treatment-${item.field}`}>
+                      {item.question}
+                    </label>
+                    <button
+                      type="button"
+                      style={styles.collapseButton}
+                      aria-label={collapsed ? 'Expand' : 'Collapse'}
+                      aria-expanded={!collapsed}
+                      onClick={() => toggleCollapsed(item.field)}
+                    >
+                      {collapsed ? 'Expand' : 'Collapse'}
+                    </button>
+                  </div>
+                  {!collapsed && (
+                    <>
+                      <p style={styles.helper}>{item.helper}</p>
+                      <textarea
+                        id={`treatment-${item.field}`}
+                        value={content.prose[item.field]}
+                        onChange={(event) => setProseField(item.field, event.target.value)}
+                        style={styles.longTextarea}
+                        rows={8}
+                      />
+                    </>
+                  )}
+                </article>
+              )
+            })}
+          </section>
 
-      <section style={styles.card}>
-        <h3 style={styles.sectionTitle}>Open questions</h3>
-        <div style={styles.grid}>
-          {QUESTION_FIELDS.map(item => (
-            <LabeledTextarea
-              key={item.field}
-              label={item.label}
-              value={arrayToLines(content.openQuestions[item.field])}
-              onChange={(value) => setQuestionField(item.field, value)}
-              rows={3}
-            />
-          ))}
-        </div>
-      </section>
+          <section style={styles.card}>
+            <div style={styles.sectionHeader}>
+              <h3 style={styles.sectionTitle}>Story passages</h3>
+              <select
+                aria-label="Add a passage"
+                value=""
+                onChange={(event) => {
+                  const template = TREATMENT_PASSAGE_TEMPLATES.find(
+                    item => item.id === event.target.value,
+                  )
+                  if (template) addPassage(template)
+                }}
+                style={styles.picker}
+              >
+                <option value="">Add a passage…</option>
+                {TREATMENT_PASSAGE_TEMPLATES.map(template => (
+                  <option key={template.id} value={template.id}>
+                    {passageOptionLabel(template)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p style={styles.helper}>
+              Add focused passages beyond the main flow above — a character&apos;s journey, a place, a
+              major turn.
+            </p>
+            {content.prose.customSections.length === 0 ? (
+              <p style={styles.emptyText}>No story passages yet.</p>
+            ) : (
+              content.prose.customSections.map(section => {
+                const collapsed = collapsedIds.has(section.id)
+                return (
+                  <div key={section.id} style={styles.customSection}>
+                    <div style={styles.headingRow}>
+                      <input
+                        aria-label="Passage heading"
+                        value={section.heading}
+                        onChange={(event) => setCustomSection(section.id, { heading: event.target.value })}
+                        style={{ ...styles.input, flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        style={styles.collapseButton}
+                        aria-label={collapsed ? 'Expand' : 'Collapse'}
+                        aria-expanded={!collapsed}
+                        onClick={() => toggleCollapsed(section.id)}
+                      >
+                        {collapsed ? 'Expand' : 'Collapse'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Remove passage"
+                        style={styles.removeButton}
+                        onClick={() => removePassage(section.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {!collapsed && (
+                      <textarea
+                        aria-label="Passage body"
+                        value={section.body}
+                        onChange={(event) => setCustomSection(section.id, { body: event.target.value })}
+                        placeholder={getPassagePlaceholder(section.heading)}
+                        style={styles.textarea}
+                        rows={5}
+                      />
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </section>
+
+          <section style={styles.card}>
+            <h3 style={styles.sectionTitle}>Texture</h3>
+            <div style={styles.grid}>
+              {VISUAL_FIELDS.map(item => (
+                <LabeledTextarea
+                  key={item.field}
+                  label={item.label}
+                  value={content.visualAndTonal[item.field]}
+                  onChange={(value) => setVisualField(item.field, value)}
+                  rows={3}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section style={styles.card}>
+            <h3 style={styles.sectionTitle}>Open questions</h3>
+            <div style={styles.grid}>
+              {QUESTION_FIELDS.map(item => (
+                <LabeledTextarea
+                  key={item.field}
+                  label={item.label}
+                  value={arrayToLines(content.openQuestions[item.field])}
+                  onChange={(value) => setQuestionField(item.field, value)}
+                  rows={3}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <TreatmentDocumentView
+          content={content}
+          format={activeFormat}
+          identity={identity}
+          composed={document.composed}
+          isComposing={isComposing}
+          error={composeError}
+          onCompose={handleCompose}
+        />
+      )}
     </div>
   )
 }

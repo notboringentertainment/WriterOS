@@ -1,0 +1,1148 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ProjectSummary } from '../../lib/projectLibrary'
+import { getDisplayProjectTitle } from '../../lib/projectIdentity'
+import type {
+  WriterOSCorruptFolderProject,
+  WriterOSFolderProject,
+  WriterOSProjectsFolderStatus,
+} from '../../lib/useWriterOSProjectsFolder'
+import { MigrateLocalStorageModal } from './MigrateLocalStorageModal'
+
+export type HomeDeleteTarget =
+  | { storageKind: 'browser'; projectId: string; title: string }
+  | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
+
+export type HomeArchiveTarget =
+  | { storageKind: 'browser'; projectId: string; title: string }
+  | { storageKind: 'folder'; projectId: string; title: string; packageName: string }
+
+export type HomePackageActionTarget = {
+  storageKind: 'folder'
+  projectId: string
+  title: string
+  packageName: string
+}
+
+export type HomeView = 'active' | 'archive'
+
+interface HomeSurfaceProps {
+  activeProjectId: string
+  projects: ProjectSummary[]
+  folderProjects?: WriterOSFolderProject[]
+  archivedFolderProjects?: WriterOSFolderProject[]
+  corruptFolderProjects?: WriterOSCorruptFolderProject[]
+  storageStatus?: HomeProjectStorageStatus
+  activeStorageKind?: 'browser' | 'folder'
+  openingFolderProjectId?: string | null
+  deletingProjectId?: string | null
+  archivingProjectId?: string | null
+  restoringProjectId?: string | null
+  showingProjectInFolderId?: string | null
+  duplicatingProjectId?: string | null
+  initialView?: HomeView
+  onOpenProject: (projectId: string) => void
+  onOpenFolderProject?: (projectId: string) => void
+  onNewProject: () => void
+  onDeleteProject?: (target: HomeDeleteTarget) => void | Promise<void>
+  onArchiveProject?: (target: HomeArchiveTarget) => void | Promise<void>
+  onRestoreProject?: (target: HomeArchiveTarget) => void | Promise<void>
+  onShowProjectInFolder?: (target: HomePackageActionTarget) => void | Promise<void>
+  onDuplicateProject?: (target: HomePackageActionTarget) => void | Promise<void>
+  onImportFdx?: (file: File) => void | Promise<void>
+  importingFdx?: boolean
+  importError?: string | null
+  onChooseProjectFolder?: () => void
+  onRefreshProjectFolder?: () => void
+  onForgetProjectFolder?: () => void
+  unmigratedProjects?: { id: string; title: string }[]
+  folderLabel?: string | null
+  onMigrateLocalStorage?: () => void
+  migratingLocalStorage?: boolean
+}
+
+type SortKey = 'updated' | 'title' | 'created'
+type HomeStorageStatusKind = WriterOSProjectsFolderStatus | 'browser-fallback'
+
+interface HomeProjectStorageStatus {
+  status: HomeStorageStatusKind
+  label: string | null
+  defaultFolderLabel: string
+  fileSystemAccessSupported: boolean
+  folderPersistenceSupported: boolean
+  errorMessage: string | null
+}
+
+type HomeProjectRow =
+  | {
+      storageKind: 'browser'
+      project: ProjectSummary
+      archived: boolean
+    }
+  | {
+      storageKind: 'folder'
+      project: ProjectSummary
+      packageName: string
+      warnings: string[]
+      archived: boolean
+    }
+
+export function HomeSurface({
+  activeProjectId,
+  projects,
+  folderProjects = [],
+  archivedFolderProjects = [],
+  corruptFolderProjects = [],
+  storageStatus,
+  activeStorageKind = 'browser',
+  openingFolderProjectId = null,
+  deletingProjectId = null,
+  archivingProjectId = null,
+  restoringProjectId = null,
+  showingProjectInFolderId = null,
+  duplicatingProjectId = null,
+  initialView = 'active',
+  onOpenProject,
+  onOpenFolderProject,
+  onNewProject,
+  onDeleteProject,
+  onArchiveProject,
+  onRestoreProject,
+  onShowProjectInFolder,
+  onDuplicateProject,
+  onImportFdx,
+  importingFdx = false,
+  importError = null,
+  onChooseProjectFolder,
+  onRefreshProjectFolder,
+  onForgetProjectFolder,
+  unmigratedProjects,
+  folderLabel,
+  onMigrateLocalStorage,
+  migratingLocalStorage = false,
+}: HomeSurfaceProps) {
+  const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const [deleteTarget, setDeleteTarget] = useState<HomeDeleteTarget | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<HomeArchiveTarget | null>(null)
+  const [view, setView] = useState<HomeView>(initialView)
+  const [migrationDismissed, setMigrationDismissed] = useState(false)
+  const unmigratedCount = unmigratedProjects?.length ?? 0
+  // Re-open the modal after a dismiss only when the count of unmigrated browser
+  // projects *increases* (e.g., the writer adds a new browser-backed project
+  // later). Decreases — including the count dropping after a partial migration
+  // success — must NOT auto-reset the dismissed flag; otherwise the modal pops
+  // back open on the same flow the writer just cancelled.
+  const prevUnmigratedCountRef = useRef(unmigratedCount)
+  useEffect(() => {
+    if (unmigratedCount > prevUnmigratedCountRef.current) {
+      setMigrationDismissed(false)
+    }
+    prevUnmigratedCountRef.current = unmigratedCount
+  }, [unmigratedCount])
+  const canShowMigrationModal =
+    storageStatus?.status === 'ready' && unmigratedCount > 0
+  const showMigrationModal = canShowMigrationModal && !migrationDismissed
+  const switchView = useCallback((next: HomeView) => {
+    if (next !== view) setQuery('')
+    setView(next)
+  }, [view])
+  const fdxInputRef = useRef<HTMLInputElement>(null)
+  const storage = storageStatus ?? {
+    status: 'browser-fallback' as const,
+    label: null,
+    defaultFolderLabel: '',
+    fileSystemAccessSupported: false,
+    folderPersistenceSupported: false,
+    errorMessage: null,
+  }
+  const isFolderSelected = Boolean(storage.label) && storage.status !== 'disconnected' && storage.status !== 'unsupported'
+  const showingFolderProjects = isFolderSelected && storage.status !== 'browser-fallback'
+  const activeProject = projects.find(project => project.id === activeProjectId) ?? projects[0]
+
+  const projectRows = useMemo<HomeProjectRow[]>(() => {
+    if (showingFolderProjects) {
+      const source = view === 'archive' ? archivedFolderProjects : folderProjects
+      return source.map(folderProject => ({
+        storageKind: 'folder',
+        project: folderProject.summary,
+        packageName: folderProject.packageName,
+        warnings: folderProject.warnings,
+        archived: view === 'archive',
+      }))
+    }
+
+    const partition = view === 'archive'
+      ? projects.filter(project => project.archivedAt)
+      : projects.filter(project => !project.archivedAt)
+
+    return partition.map(project => ({
+      storageKind: 'browser',
+      project,
+      archived: Boolean(project.archivedAt),
+    }))
+  }, [archivedFolderProjects, folderProjects, projects, showingFolderProjects, view])
+
+  const activeBrowserCount = useMemo(
+    () => projects.filter(project => !project.archivedAt).length,
+    [projects],
+  )
+  const archivedBrowserCount = useMemo(
+    () => projects.filter(project => project.archivedAt).length,
+    [projects],
+  )
+  const activeCount = showingFolderProjects ? folderProjects.length : activeBrowserCount
+  const archivedCount = showingFolderProjects ? archivedFolderProjects.length : archivedBrowserCount
+
+  const visibleProjects = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    const filtered = normalizedQuery.length === 0
+      ? projectRows
+      : projectRows.filter(row =>
+          getDisplayProjectTitle(row.project.title).toLowerCase().includes(normalizedQuery)
+          || (row.storageKind === 'folder' && row.packageName.toLowerCase().includes(normalizedQuery))
+        )
+
+    return filtered.slice().sort((a, b) => {
+      if (sortKey === 'title') {
+        return getDisplayProjectTitle(a.project.title).localeCompare(getDisplayProjectTitle(b.project.title))
+      }
+      if (sortKey === 'created') return b.project.createdAt - a.project.createdAt
+      return b.project.updatedAt - a.project.updatedAt
+    })
+  }, [projectRows, query, sortKey])
+
+  const folderActionLabel = storage.status === 'permission-needed'
+    ? 'Allow Folder Access'
+    : storage.label
+      ? 'Change Folder'
+      : 'Choose Folder'
+  const projectFolderAction = storage.status === 'permission-needed'
+    ? onRefreshProjectFolder
+    : onChooseProjectFolder
+  const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
+  const hasStatusActions = storage.fileSystemAccessSupported && (
+    Boolean(storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed')
+    || Boolean(storage.label && onForgetProjectFolder)
+    || (!showMigrationModal && canShowMigrationModal)
+  )
+  const projectCount = view === 'archive' ? archivedCount : activeCount
+  const projectCountMeta = showingFolderProjects
+    ? `Discovered in ${storage.label ?? storage.defaultFolderLabel}`
+    : 'Saved in this browser'
+  const handleImportFdxFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    void onImportFdx?.(file)
+  }
+  const noticeMessages = [storage.errorMessage, importError].filter(
+    (message): message is string => Boolean(message)
+  )
+
+  return (
+    <section style={styles.root} aria-labelledby="home-heading">
+      <div style={styles.header}>
+        <div>
+          <p style={styles.kicker}>Home</p>
+          <h1 id="home-heading" style={styles.title}>Projects</h1>
+        </div>
+        <div style={styles.actions}>
+          <button type="button" style={styles.primaryButton} onClick={onNewProject}>
+            New Project
+          </button>
+          {canUseFolderActions && (
+            <button
+              type="button"
+              style={styles.secondaryButton}
+              onClick={projectFolderAction}
+            >
+              {folderActionLabel}
+            </button>
+          )}
+          <button
+            type="button"
+            style={styles.secondaryButton}
+            disabled={!onImportFdx || importingFdx}
+            onClick={() => fdxInputRef.current?.click()}
+          >
+            {importingFdx ? 'Importing' : 'Import .fdx'}
+          </button>
+          <input
+            ref={fdxInputRef}
+            data-testid="home-fdx-import-input"
+            type="file"
+            accept=".fdx,application/xml,text/xml"
+            style={styles.hiddenInput}
+            onChange={handleImportFdxFile}
+          />
+        </div>
+      </div>
+
+      <div style={styles.statusGrid} aria-label="Project library status">
+        <div style={styles.statusBlock}>
+          <span style={styles.statusLabel}>Folder</span>
+          <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
+          <span style={styles.statusMeta}>{formatFolderStatusMeta(storage)}</span>
+          {storage.fileSystemAccessSupported ? (
+            hasStatusActions && (
+              <div style={styles.statusActions}>
+                {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
+                  <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
+                    Refresh
+                  </button>
+                )}
+                {storage.label && onForgetProjectFolder && (
+                  <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
+                    Forget
+                  </button>
+                )}
+                {!showMigrationModal && canShowMigrationModal && (
+                  <button
+                    type="button"
+                    style={styles.statusButton}
+                    onClick={() => setMigrationDismissed(false)}
+                    disabled={migratingLocalStorage}
+                  >
+                    Migrate browser projects
+                  </button>
+                )}
+              </div>
+            )
+          ) : (
+            <span style={styles.statusMeta}>Folder access is unavailable in this browser.</span>
+          )}
+        </div>
+        <div style={styles.statusBlock}>
+          <span style={styles.statusLabel}>Projects</span>
+          <strong style={styles.statusValue}>{projectCount}</strong>
+          <span style={styles.statusMeta}>{projectCountMeta}</span>
+        </div>
+        <div style={styles.statusBlock}>
+          <span style={styles.statusLabel}>Local projects</span>
+          <strong style={styles.statusValue}>{projects.length}</strong>
+          <span style={styles.statusMeta}>
+            {showingFolderProjects ? 'Available for future migration' : 'Current project source'}
+          </span>
+        </div>
+      </div>
+
+      {noticeMessages.length > 0 && (
+        <div style={styles.notice} role="status">
+          {noticeMessages.map((message, index) => (
+            <span
+              key={`${index}-${message}`}
+              style={index === 0 ? undefined : styles.noticeLine}
+            >
+              {message}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {corruptFolderProjects.length > 0 && showingFolderProjects && (
+        <div style={styles.notice} aria-label="Project package warnings">
+          <strong style={styles.noticeTitle}>{formatCorruptPackageCount(corruptFolderProjects.length)}</strong>
+          {corruptFolderProjects.map(project => (
+            <span key={project.packageName} style={styles.noticeLine}>
+              {project.packageName}: {project.message}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {activeProject && !showingFolderProjects && (
+        <div style={styles.currentProject}>
+          <div>
+            <span style={styles.statusLabel}>Current project</span>
+            <h2 style={styles.currentTitle}>{getDisplayProjectTitle(activeProject.title)}</h2>
+            <p style={styles.currentMeta}>
+              {formatFormat(activeProject.format)} · {formatSceneCount(activeProject.sceneCount)} · Updated {formatTimestamp(activeProject.updatedAt)}
+            </p>
+          </div>
+          <button
+            type="button"
+            style={styles.secondaryButton}
+            onClick={() => onOpenProject(activeProject.id)}
+          >
+            Open Current
+          </button>
+        </div>
+      )}
+
+      <div style={styles.viewToggle} role="tablist" aria-label="Project view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'active'}
+          style={view === 'active' ? styles.viewToggleButtonActive : styles.viewToggleButton}
+          onClick={() => switchView('active')}
+        >
+          Active ({activeCount})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'archive'}
+          style={view === 'archive' ? styles.viewToggleButtonActive : styles.viewToggleButton}
+          onClick={() => switchView('archive')}
+        >
+          Archive ({archivedCount})
+        </button>
+      </div>
+
+      <div style={styles.toolbar}>
+        <label style={styles.searchLabel}>
+          <span style={styles.statusLabel}>Filter</span>
+          <input
+            aria-label="Filter projects"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Project title"
+            style={styles.searchInput}
+          />
+        </label>
+        <label style={styles.sortLabel}>
+          <span style={styles.statusLabel}>Sort</span>
+          <select
+            aria-label="Sort projects"
+            value={sortKey}
+            onChange={event => setSortKey(event.target.value as SortKey)}
+            style={styles.sortSelect}
+          >
+            <option value="updated">Last updated</option>
+            <option value="title">Title</option>
+            <option value="created">Created</option>
+          </select>
+        </label>
+      </div>
+
+      <div style={styles.projectList} aria-label="Project list">
+        {visibleProjects.length === 0 ? (
+          <div style={styles.empty}>
+            <p>{formatEmptyState(query, showingFolderProjects, storage.status, view)}</p>
+            {query.trim() === '' && view === 'active' && !showingFolderProjects && (
+              <div style={styles.emptyActions}>
+                <button type="button" style={styles.primaryButton} onClick={onNewProject}>
+                  New Project
+                </button>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  disabled={!onImportFdx || importingFdx}
+                  onClick={() => fdxInputRef.current?.click()}
+                >
+                  {importingFdx ? 'Importing' : 'Import .fdx'}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : visibleProjects.map(row => {
+          const isActive = row.storageKind === activeStorageKind && row.project.id === activeProjectId
+          const isOpening = row.storageKind === 'folder' && row.project.id === openingFolderProjectId
+          const projectTitle = getDisplayProjectTitle(row.project.title)
+          return (
+            <article
+              key={`${row.storageKind}-${row.project.id}`}
+              style={{ ...styles.projectRow, ...(isActive ? styles.projectRowActive : {}) }}
+            >
+              <div style={styles.projectMain}>
+                <h3 style={styles.projectTitle}>{projectTitle}</h3>
+                <p style={styles.projectMeta}>
+                  {formatFormat(row.project.format)} · {formatSceneCount(row.project.sceneCount)} · Updated {formatTimestamp(row.project.updatedAt)}
+                </p>
+                {row.storageKind === 'folder' && (
+                  <p style={styles.projectPackageMeta}>
+                    {row.packageName}
+                    {row.warnings.length > 0 ? ` · ${row.warnings.length} warning${row.warnings.length === 1 ? '' : 's'}` : ''}
+                  </p>
+                )}
+              </div>
+              <div style={styles.projectActions}>
+                {!row.archived && (
+                  <button
+                    type="button"
+                    style={isActive ? styles.primarySmallButton : styles.secondarySmallButton}
+                    aria-label={`Open ${projectTitle}`}
+                    disabled={isOpening || (row.storageKind === 'folder' && !onOpenFolderProject)}
+                    onClick={() => {
+                      if (row.storageKind === 'browser') onOpenProject(row.project.id)
+                      else onOpenFolderProject?.(row.project.id)
+                    }}
+                  >
+                    {isOpening ? 'Opening' : 'Open'}
+                  </button>
+                )}
+                {!row.archived && row.storageKind === 'folder' && onShowProjectInFolder && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Show ${projectTitle} in Folder`}
+                    disabled={showingProjectInFolderId === row.project.id}
+                    onClick={() => {
+                      const target: HomePackageActionTarget = {
+                        storageKind: 'folder',
+                        projectId: row.project.id,
+                        title: projectTitle,
+                        packageName: row.packageName,
+                      }
+                      void onShowProjectInFolder(target)
+                    }}
+                  >
+                    {showingProjectInFolderId === row.project.id ? 'Showing' : 'Show in Folder'}
+                  </button>
+                )}
+                {!row.archived && row.storageKind === 'folder' && onDuplicateProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Duplicate ${projectTitle}`}
+                    disabled={duplicatingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomePackageActionTarget = {
+                        storageKind: 'folder',
+                        projectId: row.project.id,
+                        title: projectTitle,
+                        packageName: row.packageName,
+                      }
+                      void onDuplicateProject(target)
+                    }}
+                  >
+                    {duplicatingProjectId === row.project.id ? 'Duplicating' : 'Duplicate'}
+                  </button>
+                )}
+                {row.archived && onRestoreProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Restore ${projectTitle}`}
+                    disabled={restoringProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeArchiveTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      void onRestoreProject(target)
+                    }}
+                  >
+                    {restoringProjectId === row.project.id ? 'Restoring' : 'Restore'}
+                  </button>
+                )}
+                {!row.archived && onArchiveProject && (
+                  <button
+                    type="button"
+                    style={styles.secondarySmallButton}
+                    aria-label={`Archive ${projectTitle}`}
+                    disabled={archivingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeArchiveTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      setArchiveTarget(target)
+                    }}
+                  >
+                    {archivingProjectId === row.project.id ? 'Archiving' : 'Archive'}
+                  </button>
+                )}
+                {onDeleteProject && (
+                  <button
+                    type="button"
+                    style={styles.destructiveSmallButton}
+                    aria-label={`Delete ${projectTitle}`}
+                    disabled={deletingProjectId === row.project.id}
+                    onClick={() => {
+                      const target: HomeDeleteTarget = row.storageKind === 'folder'
+                        ? {
+                            storageKind: 'folder',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                            packageName: row.packageName,
+                          }
+                        : {
+                            storageKind: 'browser',
+                            projectId: row.project.id,
+                            title: projectTitle,
+                          }
+                      setDeleteTarget(target)
+                    }}
+                  >
+                    {deletingProjectId === row.project.id ? 'Deleting' : 'Delete'}
+                  </button>
+                )}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {archiveTarget && (
+        <div role="dialog" aria-modal="true" aria-labelledby="home-archive-title" style={styles.modalBackdrop}>
+          <div style={styles.modalCard}>
+            <h2 id="home-archive-title" style={styles.modalTitle}>
+              Archive &ldquo;{archiveTarget.title}&rdquo;?
+            </h2>
+            <p style={styles.modalBody}>
+              The project will be hidden from your Active list and moved into the Archive view. You can restore it from there at any time.
+            </p>
+            {archiveTarget.storageKind === 'folder' && (
+              <p style={styles.modalBody}>
+                The <code>{archiveTarget.packageName}</code> folder will be moved into <code>Archive/</code> inside your selected folder.
+              </p>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setArchiveTarget(null)}
+                disabled={archivingProjectId === archiveTarget.projectId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.primaryButton}
+                disabled={archivingProjectId === archiveTarget.projectId}
+                onClick={async () => {
+                  const target = archiveTarget
+                  if (!target) return
+                  try {
+                    await onArchiveProject?.(target)
+                  } catch {
+                    // Parent surfaces failure via the storage-error notice.
+                  } finally {
+                    setArchiveTarget(null)
+                  }
+                }}
+              >
+                {archivingProjectId === archiveTarget.projectId ? 'Archiving' : 'Archive project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div role="dialog" aria-modal="true" aria-labelledby="home-delete-title" style={styles.modalBackdrop}>
+          <div style={styles.modalCard}>
+            <h2 id="home-delete-title" style={styles.modalTitle}>
+              Delete &ldquo;{deleteTarget.title}&rdquo;?
+            </h2>
+            <p style={styles.modalBody}>
+              This removes the script, synopsis, outline, story bible, treatment, and all transcripts for this project.
+            </p>
+            {deleteTarget.storageKind === 'folder' && (
+              <p style={styles.modalBody}>
+                The <code>{deleteTarget.packageName}</code> folder will be removed from disk. This cannot be undone.
+              </p>
+            )}
+            {deleteTarget.storageKind === 'browser' && (
+              <p style={styles.modalBody}>This cannot be undone.</p>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setDeleteTarget(null)}
+                disabled={deletingProjectId === deleteTarget.projectId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.destructiveButton}
+                disabled={deletingProjectId === deleteTarget.projectId}
+                onClick={async () => {
+                  const target = deleteTarget
+                  if (!target) return
+                  // Keep the modal mounted during the await so the "Deleting"
+                  // label and the disabled state on Cancel are reachable, and
+                  // so the writer never sees the dialog disappear mid-action.
+                  // The parent surfaces any failure through the storage-error
+                  // notice that remains visible after the modal closes.
+                  try {
+                    await onDeleteProject?.(target)
+                  } catch {
+                    // Parent surfaces failures via the storage-error notice;
+                    // the modal still closes so the writer can read it.
+                  } finally {
+                    setDeleteTarget(null)
+                  }
+                }}
+              >
+                {deletingProjectId === deleteTarget.projectId ? 'Deleting' : 'Delete project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <MigrateLocalStorageModal
+        open={showMigrationModal}
+        projects={unmigratedProjects ?? []}
+        folderLabel={folderLabel ?? storage.label ?? ''}
+        migrating={migratingLocalStorage}
+        onMigrate={() => onMigrateLocalStorage?.()}
+        onCancel={() => setMigrationDismissed(true)}
+      />
+    </section>
+  )
+}
+
+function formatFolderStatusMeta(storage: HomeProjectStorageStatus) {
+  switch (storage.status) {
+    case 'ready':
+      return storage.folderPersistenceSupported
+        ? 'Remembered in this browser'
+        : 'Connected for this session'
+    case 'loading':
+      return 'Scanning projects'
+    case 'permission-needed':
+      return 'Allow access to the selected folder to scan projects'
+    case 'error':
+      return 'Choose or refresh a folder'
+    case 'unsupported':
+      return 'Folder access is unavailable in this browser'
+    case 'disconnected':
+    case 'browser-fallback':
+      return 'Choose any folder'
+  }
+}
+
+function formatFormat(format: ProjectSummary['format']) {
+  return format === 'series' ? 'Series' : 'Feature'
+}
+
+function formatSceneCount(sceneCount: ProjectSummary['sceneCount']) {
+  if (!sceneCount) return 'No scenes'
+  return sceneCount === 1 ? '1 scene' : `${sceneCount} scenes`
+}
+
+function formatTimestamp(timestamp: number) {
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatEmptyState(
+  query: string,
+  showingFolderProjects: boolean,
+  storageStatus: HomeStorageStatusKind,
+  view: HomeView,
+) {
+  if (query.trim()) return 'No projects match that filter.'
+  if (view === 'archive') {
+    return showingFolderProjects
+      ? 'No archived .writeros projects in this folder.'
+      : 'No archived projects yet. Archive a project from the Active list to keep it restorable.'
+  }
+  if (!showingFolderProjects) return 'No projects yet. Create a new project or import a Final Draft .fdx to get started.'
+  if (storageStatus === 'loading') return 'Scanning project folder...'
+  if (storageStatus === 'permission-needed') return 'Allow folder access to show projects.'
+  if (storageStatus === 'error') return 'Unable to scan the project folder.'
+  return 'No .writeros projects found in this folder.'
+}
+
+function formatCorruptPackageCount(count: number) {
+  return count === 1
+    ? '1 project package needs attention'
+    : `${count} project packages need attention`
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  root: {
+    minHeight: '100%',
+    padding: '40px 48px 64px',
+    background: 'var(--bg)',
+    color: 'var(--fg)',
+  },
+  header: {
+    maxWidth: 1080,
+    margin: '0 auto 24px',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 24,
+  },
+  kicker: {
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 34,
+    fontWeight: 500,
+    color: 'var(--fg)',
+    marginTop: 4,
+  },
+  actions: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  primaryButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--primary-dim)',
+    borderRadius: 6,
+    background: 'var(--primary-dim)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 14px',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 14px',
+  },
+  statusGrid: {
+    maxWidth: 1080,
+    margin: '0 auto 18px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 12,
+  },
+  statusBlock: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    padding: 16,
+  },
+  statusActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  statusButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 12,
+    padding: '6px 9px',
+  },
+  statusLabel: {
+    display: 'block',
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+  statusValue: {
+    display: 'block',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 18,
+    fontWeight: 500,
+    marginTop: 4,
+  },
+  statusMeta: {
+    display: 'block',
+    color: 'var(--fg-muted)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  notice: {
+    maxWidth: 1080,
+    margin: '0 auto 18px',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface-2)',
+    color: 'var(--fg-muted)',
+    fontSize: 14,
+    padding: '12px 14px',
+  },
+  noticeTitle: {
+    display: 'block',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontWeight: 500,
+    marginBottom: 4,
+  },
+  noticeLine: {
+    display: 'block',
+    marginTop: 3,
+  },
+  currentProject: {
+    maxWidth: 1080,
+    margin: '0 auto 28px',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface-2)',
+    padding: 18,
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 18,
+    alignItems: 'center',
+  },
+  currentTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 23,
+    fontWeight: 500,
+    color: 'var(--fg)',
+    marginTop: 4,
+  },
+  currentMeta: {
+    color: 'var(--fg-muted)',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  viewToggle: {
+    maxWidth: 1080,
+    margin: '0 auto 12px',
+    display: 'flex',
+    gap: 8,
+  },
+  viewToggleButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '8px 14px',
+  },
+  viewToggleButtonActive: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--primary-dim)',
+    borderRadius: 6,
+    background: 'var(--primary-dim)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '8px 14px',
+  },
+  toolbar: {
+    maxWidth: 1080,
+    margin: '0 auto 10px',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  searchLabel: {
+    flex: '1 1 260px',
+  },
+  sortLabel: {
+    flex: '0 0 180px',
+  },
+  searchInput: {
+    width: '100%',
+    marginTop: 6,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 10px',
+    outline: 'none',
+  },
+  sortSelect: {
+    width: '100%',
+    marginTop: 6,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 10px',
+    outline: 'none',
+  },
+  projectList: {
+    maxWidth: 1080,
+    margin: '0 auto',
+    borderTopWidth: 1,
+    borderTopStyle: 'solid',
+    borderTopColor: 'var(--border)',
+  },
+  projectRow: {
+    minHeight: 72,
+    borderBottomWidth: 1,
+    borderBottomStyle: 'solid',
+    borderBottomColor: 'var(--border)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
+    padding: '14px 0',
+  },
+  projectRowActive: {
+    background: 'linear-gradient(90deg, hsla(260, 100%, 80%, 0.08), transparent)',
+  },
+  projectMain: {
+    minWidth: 0,
+    paddingLeft: 12,
+  },
+  projectTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 18,
+    fontWeight: 500,
+    color: 'var(--fg)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  projectMeta: {
+    color: 'var(--fg-muted)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  projectPackageMeta: {
+    color: 'var(--fg-subtle)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    marginTop: 5,
+  },
+  primarySmallButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--primary-dim)',
+    borderRadius: 6,
+    background: 'var(--primary-dim)',
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '7px 12px',
+  },
+  secondarySmallButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--fg-muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '7px 12px',
+  },
+  destructiveSmallButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'hsl(0 60% 45%)',
+    borderRadius: 6,
+    background: 'transparent',
+    color: 'hsl(0 60% 55%)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 13,
+    padding: '7px 12px',
+  },
+  destructiveButton: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'hsl(0 60% 45%)',
+    borderRadius: 6,
+    background: 'hsl(0 60% 45%)',
+    color: '#fff',
+    fontFamily: 'var(--font-display)',
+    fontSize: 14,
+    padding: '9px 14px',
+  },
+  projectActions: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+    marginRight: 12,
+  },
+  modalBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'hsla(220, 20%, 5%, 0.55)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    zIndex: 50,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 480,
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: 24,
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 500,
+    color: 'var(--fg)',
+    marginBottom: 12,
+  },
+  modalBody: {
+    fontSize: 14,
+    color: 'var(--fg-muted)',
+    lineHeight: 1.5,
+    marginBottom: 10,
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 18,
+  },
+  empty: {
+    color: 'var(--fg-muted)',
+    fontSize: 15,
+    padding: '28px 12px',
+  },
+  emptyActions: {
+    display: 'flex',
+    gap: 10,
+    marginTop: 14,
+    flexWrap: 'wrap',
+  },
+  hiddenInput: {
+    display: 'none',
+  },
+}

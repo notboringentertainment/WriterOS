@@ -1,4 +1,6 @@
 import type { ProjectFormat } from './projectFormat'
+import type { SurfaceAwareness } from './surfaceAwareness'
+import type { WorkspaceLocation } from './workspaceLocation'
 
 export type EntryState =
   | 'blank_slate'
@@ -59,6 +61,12 @@ export interface StoryMemory {
     dialogueSnippets?: string[]
     actionSnippets?: string[]
     characterNames?: string[]
+    facts?: {
+      rebuiltAt: string
+      characters: Array<{ label: string; count: number }>
+      locations: Array<{ label: string; count: number }>
+      times: Array<{ label: string; count: number }>
+    }
     excerptWordCount?: number
     excerptWordLimit?: number
     excerptTruncated?: boolean
@@ -70,6 +78,10 @@ export interface StoryMemory {
     pageRange?: { start: number; end: number }
     selectedText?: string
   }
+  // Surface Awareness Contract: which page the writer is on + the next unanswered question.
+  // Optional — absent for callers that do not supply it (output stays unchanged).
+  surface?: SurfaceAwareness
+  location?: WorkspaceLocation
   characters: Record<string, Character>
   outline: {
     acts: number

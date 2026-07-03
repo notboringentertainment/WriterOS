@@ -93,7 +93,7 @@ It does not replace the workstreams in this PRD, but it changes how future UI an
 
 - **Voice Profile is shell/onboarding work.** It affects first-run experience, profile/settings access, and AI persona context.
 - **Treatment is studio surface work.** It affects the main writing surface navigation, document state, and Alex's project-facing coaching role.
-- **Document Preview is surface rendering work.** It affects how Synopsis, Outline, Story Bible, and Treatment can be read as authored documents.
+- **Document View is surface rendering work.** Synopsis and Treatment already have read-only Document Views; Outline and Story Bible remain the next structured-surface document-view opportunities.
 - **Storage planning must account for both scopes:** writer-scoped profile data and project-scoped writing documents.
 - **Alex connects both ideas:** Voice Profile gives Alex the writer's process and creative identity; Treatment gives Alex the project's draft-development artifact.
 
@@ -210,46 +210,15 @@ Success criteria:
 
 ## Workstream 4: Storage And Project Library
 
-Goal: decide durable project storage before summaries, memory, export/import, or multi-project workflows grow.
+**Status:** Superseded for planning by `docs/product/app-home-import-storage-prd.md`.
 
-Current boundary:
+Do not use this workstream to decide Home, project folder viewer, `.fdx` import, screenplay import priority, external storage path, or localStorage migration. Those decisions now live in the dedicated App Home, Screenplay Import, And Storage PRD.
 
-- `localStorage` is acceptable for this branch.
-- It is not the long-term answer for full scripts, transcripts, summaries, documents, and project libraries.
+Historical context:
 
-Persist authored/user-visible state:
-
-- project title and metadata
-- script raw HTML / scenes
-- synopsis
-- outline
-- story bible
-- treatment prose
-- transcripts
-- user-visible decisions or project notes
-
-Keep derived/rebuildable unless performance requires otherwise:
-
-- script indexes
-- retrieval packs
-- estimated page spans
-- speaker windows
-- context summaries
-
-Questions to answer in a storage PRD:
-
-- Local files, browser storage, SQLite, cloud database, or hybrid?
-- How are projects imported/exported?
-- How are transcripts stored and pruned?
-- How are large scripts versioned?
-- What is the backup/recovery story?
-- What data can be safely regenerated?
-
-Success criteria:
-
-- Clear source-of-truth model.
-- Safe migration path from current local state.
-- No accidental reintroduction of stale prototype scaffolds.
+- The current implementation still uses `localStorage`.
+- Save/Rename/Delete were added inside that localStorage boundary.
+- The shipped-app path is no longer open-ended: it is local-first `.writeros` project packages under a user-selected WriterOS Projects folder, with explicit localStorage migration.
 
 ### In-branch UX: Save / Rename / Delete
 
@@ -259,7 +228,7 @@ Within the localStorage boundary above, the TopBar exposes a project-actions men
 - **Rename** — opens the existing inline title editor in the TopBar. The click-title-to-edit fast path is preserved; the menu item adds discoverability.
 - **Delete** — `window.confirm` against the active project title, then removes it from the library. If other projects remain, switches to the most-recent. If it was the only project, auto-seeds a blank (matches `loadActiveProjectLibrary` fallback). To delete a different project, the user switches to it first.
 
-Explicitly deferred to the long-term storage PRD: export/import to file, named snapshots/version history, undo for delete, custom in-app confirm modal, and cloud sync.
+Explicitly deferred to `docs/product/app-home-import-storage-prd.md`: Home, project folder viewer, file-backed project storage, `.fdx` import, screenplay import priority, and migration from localStorage.
 
 ## Workstream 5: Measured Pagination And Export
 
@@ -351,7 +320,7 @@ Success criteria:
    Decide durable writer/project storage before generated summaries, project libraries, or assuming profile memory can survive beyond local browser state.
 
 6. **Treatment follow-up slice.**
-   Continue Treatment work through `docs/product/treatment-surface-prd.md`, especially Document View, passage reorder, and agent-context refinements.
+   Continue Treatment work through `docs/product/treatment-surface-prd.md`, especially QA/readiness, deeper character fields, passage reorder, and only then agent-context refinements that require Treatment-specific metadata.
 
 7. **Measured pagination / export plan.**
    Treat page fidelity and export as their own product/technical effort.
@@ -374,7 +343,6 @@ Use these while gauging usability:
 
 1. Should surface orientation copy be always visible, collapsible, or shown only for empty/new surfaces?
 2. Should Document View be a toggle in the surface header or a preview button?
-3. Should Treatment Document View ship before or after Outline Document View V2?
-4. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
-5. What is the minimum storage plan needed before generated summaries?
-6. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?
+3. Should context visibility be user-facing now, or remain a developer/debug tool until retrieval fails in testing?
+4. What is the minimum storage plan needed before generated summaries?
+5. Where should the Writer Voice Profile entry point live in the shell so it is discoverable without competing with project title or writing-surface navigation?

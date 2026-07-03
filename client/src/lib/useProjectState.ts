@@ -1,14 +1,21 @@
 import { useState, useCallback } from 'react'
 import { defaultProjectState } from './projectState'
 import {
+  activateStoredProject,
+  archiveProjectInLibrary,
   createBlankProject,
+  createProjectFromState,
   deleteProjectFromLibrary,
   getStoredProject,
   loadActiveProjectLibrary,
+  markProjectsMigrated,
+  projectsForActiveLibrary,
+  restoreProjectInLibrary,
   saveProjectToLibrary,
   summarizeProjects,
 } from './projectLibrary'
-import type { ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene } from './projectState'
+import type { MigrationMarker, StoredProject } from './projectLibrary'
+import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene, TitlePageMetadata } from './projectState'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
@@ -28,7 +35,20 @@ import {
 } from '@shared/documents'
 import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import type { ComposedDocument } from '@shared/compose/types'
+import { computeOutlineSourceHash } from '@shared/compose/sourceHash'
+import { pickIdentity } from '@shared/compose/identity'
 import { createOutlineEpisode } from './outlineDeck'
+import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
+
+export interface ImportedScriptPayload {
+  rawHtml: string
+  scenes: ScriptScene[]
+  title?: string | null
+  wordCount: number
+  pageCount: number
+  sourceImport: ProjectSourceImportMetadata
+}
 
 function nextTimestampAfter(value: string): string {
   return new Date(Math.max(Date.now(), new Date(value).getTime() + 1)).toISOString()
@@ -120,6 +140,19 @@ export function useProjectState() {
 
   const setProjectFormat = useCallback((format: ProjectFormat) => {
     update(s => withProjectFormat(s, format))
+  }, [update])
+
+  const setTitlePageMetadata = useCallback((patch: Partial<TitlePageMetadata>) => {
+    update(s => ({
+      ...s,
+      meta: {
+        ...s.meta,
+        titlePage: {
+          ...s.meta.titlePage,
+          ...patch,
+        },
+      },
+    }))
   }, [update])
 
   const clearSynopsis = useCallback(() => {
@@ -315,6 +348,32 @@ export function useProjectState() {
     [update],
   )
 
+  const setComposedDocument = useCallback(
+    (surface: 'outline' | 'synopsis' | 'treatment', composed: ComposedDocument) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          [surface]: {
+            ...s.documents[surface],
+            updatedAt: nextTimestampAfter(s.documents[surface].updatedAt),
+            composed,
+          },
+        },
+      }))
+    },
+    [update],
+  )
+
+  const currentOutlineSourceHash = useCallback((): string => {
+    const format = normalizeProjectFormat(state.meta.format)
+    return computeOutlineSourceHash(
+      normalizeOutlineContent(state.documents.outline.content),
+      format,
+      pickIdentity(state.meta),
+    )
+  }, [state])
+
   const setOutlineViewPreferences = useCallback(
     (patch: Partial<DocumentViewPreferences>) => {
       update(s => ({
@@ -358,6 +417,25 @@ export function useProjectState() {
           },
         }
       })
+    },
+    [update],
+  )
+
+  const setTreatmentViewPreferences = useCallback(
+    (patch: Partial<DocumentViewPreferences>) => {
+      update(s => ({
+        ...s,
+        documents: {
+          ...s.documents,
+          treatment: {
+            ...s.documents.treatment,
+            viewPreferences: {
+              ...(s.documents.treatment.viewPreferences ?? {}),
+              ...patch,
+            },
+          },
+        },
+      }))
     },
     [update],
   )
@@ -600,13 +678,83 @@ export function useProjectState() {
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
   }, [update])
 
+  const rebuildScriptFacts = useCallback((rebuiltAt?: number | string | Date) => {
+    update(s => ({
+      ...s,
+      script: {
+        ...s.script,
+        facts: rebuildScriptFactsCache(s.script.rawHtml, rebuiltAt ?? Date.now()),
+      },
+    }))
+  }, [update])
+
+  const rebuildScriptFactsFromSnapshot = useCallback((rawHtml: string, scenes: ScriptScene[], rebuiltAt?: number | string | Date) => {
+    update(s => ({
+      ...s,
+      script: {
+        ...s.script,
+        rawHtml,
+        scenes,
+        facts: rebuildScriptFactsCache(rawHtml, rebuiltAt ?? Date.now()),
+      },
+    }))
+  }, [update])
+
+  const stateFromImportedScript = useCallback((importedScript: ImportedScriptPayload): ProjectState => {
+    const importedState = defaultProjectState()
+    return {
+      ...importedState,
+      meta: {
+        ...importedState.meta,
+        title: normalizeProjectTitle(importedScript.title),
+        wordCount: importedScript.wordCount,
+        pageCount: importedScript.pageCount,
+        sourceImport: importedScript.sourceImport,
+      },
+      script: {
+        ...importedState.script,
+        rawHtml: importedScript.rawHtml,
+        scenes: importedScript.scenes,
+      },
+    }
+  }, [])
+
   const createProject = useCallback(() => {
     const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
     const next = createBlankProject(savedProjects)
     setActiveProjectId(next.activeProjectId)
     setState(next.state)
     setProjects(next.projects)
+    return getStoredProject(next.activeProjectId, next.projects)!
   }, [activeProjectId, projects, state])
+
+  const createProjectFromImportedScript = useCallback((importedScript: ImportedScriptPayload) => {
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const next = createProjectFromState(savedProjects, stateFromImportedScript(importedScript))
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+    return getStoredProject(next.activeProjectId, next.projects)!
+  }, [activeProjectId, projects, state, stateFromImportedScript])
+
+  const replaceScriptFromImport = useCallback((importedScript: ImportedScriptPayload) => {
+    update(s => ({
+      ...s,
+      meta: {
+        ...s.meta,
+        title: normalizeProjectTitle(s.meta.title || importedScript.title),
+        wordCount: importedScript.wordCount,
+        pageCount: importedScript.pageCount,
+        sourceImport: importedScript.sourceImport,
+      },
+      script: {
+        ...s.script,
+        rawHtml: importedScript.rawHtml,
+        scenes: importedScript.scenes,
+        facts: defaultScriptFactsCache(),
+      },
+    }))
+  }, [update])
 
   const switchProject = useCallback((projectId: string) => {
     if (projectId === activeProjectId) return
@@ -621,24 +769,86 @@ export function useProjectState() {
     setProjects(nextProjects)
   }, [activeProjectId, projects, state])
 
-  const saveNow = useCallback(() => {
-    const nextProjects = saveProjectToLibrary(activeProjectId, state, projects)
-    setProjects(nextProjects)
-  }, [activeProjectId, projects, state])
-
-  const deleteProject = useCallback(() => {
-    const next = deleteProjectFromLibrary(activeProjectId, projects)
+  const openStoredProject = useCallback((project: StoredProject) => {
+    const savedProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    const next = activateStoredProject(project, savedProjects)
     setActiveProjectId(next.activeProjectId)
     setState(next.state)
     setProjects(next.projects)
-  }, [activeProjectId, projects])
+  }, [activeProjectId, projects, state])
+
+  const saveNow = useCallback(() => {
+    const nextProjects = saveProjectToLibrary(activeProjectId, state, projects)
+    setProjects(nextProjects)
+    return getStoredProject(activeProjectId, nextProjects)!
+  }, [activeProjectId, projects, state])
+
+  const deleteProjectById = useCallback((projectId: string) => {
+    const next = deleteProjectFromLibrary(projectId, projects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+    return next
+  }, [projects])
+
+  const archiveProjectById = useCallback((projectId: string) => {
+    const next = archiveProjectInLibrary(projectId, projects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+    return next
+  }, [projects])
+
+  const restoreProjectById = useCallback((projectId: string) => {
+    const next = restoreProjectInLibrary(projectId, projects)
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+    return next
+  }, [projects])
+
+  const deleteProject = useCallback(() => {
+    return deleteProjectById(activeProjectId)
+  }, [activeProjectId, deleteProjectById])
+
+  // Slice 4: re-read the persisted library and re-sync hook state. Used after
+  // an out-of-band mutation to the localStorage library (e.g., stamping
+  // `migratedToFolder` markers) so the active library, the active project id,
+  // and the active session state stay in sync with what was just written.
+  //
+  // Per Decision 3 of the migration plan: if the currently-active project was
+  // migrated to a folder-backed package, `loadActiveProjectLibrary` refuses to
+  // activate it and returns activeProjectId='' + a default state — which
+  // naturally drops the writer back to Home.
+  const reloadLibrary = useCallback(() => {
+    const next = loadActiveProjectLibrary()
+    setActiveProjectId(next.activeProjectId)
+    setState(next.state)
+    setProjects(next.projects)
+  }, [])
+
+  // Folder-backed projects still keep a browser fallback copy while the app is
+  // running. Once the folder write succeeds, mark that copy as already moved so
+  // Home does not offer to migrate the same project back into the same folder.
+  const markStoredProjectsMigrated = useCallback((markers: MigrationMarker[]) => {
+    setProjects(currentProjects => markProjectsMigrated(currentProjects, markers))
+  }, [])
 
   return {
     state,
     activeProjectId,
-    projects: summarizeProjects(projects),
+    activeStoredProject: getStoredProject(activeProjectId, projects),
+    // Display summaries intentionally hide migrated localStorage backups.
+    // `storedProjects` below remains raw so migration/recovery code can still
+    // see the non-destructive backup marker.
+    projects: summarizeProjects(projectsForActiveLibrary(projects)),
+    // Raw stored projects, including the localStorage-only `migratedToFolder`
+    // marker. App.tsx uses this for migration scans; consumers that only need
+    // display data should keep using the summarized `projects` array above.
+    storedProjects: projects,
     setMeta,
     setProjectFormat,
+    setTitlePageMetadata,
     clearSynopsis,
     setSynopsisDocument,
     setSynopsisViewPreferences,
@@ -647,8 +857,11 @@ export function useProjectState() {
     migrateStoryBibleLegacyToDocument,
     setBeat,
     setOutlineDocument,
+    setComposedDocument,
+    currentOutlineSourceHash,
     setOutlineViewPreferences,
     setTreatmentDocument,
+    setTreatmentViewPreferences,
     clearTreatment,
     addEpisode,
     renameEpisode,
@@ -664,9 +877,19 @@ export function useProjectState() {
     addMessage,
     clearTranscript,
     updateScript,
+    rebuildScriptFacts,
+    rebuildScriptFactsFromSnapshot,
     createProject,
+    createProjectFromImportedScript,
+    replaceScriptFromImport,
     switchProject,
+    openStoredProject,
     saveNow,
     deleteProject,
+    deleteProjectById,
+    archiveProjectById,
+    restoreProjectById,
+    reloadLibrary,
+    markStoredProjectsMigrated,
   }
 }

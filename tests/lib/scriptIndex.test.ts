@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ESTIMATED_SCRIPT_PAGE_WORDS,
   buildScriptIndex,
   getDialogueWindowBySpeakers,
   getFocusContext,
@@ -83,32 +82,28 @@ describe('buildScriptIndex', () => {
     expect(index.blocks[3].sceneHeading).toBe('EXT. FREEWAY - NIGHT')
   })
 
-  it('creates deterministic estimated pages at 250 words per page', () => {
-    const rawHtml = Array.from({ length: ESTIMATED_SCRIPT_PAGE_WORDS + 1 }, (_, index) => (
+  it('derives pages from screenplay layout at 54 lines per page', () => {
+    // 55 single-line action paragraphs: 54 fill page 1, the 55th starts page 2.
+    const rawHtml = Array.from({ length: 55 }, (_, index) => (
       `<p data-element-type="action">word${index}</p>`
     )).join('')
 
     const index = buildScriptIndex(rawHtml)
 
-    expect(index.totalWordCount).toBe(251)
     expect(index.estimatedPageCount).toBe(2)
     expect(index.pages).toHaveLength(2)
     expect(index.pages[0]).toMatchObject({
       pageNumber: 1,
       blockStart: 0,
-      blockEnd: 249,
-      wordStart: 0,
-      wordEnd: 250,
+      blockEnd: 53,
     })
     expect(index.pages[1]).toMatchObject({
       pageNumber: 2,
-      blockStart: 250,
-      blockEnd: 250,
-      wordStart: 250,
-      wordEnd: 251,
+      blockStart: 54,
+      blockEnd: 54,
     })
-    expect(index.blocks[249].pageNumber).toBe(1)
-    expect(index.blocks[250].pageNumber).toBe(2)
+    expect(index.blocks[53].pageNumber).toBe(1)
+    expect(index.blocks[54].pageNumber).toBe(2)
   })
 
   it('falls back to plain text when no screenplay blocks are present', () => {
@@ -116,7 +111,11 @@ describe('buildScriptIndex', () => {
 
     expect(index.blocks).toEqual([])
     expect(index.scenes).toEqual([])
-    expect(index.pages).toEqual([])
+    // No screenplay blocks => one blank screenplay page (paginator sentinel).
+    expect(index.estimatedPageCount).toBe(1)
+    expect(index.pages).toEqual([
+      { pageNumber: 1, blockStart: 0, blockEnd: 0, wordStart: 0, wordEnd: 0, sceneIds: [] },
+    ])
     expect(index.plainText).toBe('Loose notes More notes')
     expect(index.totalWordCount).toBe(4)
   })
@@ -296,7 +295,8 @@ describe('script dialogue windows', () => {
 
 describe('page range windows', () => {
   function buildTwoPageScript() {
-    const fillerHtml = Array.from({ length: ESTIMATED_SCRIPT_PAGE_WORDS }, (_, i) =>
+    // 54 single-line actions fill page 1; the next scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     const page2Html = [
@@ -323,7 +323,9 @@ describe('page range windows', () => {
   })
 
   it('retrieves a block that starts earlier but overlaps the requested page', () => {
-    const longAction = Array.from({ length: ESTIMATED_SCRIPT_PAGE_WORDS + 20 }, (_, i) => `road${i}`).join(' ')
+    // 60 wrapped lines: each 40-char token sits on its own action line, so the
+    // block spans from page 1 into page 2.
+    const longAction = Array.from({ length: 60 }, (_, i) => `road${i}`.padEnd(40, 'x')).join(' ')
     const index = buildScriptIndex([
       '<p data-element-type="scene-heading">EXT. DESERT ROAD - DAY</p>',
       `<p data-element-type="action">${longAction}</p>`,
@@ -335,7 +337,7 @@ describe('page range windows', () => {
     expect(window!.label).toBe('Page 2')
     expect(window!.pageRange).toEqual({ start: 2, end: 2 })
     expect(window!.sceneHeadings).toEqual(['EXT. DESERT ROAD - DAY'])
-    expect(window!.actionSnippets[0]).toContain('road260')
+    expect(window!.actionSnippets[0]).toContain('road59')
     expect(window!.blocks.some(block => block.pageNumber === 1)).toBe(true)
   })
 
@@ -348,7 +350,7 @@ describe('page range windows', () => {
     expect(window!.label).toBe('Pages 1–2')
     expect(window!.pageRange).toEqual({ start: 1, end: 2 })
     expect(window!.sceneHeadings).toContain('EXT. ROOFTOP - DAY')
-    expect(window!.blocks.length).toBeGreaterThan(ESTIMATED_SCRIPT_PAGE_WORDS)
+    expect(window!.blocks.length).toBeGreaterThan(54)
   })
 
   it('returns null when the requested page exceeds the script', () => {
@@ -419,5 +421,36 @@ describe('script focus windows', () => {
     expect(window).not.toBeNull()
     expect(window!.reason).toBe('current-scene')
     expect(window!.dialogueSnippets).toEqual(['DANTE: Your war is over, brotha.'])
+  })
+
+  it('uses dense block position for selected-text fallback when source indices have gaps', () => {
+    const index = buildScriptIndex([
+      '<p data-element-type="action">First beat.</p>',
+      '<p data-element-type="action"></p>',
+      '<p data-element-type="action">Second beat.</p>',
+      '<p data-element-type="action"></p>',
+      '<p data-element-type="action">Third beat.</p>',
+      '<p data-element-type="character">DANTE</p>',
+      '<p data-element-type="dialogue">Keep moving.</p>',
+    ].join(''))
+
+    expect(index.blocks.map(block => block.index)).toEqual([0, 2, 4, 5, 6])
+
+    const window = getFocusContext(index, {
+      blockIndex: 6,
+      selectedText: 'moving',
+      updatedAt: 1,
+    })
+
+    expect(window).not.toBeNull()
+    expect(window!.reason).toBe('current-selection')
+    expect(window!.selectedText).toBe('moving')
+    expect(window!.blocks.map(block => block.text)).toEqual([
+      'Second beat.',
+      'Third beat.',
+      'DANTE',
+      'Keep moving.',
+    ])
+    expect(window!.dialogueSnippets).toEqual(['DANTE: Keep moving.'])
   })
 })

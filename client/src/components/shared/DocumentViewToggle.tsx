@@ -1,6 +1,6 @@
 import React from 'react'
 
-export interface SynopsisViewToggleProps {
+export interface DocumentViewToggleProps {
   value: 'edit' | 'document'
   onChange: (next: 'edit' | 'document') => void
 }
@@ -10,7 +10,7 @@ const SEGMENTS: { id: 'edit' | 'document'; label: string }[] = [
   { id: 'document', label: 'Document' },
 ]
 
-export function SynopsisViewToggle({ value, onChange }: SynopsisViewToggleProps) {
+export function DocumentViewToggle({ value, onChange }: DocumentViewToggleProps) {
   return (
     <div
       role="group"
@@ -26,18 +26,18 @@ export function SynopsisViewToggle({ value, onChange }: SynopsisViewToggleProps)
         textTransform: 'uppercase',
       }}
     >
-      {SEGMENTS.map((seg, i) => {
-        const isActive = value === seg.id
+      {SEGMENTS.map((segment, index) => {
+        const isActive = value === segment.id
         return (
           <button
-            key={seg.id}
+            key={segment.id}
             type="button"
             aria-pressed={isActive}
-            onClick={() => onChange(seg.id)}
+            onClick={() => onChange(segment.id)}
             style={{
               padding: '4px 10px',
               border: 'none',
-              borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
+              borderLeft: index > 0 ? '1px solid var(--border)' : 'none',
               borderRadius: 0,
               background: isActive ? 'var(--surface-2)' : 'transparent',
               color: isActive ? 'var(--fg)' : 'var(--fg-muted)',
@@ -50,7 +50,7 @@ export function SynopsisViewToggle({ value, onChange }: SynopsisViewToggleProps)
               lineHeight: 1.4,
             }}
           >
-            {seg.label}
+            {segment.label}
           </button>
         )
       })}

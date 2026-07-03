@@ -11,27 +11,8 @@ import {
 } from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
-import type { StoryBibleCharacter } from '../../shared/documents'
-
-function makeStoryBibleCharacter(overrides: Partial<StoryBibleCharacter> = {}): StoryBibleCharacter {
-  return {
-    id: '',
-    name: '',
-    role: '',
-    want: '',
-    need: '',
-    flaw: '',
-    secret: '',
-    contradiction: '',
-    arc: '',
-    relationshipPressure: '',
-    behavioralAnchors: '',
-    speechPatterns: '',
-    neverWriteThemAs: '',
-    continuityFacts: '',
-    ...overrides,
-  }
-}
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
+import { makeStoryBibleCharacter } from '../helpers/documents'
 
 describe('parseMention', () => {
   it('returns null when no mention', () => {
@@ -131,13 +112,13 @@ describe('parseOpenSwarmCommand', () => {
 
 describe('formatWritingPartnerSpeaker', () => {
   it('labels general partner responses plainly', () => {
-    expect(formatWritingPartnerSpeaker('writingPartner')).toBe('Writing Partner')
+    expect(formatWritingPartnerSpeaker('writingPartner')).toBe('Morgan')
   })
 
   it('labels auto-routed specialist responses as writing partner delegates', () => {
-    expect(formatWritingPartnerSpeaker('sam')).toBe('Writing Partner (@Sam)')
-    expect(formatWritingPartnerSpeaker('oliver')).toBe('Writing Partner (@Oliver)')
-    expect(formatWritingPartnerSpeaker('maya')).toBe('Writing Partner (@Maya)')
+    expect(formatWritingPartnerSpeaker('sam')).toBe('Morgan (@Sam)')
+    expect(formatWritingPartnerSpeaker('oliver')).toBe('Morgan (@Oliver)')
+    expect(formatWritingPartnerSpeaker('maya')).toBe('Morgan (@Maya)')
   })
 })
 
@@ -201,35 +182,30 @@ describe('getDefaultPersona', () => {
 
 describe('getActiveHelperText', () => {
   it('uses Writing Partner directly on script', () => {
-    expect(getActiveHelperText('', 'script', null)).toBe('Writing Partner')
+    expect(getActiveHelperText('', 'script', null)).toBe('Morgan')
   })
 
-  it('shows the default specialist for synopsis, outline, and treatment', () => {
-    expect(getActiveHelperText('', 'synopsis', null)).toBe('Writing Partner will ask @Sam')
-    expect(getActiveHelperText('', 'outline', null)).toBe('Writing Partner will ask @Oliver')
-    expect(getActiveHelperText('', 'treatment', null)).toBe('Writing Partner will ask @Alex')
-  })
-
-  it('separates Story Bible defaults by section', () => {
-    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'themes')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'tone')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Writing Partner will ask @Zoe')
-    expect(getActiveHelperText('', 'story-bible', 'rules')).toBe('Writing Partner will ask @Zoe')
+  it('uses Morgan directly by default on all writing surfaces', () => {
+    expect(getActiveHelperText('', 'script', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'synopsis', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'outline', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'treatment', null)).toBe('Morgan')
+    expect(getActiveHelperText('', 'story-bible', 'characters')).toBe('Morgan')
+    expect(getActiveHelperText('', 'story-bible', 'world')).toBe('Morgan')
   })
 
   it('lets a typed manual mention override the surface hint', () => {
-    expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Writing Partner will ask @Maya')
-    expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Writing Partner')
+    expect(getActiveHelperText('@Maya help with this exchange', 'synopsis', null)).toBe('Morgan will ask @Maya')
+    expect(getActiveHelperText('  @Partner stay broad', 'outline', null)).toBe('Morgan')
   })
 
   it('shows OpenSwarm Writing Partner for /swarm commands', () => {
     expect(getActiveHelperText('/swarm review this premise', 'synopsis', null)).toBe('OpenSwarm Writing Partner')
   })
 
-  it('updates the Story Bible hint from typed message intent', () => {
-    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Writing Partner will ask @Casey')
-    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Writing Partner will ask @Zoe')
+  it('does not infer specialist delegation from plain Story Bible message intent', () => {
+    expect(getActiveHelperText("What about Isaiah's state of mind?", 'story-bible', 'world')).toBe('Morgan')
+    expect(getActiveHelperText('How do the rules of this world work?', 'story-bible', 'characters')).toBe('Morgan')
   })
 })
 
@@ -249,7 +225,7 @@ describe('buildProjectContext', () => {
     expect(ctx.script.sceneHeadings).toEqual([])
     expect(ctx.script.excerptWordLimit).toBe(SCRIPT_EXCERPT_WORD_LIMIT)
     expect(ctx.script.totalWordCount).toBe(0)
-    expect(ctx.script.estimatedPageCount).toBe(0)
+    expect(ctx.script.estimatedPageCount).toBe(1)
     expect(ctx.script.sceneCount).toBe(0)
     expect(ctx.world.setting).toBe('')
     expect(ctx.storyBible.themes).toBe('')
@@ -384,6 +360,44 @@ describe('buildProjectContext', () => {
     expect(ctx.script.totalWordCount).toBe(16)
     expect(ctx.script.estimatedPageCount).toBe(1)
     expect(ctx.script.sceneCount).toBe(1)
+  })
+
+  it('maps current Script Facts into script context for agent grounding', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+      '<p data-element-type="dialogue">I can still hear the line breathing.</p>',
+      '<p data-element-type="scene-heading">EXT. FREEWAY - DAWN</p>',
+    ].join('')
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.script.facts).toEqual({
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      characters: [{ label: 'ISAIAH', count: 1 }],
+      locations: [
+        { label: 'EXT. FREEWAY - DAWN', count: 1 },
+        { label: 'INT. SAFEHOUSE - NIGHT', count: 1 },
+      ],
+      times: [
+        { label: 'DAWN', count: 1 },
+        { label: 'NIGHT', count: 1 },
+      ],
+    })
+  })
+
+  it('omits stale Script Facts from script context after script changes', () => {
+    const state = defaultProjectState()
+    const originalHtml = '<p data-element-type="character">ISAIAH</p>'
+    state.script.rawHtml = '<p data-element-type="character">DANTE</p>'
+    state.script.facts = rebuildScriptFactsCache(originalHtml, '2026-06-02T10:00:00.000Z')
+
+    const ctx = buildProjectContext(state)
+
+    expect(ctx.script.facts).toBeUndefined()
+    expect(ctx.script.characterNames).toEqual(['DANTE'])
   })
 
   it('defaults sparse legacy story bible fields to empty strings', () => {
@@ -592,7 +606,9 @@ describe('extractScriptContext', () => {
 
   it('keeps explicit page requests ahead of scene requests', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     state.script.rawHtml = [
@@ -794,7 +810,9 @@ describe('extractScriptContext', () => {
 
   it('uses page range context when user requests a specific page number', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     const page2Html = [
@@ -816,7 +834,9 @@ describe('extractScriptContext', () => {
 
   it('uses page range context when user requests a page range', () => {
     const state = defaultProjectState()
-    const fillerHtml = Array.from({ length: 250 }, (_, i) =>
+    // 54 single-line actions fill page 1 under screenplay layout; the next
+    // scene starts page 2.
+    const fillerHtml = Array.from({ length: 54 }, (_, i) =>
       `<p data-element-type="action">filler${i}</p>`
     ).join('')
     const page2Html = [

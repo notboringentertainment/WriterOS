@@ -37,6 +37,17 @@ describe('defaultProjectState', () => {
     expect(defaultProjectState().meta.format).toBe('feature')
   })
 
+  it('defaults title page metadata to empty fields', () => {
+    expect(defaultProjectState().meta.titlePage).toEqual({
+      writtenBy: '',
+      basedOn: '',
+      contactInfo: '',
+      draftLabel: '',
+      draftDate: '',
+      formatDisplay: '',
+    })
+  })
+
   it('default agents include alex', () => {
     expect(defaultProjectState().agents).toHaveProperty('alex')
   })
@@ -112,6 +123,45 @@ describe('migrateState', () => {
     expect(result.documents.synopsis.content.header.format).toBe('feature')
   })
 
+  it('hydrates missing title page metadata during migration', () => {
+    const state = defaultProjectState() as any
+    delete state.meta.titlePage
+
+    const result = migrateState(state)
+
+    expect(result.meta.titlePage).toEqual({
+      writtenBy: '',
+      basedOn: '',
+      contactInfo: '',
+      draftLabel: '',
+      draftDate: '',
+      formatDisplay: '',
+    })
+  })
+
+  it('normalizes title page metadata during migration', () => {
+    const state = defaultProjectState() as any
+    state.meta.titlePage = {
+      writtenBy: '  Mara   Vale \r\n&\r\n Jonah   Reed ',
+      basedOn: ' A   story \r\n by  Mira  Stone ',
+      contactInfo: 'mara@example.com\r\n555-0100  ',
+      draftLabel: ' Second   Draft ',
+      draftDate: ' May   27 ',
+      formatDisplay: ' Limited   Series ',
+    }
+
+    const result = migrateState(state)
+
+    expect(result.meta.titlePage).toEqual({
+      writtenBy: 'Mara Vale\n&\nJonah Reed',
+      basedOn: 'A story\nby Mira Stone',
+      contactInfo: 'mara@example.com\n555-0100',
+      draftLabel: 'Second Draft',
+      draftDate: 'May 27',
+      formatDisplay: 'Limited Series',
+    })
+  })
+
   it('preserves explicit series project format', () => {
     const state = defaultProjectState() as any
     state.meta.format = 'series'
@@ -159,17 +209,55 @@ describe('script field — typed shape', () => {
     expect(defaultProjectState().script.scenes).toEqual([])
   })
 
+  it('defaultProjectState has an empty script facts cache', () => {
+    expect(defaultProjectState().script.facts).toEqual({
+      rebuiltAt: null,
+      contentHash: '',
+      characters: [],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [],
+    })
+  })
+
   it('migrateState converts old unknown[] shape to new shape', () => {
     const old = { schemaVersion: 1, script: { scenes: [], elements: [], revisionHistory: [] } }
     const migrated = migrateState(old)
     expect(migrated.script.rawHtml).toBe('')
     expect(Array.isArray(migrated.script.scenes)).toBe(true)
+    expect(migrated.script.facts.rebuiltAt).toBeNull()
   })
 
   it('migrateState preserves existing rawHtml', () => {
     const old = { schemaVersion: 1, script: { rawHtml: '<p>hello</p>', scenes: [] } }
     const migrated = migrateState(old)
     expect(migrated.script.rawHtml).toBe('<p>hello</p>')
+  })
+
+  it('migrateState preserves normalized script facts cache', () => {
+    const old = {
+      schemaVersion: 5,
+      script: {
+        rawHtml: '<p data-element-type="character">MAYA</p>',
+        scenes: [],
+        facts: {
+          rebuiltAt: '2026-06-02T10:00:00.000Z',
+          contentHash: 'hash-1',
+          characters: [{ label: 'MAYA', count: 1, blockIndices: [0] }],
+          locations: [],
+          times: [],
+          transitions: [],
+          warnings: [],
+        },
+      },
+    }
+    const migrated = migrateState(old)
+    expect(migrated.script.facts).toMatchObject({
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      contentHash: 'hash-1',
+      characters: [{ label: 'MAYA', count: 1, blockIndices: [0] }],
+    })
   })
 
   it('ScriptScene type compiles — id, heading, index fields present', () => {
@@ -189,6 +277,25 @@ describe('saveProjectState / loadProjectState', () => {
     saveProjectState(state)
     const loaded = loadProjectState()
     expect(loaded.meta.title).toBe('Test Script')
+  })
+
+  it('round-trips script facts through localStorage', () => {
+    const state = defaultProjectState()
+    state.script.facts = {
+      rebuiltAt: '2026-06-02T10:00:00.000Z',
+      contentHash: 'hash-1',
+      characters: [{ label: 'MAYA', count: 1, blockIndices: [0] }],
+      locations: [],
+      times: [],
+      transitions: [],
+      warnings: [],
+    }
+    saveProjectState(state)
+    const loaded = loadProjectState()
+    expect(loaded.script.facts.characters).toEqual([
+      { label: 'MAYA', count: 1, blockIndices: [0] },
+    ])
+    expect(loaded.script.facts.rebuiltAt).toBe('2026-06-02T10:00:00.000Z')
   })
 
   it('loadProjectState returns default state when nothing stored', () => {

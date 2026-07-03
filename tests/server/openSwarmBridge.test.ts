@@ -3,6 +3,7 @@ import { buildOpenSwarmWritingPartnerPrompt, openSwarmWritingPartnerSchema } fro
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 
 function makeVoiceProfile(): VoiceProfileDocument {
@@ -162,6 +163,25 @@ describe('OpenSwarm Writing Partner prompt', () => {
 
     expect(prompt).toContain('- Format: series')
     expect(prompt).toContain('- Show Overview: A renewable conflict in a sealed city.')
+  })
+
+  it('includes current Script Facts in the script context block', () => {
+    const state = defaultProjectState()
+    state.script.rawHtml = [
+      '<p data-element-type="scene-heading">INT. SAFEHOUSE - NIGHT</p>',
+      '<p data-element-type="character">ISAIAH</p>',
+    ].join('')
+    state.script.facts = rebuildScriptFactsCache(state.script.rawHtml, '2026-06-02T10:00:00.000Z')
+
+    const prompt = buildOpenSwarmWritingPartnerPrompt(
+      'Review the world continuity.',
+      buildProjectContext(state)
+    )
+
+    expect(prompt).toContain('Script Facts: 1 character, 1 location, 1 time marker')
+    expect(prompt).toContain('Script Fact characters: ISAIAH')
+    expect(prompt).toContain('Script Fact locations: INT. SAFEHOUSE - NIGHT')
+    expect(prompt).toContain('Script Fact times: NIGHT')
   })
 
   it('falls back to feature and Not supplied when format and showOverview are empty', () => {

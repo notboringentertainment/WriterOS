@@ -2,7 +2,9 @@ import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
-import { documentsToLegacy, normalizeOutlineContent } from './documentMigration'
+import type { SurfaceAwareness } from '@shared/surfaceAwareness'
+import type { WorkspaceLocation } from '@shared/workspaceLocation'
+import { documentStoryBibleToLegacy, normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
   getDialogueWindowBySpeakers,
@@ -14,6 +16,7 @@ import {
   speakersFromMessage,
   type ScriptFocusState,
 } from './scriptIndex'
+import { isScriptFactsCacheStale, type ScriptFactEntry, type ScriptFactsCache } from './scriptFacts'
 
 export type PersonaId = 'writingPartner' | 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
 
@@ -22,6 +25,10 @@ export interface ProjectContext {
   genre?: string
   format: ProjectFormat
   logline?: string
+  // Advisory app-state contracts attached only at the wp-chat call sites (not OpenSwarm /
+  // persona-capability). Absent -> omitted from the payload (output unchanged).
+  surface?: SurfaceAwareness
+  location?: WorkspaceLocation
   script: ScriptContext
   synopsis: {
     logline: string
@@ -64,6 +71,7 @@ export interface ScriptContext {
   dialogueSnippets: string[]
   actionSnippets: string[]
   characterNames: string[]
+  facts?: ScriptFactsContext
   excerptWordCount: number
   excerptWordLimit: number
   excerptTruncated: boolean
@@ -74,6 +82,18 @@ export interface ScriptContext {
   contextLabel?: string
   pageRange?: { start: number; end: number }
   selectedText?: string
+}
+
+export interface ScriptFactContextEntry {
+  label: string
+  count: number
+}
+
+export interface ScriptFactsContext {
+  rebuiltAt: string
+  characters: ScriptFactContextEntry[]
+  locations: ScriptFactContextEntry[]
+  times: ScriptFactContextEntry[]
 }
 
 export interface ProjectContextOptions {
@@ -121,7 +141,7 @@ const STORY_BIBLE_CASEY_INTENT_RE = /\b(character|protagonist|antagonist|hero|vi
 const STORY_BIBLE_ZOE_INTENT_RE = /\b(world|worldbuilding|world-building|setting|location|place|city|environment|culture|cultural|society|rules|rule|logic|constraint|constraints|system|systems|technology|mythology|continuity|geography|politics|institution|institutions)\b/i
 
 const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
-  writingPartner: 'Writing Partner',
+  writingPartner: 'Morgan',
   sam: 'Sam',
   casey: 'Casey',
   oliver: 'Oliver',
@@ -131,8 +151,8 @@ const WRITING_PARTNER_SPEAKER_LABELS: Record<PersonaId, string> = {
 }
 
 export function formatWritingPartnerSpeaker(personaId: PersonaId): string {
-  if (personaId === 'writingPartner') return 'Writing Partner'
-  return `Writing Partner (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
+  if (personaId === 'writingPartner') return 'Morgan'
+  return `Morgan (@${WRITING_PARTNER_SPEAKER_LABELS[personaId]})`
 }
 
 export function getActiveHelperText(
@@ -143,12 +163,10 @@ export function getActiveHelperText(
   if (parseOpenSwarmCommand(inputText)) return 'OpenSwarm Writing Partner'
 
   const mentionResult = parseMention(inputText.trimStart())
-  const personaId = mentionResult
-    ? mentionResult.personaId
-    : getDefaultPersona(activeTab, storyBibleSection, inputText)
+  const personaId = mentionResult ? mentionResult.personaId : 'writingPartner'
 
-  if (personaId === 'writingPartner') return 'Writing Partner'
-  return `Writing Partner will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
+  if (personaId === 'writingPartner') return 'Morgan'
+  return `Morgan will ask @${WRITING_PARTNER_SPEAKER_LABELS[personaId]}`
 }
 
 function text(value: unknown): string {
@@ -306,7 +324,33 @@ function pageRangeFromMessage(userMessage: string): { start: number; end: number
   return { start: Math.min(start, end), end: Math.max(start, end) }
 }
 
-export function extractScriptContext(rawHtml: string, userMessage = '', focus?: ScriptFocusState): ScriptContext {
+function factEntriesForContext(entries: ScriptFactEntry[]): ScriptFactContextEntry[] {
+  return entries
+    .filter(entry => entry.label.trim() && entry.count > 0)
+    .slice(0, SCRIPT_CONTEXT_LIST_LIMIT)
+    .map(entry => ({
+      label: entry.label,
+      count: entry.count,
+    }))
+}
+
+function scriptFactsForContext(rawHtml: string, facts: ScriptFactsCache): ScriptFactsContext | undefined {
+  if (!facts.rebuiltAt || isScriptFactsCacheStale(facts, rawHtml)) return undefined
+
+  return {
+    rebuiltAt: facts.rebuiltAt,
+    characters: factEntriesForContext(facts.characters),
+    locations: factEntriesForContext(facts.locations),
+    times: factEntriesForContext(facts.times),
+  }
+}
+
+export function extractScriptContext(
+  rawHtml: string,
+  userMessage = '',
+  focus?: ScriptFocusState,
+  facts?: ScriptFactsCache,
+): ScriptContext {
   const index = buildScriptIndex(rawHtml)
   const requestedPageRange = pageRangeFromMessage(userMessage)
   const hasPageRequest = requestedPageRange !== null
@@ -367,6 +411,7 @@ export function extractScriptContext(rawHtml: string, userMessage = '', focus?: 
     dialogueSnippets: dialogueSnippets.slice(0, SCRIPT_CONTEXT_LIST_LIMIT),
     actionSnippets: actionSnippets.slice(0, SCRIPT_ACTION_SNIPPET_LIMIT),
     characterNames: index.speakers.slice(0, SCRIPT_CONTEXT_LIST_LIMIT),
+    facts: facts ? scriptFactsForContext(rawHtml, facts) : undefined,
     excerptWordCount: excerpt.wordCount,
     excerptWordLimit: SCRIPT_EXCERPT_WORD_LIMIT,
     excerptTruncated: excerpt.truncated,
@@ -411,7 +456,7 @@ export function getDefaultPersona(
 export function buildProjectContext(state: ProjectState, userMessage = '', options: ProjectContextOptions = {}): ProjectContext {
   const synopsisSections = state.synopsis.sections
   const synopsisContent = state.documents.synopsis.content
-  const storyBible = documentsToLegacy(state.documents).storyBible
+  const storyBible = documentStoryBibleToLegacy(state.documents.storyBible.content)
   const world = storyBible.world
   const treatmentContent = state.documents.treatment.content
   const scriptRawHtml = options.script?.rawHtml ?? state.script.rawHtml
@@ -449,7 +494,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
     genre: text(state.meta.genre),
     format: projectFormat,
     logline: synopsisLogline,
-    script: extractScriptContext(text(scriptRawHtml), userMessage, options.script?.focus),
+    script: extractScriptContext(text(scriptRawHtml), userMessage, options.script?.focus, state.script.facts),
     synopsis: {
       logline: synopsisLogline,
       loglineParts: {

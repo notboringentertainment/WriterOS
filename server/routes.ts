@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { OpenAIService } from "./ai/openaiService";
+import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
+import { isDebugApiEnabled } from "./ai/morganRuntime";
 import { PERSONAS } from "@shared/personas";
 import { z } from "zod";
 import type { StoryMemory } from "@shared/schema";
@@ -8,6 +9,11 @@ import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import { personaCapabilityRequestSchema } from "@shared/personaCapability";
 import { runPersonaTask } from "./persona-capability/runPersonaTask";
 import { normalizeProjectFormat } from "@shared/projectFormat";
+import { SurfaceAwarenessSchema } from "@shared/surfaceAwareness";
+import { WorkspaceLocationSchema } from "@shared/workspaceLocation";
+import { scriptFactLines } from "./scriptFactFormatting";
+import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
+import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 
 const openaiService = new OpenAIService();
 
@@ -81,6 +87,21 @@ const scriptContextSchema = z.object({
   dialogueSnippets: z.array(z.string()).default([]),
   actionSnippets: z.array(z.string()).default([]),
   characterNames: z.array(z.string()).default([]),
+  facts: z.object({
+    rebuiltAt: z.string(),
+    characters: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    locations: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+    times: z.array(z.object({
+      label: z.string(),
+      count: z.number(),
+    })).default([]),
+  }).optional(),
   excerptWordCount: z.number().default(0),
   excerptWordLimit: z.number().default(500),
   excerptTruncated: z.boolean().default(false),
@@ -238,6 +259,13 @@ const projectContextSchema = z.object({
   genre: z.string().optional(),
   format: z.string().default('feature').transform(normalizeProjectFormat),
   logline: z.string().optional(),
+  // Surface Awareness Contract — optional, advisory context. A malformed surface must
+  // never break chat, so it degrades to undefined (no block) instead of failing the parse
+  // and 500ing the whole request.
+  surface: SurfaceAwarenessSchema.optional().catch(undefined),
+  // WorkspaceLocation is optional, advisory, and read-only. Malformed packets degrade to
+  // undefined just like surface awareness so chat keeps working without a location block.
+  location: WorkspaceLocationSchema.optional().catch(undefined),
   script: scriptContextSchema,
   synopsis: z.object({
     logline: z.string(),
@@ -352,6 +380,10 @@ const wpChatSchema = z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
   })),
+  // Writer Voice Profile — optional, advisory style guidance. A malformed profile
+  // must never break chat, so it degrades to undefined (no conditioning) instead of
+  // failing the parse. Mirrors the `surface` safety rule.
+  voiceProfile: voiceProfileDocumentSchema.optional().catch(undefined),
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
@@ -698,6 +730,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     script?.selectedText && `Selected text: ${truncate(script.selectedText, 900)}`,
     script?.excerpt && `Excerpt: ${truncate(script.excerpt, 900)}`,
     script?.sceneHeadings?.length ? `Scene headings: ${script.sceneHeadings.slice(0, 10).join('; ')}` : '',
+    ...(script ? scriptFactLines(script) : []),
   ].filter(filled);
 
   const storyBibleLines = [
@@ -743,6 +776,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     `Treatment: ${treatmentContextLines.length} filled field${treatmentContextLines.length === 1 ? '' : 's'}`,
     `Story Bible: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
     `Script: ${script?.excerptWordCount || 0} excerpt word${script?.excerptWordCount === 1 ? '' : 's'}, ${script?.sceneCount || 0} scene${script?.sceneCount === 1 ? '' : 's'}${script?.contextLabel ? ` (${script.contextLabel})` : ''}`,
+    `Script Facts: ${script?.facts ? `${script.facts.characters.length} character${script.facts.characters.length === 1 ? '' : 's'}, ${script.facts.locations.length} location${script.facts.locations.length === 1 ? '' : 's'}, ${script.facts.times.length} time marker${script.facts.times.length === 1 ? '' : 's'}` : 'not supplied'}`,
   ];
 
   return `You are OpenSwarm Writing Partner. Review only this bounded WriterOS handoff packet.
@@ -814,6 +848,22 @@ Script context:
 ${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
 }
 
+// Build the HTTP body for a PersonaResponse, gating admin/debug trace metadata.
+// `debug` is included ONLY when MORGAN_DEBUG_API=on AND the runtime produced it.
+// EVERY persona-chat adapter (/api/chat, /api/wp-chat) must route through this so
+// debug never leaks from any surface by default. The default contract stays
+// { message, suggestions }.
+function personaResponseBody(response: PersonaResponse) {
+  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug'] } = {
+    message: response.message,
+    suggestions: response.suggestions,
+  };
+  if (isDebugApiEnabled() && response.debug) {
+    body.debug = response.debug;
+  }
+  return body;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Chat with persona
   app.post("/api/chat", async (req, res) => {
@@ -833,10 +883,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.conversationHistory
       );
 
-      res.json(response);
+      res.json(personaResponseBody(response));
     } catch (error) {
       console.error("Chat error:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to process chat message",
         message: "I'm having trouble connecting right now. Please try again in a moment."
       });
@@ -896,12 +946,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           treatment: buildStoryMemoryTreatment(data.projectContext),
           themes: data.projectContext.storyBible.themes,
         },
+        surface: data.projectContext.surface,
+        location: data.projectContext.location,
         script: scriptContext ? {
           excerpt: scriptContext.excerpt,
           sceneHeadings: scriptContext.sceneHeadings,
           dialogueSnippets: scriptContext.dialogueSnippets,
           actionSnippets: scriptContext.actionSnippets,
           characterNames: scriptContext.characterNames,
+          facts: scriptContext.facts,
           excerptWordCount: scriptContext.excerptWordCount,
           excerptWordLimit: scriptContext.excerptWordLimit,
           excerptTruncated: scriptContext.excerptTruncated,
@@ -942,10 +995,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.message,
         userProfile,
         storyMemory,
-        data.conversationHistory
+        data.conversationHistory,
+        data.voiceProfile
       );
 
-      res.json({ message: response.message, suggestions: response.suggestions });
+      res.json(personaResponseBody(response));
     } catch (error) {
       console.error("WP chat error:", error);
       res.status(500).json({
@@ -1048,6 +1102,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to run persona capability",
         message: "Zoe could not complete that research pass right now.",
       });
+    }
+  });
+
+  app.post("/api/compose-document", async (req, res) => {
+    try {
+      const data = ComposeDocumentRequestSchema.parse(req.body);
+      const result = data.surface === "treatment"
+        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity })
+        : data.surface === "synopsis"
+          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity })
+          : await composeOutline({ content: data.content, format: data.format, identity: data.identity });
+      if (!result.ok) {
+        console.error("compose-document soft-fail:", result.reason);
+        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
+      }
+      res.json({ composed: result.composed });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error("compose-document validation error:", error.flatten());
+        return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });
+      }
+      console.error("compose-document route error:", error instanceof Error ? error.message : error);
+      res.status(502).json({ error: "compose_error", message: "WriterOS could not compose this document right now." });
     }
   });
 

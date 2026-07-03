@@ -5,6 +5,7 @@ type PanelByTab = Record<WritingTab, boolean>
 export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'rules'
 
 export function useShellState() {
+  const [homeActive, setHomeActive] = useState(true)
   const [activeTab, setActiveTabRaw] = useState<WritingTab>('script')
   const [writersRoomActive, setWritersRoomActive] = useState(false)
   const [panelByTab, setPanelByTab] = useState<PanelByTab>({
@@ -21,7 +22,19 @@ export function useShellState() {
   const panelOpen = panelByTab[activeTab]
 
   const setActiveTab = useCallback((tab: WritingTab) => {
+    setHomeActive(false)
     setActiveTabRaw(tab)
+    setFocusMode(false)
+  }, [])
+
+  const openHome = useCallback(() => {
+    setHomeActive(true)
+    setWritersRoomActive(false)
+    setFocusMode(false)
+  }, [])
+
+  const openProjectWorkspace = useCallback(() => {
+    setHomeActive(false)
     setWritersRoomActive(false)
     setFocusMode(false)
   }, [])
@@ -31,6 +44,7 @@ export function useShellState() {
   }, [activeTab])
 
   const enterWritersRoom = useCallback(() => {
+    setHomeActive(false)
     setPanelByTab(prev => ({ ...prev, [activeTab]: false }))
     setFocusMode(false)
     setWritersRoomActive(true)
@@ -39,6 +53,13 @@ export function useShellState() {
   const exitWritersRoom = useCallback(() => {
     setWritersRoomActive(false)
   }, [])
+
+  const toggleWritersRoom = useCallback(() => {
+    setHomeActive(false)
+    setPanelByTab(prev => ({ ...prev, [activeTab]: false }))
+    setFocusMode(false)
+    setWritersRoomActive(prev => !prev)
+  }, [activeTab])
 
   const toggleFocusMode = useCallback(() => {
     setFocusMode(prev => !prev)
@@ -57,6 +78,7 @@ export function useShellState() {
   }, [])
 
   return {
+    homeActive,
     activeTab,
     writersRoomActive,
     panelOpen,
@@ -64,9 +86,12 @@ export function useShellState() {
     storyBibleSection,
     voiceProfileOpen,
     setActiveTab,
+    openHome,
+    openProjectWorkspace,
     togglePanel,
     enterWritersRoom,
     exitWritersRoom,
+    toggleWritersRoom,
     toggleFocusMode,
     setStoryBibleSection,
     toggleVoiceProfile,

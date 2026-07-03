@@ -17,6 +17,10 @@ interface ScreenplayToolbarProps {
   focusMode: boolean
   onElementTypeChange: (type: ElementType) => void
   onToggleFocusMode: () => void
+  onOpenTitlePage?: () => void
+  onImportFdx?: () => void
+  onReplaceFdx?: () => void
+  importingFdx?: boolean
 }
 
 export function ScreenplayToolbar({
@@ -26,6 +30,10 @@ export function ScreenplayToolbar({
   focusMode,
   onElementTypeChange,
   onToggleFocusMode,
+  onOpenTitlePage,
+  onImportFdx,
+  onReplaceFdx,
+  importingFdx = false,
 }: ScreenplayToolbarProps) {
   if (focusMode) return null
 
@@ -51,6 +59,38 @@ export function ScreenplayToolbar({
       <button style={styles.focusBtn} onClick={onToggleFocusMode}>
         Focus
       </button>
+
+      {onOpenTitlePage && (
+        <button
+          type="button"
+          style={styles.focusBtn}
+          onClick={onOpenTitlePage}
+        >
+          Title page
+        </button>
+      )}
+
+      {onImportFdx && (
+        <button
+          type="button"
+          style={styles.focusBtn}
+          onClick={onImportFdx}
+          disabled={importingFdx}
+        >
+          {importingFdx ? 'Importing' : 'Import .fdx'}
+        </button>
+      )}
+
+      {onReplaceFdx && (
+        <button
+          type="button"
+          style={styles.focusBtn}
+          onClick={onReplaceFdx}
+          disabled={importingFdx}
+        >
+          Replace .fdx
+        </button>
+      )}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import History from '@tiptap/extension-history'
 import { ScreenplayExtension } from './ScreenplayExtension'
+import { PaginationExtension } from './PaginationExtension'
 import { ElementType, countWords } from '../../../lib/screenplay'
 import type { ScriptFocusState } from '../../../lib/scriptIndex'
 import './screenplay.css'
@@ -38,6 +39,9 @@ export function ScreenplayEditor({
   onContentChangeRef.current = onContentChange
   const onContentSnapshotChangeRef = useRef(onContentSnapshotChange)
   onContentSnapshotChangeRef.current = onContentSnapshotChange
+  // Stable bridge for the pagination plugin's page-count callback.
+  const onPageCountChangeRef = useRef(onPageCountChange)
+  onPageCountChangeRef.current = onPageCountChange
 
   // Clean up debounce timer on unmount
   useEffect(() => {
@@ -46,17 +50,9 @@ export function ScreenplayEditor({
     }
   }, [])
 
-  const updatePageCount = useCallback(() => {
-    if (!editorDivRef.current) return
-    const pageHeightPx = 11 * 96
-    const pages = Math.max(1, Math.round(editorDivRef.current.scrollHeight / pageHeightPx))
-    onPageCountChange?.(pages)
-  }, [onPageCountChange])
-
   const publishEditorMetrics = useCallback(
     (editor: Editor) => {
       onWordCountChange?.(countWords(editor.getText()))
-      updatePageCount()
 
       const headings: Array<{ index: number; text: string; nodePos: number }> = []
       let sceneIndex = 0
@@ -71,7 +67,7 @@ export function ScreenplayEditor({
       })
       onSceneHeadingsChange?.(headings)
     },
-    [onSceneHeadingsChange, onWordCountChange, updatePageCount]
+    [onSceneHeadingsChange, onWordCountChange]
   )
 
   const getFocusState = useCallback((editor: Editor): ScriptFocusState | undefined => {
@@ -99,7 +95,19 @@ export function ScreenplayEditor({
   }, [getFocusState])
 
   const editor = useEditor({
-    extensions: [Document, Paragraph, Text, History, ScreenplayExtension],
+    extensions: [
+      Document,
+      Paragraph,
+      Text,
+      History,
+      ScreenplayExtension,
+      // Layout-derived page count + continuous-scroll page-break/number
+      // decorations. The page count flows through the stable ref so the
+      // extension (created once) always reaches the latest prop.
+      PaginationExtension.configure({
+        onPageCountChange: (count: number) => onPageCountChangeRef.current?.(count),
+      }),
+    ],
     content: initialContent || '<p data-element-type="scene-heading"></p>',
 
     onCreate({ editor }) {
