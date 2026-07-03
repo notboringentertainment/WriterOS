@@ -59,7 +59,7 @@ export function TopBar({
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
-  const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange)
+  const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange || onExportSeed)
 
   function handleSaveProject() {
     onSaveProject?.()

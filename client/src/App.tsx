@@ -25,7 +25,7 @@ import {
 } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
 import { pickIdentity } from '@shared/compose/identity'
-import { composeSeedMarkdown, seedFileName } from '@shared/seedMarkdown'
+import { composeSeedMarkdown, resolveSeedTitle, seedFileName } from '@shared/seedMarkdown'
 import { downloadTextFile } from './lib/downloadTextFile'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
@@ -382,13 +382,14 @@ export default function App() {
 
   const handleExportSeed = useCallback(() => {
     const documents = project.state.documents
-    const markdown = composeSeedMarkdown({
+    const seedInput = {
       synopsis: documents.synopsis.content,
       storyBible: documents.storyBible.content,
       treatment: documents.treatment.content,
       projectTitle: project.state.meta.title,
-    })
-    downloadTextFile(seedFileName(project.state.meta.title), markdown, 'text/markdown')
+    }
+    const markdown = composeSeedMarkdown(seedInput)
+    downloadTextFile(seedFileName(resolveSeedTitle(seedInput)), markdown, 'text/markdown')
   }, [project.state.documents, project.state.meta.title])
 
   const handleDeleteProject = useCallback(() => {

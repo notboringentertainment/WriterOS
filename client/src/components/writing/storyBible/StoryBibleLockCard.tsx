@@ -127,6 +127,11 @@ export function StoryBibleLockCard({ lock, onChange, onRemove }: StoryBibleLockC
         >
           {retired ? 'Reactivate' : 'Retire'}
         </button>
+        {removeArmed && (
+          <button type="button" style={buttonStyle} onClick={() => setRemoveArmed(false)}>
+            Cancel
+          </button>
+        )}
         <button
           type="button"
           style={removeArmed ? dangerButtonStyle : buttonStyle}

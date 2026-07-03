@@ -8,5 +8,6 @@ export function downloadTextFile(filename: string, text: string, mime: string): 
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
+  // Deferred: revoking synchronously can cancel the still-async download in Firefox.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }

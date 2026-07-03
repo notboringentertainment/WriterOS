@@ -459,7 +459,8 @@ export const StoryBibleDocumentContentSchema = z.object({
   storyEngine: StoryBibleStoryEngineSchema,
   episodeOrSequenceMap: z.array(StoryBibleMapEntrySchema),
   // Defaults to [] so documents saved before locks existed still parse.
-  locks: z.array(StoryLockSchema).default([]),
+  // Factory form so each parse gets its own array instance.
+  locks: z.array(StoryLockSchema).default(() => []),
 })
 export type StoryBibleDocumentContent = z.infer<typeof StoryBibleDocumentContentSchema>
 

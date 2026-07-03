@@ -99,4 +99,14 @@ describe('StoryBibleLocksEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }))
     expect(onChange).toHaveBeenCalledWith([lock2])
   })
+
+  it('cancel disarms the remove confirmation without deleting', () => {
+    const onChange = vi.fn()
+    render(<StoryBibleLocksEditor value={[lock1]} onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Confirm remove' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+  })
 })

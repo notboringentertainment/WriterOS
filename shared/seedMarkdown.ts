@@ -55,10 +55,21 @@ function yamlList(values: string[]): string {
   return `[${values.map(yamlString).join(', ')}]`
 }
 
+/** Title used in the seed frontmatter; export filenames should use the same resolution. */
+export function resolveSeedTitle(
+  input: Pick<SeedMarkdownInput, 'synopsis' | 'storyBible' | 'projectTitle'>,
+): string {
+  return (
+    input.synopsis.header.title.trim() ||
+    input.storyBible.cover.title.trim() ||
+    input.projectTitle?.trim() ||
+    ''
+  )
+}
+
 function frontmatter(input: SeedMarkdownInput): string | undefined {
   const { synopsis, storyBible } = input
-  const title =
-    synopsis.header.title.trim() || storyBible.cover.title.trim() || input.projectTitle?.trim() || ''
+  const title = resolveSeedTitle(input)
   const toneWords = storyBible.toneAndStyle.toneWords.filter(word => word.trim())
   const comps = synopsis.header.comps.filter(comp => comp.trim())
 
