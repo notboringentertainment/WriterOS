@@ -177,7 +177,7 @@ export function Shell({
             spine={spineContent}
             console={consoleContent}
             paper={children}
-            teleprompter={morganRail}
+            morgan={morganRail}
             chromeless={writersRoomActive}
           />
         )}

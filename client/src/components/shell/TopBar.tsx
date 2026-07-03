@@ -225,7 +225,6 @@ export function TopBar({
         >
           Writer's Room
         </button>
-        <button style={styles.cmdK} title="⌘K">⌘K</button>
       </div>
     </header>
   )
