@@ -45,7 +45,7 @@ Both surfaces exist. They serve different writer intent and must stay separate i
 ### Workspace Vault
 
 - Lives at the workspace root (the user-selected WriterOS projects folder), not inside any one project.
-- Path: `<workspace>/_vault/` (leading underscore so it sorts above project folders and is visually distinct in Finder).
+- Path: `<workspace>/_vault/` (leading underscore so it is visually distinct in Finder and groups away from `.writeros` project bundles; Finder's default Name sort usually places `_`-prefixed names after alphabetical entries, not before).
 - Scope: reference material the writer wants available across projects (recurring research, personal craft notes, market/genre references, ongoing client style guides).
 - Lifecycle: survives project delete. Survives project archive. Removed only when the writer explicitly deletes Workspace Vault files or switches workspaces.
 - Optional in V1: a workspace may have no Workspace Vault. The folder is created lazily on first add.
@@ -106,10 +106,11 @@ Minimum fields per entry:
 - `mimeType` — detected.
 - `addedAt`, `updatedAt`.
 - `sizeBytes`.
+- `contentHash` — SHA-256 of the file bytes at last index/update; used to detect outside edits and stale agent receipts.
 - `agentAccess` — `allow | ask | deny` (default `ask` in V1; see Agent Access Rules).
 - `tags` — optional writer-supplied tags.
 
-The manifest is rebuildable from the filesystem if lost, but is canonical for the `agentAccess` field.
+The manifest is rebuildable from the filesystem if lost, but is canonical for the `agentAccess` field. Rebuild resets all `agentAccess` values to the default `ask`; previously set `deny` entries are not recoverable from the filesystem alone. WriterOS must warn before any rebuild that per-file access settings will be cleared.
 
 ## Supported File Types
 
