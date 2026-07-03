@@ -1,12 +1,12 @@
 ---
 name: refactor-service-layer
-description: After a feature ships, find duplicated runtime/helpers and consolidate into a reusable service layer. Use when the agent rewrote similar functions instead of reusing them.
+description: After a feature works locally, find duplicated runtime/helpers and consolidate into a reusable service layer. Use when the agent rewrote similar functions instead of reusing them.
 disable-model-invocation: true
 ---
 
 # Refactor service layer
 
-Run **after** a feature works locally and you are happy with behavior — not before first implementation.
+Run **after** a feature works locally and before opening or finalizing the PR — not before first implementation.
 
 ## Goal
 

@@ -20,7 +20,9 @@ User invokes: `/greploop` or `/greploop 42` (PR number).
 
 ## Loop (max 5 iterations)
 
-1. Identify PR for current branch: `gh pr view --json number,headRefName`
+1. Identify the PR:
+   - If the user supplied a PR number (for example `/greploop 42`), use that PR number.
+   - Otherwise resolve the current branch PR: `gh pr view --json number,headRefName`
 2. Push latest commits if needed.
 3. Trigger Greptile review if not already running (`@greptile review` comment when appropriate).
 4. Wait for Greptile check to complete; read confidence score (e.g. `3/5`) from PR body or bot review.

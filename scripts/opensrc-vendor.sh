@@ -29,7 +29,11 @@ for spec in "$@"; do
     errors=$((errors + 1))
     continue
   fi
-  SRC="$("${OPENSRC[@]}" path "$spec")"
+  if ! SRC="$("${OPENSRC[@]}" path "$spec")"; then
+    echo "Could not resolve path for: $spec" >&2
+    errors=$((errors + 1))
+    continue
+  fi
   if [ -z "$SRC" ] || [ ! -d "$SRC" ]; then
     echo "Could not resolve path for: $spec" >&2
     errors=$((errors + 1))

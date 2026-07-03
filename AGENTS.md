@@ -25,12 +25,12 @@ When implementing a feature that depends on an npm package or upstream repo:
 3. Optional vendor for `@` mentions: `npm run opensrc:vendor -- <package>` → under `repos/`.
 4. In prompts: **reference the vendored path or `$(opensrc path <pkg>)` output** — find the exact function; do not invent signatures.
 
-## When to use which model (human choice in Cursor)
+## When to use which agent (human choice in Cursor)
 
-| Work | Suggested model |
+| Work | Suggested agent |
 |------|-----------------|
-| UI in `src/ui/`, CSS, layout, visual polish | Claude **Opus 4.7 Max Fast** or `/ui-builder` |
-| Store, bridge, schema, multi-file logic | **GPT‑5.5 Extra High Fast** or `/implementer` |
+| UI in `src/ui/`, CSS, layout, visual polish | `/ui-builder` (see `.cursor/agents/ui-builder.md`) |
+| Store, bridge, schema, multi-file logic | `/implementer` (see `.cursor/agents/implementer.md`) |
 
 ## After each feature
 
