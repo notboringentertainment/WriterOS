@@ -13,6 +13,9 @@ export type MorganTraceEvent =
   | { kind: 'askSpecialist.started'; runId: string; specialistId: string; question: string }
   | { kind: 'askSpecialist.ok'; runId: string; specialistId: string; durationMs: number; chars: number }
   | { kind: 'askSpecialist.error'; runId: string; specialistId: string; durationMs: number; reason: string }
+  | { kind: 'capability_tool.started'; runId: string; personaId: string; toolName: string }
+  | { kind: 'capability_tool.ok'; runId: string; personaId: string; toolName: string; durationMs: number }
+  | { kind: 'capability_tool.error'; runId: string; personaId: string; toolName: string; durationMs: number; reason: string }
   | { kind: 'guard.attribution'; runId: string; status: 'passed' | 'blocked'; specialists: string[] }
   | { kind: 'final.accepted'; runId: string }
   | { kind: 'final.failed'; runId: string; reason: string };
@@ -55,6 +58,12 @@ export function formatTraceLine(event: MorganTraceEvent): string {
       return `${head} askSpecialist ok specialist=${event.specialistId} durationMs=${event.durationMs} chars=${event.chars}`;
     case 'askSpecialist.error':
       return `${head} askSpecialist error specialist=${event.specialistId} durationMs=${event.durationMs} reason="${quotedPreview(event.reason)}"`;
+    case 'capability_tool.started':
+      return `${head} capabilityTool start persona=${event.personaId} tool=${event.toolName}`;
+    case 'capability_tool.ok':
+      return `${head} capabilityTool ok persona=${event.personaId} tool=${event.toolName} durationMs=${event.durationMs}`;
+    case 'capability_tool.error':
+      return `${head} capabilityTool error persona=${event.personaId} tool=${event.toolName} durationMs=${event.durationMs} reason="${quotedPreview(event.reason)}"`;
     case 'guard.attribution':
       return event.status === 'passed'
         ? `${head} guard attribution passed consulted=${event.specialists.join(',')}`

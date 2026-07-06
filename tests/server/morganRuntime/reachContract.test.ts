@@ -36,6 +36,13 @@ describe('reach inventory', () => {
     expect(inv.canDoNow.some((s) => /consult.*specialist/i.test(s))).toBe(true)
   })
 
+  it('parameterizes persona capabilities without changing derived canSee rules', () => {
+    const inv = buildReachInventory(base(), 'zoe')
+    expect(inv.canSee.join(' ')).toMatch(/logline/i)
+    expect(inv.canDoNow.some((s) => /consult.*specialist/i.test(s))).toBe(false)
+    expect(inv.canDoNow.join(' ')).toMatch(/Zoe|world/i)
+  })
+
   it('after M2 flip: cannotDoYet no longer contains the specific "call the specialists directly" line', () => {
     const inv = buildReachInventory(base())
     expect(inv.cannotDoYet.some((s) => /call the specialists directly/i.test(s))).toBe(false)
