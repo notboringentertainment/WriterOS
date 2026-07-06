@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan: OpenSwarm Evaluation &amp; Agent Runtime Consolidation</title>
+<style>
+  :root {
+    --paper: #f7f3ec;
+    --card: #fffdf8;
+    --ink: #221d16;
+    --muted: #6f6759;
+    --line: #e2d9c8;
+    --accent: #8a3324;        /* oxblood — decision / action */
+    --accent-soft: #f3e2dc;
+    --teal: #0f6b5f;          /* runtime / build */
+    --teal-soft: #dfeeea;
+    --gold: #9a7b2d;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino", Georgia, serif;
+    --sans: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; font-size: 16px;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 28px 120px; }
+  h1, h2, h3, h4 { font-family: var(--serif); line-height: 1.25; }
+  h1 { font-size: 2.1rem; margin: 0 0 8px; }
+  h2 { font-size: 1.5rem; margin: 56px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+  h3 { font-size: 1.15rem; margin: 28px 0 8px; }
+  h4 { font-size: 1rem; margin: 22px 0 6px; font-family: var(--sans); font-weight: 600; }
+  p { margin: 10px 0; }
+  code { font-family: var(--mono); font-size: 0.85em; background: #efe8da; padding: 1px 5px; border-radius: 4px; }
+  pre code { display: block; padding: 14px; overflow-x: auto; }
+  a { color: var(--teal); }
+  figure { margin: 26px 0; text-align: center; }
+  figure img { max-width: 100%; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 2px 10px rgba(34,29,22,.07); }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 8px; font-style: italic; }
+  details.meta { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; margin: 14px 0 6px; }
+  details.meta summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+  details.meta dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 14px; margin: 10px 0 4px; font-size: 0.88rem; }
+  details.meta dt { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; }
+  details.meta dd { margin: 0; word-break: break-word; }
+  .tag { font-family: var(--mono); font-size: 0.7rem; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: .04em; }
+  .tag.existing { background: var(--teal-soft); color: var(--teal); }
+  .tag.new { background: var(--accent-soft); color: var(--accent); }
+  .tag.delete { background: #f4dede; color: #a12626; }
+  section.files li { margin: 6px 0; font-size: 0.92rem; }
+  .phase { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: 10px; padding: 18px 24px; margin: 26px 0; }
+  .phase h3 { margin-top: 4px; }
+  ul.checklist { list-style: none; padding-left: 4px; }
+  ul.checklist li { margin: 7px 0; padding-left: 2px; }
+  code.status { background: var(--ink); color: #f7f3ec; min-width: 34px; display: inline-block; text-align: center; margin-right: 8px; border-radius: 5px; font-size: 0.72rem; padding: 2px 6px; }
+  .loop { background: var(--accent-soft); border: 1px solid #dcc0b6; border-radius: 8px; padding: 12px 16px; margin: 18px 0 6px; font-size: 0.92rem; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.9rem; background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #efe8da; font-family: var(--sans); font-size: 0.82rem; text-transform: uppercase; letter-spacing: .03em; }
+  .verdict { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 18px 24px; margin: 24px 0; }
+  .verdict h3 { color: var(--accent); margin-top: 0; }
+  #notes details, #amendments details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; margin: 10px 0; }
+  #notes summary, #amendments summary { cursor: pointer; font-weight: 600; }
+  .kill { color: #a12626; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ===== HEADER + UPDATABLE METADATA ===== -->
+  <header>
+    <h1>Plan: OpenSwarm Evaluation &amp; Agent Runtime Consolidation</h1>
+    <details class="meta">
+      <summary>Metadata</summary>
+      <dl>
+        <dt>created</dt>      <dd>2026-07-06T05:30:00-07:00</dd>
+        <dt>modified</dt>     <dd>2026-07-06T05:30:00-07:00, 2026-07-06T09:45:00-07:00, 2026-07-06T10:20:00-07:00, 2026-07-06T14:55:00-07:00</dd>
+        <dt>commits</dt>      <dd>(none yet — appended by Build Plan workflow)</dd>
+        <dt>agent name</dt>   <dd>claude-fable-5 (planf3 · create-plan)</dd>
+        <dt>session id</dt>   <dd>8507a6a3-0960-4001-88fb-f0a39e4fdd05</dd>
+        <dt>back refs</dt>    <dd>docs/product/persona-capability-layer-prd.md, docs/product/persona-capability-phase2-plan.md, docs/product/agent-observability-provenance-prd.md, docs/superpowers/plans/2026-06-20-morgan-runtime-m1-handoff.md</dd>
+        <dt>forward refs</dt> <dd>docs/product/open-swarm-agent-runtime-consolidation-prd.md (Accepted 2026-07-06)</dd>
+      </dl>
+    </details>
+  </header>
+
+  <figure>
+    <!-- {{HERO_IMAGE: two parallel agent pipelines merging into one clean runtime channel — warm paper minimal engineering diagram}} -->
+    <figcaption>Two parallel agent paths — one external swarm, one native runtime — consolidated into a single kernel.</figcaption>
+  </figure>
+
+  <!-- ===== PURPOSE / PROBLEM / SOLUTION ===== -->
+  <section id="purpose">
+    <h2>Purpose</h2>
+    <p>Decide the fate of the OpenSwarm agent integration with evidence, then consolidate WriterOS onto a single efficient agent system that delivers what OpenSwarm was originally meant to provide: agents that make tool calls and kick off workflows. The recommendation, argued below and verified in Phase&nbsp;1, is to <strong>retire OpenSwarm and generalize the already-shipped Morgan runtime into the one agent kernel for the whole product</strong>. This is a surgical replacement of the agent layer (~1,700 LOC), not a repo overhaul — the composers, schemas, editor, and 1,500+ tests are healthy and stay.</p>
+  </section>
+
+  <section id="problem">
+    <h2>Problem</h2>
+    <p>WriterOS runs <strong>three parallel agent execution paths</strong> for the same product idea (the flagged "three-Morgan problem"): the Claude-native Morgan runtime behind <code>/api/wp-chat</code>, a raw debug bridge at <code>/api/openswarm/writing-partner</code>, and the OpenSwarm-backed Zoe research capability at <code>/api/persona-capability/run</code>. OpenSwarm is an external, separately-run Python FastAPI service on <code>localhost:8080</code> that today powers exactly <em>one</em> shipped capability. Its settled security boundary (envelope-strong, content-limited) deliberately prevents it from calling tools inside WriterOS or mutating documents — which means the original goal, agents that make tool calls and kick off workflows, is <em>architecturally impossible through OpenSwarm</em>. Meanwhile the Morgan runtime already does native tool-calling with better observability (trace events, attribution guards, reach contract) and is live-verified. Every month both paths coexist adds duplicated HTTP code, a silent ops dependency (service down → Zoe research soft-fails), and split engineering attention.</p>
+    <figure>
+      <!-- {{PROBLEM_IMAGE: three tangled redundant pipelines from one chat box, one path blocked by a wall — minimal warm diagram}} -->
+      <figcaption>Three agent paths, one product: duplicated bridges, an external service dependency, and a boundary that blocks the actual goal.</figcaption>
+    </figure>
+
+    <h3>Evidence inventory (from codebase audit, 2026-07-06)</h3>
+    <table>
+      <tr><th>Fact</th><th>Evidence</th></tr>
+      <tr><td>OpenSwarm is an external HTTP service, not a library</td><td>No swarm package in <code>package.json</code>; plain <code>fetch</code> to <code>POST /open-swarm/get_response</code> at <code>server/routes.ts:1016</code> and <code>server/persona-capability/runPersonaTask.ts:257</code></td></tr>
+      <tr><td>Exactly one shipped capability uses it</td><td><code>PERSONA_CAPABILITY_ALLOWLIST</code> has a single entry: Zoe / research_world_context (<code>shared/personaCapability.ts:180-188</code>)</td></tr>
+      <tr><td>Two bridges share zero HTTP code</td><td><code>routes.ts:1023</code> vs <code>runPersonaTask.ts:257</code>; extraction explicitly deferred in phase-2 plan §9</td></tr>
+      <tr><td>Tool calls / workflows / document edits never built</td><td>PRD Phases 3–4 unstarted; <code>storyUpdates</code> = zero grep hits repo-wide; "no automatic project mutation from tool output" is a PRD non-goal</td></tr>
+      <tr><td>Morgan runtime M1+M2 shipped and merged</td><td><code>server/ai/morganRuntime/</code> (7 files): tool loop, terminal <code>respond_to_writer</code>, <code>askSpecialist</code>, reach contract, attribution guards, trace + RunDebug; PR #44/#45/#47 merged, live-verified</td></tr>
+      <tr><td>Capability tests green</td><td>14/14 in <code>openSwarmBridge.test.ts</code> + <code>personaCapabilityTask.test.ts</code>; 8 test files total on this layer</td></tr>
+      <tr><td>Client cancel path is a dead branch</td><td><code>status:'cancelled'</code> exists in schema but no AbortSignal wired (<code>App.tsx:627</code>); server never emits it</td></tr>
+    </table>
+  </section>
+
+  <section id="solution">
+    <h2>Solution</h2>
+    <p><strong>One runtime, many hands.</strong> Generalize <code>server/ai/morganRuntime/</code> into a persona-agnostic <code>agentRuntime</code> kernel: a provider-boxed tool loop where personas are configurations, capabilities are tools, and workflows are tools that invoke existing pipelines. Research becomes a native in-process tool (replacing the OpenSwarm HTTP hop) that produces the <em>same</em> <code>CapabilityReceipt</code> the UI already renders. Document composition becomes an agent-invocable <code>composeDocument</code> tool wrapping the existing <code>server/compose</code> pipeline. Document edits stay writer-gated behind the settled propose → approve → stale-guard contract. OpenSwarm, both bridges, and the external service dependency retire. Provenance gets stronger, not weaker: every capability run flows through the runtime's trace layer, feeding the Agent Observability PRD slices.</p>
+    <figure>
+      <!-- {{SOLUTION_IMAGE: single runtime hub with tool spokes — research, specialists, compose workflow, gated edits — minimal warm engineering diagram}} -->
+      <figcaption>The consolidated kernel: one loop, tools as spokes, receipts and trace on every run, writer approval gating mutations.</figcaption>
+    </figure>
+
+    <div class="verdict">
+      <h3>Keep-or-Replace Verdict: REPLACE (pending Phase 1 evidence gates)</h3>
+      <table>
+        <tr><th></th><th>Keep OpenSwarm</th><th>Replace with native runtime</th></tr>
+        <tr><td>Value delivered today</td><td>1 capability (Zoe research) + debug bridge</td><td>Morgan host chat + specialist consults, live now</td></tr>
+        <tr><td>Path to tool calls / workflows</td><td class="kill">Blocked by design (content-limited boundary)</td><td>Native: add tools to the loop</td></tr>
+        <tr><td>Ops burden</td><td class="kill">Separate Python service must be running</td><td>None beyond existing Node server</td></tr>
+        <tr><td>Observability</td><td>Receipt only; upstream opaque</td><td>Trace events, RunDebug, attribution guards + receipts</td></tr>
+        <tr><td>Code health</td><td class="kill">Two duplicated HTTP bridges</td><td>One kernel, DI-tested</td></tr>
+        <tr><td>What survives either way</td><td colspan="2"><code>CapabilityReceipt</code> schema + chip UI, citation discipline, voice-preserving synthesis, allowlist-as-capability-matrix — all provider-independent and kept</td></tr>
+      </table>
+      <p><strong>Reversal condition:</strong> if Phase 1 surfaces OpenSwarm-side agents with real workflow value that cannot be reproduced as native tools within one phase of effort, halt at Phase 1 and amend this plan.</p>
+    </div>
+  </section>
+
+  <!-- ===== RELEVANT FILES ===== -->
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>Existing Files</h3>
+    <ul>
+      <li><span class="tag existing">existing</span> <code>server/ai/morganRuntime/runMorgan.ts</code> — the loop to generalize (MAX_ITERS, terminal capture, guards)</li>
+      <li><span class="tag existing">existing</span> <code>server/ai/morganRuntime/anthropicToolClient.ts</code> — boxed Anthropic client; stays the only SDK-shape file</li>
+      <li><span class="tag existing">existing</span> <code>server/ai/morganRuntime/tools.ts</code> — MORGAN_TOOLS + dispatchTool; becomes per-persona toolset registry</li>
+      <li><span class="tag existing">existing</span> <code>server/ai/morganRuntime/reachContract.ts</code> — derived canSee inventory; generalizes per persona</li>
+      <li><span class="tag existing">existing</span> <code>server/ai/morganRuntime/trace.ts</code> — trace events + RunDebug; extends to capability runs</li>
+      <li><span class="tag existing">existing</span> <code>server/persona-capability/runPersonaTask.ts</code> — orchestrator; keeps receipt/citation logic, loses <code>callOpenSwarm</code></li>
+      <li><span class="tag existing">existing</span> <code>server/persona-capability/buildResearchPrompt.ts</code> — research JSON contract; reused by native research tool</li>
+      <li><span class="tag existing">existing</span> <code>shared/personaCapability.ts</code> — receipt schema persisted in project packages; <strong>kept untouched</strong></li>
+      <li><span class="tag existing">existing</span> <code>server/routes.ts</code> — bridge routes deleted; capability route repointed; shared storyMemory helpers kept</li>
+      <li><span class="tag existing">existing</span> <code>server/ai/openaiService.ts</code> — synthesis fn kept; OpenSwarm anti-leak line removed with the boundary it guarded</li>
+      <li><span class="tag existing">existing</span> <code>server/compose/index.ts</code> — existing compose pipeline; wrapped as agent tool in Phase 5</li>
+      <li><span class="tag existing">existing</span> <code>client/src/App.tsx</code> — <code>/swarm</code> branch removed; capability branch kept (same response contract)</li>
+      <li><span class="tag existing">existing</span> <code>client/src/components/transcript/CapabilityReceiptChip.tsx</code> — untouched; renders receipts from the new producer</li>
+      <li><span class="tag existing">existing</span> <code>client/src/lib/wpRouting.ts</code> — <code>OPEN_SWARM_RE</code> / <code>parseOpenSwarmCommand</code> removed</li>
+      <li><span class="tag existing">existing</span> <code>shared/workspaceLocation.ts</code> — read-only location contract; grounds the Phase 5 propose-edit tool</li>
+    </ul>
+
+    <h3>New Files</h3>
+    <ul>
+      <li><span class="tag new">new</span> <code>server/ai/agentRuntime/runAgent.ts</code> — persona-agnostic loop extracted from runMorgan</li>
+      <li><span class="tag new">new</span> <code>server/ai/agentRuntime/toolsets.ts</code> — per-persona tool registry (host: consult+respond; zoe: research+respond; …)</li>
+      <li><span class="tag new">new</span> <code>server/ai/agentRuntime/tools/research.ts</code> — native research tool: bounded call, citation discipline, receipt production</li>
+      <li><span class="tag new">new</span> <code>server/ai/agentRuntime/tools/composeDocument.ts</code> — Phase 5: agent-invocable wrapper over server/compose</li>
+      <li><span class="tag new">new</span> <code>server/ai/agentRuntime/tools/proposeEdit.ts</code> — Phase 5: propose→approve→stale-guard edit proposals (never direct mutation)</li>
+      <li><span class="tag new">new</span> <code>tests/server/agentRuntime/*.test.ts</code> — kernel, toolsets, research parity, compose tool, propose-edit gating</li>
+    </ul>
+  </section>
+
+  <!-- ===== IMPLEMENTATION PHASES ===== -->
+  <section id="phases">
+    <h2>Implementation Phases</h2>
+    <p><strong>IMPORTANT:</strong> Execute every phase and task step by step, in order, top to bottom. House rules apply throughout: TDD (failing test first), one phase = one PR, no deferred debt — bugs found in a phase are fixed in that phase.</p>
+    <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed. All start as <code>[]</code>; the Build Plan workflow updates them as it works.</p>
+
+    <div class="phase">
+      <h3><code class="status">[x]</code> Phase 1: Evaluate &amp; Verify — the keep/replace evidence gates</h3>
+      <p>Turn the recommendation into a decision backed by executed evidence, not audit prose. Also captures the baseline the later phases must not regress.</p>
+      <figure>
+        <!-- {{PHASE1_IMAGE: a balance scale weighing an external service against a native runtime, checklist beneath — minimal warm diagram}} -->
+        <figcaption>Phase 1: run the system both ways, weigh the evidence, commit the decision.</figcaption>
+      </figure>
+
+      <h4>1. Baseline capture</h4>
+      <ul class="checklist">
+        <li><code class="status">[x]</code> Run full suite + typecheck + build on a clean checkout of <code>main</code>; record counts in Amendments <em>(run on <code>codex/openswarm-phase1-eval</code> @ 6651e11 = main + story-locks + docs — the actual execution base; see decision record)</em></li>
+        <li><code class="status">[x]</code> Grep-inventory every OpenSwarm coupling point (routes, env vars, client branches, shared types) and diff against the audit list in this plan — 13 files, exact match; <code>shared/personaCapability.ts</code> confirmed clean of OpenSwarm literals</li>
+      </ul>
+
+      <h4>2. Live behavior with OpenSwarm DOWN</h4>
+      <ul class="checklist">
+        <li><code class="status">[x]</code> Start dev server with no service on :8080; send a Zoe research message; confirm in-voice <code>soft_fail</code>/<code>timeout</code> fallback and receipt status, no raw error leak — confirmed: HTTP 200, receipt <code>soft_fail</code>, 0 sources, in-voice fallback, no port/errno leak (fixture: <code>fixture-zoe-research-down.json</code>)</li>
+        <li><code class="status">[x]</code> Send a <code>/swarm</code> message; document the failure mode of the raw bridge — HTTP 502 <code>{"error":"Failed to reach OpenSwarm"}</code>; command hard-fails without the service</li>
+      </ul>
+
+      <h4>3. Live behavior with OpenSwarm UP (if runnable)</h4>
+      <ul class="checklist">
+        <li><code class="status">[x]</code> Service found RUNNING on :8080 (Python PID, FastAPI, <code>/open-swarm/get_response</code> confirmed via OpenAPI) — yet <strong>both paths fail</strong>: Zoe → soft_fail in ~4.9s, /swarm → 502 "reachable, but Writing Partner could not complete". Direct probe returns HTTP 500 <code>Runner execution failed</code>; root cause: <code>~/OpenSwarm/.env</code> is the unfilled template — no provider API key. A successful parity fixture is unobtainable; broken-service capture saved as <code>fixture-zoe-research-up-brokenservice.json</code>. Phase 3 parity falls back to the mocked upstream-contract fixtures in the existing tests</li>
+        <li><code class="status">[x]</code> Enumerate any OpenSwarm-side agents beyond Deep Research Agent / Writing Partner actually configured; assess unique value — template lists General/Image/Slides/Video agents but none are wired into WriterOS, and with no provider key none are functional; zero unique value in the current install</li>
+      </ul>
+
+      <h4>4. Decision record</h4>
+      <ul class="checklist">
+        <li><code class="status">[x]</code> Append a dated decision entry to Amendments: KEEP or REPLACE, with the evidence lines above cited — <strong>REPLACE</strong>, recorded 2026-07-06</li>
+        <li><code class="status">[x]</code> If REPLACE: proceed to Phase 2. If KEEP: halt, amend this plan with the reversal rationale, and re-scope — gate is GO; Phase 2 starts in its own PR</li>
+      </ul>
+
+      <h4>5. Testing Strategy</h4>
+      <p>Vitest for automated baseline; manual live smoke for the two service states (the dev-server-restart trap applies — restart after any server change). Edge cases: service half-up (connects, malformed JSON) is covered by existing <code>invalid_upstream</code> tests — verify they still pass.</p>
+      <ul class="checklist">
+        <li><code class="status">[x]</code> <code>npm run check</code> — TypeScript clean at baseline</li>
+        <li><code class="status">[x]</code> <code>npx vitest run</code> — full suite green at baseline: <strong>141 files, 1502 tests, 0 failures</strong> (14.98s); build <code>dist/index.js</code> 197.1kb</li>
+        <li><code class="status">[x]</code> <code>npx vitest run tests/server/openSwarmBridge.test.ts tests/server/personaCapabilityTask.test.ts tests/server/personaCapabilityRoute.test.ts</code> — capability layer green (included in full-suite run)</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+
+    <div class="phase">
+      <h3><code class="status">[]</code> Phase 2: Extract the Agent Runtime Kernel</h3>
+      <p>Pure refactor, behavior-frozen: generalize <code>morganRuntime</code> into <code>agentRuntime</code> so the loop is persona-agnostic and toolsets are injected. Morgan becomes the first consumer with zero behavior change. No OpenSwarm code touched yet.</p>
+      <figure>
+        <!-- {{PHASE2_IMAGE: a single engine block being lifted out of one car and placed on a shared mount — minimal warm diagram}} -->
+        <figcaption>Phase 2: the proven Morgan loop becomes the shared kernel; Morgan is consumer #1, unchanged.</figcaption>
+      </figure>
+
+      <h4>1. Kernel extraction (TDD)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Write per-persona regression snapshots FIRST: for each of the 7 personas (Morgan, Sam, Casey, Oliver, Maya, Zoe, Alex), snapshot the system prompt (<code>createPersonaSystemPrompt</code>, openaiService.ts:811) and the rendered context-section order (<code>PERSONA_CONTEXT_ORDER</code> → <code>createContextSummary</code>, openaiService.ts:459/555) against a fixed StoryMemory fixture — these snapshots are the executable proof behind "all 7 personas unchanged" and must pass untouched through Phases 2-4</li>
+        <li><code class="status">[]</code> Write kernel tests: loop iteration cap, terminal-tool capture, retry-with-nudge, honest-error (no hollow fallback), one-consult-per-turn guard, attribution guard — ported from existing runMorgan tests</li>
+        <li><code class="status">[]</code> Create <code>server/ai/agentRuntime/runAgent.ts</code> — parameterized by <code>{ personaId, toolset, systemPrompt, deps }</code>; move loop logic from <code>runMorgan.ts</code></li>
+        <li><code class="status">[]</code> Create <code>toolsets.ts</code> — registry mapping personaId → tool definitions + dispatch table; Morgan's three tools register as the <code>host</code> toolset</li>
+        <li><code class="status">[]</code> <code>runMorgan.ts</code> becomes a thin adapter over <code>runAgent</code> (public signature unchanged — <code>openaiService.ts:997</code> call site untouched)</li>
+      </ul>
+
+      <h4>2. Reach contract + trace generalization</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Parameterize <code>reachContract.ts</code> per persona (derived canSee stays the rule: only populated fields are advertised)</li>
+        <li><code class="status">[]</code> Extend <code>trace.ts</code> event union with <code>capability_tool</code> events; RunDebug shape stays backward-compatible</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>Vitest with DI fakes (no live API). The frozen-behavior proof is the existing Morgan test files passing unmodified against the adapter. Edge cases: empty toolset, unknown tool name dispatch, terminal tool emitted alongside a consult (must reject, per existing guard).</p>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>npx vitest run tests/server/agentRuntime</code> — new kernel tests green</li>
+        <li><code class="status">[]</code> <code>npx vitest run</code> — full suite green; Morgan tests pass with zero edits (frozen behavior proven)</li>
+        <li><code class="status">[]</code> <code>npm run check</code> — clean</li>
+        <li><code class="status">[]</code> <code>MORGAN_TRACE=on</code> live smoke: one wp-chat message; trace events emit as before</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+
+    <div class="phase">
+      <h3><code class="status">[]</code> Phase 3: Native Research Tool — OpenSwarm parity, then better</h3>
+      <p>Rebuild the one real OpenSwarm capability as a runtime tool. Same request/response contract, same receipt, same citation discipline — the client cannot tell the difference, which is the point. Then wire the cancel path that was left dead.</p>
+      <figure>
+        <!-- {{PHASE3_IMAGE: research capability moving from an external cloud box into the local runtime, receipt preserved — minimal warm diagram}} -->
+        <figcaption>Phase 3: research comes in-house; the receipt contract is the fixed point.</figcaption>
+      </figure>
+
+      <h4>1. Research tool (TDD, parity-first)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Port parity tests first: unsourced findings demoted to unverified; non-http(s) URLs stripped keeping labels; timeout → in-voice fallback; upstream error → <code>soft_fail</code> with no raw leak; receipt sources carry <code>citedInFinal</code></li>
+        <li><code class="status">[]</code> Server-tool error tests (distinct failure surface — these arrive as HTTP <strong>200</strong>, not thrown errors): a <code>web_search_tool_result</code> block whose <code>content</code> is an error <em>object</em> instead of a results <em>list</em> — branch on that shape before indexing. Cases: <code>max_uses_exceeded</code>, <code>too_many_requests</code>, <code>unavailable</code> → each yields a <code>soft_fail</code> receipt with in-voice fallback and no raw <code>error_code</code> leak into the transcript; partial results (one search succeeded, second errored) → keep the successful sources</li>
+        <li><code class="status">[]</code> Widen <code>anthropicToolClient.ts</code> for server tools: the current signature types tools as <code>Anthropic.Tool[]</code> (custom-only, line 49) — accept the tool union, pass through <code>server_tool_use</code>/<code>web_search_tool_result</code> content blocks, and handle the <code>pause_turn</code> stop reason (re-send to resume)</li>
+        <li><code class="status">[]</code> Implement <code>tools/research.ts</code>: bounded research call via the boxed Anthropic client with the <strong>Anthropic server-side web search tool <code>web_search_20260209</code></strong> (supported on claude-sonnet-4-6, no beta header; <code>max_uses: 3</code> to honor the existing "1-2 targeted searches" contract in buildResearchPrompt.ts:120) — this is the named replacement for OpenSwarm's Deep Research Agent web access. Streaming (<code>messages.stream</code> + <code>finalMessage</code> — long generations must stream, per house rule). Reuses <code>buildResearchPrompt.ts</code> JSON contract and <code>parseResearchTaskResult</code> logic. Citation mapping is two-step: the receipt's <em>source list</em> comes from <code>web_search_tool_result</code> result blocks (url/title), while <code>citedInFinal</code> comes from the <code>citations</code> arrays on the final <em>text</em> blocks — match each citation's URL back to a source entry and flag it; a source with no matching text-block citation stays <code>citedInFinal: false</code></li>
+        <li><code class="status">[]</code> Receipt production moves behind the tool; <code>shared/personaCapability.ts</code> schema untouched (persisted in project packages — back-compat is non-negotiable)</li>
+        <li><code class="status">[]</code> Repoint <code>runPersonaTask.ts</code>: <code>callOpenSwarm</code> replaced by the runtime research tool; route contract <code>/api/persona-capability/run</code> unchanged</li>
+      </ul>
+
+      <h4>2. Finish the cancel path</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Wire AbortSignal from client (<code>postPersonaCapability</code> already accepts one) through the route into the tool; server emits <code>status:'cancelled'</code>; no transcript entry on cancel (existing client guard finally earns its keep)</li>
+      </ul>
+
+      <h4>3. Testing Strategy</h4>
+      <p>Vitest with a fake model client for determinism; the Phase 1 captured round-trip (if any) is the golden parity fixture. Edge cases: zero findings returned; findings all unverified; abort mid-synthesis; malformed model JSON (retry-once then soft_fail).</p>
+      <p><strong>Phase 1 finding:</strong> no successful OpenSwarm parity fixture exists because the live service returned only broken-provider failures. Mocked upstream-contract fixtures cover incumbent parity; the live Phase 3 smoke must prove new positive-path value with at least one successful sourced Zoe answer, not just fallback correctness.</p>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>npx vitest run tests/server/agentRuntime tests/server/personaCapabilityTask.test.ts tests/server/personaCapabilityRoute.test.ts</code> — parity + cancel green</li>
+        <li><code class="status">[]</code> <code>npx vitest run tests/components/AppZoeCapability.test.tsx tests/components/CapabilityReceiptChip.test.tsx</code> — client contract untouched, chips render</li>
+        <li><code class="status">[]</code> Live smoke: Zoe research message end-to-end with <em>no OpenSwarm service running</em> — at least one successful sourced answer, full receipt, sources, in-voice answer</li>
+        <li><code class="status">[]</code> <code>npm run check</code> — clean</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+
+    <div class="phase">
+      <h3><code class="status">[]</code> Phase 4: Retire OpenSwarm</h3>
+      <p>Delete the external dependency now that nothing needs it. The receipt types and chip UI stay (persisted schema, live producer). Shared storyMemory context helpers stay (used by <code>/api/wp-chat</code>).</p>
+      <figure>
+        <!-- {{PHASE4_IMAGE: unplugging an external service box, its cable removed cleanly while the main machine keeps running — minimal warm diagram}} -->
+        <figcaption>Phase 4: the external service unplugs; nothing user-visible changes.</figcaption>
+      </figure>
+
+      <h4>1. Server removal</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Delete <code>/api/openswarm/writing-partner</code> route + <code>openSwarmWritingPartnerSchema</code> + <code>buildOpenSwarmWritingPartnerPrompt</code> (keep its shared storyMemory helpers — verify wp-chat usage first)</li>
+        <li><code class="status">[]</code> Remove <code>callOpenSwarm</code>, <code>OPENSWARM_URL</code>/<code>OPEN_SWARM_URL</code>/<code>OPENSWARM_APP_TOKEN</code> handling, and the "do not mention OpenSwarm" prompt line</li>
+      </ul>
+
+      <h4>2. Client: /swarm deprecation (user-visible — not a silent delete)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>/swarm &lt;msg&gt;</code> is a live user command (parsed at wpRouting.ts:119, handled at App.tsx:583). Reroute it: rename <code>parseOpenSwarmCommand</code> → <code>parseSwarmCommand</code> (and <code>OPEN_SWARM_RE</code> → <code>SWARM_RE</code>), match → send message through the native Morgan wp-chat path, prepend one-time transcript notice "<em>/swarm now routes to Morgan directly; the old external bridge was retired</em>" — notice text and identifiers deliberately contain no "OpenSwarm" string so the zero-reference grep below holds without an allowlist</li>
+        <li><code class="status">[]</code> Delete <code>postOpenSwarmWritingPartner</code>, the raw-bridge App.tsx branch, "Morgan (OpenSwarm)" speaker label, and the "OpenSwarm Writing Partner" helper text (replace with "Morgan"); keep the renamed <code>/swarm</code> regex + reroute for one release, then remove in a later cleanup PR</li>
+        <li><code class="status">[]</code> Sweep tests: delete <code>openSwarmBridge.test.ts</code>; rewrite <code>AppOpenSwarm.test.tsx</code> → <code>AppSwarmDeprecation.test.tsx</code> asserting the reroute + notice (test content also free of the "OpenSwarm" string); retarget any receipt/schema assertions that referenced the bridge</li>
+      </ul>
+
+      <h4>3. Dev tooling &amp; config removal (the audit missed these)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>scripts/dev.mjs</code> — remove the OpenSwarm auto-launcher: <code>pythonForOpenSwarm()</code> (line 98), port probe/waiters (lines 105-141), <code>OPENSWARM_PORT/HOST/DIR</code> env handling (lines 13-16); <code>npm run dev</code> must start clean with no :8080 references</li>
+        <li><code class="status">[]</code> <code>.env.example</code> — drop <code>OPENSWARM_URL</code> (line 8) and <code>OPENSWARM_APP_TOKEN</code> (line 9)</li>
+        <li><code class="status">[]</code> <code>README.md</code> — remove OpenSwarm run instructions (lines 45, 55: the :8080 service and <code>OPENSWARM_DIR</code> override)</li>
+        <li><code class="status">[]</code> <code>package.json</code> — verify no OpenSwarm-related scripts remain</li>
+      </ul>
+
+      <h4>4. Testing Strategy</h4>
+      <p>The proof is absence plus green: zero OpenSwarm references anywhere outside docs/history, full suite passing, and a live app pass over every agent surface. Edge case: previously exported project packages containing <code>capabilityReceipt</code> must still import cleanly (schema untouched — assert it).</p>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>grep -riE "openswarm|open_swarm|open-swarm" . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=docs --exclude-dir=chats --exclude-dir=specs | wc -l</code> — returns 0 (repo-wide: covers scripts/, README.md, .env.example, package.json — not just src dirs)</li>
+        <li><code class="status">[]</code> <code>npx vitest run</code> — full suite green, persona snapshots from Phase 2 untouched</li>
+        <li><code class="status">[]</code> <code>npm run check && npm run build</code> — clean compile and bundle</li>
+        <li><code class="status">[]</code> <code>npm run dev</code> boots with zero :8080 probes or OpenSwarm log lines</li>
+        <li><code class="status">[]</code> Live smoke: Morgan chat, specialist consult, Zoe research, <code>/swarm</code> reroute notice, one composer run — all green with no :8080 service on the machine</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+
+    <div class="phase">
+      <h3><code class="status">[]</code> Phase 5: Workflows as Tools — the original promise, delivered</h3>
+      <p>The payoff phase: agents that kick off workflows. Two tools, both riding existing, tested pipelines — the agent gains hands, the writer keeps the pen.</p>
+      <figure>
+        <!-- {{PHASE5_IMAGE: agent hand pressing a workflow lever, output document flowing to a writer holding an approve stamp — minimal warm diagram}} -->
+        <figcaption>Phase 5: compose on command, edits by proposal only — the writer approves every mutation.</figcaption>
+      </figure>
+
+      <h4>1. composeDocument tool (TDD)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Tests first: tool invokes <code>server/compose</code> with correct surface + identity + format; readiness-gate refusals surface as in-voice explanations, never silent failures; result returns as a proposal reference, not an auto-applied document</li>
+        <li><code class="status">[]</code> Implement <code>tools/composeDocument.ts</code>; register in the host toolset; Morgan can now run "compose the outline" as a tool call with a receipt</li>
+      </ul>
+
+      <h4>2. proposeEdit tool (TDD)</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Tests first: proposals carry <code>WorkspaceLocation</code> anchor + content hash; stale anchor → proposal rejected; approval applies, decline discards; direct mutation path does not exist</li>
+        <li><code class="status">[]</code> Implement <code>tools/proposeEdit.ts</code> honoring the settled propose→approve→stale-guard contract; minimal client approve/decline affordance on the transcript</li>
+      </ul>
+
+      <h4>3. Capability matrix expansion</h4>
+      <ul class="checklist">
+        <li><code class="status">[]</code> Extend the allowlist to a per-persona toolset matrix (Zoe: research; host: consult+compose+propose; specialists: read-only until proven) — one new persona/tool pair per PR thereafter</li>
+      </ul>
+
+      <h4>4. Testing Strategy</h4>
+      <p>Vitest with DI fakes for the model; real compose pipeline in integration tests (it is deterministic given a fixed fact sheet). Edge cases: compose invoked on a surface with unmet readiness; propose against a document edited mid-flight (stale guard); tool budget exhaustion inside the loop (MAX_ITERS respected).</p>
+      <ul class="checklist">
+        <li><code class="status">[]</code> <code>npx vitest run tests/server/agentRuntime</code> — tool suites green</li>
+        <li><code class="status">[]</code> <code>npx vitest run</code> — full suite green</li>
+        <li><code class="status">[]</code> <code>npm run check</code> — clean</li>
+        <li><code class="status">[]</code> Live smoke: "Morgan, compose the outline" → tool call → receipt → composed document lands via approval; a proposed edit against stale text is refused</li>
+      </ul>
+      <div class="loop">
+        🔁 <strong>Do not exit this phase until every box above is checked.</strong>
+        If any command fails, fix the cause and re-run — loop until all pass.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== GLOBAL VALIDATION ===== -->
+  <section id="validation">
+    <h2>Validation Commands</h2>
+    <p>Execute these commands to validate the entire plan is complete:</p>
+    <ul class="checklist">
+      <li><code class="status">[]</code> <code>npm run check</code> — TypeScript clean across server, client, shared</li>
+      <li><code class="status">[]</code> <code>npx vitest run</code> — full suite green (≥ baseline count from Phase 1; no skipped agent tests)</li>
+      <li><code class="status">[]</code> <code>npm run build</code> — production bundle builds</li>
+      <li><code class="status">[]</code> <code>grep -riE "openswarm|open_swarm|open-swarm" . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=docs --exclude-dir=chats --exclude-dir=specs | wc -l</code> — 0 repo-wide, including scripts/dev.mjs, README.md, .env.example, package.json (docs/history references are fine)</li>
+      <li><code class="status">[]</code> <code>npx vitest run tests/server/personaSnapshots</code> — all 7 persona prompt/context-order snapshots pass unmodified (Morgan, Sam, Casey, Oliver, Maya, Zoe, Alex)</li>
+      <li><code class="status">[]</code> Live end-to-end with no service on :8080: Morgan chat, specialist consult, Zoe research with receipt, composeDocument via Morgan, one gated edit proposal approved — all pass</li>
+    </ul>
+    <div class="loop">
+      🔁 <strong>The plan is not complete until every box is checked and every command passes. If for some reason a step is not possible to complete, mark it with [f] and move on if possible.</strong>
+    </div>
+  </section>
+
+  <!-- ===== NOTES ===== -->
+  <section id="notes">
+    <h2>Notes</h2>
+
+    <h3>Why this is not a repo overhaul</h3>
+    <p>The prompt allowed a complete overhaul. The audit says the repo does not need one: the composer pipeline (recipes, fact sheets, fidelity checks), the shared Zod contracts, the editor stack, and 141 test files are the healthiest parts of the codebase. The inefficiency is confined to the agent layer's triplicated execution paths. Overhauling healthy code to feel thorough would violate the no-deferred-debt spirit in reverse — it would <em>create</em> debt. The efficient system is the one that deletes a service, not the one that rewrites a product.</p>
+
+    <h3>Rejected approaches</h3>
+    <table>
+      <tr><th>Approach</th><th>Why rejected</th></tr>
+      <tr><td>Go all-in on OpenSwarm (move Morgan into the swarm)</td><td>The settled envelope-strong/content-limited boundary exists for good reasons (provenance, voice integrity, no raw upstream in transcripts). Tool calls into WriterOS would mean tearing down that boundary or building a second trust system. Also: external Python service becomes a hard runtime dependency for the core product loop.</td></tr>
+      <tr><td>Keep both paths indefinitely</td><td>The three-Morgan problem compounds: every new capability must choose a lane, every context change must be mirrored into two prompt builders, and the :8080 dependency silently degrades Zoe when absent.</td></tr>
+      <tr><td>Full repo rewrite around an agent framework</td><td>Nothing in the audit justifies it; 1,500+ passing tests are an asset to protect, not a legacy to escape.</td></tr>
+      <tr><td>Provider-agnostic tool loop (OpenAI + Anthropic)</td><td>Deliberately deferred, not rejected: the boxed <code>anthropicToolClient</code> keeps SDK shapes in one file, so a second provider is an additive adapter later. Single-shot personas remain provider-agnostic today.</td></tr>
+    </table>
+
+    <h3>Risks &amp; constraints</h3>
+    <ul>
+      <li><strong>Anthropic-only agentic path</strong> — the tool loop is hardwired to Anthropic. Acceptable: it is one boxed file, and single-shot paths keep the <code>AI_PROVIDER</code> switch. Revisit only if a real second-provider need appears.</li>
+      <li><strong>Streaming</strong> — <code>anthropicToolClient</code> uses non-streaming <code>messages.create</code>; long Phase 3/5 syntheses risk the known APIConnectionTimeoutError. The research tool must stream (<code>messages.stream</code> + <code>finalMessage</code>), and migrating the tool-turn client to streaming is in-scope for Phase 3 if smoke tests show latency pressure.</li>
+      <li><strong>Persisted schema gravity</strong> — <code>capabilityReceipt</code> lives in exported project packages and localStorage. Every phase treats <code>shared/personaCapability.ts</code> as frozen; only the producer changes.</li>
+      <li><strong>Research quality parity</strong> — OpenSwarm's Deep Research Agent may chain searches in ways a single bounded call does not. The named backend is Anthropic's <code>web_search_20260209</code> server tool (dynamic filtering, supported on claude-sonnet-4-6); it allows multiple searches per call via <code>max_uses</code>, so the "1-2 targeted searches" contract carries over. Phase 3's parity fixture is the honest check; if quality drops, raise <code>max_uses</code> or grow an iterative search loop <em>inside the runtime</em> (it is a tool — it can loop) before any thought of reverting. Note: server tool availability differs on Bedrock/Vertex — irrelevant while the runtime targets the first-party API, flagged in case of a future provider move.</li>
+      <li><strong>Dev-server staleness</strong> — every live smoke in this plan requires a dev server restart after server changes (known trap).</li>
+    </ul>
+
+    <h3>Future work (out of scope, forward refs when planned)</h3>
+    <ul>
+      <li>Observability Slices 2–5 (persisted diagnostics, cross-agent trace schema) — the runtime's trace layer is built to feed them.</li>
+      <li>Image/video capabilities from the original PRD Phase 3 — become runtime tools when wanted; the receipt already models them.</li>
+      <li>Writer's Room specialist-initiated capability calls — unlocked by the toolset matrix, gated one pair per PR.</li>
+    </ul>
+
+    <figure>
+      <!-- {{NOTES_IMAGE: roadmap horizon — runtime kernel in foreground, observability and media capability milestones on the road ahead — minimal warm diagram}} -->
+      <figcaption>Beyond this plan: the kernel is the platform; observability slices and media capabilities ride on it.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== AMENDMENTS ===== -->
+  <section id="amendments">
+    <h2>Amendments</h2>
+    <details>
+      <summary>2026-07-06 — Plan created</summary>
+      <p>Initial creation from codebase audit (two parallel exploration passes over /Users/ben/Projects/WriterOS, branch feat/story-locks-seed-export). No build work started; Phase 1 decision record pending.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — Codex review: four fixes applied (verified against repo before adoption)</summary>
+      <p>External review by Codex surfaced four gaps; each was verified against the codebase and all four were adopted. (1) <strong>Cleanup gate widened</strong> — the audit missed that <code>scripts/dev.mjs</code> auto-launches the OpenSwarm FastAPI service on <code>npm run dev</code> (pythonForOpenSwarm, port waiters), plus references in README.md and .env.example; Phase 4 gained a dev-tooling removal task and both validation greps now sweep the whole repo, not just src dirs. (2) <strong>Research backend named</strong> — Phase 3 now specifies Anthropic's <code>web_search_20260209</code> server tool (verified supported on claude-sonnet-4-6 via API reference) and adds the required <code>anthropicToolClient</code> widening (custom-only <code>Anthropic.Tool[]</code> typing → tool union, <code>server_tool_use</code> blocks, <code>pause_turn</code>). (3) <strong>/swarm deprecation</strong> — the command is user-visible (wpRouting.ts:119, App.tsx:583); silent delete replaced with a reroute to native Morgan plus a one-time transcript notice, regex removed one release later. (4) <strong>Persona regression snapshots</strong> — Phase 2 now opens with per-persona prompt + context-order snapshot tests for all 7 personas, and global validation asserts they pass unmodified, making "all personas unchanged" executable rather than asserted.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — Codex review round 2: three fixes applied</summary>
+      <p>(1) <strong>Server-tool error tests added (P1)</strong> — Anthropic web-search failures arrive as HTTP 200 with a <code>web_search_tool_result</code> block whose <code>content</code> is an error object rather than a results list (verified against the API reference); Phase 3 gained explicit cases for <code>max_uses_exceeded</code> / <code>too_many_requests</code> / <code>unavailable</code> → soft_fail receipt, no raw error-code leak, plus a partial-results case. (2) <strong>Grep self-conflict resolved (P2)</strong> — the /swarm deprecation previously kept "OpenSwarm" strings that the zero-reference grep would catch; resolved by renaming <code>parseOpenSwarmCommand</code> → <code>parseSwarmCommand</code> (<code>OPEN_SWARM_RE</code> → <code>SWARM_RE</code>) and rewording the notice to "the old external bridge was retired" — no allowlist needed, the grep's zero is now literal. (3) <strong>Citation mapping sharpened (P2)</strong> — receipt source list comes from <code>web_search_tool_result</code> result blocks; <code>citedInFinal</code> is derived separately from the <code>citations</code> arrays on final text blocks, matched back to sources by URL.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — PHASE 1 DECISION RECORD: REPLACE (gate = GO)</summary>
+      <p><strong>Executed on branch <code>codex/openswarm-phase1-eval</code> @ 6651e11</strong> (main + story-locks + accepted docs — the actual base Phase 2 will build on). Evidence:</p>
+      <p><strong>E1 — Baseline green.</strong> <code>tsc</code> clean · 1502/1502 tests across 141 files (14.98s) · production build 197.1kb. This is the floor every subsequent phase must hold.</p>
+      <p><strong>E2 — Coupling inventory matches audit.</strong> 13 files carry OpenSwarm references (server ×3, client ×2, tests ×5, scripts/dev.mjs, README.md, .env.example). <code>shared/personaCapability.ts</code> is clean — the persisted receipt schema has no OpenSwarm coupling, confirming the freeze strategy.</p>
+      <p><strong>E3 — DOWN behavior (OPENSWARM_URL → dead port).</strong> Zoe research: HTTP 200, receipt <code>soft_fail</code>, in-voice fallback, zero sources, zero raw-error leakage. <code>/swarm</code>: HTTP 502 hard failure. Graceful degradation works; the debug bridge simply dies.</p>
+      <p><strong>E4 — UP behavior: service running, capability dead.</strong> OpenSwarm FastAPI live on :8080 (verified via OpenAPI + direct probe), yet every agent run returns HTTP 500 <code>Runner execution failed</code> — <code>~/OpenSwarm/.env</code> is the unfilled onboarding template with no provider API key. <em>Zoe's research capability is non-functional in production today and every research request has been silently soft_failing.</em> No successful parity fixture is obtainable; captures saved to <code>specs/openswarm-evaluation-and-runtime-consolidation/fixture-zoe-research-{down,up-brokenservice}.json</code>. Phase 3 parity testing falls back to the mocked upstream-contract fixtures already in the test suite.</p>
+      <p><strong>E5 — No irreplaceable upstream capability.</strong> The install's other agents (General/Image/Slides/Video) are neither wired into WriterOS nor functional without provider keys. The reversal condition ("OpenSwarm-side agents with real workflow value that cannot be reproduced as native tools") is not met — it is inverted: the incumbent delivers no working value at all.</p>
+      <p><strong>DECISION: REPLACE. Gate GO for Phase 2</strong> (runtime kernel extraction, own PR, Morgan behavior frozen). Phase 1 evidence ships as PR 1 with no runtime code touched.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — Phase 3 positive-path bar added after Phase 1</summary>
+      <p>Because Phase 1 proved the incumbent OpenSwarm service had no obtainable successful research path, Phase 3 now has an explicit positive-path acceptance bar: mocked upstream-contract fixtures cover parity, but the live native research smoke must produce at least one successful sourced Zoe answer with a full receipt. This prevents the replacement from merely matching the incumbent's masked soft-fail behavior.</p>
+    </details>
+  </section>
+
+</main>
+</body>
+</html>

@@ -45,6 +45,7 @@ This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script r
 - `docs/product/writeros-future-work-prd.md` remains current for future workstreams and the in-branch Save/Rename/Delete local project UX.
 - `docs/product/writer-voice-profile-prd.md` remains current for writer-scoped profile work. Voice Profile is not project format, Story Bible canon, or project memory.
 - `docs/product/agent-observability-provenance-prd.md` is canonical for under-the-hood agent traceability, admin/debug consult visibility, guardrail provenance, and the source-aware foundation future agent memory must use. It was created after Morgan M2 exposed that functional tool use is not enough if operators cannot verify what happened.
+- `docs/product/open-swarm-agent-runtime-consolidation-prd.md` is canonical for retiring OpenSwarm, preserving all WriterOS personas, keeping Zoe research and `/swarm` compatibility on the native runtime, and adding writer-gated workflow tools.
 - `docs/product/persona-capability-layer-prd.md` and `docs/product/persona-capability-phase2-plan.md` remain current for persona capability routing and bounded OpenSwarm use.
 - `docs/product/agent-workflow-prd.md` remains useful for persona roles and transcript boundaries, but older context-pack examples must be read through the project-format and document-state updates.
 - `docs/product/project-identity-script-context-prd.md` remains useful for title identity and script retrieval. Its remaining future work is mostly tracked in `writeros-future-work-prd.md`.
