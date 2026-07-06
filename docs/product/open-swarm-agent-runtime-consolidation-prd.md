@@ -159,7 +159,7 @@ Receipt behavior must cover:
 - Sam, Casey, Oliver, Maya, Zoe, and Alex direct chat still work.
 - Each persona keeps prompt/context ordering verified by snapshots.
 - Zoe research works without OpenSwarm running on `:8080`.
-- Zoe research receipt renders with sources and citation marking.
+- Zoe research positive path returns at least one successful sourced answer with receipt sources and citation marking.
 - `/swarm` routes to native Morgan with one-time compatibility notice.
 - Composer workflows still work.
 - Morgan can invoke compose through native runtime.

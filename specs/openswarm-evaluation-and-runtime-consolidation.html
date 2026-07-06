@@ -286,10 +286,11 @@
 
       <h4>3. Testing Strategy</h4>
       <p>Vitest with a fake model client for determinism; the Phase 1 captured round-trip (if any) is the golden parity fixture. Edge cases: zero findings returned; findings all unverified; abort mid-synthesis; malformed model JSON (retry-once then soft_fail).</p>
+      <p><strong>Phase 1 finding:</strong> no successful OpenSwarm parity fixture exists because the live service returned only broken-provider failures. Mocked upstream-contract fixtures cover incumbent parity; the live Phase 3 smoke must prove new positive-path value with at least one successful sourced Zoe answer, not just fallback correctness.</p>
       <ul class="checklist">
         <li><code class="status">[]</code> <code>npx vitest run tests/server/agentRuntime tests/server/personaCapabilityTask.test.ts tests/server/personaCapabilityRoute.test.ts</code> — parity + cancel green</li>
         <li><code class="status">[]</code> <code>npx vitest run tests/components/AppZoeCapability.test.tsx tests/components/CapabilityReceiptChip.test.tsx</code> — client contract untouched, chips render</li>
-        <li><code class="status">[]</code> Live smoke: Zoe research message end-to-end with <em>no OpenSwarm service running</em> — full receipt, sources, in-voice answer</li>
+        <li><code class="status">[]</code> Live smoke: Zoe research message end-to-end with <em>no OpenSwarm service running</em> — at least one successful sourced answer, full receipt, sources, in-voice answer</li>
         <li><code class="status">[]</code> <code>npm run check</code> — clean</li>
       </ul>
       <div class="loop">
@@ -461,6 +462,10 @@
       <p><strong>E4 — UP behavior: service running, capability dead.</strong> OpenSwarm FastAPI live on :8080 (verified via OpenAPI + direct probe), yet every agent run returns HTTP 500 <code>Runner execution failed</code> — <code>~/OpenSwarm/.env</code> is the unfilled onboarding template with no provider API key. <em>Zoe's research capability is non-functional in production today and every research request has been silently soft_failing.</em> No successful parity fixture is obtainable; captures saved to <code>specs/openswarm-evaluation-and-runtime-consolidation/fixture-zoe-research-{down,up-brokenservice}.json</code>. Phase 3 parity testing falls back to the mocked upstream-contract fixtures already in the test suite.</p>
       <p><strong>E5 — No irreplaceable upstream capability.</strong> The install's other agents (General/Image/Slides/Video) are neither wired into WriterOS nor functional without provider keys. The reversal condition ("OpenSwarm-side agents with real workflow value that cannot be reproduced as native tools") is not met — it is inverted: the incumbent delivers no working value at all.</p>
       <p><strong>DECISION: REPLACE. Gate GO for Phase 2</strong> (runtime kernel extraction, own PR, Morgan behavior frozen). Phase 1 evidence ships as PR 1 with no runtime code touched.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — Phase 3 positive-path bar added after Phase 1</summary>
+      <p>Because Phase 1 proved the incumbent OpenSwarm service had no obtainable successful research path, Phase 3 now has an explicit positive-path acceptance bar: mocked upstream-contract fixtures cover parity, but the live native research smoke must produce at least one successful sourced Zoe answer with a full receipt. This prevents the replacement from merely matching the incumbent's masked soft-fail behavior.</p>
     </details>
   </section>
 
