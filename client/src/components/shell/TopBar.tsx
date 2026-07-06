@@ -26,6 +26,7 @@ interface TopBarProps {
   onNewProject?: () => void
   onSaveProject?: () => void
   onDeleteProject?: () => void
+  onExportSeed?: () => void
   onHome?: () => void
   onTabChange: (tab: WritingTab) => void
   onWritersRoom: () => void
@@ -45,6 +46,7 @@ export function TopBar({
   onNewProject,
   onSaveProject,
   onDeleteProject,
+  onExportSeed,
   onHome,
   onTabChange,
   onWritersRoom,
@@ -57,7 +59,7 @@ export function TopBar({
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
-  const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange)
+  const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange || onExportSeed)
 
   function handleSaveProject() {
     onSaveProject?.()
@@ -198,6 +200,7 @@ export function TopBar({
             onSave={handleSaveProject}
             onRename={startTitleEdit}
             onDelete={handleDeleteProject}
+            onExportSeed={onExportSeed}
           />
         )}
 

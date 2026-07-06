@@ -25,6 +25,8 @@ import {
 } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
 import { pickIdentity } from '@shared/compose/identity'
+import { composeSeedMarkdown, resolveSeedTitle, seedFileName } from '@shared/seedMarkdown'
+import { downloadTextFile } from './lib/downloadTextFile'
 import type { TranscriptMessage, AgentId, ScriptScene } from './lib/projectState'
 import type { ScriptFocusState } from './lib/scriptIndex'
 import type { StoredProject } from './lib/projectLibrary'
@@ -377,6 +379,18 @@ export default function App() {
     const savedProject = project.saveNow()
     void persistFolderProject(savedProject, activeFolderProjectId)
   }, [activeFolderProjectId, persistFolderProject, project])
+
+  const handleExportSeed = useCallback(() => {
+    const documents = project.state.documents
+    const seedInput = {
+      synopsis: documents.synopsis.content,
+      storyBible: documents.storyBible.content,
+      treatment: documents.treatment.content,
+      projectTitle: project.state.meta.title,
+    }
+    const markdown = composeSeedMarkdown(seedInput)
+    downloadTextFile(seedFileName(resolveSeedTitle(seedInput)), markdown, 'text/markdown')
+  }, [project.state.documents, project.state.meta.title])
 
   const handleDeleteProject = useCallback(() => {
     cancelPendingFolderSave()
@@ -855,6 +869,7 @@ export default function App() {
       onNewProject={handleNewProject}
       onSaveProject={handleSaveProject}
       onDeleteProject={handleDeleteProject}
+      onExportSeed={handleExportSeed}
       railProps={railProps}
     >
       {renderCenter()}

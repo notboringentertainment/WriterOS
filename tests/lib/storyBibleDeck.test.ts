@@ -38,6 +38,7 @@ const EXPECTED_FEATURE_IDS = [
   'feature-hidden-history',
   'feature-mythology-reveals',
   'feature-characters',
+  'feature-locks',
   'feature-starting-state',
   'feature-premise-alive',
   'feature-future-potential',
@@ -66,6 +67,7 @@ const EXPECTED_SERIES_IDS = [
   'series-hidden-history',
   'series-mythology-reveals',
   'series-characters',
+  'series-locks',
   'series-repeatable-pressure',
   'series-premise-renewal',
   'series-pilot-pressure',
@@ -117,7 +119,7 @@ describe('story bible prompt input structure', () => {
   })
 
   it('every input has a valid kind', () => {
-    const validKinds = new Set(['text', 'textarea', 'comps', 'status', 'tone-words', 'characters'])
+    const validKinds = new Set(['text', 'textarea', 'comps', 'status', 'tone-words', 'characters', 'locks'])
 
     for (const prompt of ALL_PROMPTS) {
       for (const input of prompt.inputs) {
@@ -169,6 +171,14 @@ describe('story bible prompt content discipline', () => {
           `prompt ${prompt.id} must not use documentLabel "${part}" as its question`,
         ).not.toBe(part)
       }
+    }
+  })
+
+  it('both decks expose a locks prompt mapped to the top-level locks array', () => {
+    for (const deck of [FEATURE_STORY_BIBLE_DECK, SERIES_STORY_BIBLE_DECK]) {
+      const locksPrompt = deck.find((prompt) => prompt.inputs.some((input) => input.kind === 'locks'))
+      expect(locksPrompt).toBeDefined()
+      expect(getMappingPaths(locksPrompt!)).toEqual(['locks'])
     }
   })
 

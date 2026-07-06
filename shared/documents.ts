@@ -417,6 +417,23 @@ export const StoryBibleCharacterSchema = z.object({
 })
 export type StoryBibleCharacter = z.infer<typeof StoryBibleCharacterSchema>
 
+export const StoryLockScopeSchema = z.enum(['story', 'character', 'world', 'tone', 'ending'])
+export type StoryLockScope = z.infer<typeof StoryLockScopeSchema>
+
+export const StoryLockStatusSchema = z.enum(['active', 'retired'])
+export type StoryLockStatus = z.infer<typeof StoryLockStatusSchema>
+
+export const StoryLockSchema = z.object({
+  id: z.string(),
+  statement: z.string(),
+  scope: StoryLockScopeSchema,
+  rationale: z.string(),
+  source: z.string(),
+  status: StoryLockStatusSchema,
+  createdAt: z.string(),
+})
+export type StoryLock = z.infer<typeof StoryLockSchema>
+
 export const StoryBibleStoryEngineSchema = z.object({
   featurePropulsion: z.string(),
   seriesEngine: z.string(),
@@ -441,6 +458,9 @@ export const StoryBibleDocumentContentSchema = z.object({
   characters: z.array(StoryBibleCharacterSchema),
   storyEngine: StoryBibleStoryEngineSchema,
   episodeOrSequenceMap: z.array(StoryBibleMapEntrySchema),
+  // Defaults to [] so documents saved before locks existed still parse.
+  // Factory form so each parse gets its own array instance.
+  locks: z.array(StoryLockSchema).default(() => []),
 })
 export type StoryBibleDocumentContent = z.infer<typeof StoryBibleDocumentContentSchema>
 
@@ -492,6 +512,7 @@ export function createEmptyStoryBibleContent(): StoryBibleDocumentContent {
       whatKeepsThePremiseAlive: '',
     },
     episodeOrSequenceMap: [],
+    locks: [],
   }
 }
 
