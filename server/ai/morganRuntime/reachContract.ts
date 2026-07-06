@@ -13,8 +13,8 @@ const filled = (v: unknown): boolean => typeof v === 'string' && v.trim().length
 // contract copy can never drift from the askSpecialist tool enum.
 const SPECIALIST_NAMES = CALLABLE_SPECIALIST_IDS.map((id) => PERSONAS[id].name).join(', ');
 
-/** Build Morgan's honest capability inventory from the current StoryMemory packet. */
-export function buildReachInventory(memory: StoryMemory): ReachInventory {
+/** Build honest capability inventory from the current StoryMemory packet. */
+export function buildReachInventory(memory: StoryMemory, personaId = 'writingPartner'): ReachInventory {
   const canSee: string[] = [];
   const p = memory.project ?? ({} as StoryMemory['project']);
 
@@ -49,16 +49,23 @@ export function buildReachInventory(memory: StoryMemory): ReachInventory {
     'the live web or anything after my knowledge cutoff',
   ];
 
-  const canDoNow = [
+  const canDoNow = personaId === 'writingPartner' ? [
     'read and synthesize the project context above',
     'answer film, reference, and general questions from my own knowledge',
     'give you a showrunner-level read: name the central problem, the tradeoff, the next move',
     `recommend which specialist (${SPECIALIST_NAMES}) is the right next visit`,
     `consult one specialist at a time (${SPECIALIST_NAMES}) to get their actual read, then synthesize it for you`,
+  ] : [
+    'read and synthesize the project context above',
+    `answer from ${PERSONAS[personaId as keyof typeof PERSONAS]?.name ?? 'this persona'}'s specialist lane`,
+    `stay inside ${PERSONAS[personaId as keyof typeof PERSONAS]?.name ?? 'this persona'}'s visible role and context boundaries`,
   ];
 
-  const cannotDoYet = [
+  const cannotDoYet = personaId === 'writingPartner' ? [
     'consult more than one specialist at once (no parallel room orchestration yet)',
+    'edit or rewrite your draft',
+    'look things up on the live web',
+  ] : [
     'edit or rewrite your draft',
     'look things up on the live web',
   ];
