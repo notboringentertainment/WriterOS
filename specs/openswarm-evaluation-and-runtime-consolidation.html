@@ -74,7 +74,7 @@
       <summary>Metadata</summary>
       <dl>
         <dt>created</dt>      <dd>2026-07-06T05:30:00-07:00</dd>
-        <dt>modified</dt>     <dd>2026-07-06T05:30:00-07:00, 2026-07-06T09:45:00-07:00, 2026-07-06T10:20:00-07:00</dd>
+        <dt>modified</dt>     <dd>2026-07-06T05:30:00-07:00, 2026-07-06T09:45:00-07:00, 2026-07-06T10:20:00-07:00, 2026-07-06T14:55:00-07:00</dd>
         <dt>commits</dt>      <dd>(none yet — appended by Build Plan workflow)</dd>
         <dt>agent name</dt>   <dd>claude-fable-5 (planf3 · create-plan)</dd>
         <dt>session id</dt>   <dd>8507a6a3-0960-4001-88fb-f0a39e4fdd05</dd>
@@ -180,7 +180,7 @@
     <p>Status markers: <code>[]</code> idle · <code>[wip]</code> in progress · <code>[x]</code> complete · <code>[f]</code> failed. All start as <code>[]</code>; the Build Plan workflow updates them as it works.</p>
 
     <div class="phase">
-      <h3><code class="status">[]</code> Phase 1: Evaluate &amp; Verify — the keep/replace evidence gates</h3>
+      <h3><code class="status">[x]</code> Phase 1: Evaluate &amp; Verify — the keep/replace evidence gates</h3>
       <p>Turn the recommendation into a decision backed by executed evidence, not audit prose. Also captures the baseline the later phases must not regress.</p>
       <figure>
         <!-- {{PHASE1_IMAGE: a balance scale weighing an external service against a native runtime, checklist beneath — minimal warm diagram}} -->
@@ -189,34 +189,34 @@
 
       <h4>1. Baseline capture</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Run full suite + typecheck + build on a clean checkout of <code>main</code>; record counts in Amendments</li>
-        <li><code class="status">[]</code> Grep-inventory every OpenSwarm coupling point (routes, env vars, client branches, shared types) and diff against the audit list in this plan</li>
+        <li><code class="status">[x]</code> Run full suite + typecheck + build on a clean checkout of <code>main</code>; record counts in Amendments <em>(run on <code>codex/openswarm-phase1-eval</code> @ 6651e11 = main + story-locks + docs — the actual execution base; see decision record)</em></li>
+        <li><code class="status">[x]</code> Grep-inventory every OpenSwarm coupling point (routes, env vars, client branches, shared types) and diff against the audit list in this plan — 13 files, exact match; <code>shared/personaCapability.ts</code> confirmed clean of OpenSwarm literals</li>
       </ul>
 
       <h4>2. Live behavior with OpenSwarm DOWN</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Start dev server with no service on :8080; send a Zoe research message; confirm in-voice <code>soft_fail</code>/<code>timeout</code> fallback and receipt status, no raw error leak</li>
-        <li><code class="status">[]</code> Send a <code>/swarm</code> message; document the failure mode of the raw bridge</li>
+        <li><code class="status">[x]</code> Start dev server with no service on :8080; send a Zoe research message; confirm in-voice <code>soft_fail</code>/<code>timeout</code> fallback and receipt status, no raw error leak — confirmed: HTTP 200, receipt <code>soft_fail</code>, 0 sources, in-voice fallback, no port/errno leak (fixture: <code>fixture-zoe-research-down.json</code>)</li>
+        <li><code class="status">[x]</code> Send a <code>/swarm</code> message; document the failure mode of the raw bridge — HTTP 502 <code>{"error":"Failed to reach OpenSwarm"}</code>; command hard-fails without the service</li>
       </ul>
 
       <h4>3. Live behavior with OpenSwarm UP (if runnable)</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> If the FastAPI service is still runnable locally, capture one full Zoe research round-trip (receipt, sources, timings) as the parity fixture for Phase 3; if it is not runnable, record that fact — it is itself keep/replace evidence</li>
-        <li><code class="status">[]</code> Enumerate any OpenSwarm-side agents beyond Deep Research Agent / Writing Partner actually configured; assess unique value</li>
+        <li><code class="status">[x]</code> Service found RUNNING on :8080 (Python PID, FastAPI, <code>/open-swarm/get_response</code> confirmed via OpenAPI) — yet <strong>both paths fail</strong>: Zoe → soft_fail in ~4.9s, /swarm → 502 "reachable, but Writing Partner could not complete". Direct probe returns HTTP 500 <code>Runner execution failed</code>; root cause: <code>~/OpenSwarm/.env</code> is the unfilled template — no provider API key. A successful parity fixture is unobtainable; broken-service capture saved as <code>fixture-zoe-research-up-brokenservice.json</code>. Phase 3 parity falls back to the mocked upstream-contract fixtures in the existing tests</li>
+        <li><code class="status">[x]</code> Enumerate any OpenSwarm-side agents beyond Deep Research Agent / Writing Partner actually configured; assess unique value — template lists General/Image/Slides/Video agents but none are wired into WriterOS, and with no provider key none are functional; zero unique value in the current install</li>
       </ul>
 
       <h4>4. Decision record</h4>
       <ul class="checklist">
-        <li><code class="status">[]</code> Append a dated decision entry to Amendments: KEEP or REPLACE, with the evidence lines above cited</li>
-        <li><code class="status">[]</code> If REPLACE: proceed to Phase 2. If KEEP: halt, amend this plan with the reversal rationale, and re-scope</li>
+        <li><code class="status">[x]</code> Append a dated decision entry to Amendments: KEEP or REPLACE, with the evidence lines above cited — <strong>REPLACE</strong>, recorded 2026-07-06</li>
+        <li><code class="status">[x]</code> If REPLACE: proceed to Phase 2. If KEEP: halt, amend this plan with the reversal rationale, and re-scope — gate is GO; Phase 2 starts in its own PR</li>
       </ul>
 
       <h4>5. Testing Strategy</h4>
       <p>Vitest for automated baseline; manual live smoke for the two service states (the dev-server-restart trap applies — restart after any server change). Edge cases: service half-up (connects, malformed JSON) is covered by existing <code>invalid_upstream</code> tests — verify they still pass.</p>
       <ul class="checklist">
-        <li><code class="status">[]</code> <code>npm run check</code> — TypeScript clean at baseline</li>
-        <li><code class="status">[]</code> <code>npx vitest run</code> — full suite green at baseline; count recorded</li>
-        <li><code class="status">[]</code> <code>npx vitest run tests/server/openSwarmBridge.test.ts tests/server/personaCapabilityTask.test.ts tests/server/personaCapabilityRoute.test.ts</code> — capability layer green pre-change</li>
+        <li><code class="status">[x]</code> <code>npm run check</code> — TypeScript clean at baseline</li>
+        <li><code class="status">[x]</code> <code>npx vitest run</code> — full suite green at baseline: <strong>141 files, 1502 tests, 0 failures</strong> (14.98s); build <code>dist/index.js</code> 197.1kb</li>
+        <li><code class="status">[x]</code> <code>npx vitest run tests/server/openSwarmBridge.test.ts tests/server/personaCapabilityTask.test.ts tests/server/personaCapabilityRoute.test.ts</code> — capability layer green (included in full-suite run)</li>
       </ul>
       <div class="loop">
         🔁 <strong>Do not exit this phase until every box above is checked.</strong>
@@ -451,6 +451,16 @@
     <details>
       <summary>2026-07-06 — Codex review round 2: three fixes applied</summary>
       <p>(1) <strong>Server-tool error tests added (P1)</strong> — Anthropic web-search failures arrive as HTTP 200 with a <code>web_search_tool_result</code> block whose <code>content</code> is an error object rather than a results list (verified against the API reference); Phase 3 gained explicit cases for <code>max_uses_exceeded</code> / <code>too_many_requests</code> / <code>unavailable</code> → soft_fail receipt, no raw error-code leak, plus a partial-results case. (2) <strong>Grep self-conflict resolved (P2)</strong> — the /swarm deprecation previously kept "OpenSwarm" strings that the zero-reference grep would catch; resolved by renaming <code>parseOpenSwarmCommand</code> → <code>parseSwarmCommand</code> (<code>OPEN_SWARM_RE</code> → <code>SWARM_RE</code>) and rewording the notice to "the old external bridge was retired" — no allowlist needed, the grep's zero is now literal. (3) <strong>Citation mapping sharpened (P2)</strong> — receipt source list comes from <code>web_search_tool_result</code> result blocks; <code>citedInFinal</code> is derived separately from the <code>citations</code> arrays on final text blocks, matched back to sources by URL.</p>
+    </details>
+    <details>
+      <summary>2026-07-06 — PHASE 1 DECISION RECORD: REPLACE (gate = GO)</summary>
+      <p><strong>Executed on branch <code>codex/openswarm-phase1-eval</code> @ 6651e11</strong> (main + story-locks + accepted docs — the actual base Phase 2 will build on). Evidence:</p>
+      <p><strong>E1 — Baseline green.</strong> <code>tsc</code> clean · 1502/1502 tests across 141 files (14.98s) · production build 197.1kb. This is the floor every subsequent phase must hold.</p>
+      <p><strong>E2 — Coupling inventory matches audit.</strong> 13 files carry OpenSwarm references (server ×3, client ×2, tests ×5, scripts/dev.mjs, README.md, .env.example). <code>shared/personaCapability.ts</code> is clean — the persisted receipt schema has no OpenSwarm coupling, confirming the freeze strategy.</p>
+      <p><strong>E3 — DOWN behavior (OPENSWARM_URL → dead port).</strong> Zoe research: HTTP 200, receipt <code>soft_fail</code>, in-voice fallback, zero sources, zero raw-error leakage. <code>/swarm</code>: HTTP 502 hard failure. Graceful degradation works; the debug bridge simply dies.</p>
+      <p><strong>E4 — UP behavior: service running, capability dead.</strong> OpenSwarm FastAPI live on :8080 (verified via OpenAPI + direct probe), yet every agent run returns HTTP 500 <code>Runner execution failed</code> — <code>~/OpenSwarm/.env</code> is the unfilled onboarding template with no provider API key. <em>Zoe's research capability is non-functional in production today and every research request has been silently soft_failing.</em> No successful parity fixture is obtainable; captures saved to <code>specs/openswarm-evaluation-and-runtime-consolidation/fixture-zoe-research-{down,up-brokenservice}.json</code>. Phase 3 parity testing falls back to the mocked upstream-contract fixtures already in the test suite.</p>
+      <p><strong>E5 — No irreplaceable upstream capability.</strong> The install's other agents (General/Image/Slides/Video) are neither wired into WriterOS nor functional without provider keys. The reversal condition ("OpenSwarm-side agents with real workflow value that cannot be reproduced as native tools") is not met — it is inverted: the incumbent delivers no working value at all.</p>
+      <p><strong>DECISION: REPLACE. Gate GO for Phase 2</strong> (runtime kernel extraction, own PR, Morgan behavior frozen). Phase 1 evidence ships as PR 1 with no runtime code touched.</p>
     </details>
   </section>
 
