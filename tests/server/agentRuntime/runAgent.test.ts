@@ -206,6 +206,36 @@ describe('runAgent kernel', () => {
     expect(toolResults.some(result => result.tool_use_id === 'early' && /before seeing the specialist answer/i.test(result.content))).toBe(true)
   })
 
+  it('returns a tool result for every premature terminal tool call before continuing', async () => {
+    const deps = { callSpecialist: async () => ({ message: 'ZOE_READ' }) }
+    sendToolTurn
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [{ type: 'tool_use', id: 'z' }, { type: 'tool_use', id: 'early1' }, { type: 'tool_use', id: 'early2' }],
+        toolUses: [
+          { id: 'z', name: 'askSpecialist', input: { specialistId: 'zoe', question: 'world?' } },
+          { id: 'early1', name: 'respond_to_writer', input: { message: 'EARLY 1' } },
+          { id: 'early2', name: 'respond_to_writer', input: { message: 'EARLY 2' } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stopReason: 'tool_use',
+        text: '',
+        assistantContent: [],
+        toolUses: [{ id: 'r', name: 'respond_to_writer', input: { message: 'AFTER' } }],
+      })
+
+    await runAgent({ ...inputBase, personaId: 'writingPartner', toolset: getAgentToolset('writingPartner'), deps })
+    const secondCallMessages = sendToolTurn.mock.calls[1][0].messages as Array<{ role: string; content: unknown }>
+    const toolResultIds = secondCallMessages
+      .filter((m) => m.role === 'user' && Array.isArray(m.content))
+      .flatMap((m) => m.content as Array<{ tool_use_id: string }>)
+      .map(result => result.tool_use_id)
+
+    expect(toolResultIds).toEqual(expect.arrayContaining(['z', 'early1', 'early2']))
+  })
+
   it('uses the host toolset to block unverified specialist attribution', async () => {
     sendToolTurn
       .mockResolvedValueOnce({

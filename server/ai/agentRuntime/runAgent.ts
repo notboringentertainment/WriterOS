@@ -35,8 +35,8 @@ function consultCount(toolset: AgentToolset, toolUses: Array<{ name: string }>):
     : 0;
 }
 
-function terminalUse(toolset: AgentToolset, toolUses: Array<{ id: string; name: string }>) {
-  return toolUses.find((use) => use.name === toolset.terminalToolName);
+function terminalUses(toolset: AgentToolset, toolUses: Array<{ id: string; name: string }>) {
+  return toolUses.filter((use) => use.name === toolset.terminalToolName);
 }
 
 async function runLoop(
@@ -102,8 +102,7 @@ async function runLoop(
       .filter((o): o is Extract<DispatchOutcome, { kind: 'continue' | 'error' }> => o.kind !== 'final')
       .map((o) => ({ toolUseId: o.toolUseId, content: o.content }));
     if (final && consulted) {
-      const use = terminalUse(toolset, turn.toolUses);
-      if (use) {
+      for (const use of terminalUses(toolset, turn.toolUses)) {
         results.push({
           toolUseId: use.id,
           content: toolset.prematureFinalError ?? `Wait for the ${toolset.consultToolName} result, then call ${toolset.terminalToolName}.`,
@@ -112,8 +111,7 @@ async function runLoop(
     }
     if (final && !consulted && attributionViolation.length > 0) {
       trace({ kind: 'guard.attribution', runId, status: 'blocked', specialists: attributionViolation });
-      const use = terminalUse(toolset, turn.toolUses);
-      if (use) {
+      for (const use of terminalUses(toolset, turn.toolUses)) {
         results.push({
           toolUseId: use.id,
           content: toolset.attributionGuard?.formatError(attributionViolation) ?? 'Unverified attribution blocked.',

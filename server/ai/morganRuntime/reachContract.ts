@@ -61,8 +61,11 @@ export function buildReachInventory(memory: StoryMemory, personaId = 'writingPar
     `stay inside ${PERSONAS[personaId as keyof typeof PERSONAS]?.name ?? 'this persona'}'s visible role and context boundaries`,
   ];
 
-  const cannotDoYet = [
+  const cannotDoYet = personaId === 'writingPartner' ? [
     'consult more than one specialist at once (no parallel room orchestration yet)',
+    'edit or rewrite your draft',
+    'look things up on the live web',
+  ] : [
     'edit or rewrite your draft',
     'look things up on the live web',
   ];

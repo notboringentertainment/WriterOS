@@ -40,6 +40,7 @@ describe('reach inventory', () => {
     const inv = buildReachInventory(base(), 'zoe')
     expect(inv.canSee.join(' ')).toMatch(/logline/i)
     expect(inv.canDoNow.some((s) => /consult.*specialist/i.test(s))).toBe(false)
+    expect(inv.cannotDoYet.some((s) => /consult.*specialist/i.test(s))).toBe(false)
     expect(inv.canDoNow.join(' ')).toMatch(/Zoe|world/i)
   })
 
