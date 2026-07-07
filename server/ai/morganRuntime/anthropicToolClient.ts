@@ -8,6 +8,9 @@ import type { ToolSpec, ToolTurn, ToolUse } from './types';
 
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 1600;
+const MAX_PAUSE_TURNS = 3;
+
+export type AnthropicToolSpec = ToolSpec | Anthropic.ToolUnion;
 
 export function isAnthropicConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
@@ -33,26 +36,52 @@ export function toolResultsTurn(results: Array<{ toolUseId: string; content: str
   };
 }
 
-export async function sendToolTurn(input: {
-  system: string;
+export async function sendStreamingMessage(input: {
+  system?: string;
   messages: unknown[];
-  tools: ToolSpec[];
+  tools?: AnthropicToolSpec[];
   maxTokens?: number;
-}): Promise<ToolTurn> {
-  // Generous timeout + retries mirror the resilience pattern in modelProvider.ts.
+  temperature?: number;
+  signal?: AbortSignal;
+}): Promise<Anthropic.Message> {
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
     timeout: 10 * 60 * 1000,
     maxRetries: 2,
   });
 
-  const response = await client.messages.create({
-    model: ANTHROPIC_MODEL,
-    max_tokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
+  let messages = [...input.messages];
+  let response: Anthropic.Message | undefined;
+
+  for (let i = 0; i <= MAX_PAUSE_TURNS; i += 1) {
+    const stream = client.messages.stream({
+      model: ANTHROPIC_MODEL,
+      max_tokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
+      ...(input.system ? { system: input.system } : {}),
+      messages: messages as Anthropic.MessageParam[],
+      ...(input.tools ? { tools: input.tools as Anthropic.ToolUnion[], tool_choice: { type: 'auto' as const } } : {}),
+      ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),
+    }, input.signal ? { signal: input.signal } : undefined);
+
+    response = await stream.finalMessage();
+    if (response.stop_reason !== 'pause_turn') return response;
+    messages = [...messages, assistantTurn(response.content)];
+  }
+
+  throw new Error(`Anthropic pause_turn did not complete after ${MAX_PAUSE_TURNS + 1} turns`);
+}
+
+export async function sendToolTurn(input: {
+  system: string;
+  messages: unknown[];
+  tools: AnthropicToolSpec[];
+  maxTokens?: number;
+}): Promise<ToolTurn> {
+  const response = await sendStreamingMessage({
     system: input.system,
     messages: input.messages as Anthropic.MessageParam[],
-    tools: input.tools as Anthropic.Tool[],
-    tool_choice: { type: 'auto' },
+    tools: input.tools,
+    maxTokens: input.maxTokens,
   });
 
   const toolUses: ToolUse[] = [];
