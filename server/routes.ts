@@ -1077,13 +1077,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Persona capability adapter — visible WriterOS persona, hidden bounded task layer
   app.post("/api/persona-capability/run", async (req, res) => {
+    const controller = new AbortController();
+    const abortCapability = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    req.on('aborted', abortCapability);
+    res.on('close', abortCapability);
     try {
       const data = personaCapabilityRequestSchema.parse(req.body);
-      const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
-      const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const response = await runPersonaTask(data, {
-        baseUrl,
-        token,
+        signal: controller.signal,
         synthesizeFinal: input => openaiService.synthesizePersonaCapabilityResponse(input),
       });
 
@@ -1102,6 +1105,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to run persona capability",
         message: "Zoe could not complete that research pass right now.",
       });
+    } finally {
+      req.off('aborted', abortCapability);
+      res.off('close', abortCapability);
     }
   });
 

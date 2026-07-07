@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { runNativeResearchTool, type NativeResearchToolResult } from '../ai/agentRuntime/tools/research'
 import {
   getCapabilityContextChips,
   getMissingCapabilitySurfaces,
@@ -10,14 +10,14 @@ import {
   type PersonaCapabilityResponse,
   type PersonaCapabilityStatus,
 } from '@shared/personaCapability'
-import { buildResearchWorldContextPrompt } from './buildResearchPrompt'
 import { buildPersonaCapabilityFallbackMessage } from './fallback'
 import {
   EMPTY_RESEARCH_TASK_RESULT,
-  type ResearchFinding,
   type ResearchSource,
   type ResearchTaskResult,
 } from './researchTypes'
+
+export { parseResearchTaskResult } from './researchParsing'
 
 export interface PersonaCapabilitySynthesisInput {
   personaId: 'zoe'
@@ -37,88 +37,14 @@ export interface PersonaCapabilitySynthesisResult {
 }
 
 export interface PersonaCapabilityDeps {
-  fetchImpl?: typeof fetch
+  runResearch?: (request: PersonaCapabilityRequest, deps: { signal?: AbortSignal }) => Promise<NativeResearchToolResult>
   synthesizeFinal: (input: PersonaCapabilitySynthesisInput) => Promise<PersonaCapabilitySynthesisResult>
-  baseUrl: string
-  token?: string
+  signal?: AbortSignal
   now?: () => Date
 }
 
-const researchSourceSchema = z.object({
-  label: z.string().min(1),
-  url: z.string().optional(),
-})
-
-const researchFindingSchema = z.object({
-  claim: z.string().optional(),
-  text: z.string().optional(),
-  sourceLabel: z.string().optional(),
-  label: z.string().optional(),
-  url: z.string().optional(),
-  verified: z.boolean().optional(),
-  unverified: z.boolean().optional(),
-})
-
-const researchTaskResultSchema = z.object({
-  findings: z.array(researchFindingSchema).default([]),
-  sources: z.array(researchSourceSchema).default([]),
-  missing: z.array(z.string()).default([]),
-  unverified: z.array(z.string()).default([]),
-})
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function extractFirstJsonObject(raw: string): string | undefined {
-  let start = -1
-  let depth = 0
-  let inString = false
-  let escaped = false
-
-  for (let i = 0; i < raw.length; i += 1) {
-    const char = raw[i]
-
-    if (start === -1) {
-      if (char === '{') {
-        start = i
-        depth = 1
-      }
-      continue
-    }
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (char === '\\') {
-      escaped = true
-      continue
-    }
-    if (char === '"') {
-      inString = !inString
-      continue
-    }
-    if (inString) continue
-
-    if (char === '{') depth += 1
-    if (char === '}') depth -= 1
-    if (depth === 0) return raw.slice(start, i + 1)
-  }
-
-  return undefined
-}
-
-function parseJsonObject(value: string): Record<string, unknown> {
-  try {
-    return JSON.parse(value) as Record<string, unknown>
-  } catch {
-    const fenced = value.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-    if (fenced) return JSON.parse(fenced[1].trim()) as Record<string, unknown>
-    const extracted = extractFirstJsonObject(value)
-    if (extracted) return JSON.parse(extracted) as Record<string, unknown>
-    throw new Error('Invalid JSON object')
-  }
 }
 
 function safeHttpUrl(value: unknown): string | undefined {
@@ -154,56 +80,6 @@ function normalizeSources(sources: ResearchSource[]): ResearchSource[] {
   return result.slice(0, 8)
 }
 
-export function parseResearchTaskResult(rawResponse: unknown): ResearchTaskResult {
-  const parsed = typeof rawResponse === 'string'
-    ? parseJsonObject(rawResponse)
-    : isRecord(rawResponse) ? rawResponse : undefined
-
-  if (!parsed) {
-    throw new Error('Research task returned an invalid shape')
-  }
-
-  const data = researchTaskResultSchema.parse(parsed)
-  const findings: ResearchFinding[] = []
-  const demotedUnverified: string[] = []
-
-  for (const item of data.findings) {
-    const claim = (item.claim || item.text || '').trim()
-    if (!claim) continue
-    const sourceLabel = (item.sourceLabel || item.label || '').trim()
-    const explicitlyUnverified = item.unverified === true || item.verified === false
-
-    if (!sourceLabel || explicitlyUnverified) {
-      demotedUnverified.push(claim)
-      continue
-    }
-
-    const finding: ResearchFinding = {
-      claim,
-      verified: true,
-      sourceLabel,
-    }
-    const url = safeHttpUrl(item.url)
-    if (url) finding.url = url
-    findings.push(finding)
-  }
-
-  const sourceFromFindings = findings.map(finding => ({
-    label: finding.sourceLabel as string,
-    ...(finding.url ? { url: finding.url } : {}),
-  }))
-
-  return {
-    findings,
-    sources: normalizeSources([...data.sources, ...sourceFromFindings]),
-    missing: data.missing.filter(item => item.trim().length > 0),
-    unverified: [
-      ...data.unverified.filter(item => item.trim().length > 0),
-      ...demotedUnverified,
-    ],
-  }
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError' ||
     error instanceof Error && error.name === 'AbortError'
@@ -236,58 +112,14 @@ function buildReceipt(input: {
   }
 }
 
-function markCitedSources(sources: ResearchSource[], citedLabels: string[]): CapabilityReceiptSource[] {
+function markCitedSources(sources: ResearchSource[], citedLabels: string[], citedUrls: string[] = []): CapabilityReceiptSource[] {
   const cited = new Set(citedLabels.map(label => label.toLowerCase()))
+  const citedSourceUrls = new Set(citedUrls.map(url => safeHttpUrl(url)?.toLowerCase()).filter(Boolean) as string[])
   return normalizeSources(sources).map(source => ({
     ...source,
-    citedInFinal: cited.has(source.label.toLowerCase()),
+    citedInFinal: cited.has(source.label.toLowerCase()) ||
+      Boolean(source.url && citedSourceUrls.has(source.url.toLowerCase())),
   }))
-}
-
-async function callOpenSwarm(request: PersonaCapabilityRequest, deps: PersonaCapabilityDeps): Promise<ResearchTaskResult> {
-  const entry = getPersonaCapabilityAllowlistEntry(request.personaId, request.taskKind)
-  if (!entry) throw new Error('Capability is not allowlisted')
-
-  const fetchImpl = deps.fetchImpl ?? fetch
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), entry.softTimeoutMs)
-  let response: Response
-
-  try {
-    response = await fetchImpl(`${deps.baseUrl.replace(/\/$/, '')}/open-swarm/get_response`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(deps.token ? { Authorization: `Bearer ${deps.token}` } : {}),
-      },
-      body: JSON.stringify({
-        recipient_agent: entry.upstreamRecipient,
-        message: buildResearchWorldContextPrompt(request),
-        chat_history: [],
-      }),
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeout)
-  }
-
-  if (!response.ok) {
-    console.error('[persona-capability] upstream status', response.status)
-    throw Object.assign(new Error('OpenSwarm request failed'), { failureReason: 'upstream_error' })
-  }
-
-  const payload = await response.json() as { response?: unknown; error?: unknown }
-  if (payload.error) {
-    console.error('[persona-capability] upstream returned an error payload')
-    throw Object.assign(new Error('OpenSwarm payload error'), { failureReason: 'upstream_error' })
-  }
-
-  try {
-    return parseResearchTaskResult(payload.response)
-  } catch (error) {
-    console.error('[persona-capability] invalid upstream research result', error instanceof Error ? error.message : error)
-    throw Object.assign(new Error('Invalid upstream research result'), { failureReason: 'invalid_upstream' })
-  }
 }
 
 function failureReasonFrom(error: unknown): PersonaCapabilityFailureReason {
@@ -300,24 +132,89 @@ function failureReasonFrom(error: unknown): PersonaCapabilityFailureReason {
   return 'upstream_error'
 }
 
+function buildTaskSignal(
+  externalSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; cleanup: () => void; abortReason: () => PersonaCapabilityFailureReason | undefined } {
+  const controller = new AbortController()
+  let reason: PersonaCapabilityFailureReason | undefined
+  let timeout: ReturnType<typeof setTimeout> | undefined
+
+  const abortFromExternal = () => {
+    reason = 'aborted'
+    controller.abort()
+  }
+
+  if (externalSignal?.aborted) {
+    abortFromExternal()
+  } else {
+    externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
+    timeout = setTimeout(() => {
+      reason = 'timeout'
+      controller.abort()
+    }, timeoutMs)
+  }
+
+  return {
+    signal: controller.signal,
+    abortReason: () => reason,
+    cleanup: () => {
+      if (timeout) clearTimeout(timeout)
+      externalSignal?.removeEventListener('abort', abortFromExternal)
+    },
+  }
+}
+
 export async function runPersonaTask(
   request: PersonaCapabilityRequest,
   deps: PersonaCapabilityDeps
 ): Promise<PersonaCapabilityResponse> {
+  const entry = getPersonaCapabilityAllowlistEntry(request.personaId, request.taskKind)
+  if (!entry) throw new Error('Capability is not allowlisted')
+
   const startedAt = deps.now?.() ?? new Date()
   let status: PersonaCapabilityStatus = 'ok'
   let failureReason: PersonaCapabilityFailureReason | undefined
   let taskResult: ResearchTaskResult = EMPTY_RESEARCH_TASK_RESULT
+  let citedSourceUrls: string[] = []
+  const taskSignal = buildTaskSignal(deps.signal, entry.softTimeoutMs)
 
   try {
-    taskResult = await callOpenSwarm(request, deps)
+    const runResearch = deps.runResearch ?? runNativeResearchTool
+    const research = await runResearch(request, { signal: taskSignal.signal })
+    taskResult = research.taskResult
+    citedSourceUrls = research.citedSourceUrls
+    const abortReason = taskSignal.abortReason()
+    if (abortReason || deps.signal?.aborted) {
+      throw Object.assign(
+        new Error(abortReason === 'timeout' ? 'Research request timed out' : 'Research request cancelled'),
+        { failureReason: abortReason ?? 'aborted' },
+      )
+    }
   } catch (error) {
-    failureReason = failureReasonFrom(error)
-    status = failureReason === 'timeout' ? 'timeout' : 'soft_fail'
+    failureReason = taskSignal.abortReason() ?? failureReasonFrom(error)
+    status = failureReason === 'aborted'
+      ? 'cancelled'
+      : failureReason === 'timeout' ? 'timeout' : 'soft_fail'
+  } finally {
+    taskSignal.cleanup()
   }
 
   const sources = status === 'ok' ? taskResult.sources : []
   let synthesis: PersonaCapabilitySynthesisResult
+
+  if (status === 'cancelled') {
+    const completedAt = deps.now?.() ?? new Date()
+    const receipt = buildReceipt({
+      request,
+      startedAt,
+      completedAt,
+      status,
+      failureReason,
+      sources: [],
+    })
+    return { finalMessage: '', receipt, status }
+  }
 
   try {
     synthesis = await deps.synthesizeFinal({
@@ -340,7 +237,7 @@ export async function runPersonaTask(
   }
 
   const completedAt = deps.now?.() ?? new Date()
-  const receiptSources = markCitedSources(sources, synthesis.citedLabels)
+  const receiptSources = markCitedSources(sources, synthesis.citedLabels, citedSourceUrls)
   const receipt = buildReceipt({
     request,
     startedAt,

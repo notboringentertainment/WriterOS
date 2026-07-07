@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+
+const { runNativeResearchTool } = vi.hoisted(() => ({
+  runNativeResearchTool: vi.fn(),
+}))
+
+vi.mock('../../server/ai/agentRuntime/tools/research', () => ({
+  runNativeResearchTool,
+}))
+
 import { registerRoutes } from '../../server/routes'
 import { OpenAIService } from '../../server/ai/openaiService'
 import { defaultProjectState } from '../../client/src/lib/projectState'
@@ -10,6 +19,7 @@ import { buildProjectContext } from '../../client/src/lib/wpRouting'
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  runNativeResearchTool.mockReset()
 })
 
 async function startApp() {
@@ -55,19 +65,17 @@ function postJson(port: number, path: string, body: unknown): Promise<{ status: 
 
 describe('/api/persona-capability/run', () => {
   it('returns synthesized Zoe response and receipt without raw upstream task body', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      response: JSON.stringify({
+    runNativeResearchTool.mockResolvedValue({
+      taskResult: {
         findings: [
           { claim: 'Raw upstream historical note that should stay out of HTTP response.', sourceLabel: 'Archive', verified: true },
         ],
         sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
         missing: [],
         unverified: [],
-      }),
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })))
+      },
+      citedSourceUrls: [],
+    })
     vi.spyOn(OpenAIService.prototype, 'synthesizePersonaCapabilityResponse').mockResolvedValue({
       finalMessage: 'Zoe synthesized answer. [Archive]',
       citedLabels: ['Archive'],
@@ -91,6 +99,36 @@ describe('/api/persona-capability/run', () => {
         { label: 'Archive', url: 'https://example.com/archive', citedInFinal: true },
       ])
       expect(response.text).not.toContain('Raw upstream historical note')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('passes a route abort signal into the native research tool', async () => {
+    runNativeResearchTool.mockResolvedValue({
+      taskResult: { findings: [], sources: [], missing: [], unverified: [] },
+      citedSourceUrls: [],
+    })
+    vi.spyOn(OpenAIService.prototype, 'synthesizePersonaCapabilityResponse').mockResolvedValue({
+      finalMessage: 'Zoe synthesized answer.',
+      citedLabels: [],
+    })
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/persona-capability/run', {
+        personaId: 'zoe',
+        taskKind: 'research_world_context',
+        message: 'research the construction period',
+        projectContext: buildProjectContext(defaultProjectState()),
+        sourceSurface: 'writingPartner',
+        clientRequestId: 'req-1',
+      })
+
+      expect(response.status).toBe(200)
+      expect(runNativeResearchTool).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }))
     } finally {
       server.close()
     }
