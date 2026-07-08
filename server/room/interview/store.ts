@@ -13,6 +13,7 @@ import type {
   TranscriptEntry,
   InterviewProposalRow,
 } from './types';
+import { DEFAULT_INTERVIEW_CURSOR } from './types';
 import type { ProposalStatus } from '../types';
 
 function throwOnError<T>(result: { data: T | null; error: { message: string } | null }, label: string): T {
@@ -36,7 +37,7 @@ export async function createInterviewSession(input: {
       state: 'intake',
       seed_text: input.seedText ?? '',
       audit: {},
-      cursor: {},
+      cursor: DEFAULT_INTERVIEW_CURSOR,
       answers: [],
     })
     .select()

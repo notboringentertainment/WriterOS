@@ -38,6 +38,16 @@ export interface InterviewCursor {
   budgets_spent: Record<string, number>;
 }
 
+/**
+ * Canonical default cursor for fresh interview sessions.
+ * Must match the migration default for the `cursor` column.
+ */
+export const DEFAULT_INTERVIEW_CURSOR: Readonly<InterviewCursor> = Object.freeze({
+  lane: null,
+  question_id: null,
+  budgets_spent: {},
+});
+
 // ---- §A7.2 transcript entry ----
 
 export type AnswerDisposition = 'field_mapped' | 'seed_color' | 'skipped_delegated';

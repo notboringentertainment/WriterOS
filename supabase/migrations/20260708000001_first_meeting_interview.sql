@@ -14,7 +14,7 @@ create table interview_sessions (
   state text not null default 'intake',     -- intake → auditing → interviewing → readback → banked → exported (+ paused)
   seed_text text not null default '',       -- verbatim writer seed, never edited after intake
   audit jsonb not null default '{}',        -- per-area SUFFICIENT|THIN verdicts (§A5.2)
-  cursor jsonb not null default '{}',       -- current lane, question_id, budgets spent
+  cursor jsonb not null default '{"lane":null,"question_id":null,"budgets_spent":{}}'::jsonb,       -- current lane, question_id, budgets spent
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

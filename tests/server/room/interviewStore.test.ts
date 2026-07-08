@@ -80,7 +80,7 @@ describe('interview.store.createInterviewSession', () => {
       state: 'intake',
       seed_text: '',
       audit: {},
-      cursor: {},
+      cursor: { lane: null, question_id: null, budgets_spent: {} },
       answers: [],
     });
   });
@@ -100,6 +100,30 @@ describe('interview.store.createInterviewSession', () => {
     await createInterviewSession({ projectId: 'p1', mode: 'quick', seedText: 'A heist movie' });
 
     expect(inserted[0]).toMatchObject({ seed_text: 'A heist movie', mode: 'quick' });
+  });
+
+  it('initializes cursor with the full default shape (not empty object)', async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const chain = {
+      insert: (row: Record<string, unknown>) => {
+        inserted.push(row);
+        return chain;
+      },
+      select: () => chain,
+      single: async () => ({ data: { id: 's1' }, error: null }),
+    };
+    __setRoomDbForTests({ from: () => chain } as unknown as SupabaseClient);
+
+    await createInterviewSession({ projectId: 'p1', mode: 'full' });
+
+    const cursor = inserted[0].cursor as Record<string, unknown>;
+    expect(cursor).toEqual({
+      lane: null,
+      question_id: null,
+      budgets_spent: {},
+    });
+    // Ensure no extra keys sneak in
+    expect(Object.keys(cursor)).toHaveLength(3);
   });
 
   it('throws on database error', async () => {
