@@ -16,7 +16,7 @@ const MAX_WRITER_MESSAGE_CHARS = 4000;
 
 function requireRoom(res: Response): boolean {
   if (isRoomConfigured()) return true;
-  res.status(503).json({ message: 'Writers Room is not configured (SUPABASE_URL / SUPABASE_ANON_KEY missing).' });
+  res.status(503).json({ message: 'Writers Room is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing).' });
   return false;
 }
 

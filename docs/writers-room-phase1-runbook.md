@@ -10,7 +10,8 @@ setting up fake form data.
 ```env
 ANTHROPIC_API_KEY=...        # room turns
 SUPABASE_URL=...             # room persistence (writeros-room project)
-SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=... # required outside local spike databases
+SUPABASE_ANON_KEY=...        # local fallback only
 ANTHROPIC_DIGEST_MODEL=      # optional; defaults to claude-haiku-4-5
 ```
 
@@ -98,7 +99,8 @@ test above remains the product-value test.
 - **Ledger check:** `select agent_id, action, input_tokens, output_tokens,
   created_at from agent_turn_ledger order by created_at desc limit 10;`
 
-## Not Production-Safe
+## Production Posture
 
-RLS is disabled on all six room tables and the server uses the anon key.
-Local spike posture only — harden before any deploy (DECISIONS.md D2).
+Room tables have RLS enabled with no permissive anon policies. Production room
+access requires `SUPABASE_SERVICE_ROLE_KEY` on the server; `SUPABASE_ANON_KEY`
+is local fallback only.
