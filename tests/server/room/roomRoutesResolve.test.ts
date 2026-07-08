@@ -144,6 +144,77 @@ describe('POST /api/room/:projectId/proposals/:id/resolve', () => {
     expect(storeMock.resolveProposal).toHaveBeenCalledWith('project-A', 'prop-1', 'adopted')
   })
 
+  it('passes a writer-edited resolved value to the store', async () => {
+    storeMock.resolveProposal.mockResolvedValueOnce({
+      id: 'prop-1', project_id: 'project-A', agent_id: 'morgan', surface: 'storyBible',
+      field_path: 'characters[r1].want', proposed_value: 'draft', resolved_value: 'writer edit', rationale: 'y',
+      status: 'adopted', resolved_at: 'now', created_at: 'then',
+    })
+    storeMock.insertMessage.mockResolvedValueOnce({ id: 'm1', author: 'writer', kind: 'system', content: '' })
+
+    const res = await post('/api/room/project-A/proposals/prop-1/resolve', {
+      status: 'adopted',
+      resolved_value: 'writer edit',
+    })
+
+    expect(res.status).toBe(200)
+    expect(storeMock.resolveProposal).toHaveBeenCalledWith('project-A', 'prop-1', 'adopted', {
+      resolvedValue: 'writer edit',
+    })
+  })
+
+  it('passes a writer origin override to the store', async () => {
+    storeMock.resolveProposal.mockResolvedValueOnce({
+      id: 'prop-1', project_id: 'project-A', agent_id: 'morgan', surface: 'storyBible',
+      field_path: 'characters[r1].want', proposed_value: 'draft', origin: 'extrapolated', rationale: 'y',
+      status: 'adopted', resolved_at: 'now', created_at: 'then',
+    })
+    storeMock.insertMessage.mockResolvedValueOnce({ id: 'm1', author: 'writer', kind: 'system', content: '' })
+
+    const res = await post('/api/room/project-A/proposals/prop-1/resolve', {
+      status: 'adopted',
+      origin: 'extrapolated',
+    })
+
+    expect(res.status).toBe(200)
+    expect(storeMock.resolveProposal).toHaveBeenCalledWith('project-A', 'prop-1', 'adopted', {
+      origin: 'extrapolated',
+    })
+  })
+
+  it('passes writer edit and origin override together', async () => {
+    storeMock.resolveProposal.mockResolvedValueOnce({
+      id: 'prop-1', project_id: 'project-A', agent_id: 'morgan', surface: 'storyBible',
+      field_path: 'characters[r1].want', proposed_value: 'draft', resolved_value: 'writer edit',
+      origin: 'seed', rationale: 'y', status: 'adopted', resolved_at: 'now', created_at: 'then',
+    })
+    storeMock.insertMessage.mockResolvedValueOnce({ id: 'm1', author: 'writer', kind: 'system', content: '' })
+
+    const res = await post('/api/room/project-A/proposals/prop-1/resolve', {
+      status: 'adopted',
+      resolved_value: 'writer edit',
+      origin: 'seed',
+    })
+
+    expect(res.status).toBe(200)
+    expect(storeMock.resolveProposal).toHaveBeenCalledWith('project-A', 'prop-1', 'adopted', {
+      resolvedValue: 'writer edit',
+      origin: 'seed',
+    })
+  })
+
+  it('rejects invalid origin overrides', async () => {
+    const res = await post('/api/room/project-A/proposals/prop-1/resolve', { status: 'adopted', origin: 'wrong' })
+    expect(res.status).toBe(400)
+    expect(storeMock.resolveProposal).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-string resolved values', async () => {
+    const res = await post('/api/room/project-A/proposals/prop-1/resolve', { status: 'adopted', resolved_value: 12 })
+    expect(res.status).toBe(400)
+    expect(storeMock.resolveProposal).not.toHaveBeenCalled()
+  })
+
   it('returns 409 when the proposal is stale, already resolved, or belongs to another project', async () => {
     storeMock.resolveProposal.mockResolvedValueOnce(null)
 
@@ -152,6 +223,23 @@ describe('POST /api/room/:projectId/proposals/:id/resolve', () => {
     expect(res.status).toBe(409)
     expect(String(res.json.message)).toMatch(/not pending/i)
     expect(storeMock.insertMessage).not.toHaveBeenCalled() // no channel log for a refused resolve
+  })
+
+  it('keeps stale/double resolve at 409 even with interview confirmation metadata', async () => {
+    storeMock.resolveProposal.mockResolvedValueOnce(null)
+
+    const res = await post('/api/room/project-B/proposals/prop-1/resolve', {
+      status: 'adopted',
+      resolved_value: 'writer edit',
+      origin: 'seed',
+    })
+
+    expect(res.status).toBe(409)
+    expect(storeMock.resolveProposal).toHaveBeenCalledWith('project-B', 'prop-1', 'adopted', {
+      resolvedValue: 'writer edit',
+      origin: 'seed',
+    })
+    expect(storeMock.insertMessage).not.toHaveBeenCalled()
   })
 
   it('still 500s on real store failures', async () => {

@@ -8,7 +8,7 @@ import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
 import { isRoomConfigured } from './supabaseClient';
-import type { RoomEventKind } from './types';
+import type { ProposalOrigin, RoomEventKind } from './types';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
 const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
@@ -125,7 +125,26 @@ export function registerRoomRoutes(app: Express): void {
         res.status(400).json({ message: "status must be 'adopted' or 'rejected'." });
         return;
       }
-      const proposal = await store.resolveProposal(projectId, String(req.params.id), status);
+
+      const opts: { resolvedValue?: string; origin?: ProposalOrigin } = {};
+      if (req.body?.resolved_value !== undefined) {
+        if (typeof req.body.resolved_value !== 'string') {
+          res.status(400).json({ message: 'resolved_value must be a string.' });
+          return;
+        }
+        opts.resolvedValue = req.body.resolved_value;
+      }
+      if (req.body?.origin !== undefined) {
+        if (req.body.origin !== 'seed' && req.body.origin !== 'extrapolated' && req.body.origin !== 'invented') {
+          res.status(400).json({ message: "origin must be 'seed', 'extrapolated', or 'invented'." });
+          return;
+        }
+        opts.origin = req.body.origin;
+      }
+
+      const proposal = Object.keys(opts).length > 0
+        ? await store.resolveProposal(projectId, String(req.params.id), status, opts)
+        : await store.resolveProposal(projectId, String(req.params.id), status);
       if (!proposal) {
         res.status(409).json({ message: 'Proposal not pending for this project (already resolved, or wrong project).' });
         return;
