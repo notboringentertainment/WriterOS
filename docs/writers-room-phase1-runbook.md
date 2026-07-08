@@ -70,12 +70,19 @@ Expected stronger pass:
 - proposal cards work when an exact character field exists
 - pass remains valid when Casey has nothing useful to add
 
-## Optional Plumbing Smoke
+## Ambient Integration Check
 
-The old field-change path still exists for ambient behavior: changing an existing
-Story Bible character `want` / `need` / `flaw` / `secret` / `arc` emits
-`doc_field_changed` and can wake Casey unprompted. That is an engineering smoke,
-not the product acceptance path.
+This checks the ambient trigger without bringing back DevTools or fake seeded
+memory.
+
+1. In any project with a Story Bible character card, open **The Room**.
+2. Keep the dock open, switch to Story Bible → Characters.
+3. Edit that character's `want` / `need` / `flaw` / `secret` / `arc` field.
+4. Casey should wake without a direct room prompt. A pass is valid only if the
+   ledger records it; otherwise she should stream a useful response.
+
+This proves the `doc_field_changed` path still works. The active room message
+test above remains the product-value test.
 
 ## Troubleshooting
 

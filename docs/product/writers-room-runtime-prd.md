@@ -309,15 +309,22 @@ Morgan + Casey only. Deliverables:
 4. Idle_tick digest for Casey only.
 5. Minimal channel UI: stream, send, proposal card with adopt/reject.
 
-**Acceptance (the "is it alive" test):** Open any active project with an incomplete
-or empty Story Bible. Open the room and ask Casey to help define a lead
-character's `want`. Within a minute, Casey speaks in the channel, streams live,
-and either offers a concrete field-ready value or asks the one next question
-needed to make it field-ready. If an exact Story Bible character card exists,
-Casey may also file a proposal card that the writer can adopt. No DevTools,
-manual project-id lookup, or pre-seeded Story Bible data is part of the product
-acceptance path. If that moment doesn't feel different from the current app,
-stop and reassess before Phase 2.
+**Acceptance (the "is it alive" test):**
+1. Reactive room flow: open any active project with an incomplete or empty Story
+   Bible. Open the room and ask Casey to help define a lead character's `want`.
+   Within a minute, Casey speaks in the channel, streams live, and either offers
+   a concrete field-ready value or asks the one next question needed to make it
+   field-ready.
+2. Ambient integration: in any project with a Story Bible character card, edit
+   that character's `want` / `need` / `flaw` / `secret` / `arc` field and verify
+   the resulting `doc_field_changed` event wakes Casey without a direct room
+   prompt.
+
+If an exact Story Bible character card exists, Casey may also file a proposal
+card that the writer can adopt. No DevTools, manual project-id lookup, or
+pre-seeded Story Bible data is part of the product acceptance path. If these
+moments don't feel different from the current app, stop and reassess before
+Phase 2.
 
 ### Phase 2 — Full Cast
 All seven agents, full wake-rule table, message_agent + mention chains, bench
