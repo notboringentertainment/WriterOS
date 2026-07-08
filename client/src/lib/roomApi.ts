@@ -18,9 +18,14 @@ export interface RoomProposal {
   surface: string
   field_path: string
   proposed_value: string
+  resolved_value?: string | null
   rationale: string
   status: 'pending' | 'adopted' | 'rejected' | 'superseded' | 'blocked'
   resolved_at: string | null
+  kind?: 'ambient_suggestion' | 'interview_answer'
+  session_id?: string | null
+  question_id?: string | null
+  origin?: 'seed' | 'extrapolated' | 'invented' | null
   created_at: string
 }
 
@@ -32,6 +37,49 @@ export interface RoomCharacterBrief {
   flaw?: string
   secret?: string
   arc?: string
+}
+
+export interface InterviewSession {
+  id: string
+  project_id: string
+  mode: 'quick' | 'full'
+  state: 'intake' | 'auditing' | 'interviewing' | 'readback' | 'banked' | 'exported' | 'paused'
+  seed_text: string
+  audit: Record<string, 'SUFFICIENT' | 'THIN'>
+  cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; paused_from?: string }
+  answers: Array<{ question_id: string; lane: string; answer_text: string; origin: 'seed' | 'extrapolated' | null; disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'; at: string }>
+  created_at: string
+  updated_at: string
+}
+
+export interface InterviewQuestion {
+  id: string
+  lane: string
+  trigger: string
+  question: string
+  writerOSTarget: string
+  templateDestination: string
+  originOnConfirm: string
+  requirement: string
+  budget: number
+}
+
+export interface InterviewStatus {
+  activeSession: InterviewSession | null
+  hasBankedSeed: boolean
+  actionLabel: 'First Meeting' | 'New interview round'
+  currentQuestion: InterviewQuestion | null
+}
+
+export interface InterviewBankPreview {
+  title: string
+  seedText: string
+  datedAnswers: string[]
+  seedColor: string[]
+  locks: string[]
+  leanings: string[]
+  openQuestions: string[]
+  conceptSeedAppend: string
 }
 
 export type RoomStreamEvent =
@@ -106,6 +154,76 @@ export async function resolveRoomProposal(
   )
   const body = await jsonOrThrow<{ proposal: RoomProposal }>(res)
   return body.proposal
+}
+
+export async function fetchInterviewStatus(projectId: string): Promise<InterviewStatus> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview`)
+  return jsonOrThrow<InterviewStatus>(res)
+}
+
+export async function startInterview(
+  projectId: string,
+  input: { mode: 'quick' | 'full'; seedText: string; speculative?: boolean },
+): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function answerInterviewQuestion(
+  projectId: string,
+  sessionId: string,
+  input: { answerText: string; origin?: 'seed' | 'extrapolated'; resolvedValue?: string; rejectMapping?: boolean },
+): Promise<{ session: InterviewSession; proposal?: RoomProposal; currentQuestion: InterviewQuestion | null }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function skipInterviewQuestion(projectId: string, sessionId: string): Promise<{ session: InterviewSession; currentQuestion: InterviewQuestion | null }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/skip`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function pauseInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/pause`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function resumeInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/resume`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function wrapInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/wrap`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function fetchInterviewBankPreview(projectId: string, sessionId: string): Promise<InterviewBankPreview> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`)
+  const body = await jsonOrThrow<{ preview: InterviewBankPreview }>(res)
+  return body.preview
+}
+
+export async function bankInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession; preview: InterviewBankPreview }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mutability: {} }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function exportInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession; markdown: string }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/export`, { method: 'POST' })
+  return jsonOrThrow(res)
 }
 
 export async function syncStoryLocksBlock(projectId: string, locksText: string): Promise<void> {

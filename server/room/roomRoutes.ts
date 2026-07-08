@@ -7,6 +7,7 @@ import { PERSONAS } from '../../shared/personas';
 import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
+import * as interviewRuntime from './interview/runtime';
 import { isRoomConfigured } from './supabaseClient';
 import type { ProposalOrigin, RoomEventKind } from './types';
 
@@ -190,6 +191,140 @@ export function registerRoomRoutes(app: Express): void {
     } catch (error) {
       console.error('[room.routes] story-locks failed:', error);
       res.status(500).json({ message: 'Failed to update story locks block.' });
+    }
+  });
+
+  // First Meeting — explicit, never auto-started (§A3-A12).
+  app.get('/api/room/:projectId/interview', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.getInterviewStatus(projectIdOf(req)));
+    } catch (error) {
+      console.error('[room.routes] interview status failed:', error);
+      res.status(500).json({ message: 'Failed to load First Meeting status.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/start', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      const mode = req.body?.mode === 'quick' ? 'quick' : req.body?.mode === 'full' ? 'full' : null;
+      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText.trim() : '';
+      if (!mode) {
+        res.status(400).json({ message: "mode must be 'quick' or 'full'." });
+        return;
+      }
+      if (!seedText) {
+        res.status(400).json({ message: 'seedText is required.' });
+        return;
+      }
+      const result = await interviewRuntime.startInterview({
+        projectId: projectIdOf(req),
+        mode,
+        seedText,
+        speculative: Boolean(req.body?.speculative),
+      });
+      res.json(result);
+    } catch (error) {
+      console.error('[room.routes] interview start failed:', error);
+      res.status(500).json({ message: 'Failed to start First Meeting.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/answer', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText.trim() : '';
+      if (!answerText) {
+        res.status(400).json({ message: 'answerText is required.' });
+        return;
+      }
+      const origin = req.body?.origin;
+      if (origin !== undefined && origin !== 'seed' && origin !== 'extrapolated') {
+        res.status(400).json({ message: "origin must be 'seed' or 'extrapolated' for interview answers." });
+        return;
+      }
+      const result = await interviewRuntime.answerInterviewQuestion({
+        sessionId: String(req.params.sessionId),
+        answerText,
+        resolvedValue: typeof req.body?.resolvedValue === 'string' ? req.body.resolvedValue : undefined,
+        origin,
+        rejectMapping: Boolean(req.body?.rejectMapping),
+      });
+      res.json(result);
+    } catch (error) {
+      console.error('[room.routes] interview answer failed:', error);
+      res.status(500).json({ message: 'Failed to record First Meeting answer.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/skip', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.skipInterviewQuestion(String(req.params.sessionId)));
+    } catch (error) {
+      console.error('[room.routes] interview skip failed:', error);
+      res.status(500).json({ message: 'Failed to skip First Meeting question.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/wrap', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.wrapInterview(String(req.params.sessionId)) });
+    } catch (error) {
+      console.error('[room.routes] interview wrap failed:', error);
+      res.status(500).json({ message: 'Failed to wrap First Meeting.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pause', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.pauseInterview(String(req.params.sessionId)) });
+    } catch (error) {
+      console.error('[room.routes] interview pause failed:', error);
+      res.status(500).json({ message: 'Failed to pause First Meeting.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/resume', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.resumeInterview(String(req.params.sessionId)) });
+    } catch (error) {
+      console.error('[room.routes] interview resume failed:', error);
+      res.status(500).json({ message: 'Failed to resume First Meeting.' });
+    }
+  });
+
+  app.get('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ preview: await interviewRuntime.previewBank(String(req.params.sessionId)) });
+    } catch (error) {
+      console.error('[room.routes] interview bank preview failed:', error);
+      res.status(500).json({ message: 'Failed to preview First Meeting banking.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/bank', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.bankInterview(String(req.params.sessionId), req.body?.mutability ?? {}));
+    } catch (error) {
+      console.error('[room.routes] interview bank failed:', error);
+      res.status(500).json({ message: 'Failed to bank First Meeting.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/export', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.exportInterview(String(req.params.sessionId)));
+    } catch (error) {
+      console.error('[room.routes] interview export failed:', error);
+      res.status(500).json({ message: 'Failed to export First Meeting.' });
     }
   });
 

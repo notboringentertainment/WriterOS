@@ -3,13 +3,23 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
+    answerInterviewQuestion: vi.fn(),
+    bankInterview: vi.fn(),
+    exportInterview: vi.fn(),
+    fetchInterviewBankPreview: vi.fn(),
+    fetchInterviewStatus: vi.fn(),
     fetchRoomMessages: vi.fn(),
     fetchRoomProposals: vi.fn(),
     openRoomStream: vi.fn(),
+    pauseInterview: vi.fn(),
     postRoomEvent: vi.fn(),
     resolveRoomProposal: vi.fn(),
+    resumeInterview: vi.fn(),
     sendRoomMessage: vi.fn(),
+    skipInterviewQuestion: vi.fn(),
+    startInterview: vi.fn(),
     syncStoryLocksBlock: vi.fn(),
+    wrapInterview: vi.fn(),
   },
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
@@ -34,6 +44,7 @@ beforeEach(() => {
   Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
   apiMock.fetchRoomProposals.mockResolvedValue([pendingProposal])
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
   apiMock.postRoomEvent.mockResolvedValue(undefined)
   apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
@@ -85,11 +96,17 @@ describe('RoomChannel proposal adoption ordering', () => {
     expect(await screen.findByText(/409/)).toBeInTheDocument() // surfaced, not swallowed
   })
 
-  it('writes the document only AFTER a successful resolve', async () => {
+  it('writes the document only AFTER a successful resolve and applies the server-confirmed resolved value', async () => {
     const order: string[] = []
+    const resolvedProposal = {
+      ...pendingProposal,
+      status: 'adopted' as const,
+      resolved_at: 'now',
+      resolved_value: 'win back the restaurant on her own terms',
+    }
     apiMock.resolveRoomProposal.mockImplementation(async () => {
       order.push('resolve')
-      return { ...pendingProposal, status: 'adopted' as const, resolved_at: 'now' }
+      return resolvedProposal
     })
     const onAdopt = vi.fn(() => {
       order.push('apply')
@@ -99,7 +116,7 @@ describe('RoomChannel proposal adoption ordering', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Adopt' }))
 
-    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(pendingProposal))
+    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(resolvedProposal))
     expect(order).toEqual(['resolve', 'apply'])
   })
 
