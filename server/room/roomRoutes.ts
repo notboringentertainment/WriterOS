@@ -108,7 +108,11 @@ export function registerRoomRoutes(app: Express): void {
         res.status(400).json({ message: "status must be 'adopted' or 'rejected'." });
         return;
       }
-      const proposal = await store.resolveProposal(String(req.params.id), status);
+      const proposal = await store.resolveProposal(projectId, String(req.params.id), status);
+      if (!proposal) {
+        res.status(409).json({ message: 'Proposal not pending for this project (already resolved, or wrong project).' });
+        return;
+      }
       const personaName = PERSONAS[proposal.agent_id]?.displayName ?? PERSONAS[proposal.agent_id]?.name ?? proposal.agent_id;
       const message = await store.insertMessage({
         projectId,
@@ -124,7 +128,7 @@ export function registerRoomRoutes(app: Express): void {
       res.json({ proposal });
     } catch (error) {
       console.error('[room.routes] resolve failed:', error);
-      res.status(500).json({ message: 'Failed to resolve proposal (it may already be resolved).' });
+      res.status(500).json({ message: 'Failed to resolve proposal.' });
     }
   });
 

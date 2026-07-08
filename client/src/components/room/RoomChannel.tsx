@@ -143,19 +143,24 @@ export function RoomChannel({ projectId, characterNames, locksText, onAdoptPropo
   }
 
   async function handleResolve(proposal: RoomProposal, status: 'adopted' | 'rejected') {
+    // Server resolve FIRST — the document is never written unless the server
+    // accepted the resolution (a stale/double click 409s and changes nothing).
+    let resolved: RoomProposal
+    try {
+      resolved = await resolveRoomProposal(projectId, proposal.id, status)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Resolve failed')
+      return
+    }
+    setProposals((prev) => prev.map((p) => (p.id === proposal.id ? resolved : p)))
+
     if (status === 'adopted') {
       const applied = onAdoptProposal(proposal)
       if (!applied) {
-        setError(`Can't apply ${proposal.field_path} automatically — copy the value by hand, then reject the card.`)
-        return
+        // Resolved as adopted server-side but the path couldn't be applied
+        // locally (should be prevented by the canApplyProposal button gate).
+        setError(`Adopted, but ${proposal.field_path} couldn't be applied automatically — copy the value into the field by hand.`)
       }
-    }
-    try {
-      await resolveRoomProposal(projectId, proposal.id, status)
-      // Row update arrives via SSE; drop it optimistically too.
-      setProposals((prev) => prev.map((p) => (p.id === proposal.id ? { ...p, status } : p)))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Resolve failed')
     }
   }
 

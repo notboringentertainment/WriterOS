@@ -11,14 +11,13 @@ export function isRoomConfigured(): boolean {
 }
 
 export function getRoomDb(): SupabaseClient {
+  if (cached) return cached; // includes test-injected clients
   if (!isRoomConfigured()) {
     throw new Error('Writers Room is not configured: set SUPABASE_URL and SUPABASE_ANON_KEY');
   }
-  if (!cached) {
-    cached = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-      auth: { persistSession: false },
-    });
-  }
+  cached = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false },
+  });
   return cached;
 }
 

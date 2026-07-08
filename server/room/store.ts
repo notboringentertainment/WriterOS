@@ -222,15 +222,24 @@ export async function insertProposal(input: {
   return throwOnError(res, 'insertProposal') as ProposalRow;
 }
 
-export async function resolveProposal(id: string, status: 'adopted' | 'rejected'): Promise<ProposalRow> {
+// Returns null when nothing matched: unknown id, wrong project, or already
+// resolved (stale click). Callers map null to 409 — it is contention, not a
+// server fault.
+export async function resolveProposal(
+  projectId: string,
+  id: string,
+  status: 'adopted' | 'rejected',
+): Promise<ProposalRow | null> {
   const res = await getRoomDb()
     .from('proposals')
     .update({ status, resolved_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('status', 'pending') // only pending proposals resolve; stale clicks no-op
+    .eq('project_id', projectId) // never resolve another project's proposal
+    .eq('status', 'pending') // only pending proposals resolve
     .select()
-    .single();
-  return throwOnError(res, 'resolveProposal') as ProposalRow;
+    .maybeSingle();
+  if (res.error) throw new Error(`[room.store] resolveProposal: ${res.error.message}`);
+  return (res.data as ProposalRow | null) ?? null;
 }
 
 export async function listProposals(projectId: string, status?: ProposalStatus): Promise<ProposalRow[]> {
