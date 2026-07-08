@@ -136,23 +136,21 @@ export async function writeBlock(input: {
     };
   }
 
-  if (row) {
-    const res = await db
-      .from('memory_blocks')
-      .update({ value: input.value, updated_by: input.updatedBy, updated_at: new Date().toISOString() })
-      .eq('id', row.id);
-    if (res.error) throw new Error(`[room.store] writeBlock update: ${res.error.message}`);
-  } else {
-    const res = await db.from('memory_blocks').insert({
-      project_id: input.projectId,
-      agent_id: input.agentId,
-      label: input.label,
-      value: input.value,
-      char_cap: cap,
-      updated_by: input.updatedBy,
-    });
-    if (res.error) throw new Error(`[room.store] writeBlock insert: ${res.error.message}`);
-  }
+  const res = await db
+    .from('memory_blocks')
+    .upsert(
+      {
+        project_id: input.projectId,
+        agent_id: input.agentId,
+        label: input.label,
+        value: input.value,
+        char_cap: cap,
+        updated_by: input.updatedBy,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'project_id,agent_id,label' },
+    );
+  if (res.error) throw new Error(`[room.store] writeBlock upsert: ${res.error.message}`);
 
   return { ok: true, nearCap: input.value.length > cap * 0.85 };
 }

@@ -38,7 +38,11 @@ export function broadcast(projectId: string, event: RoomSseEvent): void {
   if (!set) return;
   const frame = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of set) {
-    res.write(frame);
+    try {
+      res.write(frame);
+    } catch (error) {
+      console.error('[room.sseHub] broadcast write failed:', error);
+    }
   }
 }
 

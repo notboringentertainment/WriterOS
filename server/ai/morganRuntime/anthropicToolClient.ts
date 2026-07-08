@@ -49,6 +49,8 @@ export async function sendStreamingMessage(input: {
   // Optional raw stream-event tap — the room runtime extracts live `speak`
   // input deltas for SSE. Absent, nothing changes.
   onStreamEvent?: (event: Anthropic.RawMessageStreamEvent) => void;
+  // Fired once per internal API call, including pause_turn continuations.
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
 }): Promise<Anthropic.Message> {
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -74,6 +76,12 @@ export async function sendStreamingMessage(input: {
     }
 
     response = await stream.finalMessage();
+    if (input.onUsage && response.usage) {
+      input.onUsage({
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+      });
+    }
     if (response.stop_reason !== 'pause_turn') return response;
     messages = [...messages, assistantTurn(response.content)];
   }
@@ -98,14 +106,8 @@ export async function sendToolTurn(input: {
     maxTokens: input.maxTokens,
     model: input.model,
     onStreamEvent: input.onStreamEvent,
+    onUsage: input.onUsage,
   });
-
-  if (input.onUsage && response.usage) {
-    input.onUsage({
-      inputTokens: response.usage.input_tokens ?? 0,
-      outputTokens: response.usage.output_tokens ?? 0,
-    });
-  }
 
   const toolUses: ToolUse[] = [];
   const textParts: string[] = [];

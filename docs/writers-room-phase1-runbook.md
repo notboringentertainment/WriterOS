@@ -9,7 +9,7 @@ or a pass.
 
 `.env` must contain (all server-side; never shipped to the client bundle):
 
-```
+```env
 ANTHROPIC_API_KEY=...        # room turns
 SUPABASE_URL=...             # room persistence (writeros-room project)
 SUPABASE_ANON_KEY=...

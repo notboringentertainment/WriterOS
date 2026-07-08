@@ -11,6 +11,8 @@ import * as store from './store';
 import type { RoomEventRow } from './types';
 
 const CASEY_ID = 'casey';
+const LANE_NOTES_CAP = 3400;
+const WRITER_RAPPORT_CAP = 1200;
 
 export async function runCaseyDigest(input: {
   projectId: string;
@@ -38,7 +40,7 @@ export async function runCaseyDigest(input: {
         `You are the memory-digest process for ${persona.name}, ${persona.role}. ` +
         'Compress the channel history and current memory blocks into updated blocks. ' +
         `Digest bias (what lane_notes keeps): per-character psychology; contradictions between page behavior and stated spine. ` +
-        'Keep what will matter next session; drop chatter. lane_notes max 3400 chars, writer_rapport max 1200 chars. ' +
+        `Keep what will matter next session; drop chatter. lane_notes max ${LANE_NOTES_CAP} chars, writer_rapport max ${WRITER_RAPPORT_CAP} chars. ` +
         'Respond with ONLY a JSON object: {"lane_notes": string, "writer_rapport": string, "flag": string | null}. ' +
         'Set flag ONLY for a genuine contradiction or risk the writer must see — almost always null.',
       messages: [
@@ -62,9 +64,9 @@ export async function runCaseyDigest(input: {
         projectId,
         agentId: CASEY_ID,
         label: 'lane_notes',
-        value: parsed.lane_notes.slice(0, 4000),
+        value: parsed.lane_notes.slice(0, LANE_NOTES_CAP),
         updatedBy: 'digest',
-        charCap: 4000,
+        charCap: LANE_NOTES_CAP,
       });
     }
     if (typeof parsed.writer_rapport === 'string' && parsed.writer_rapport.trim()) {
@@ -72,9 +74,9 @@ export async function runCaseyDigest(input: {
         projectId,
         agentId: CASEY_ID,
         label: 'writer_rapport',
-        value: parsed.writer_rapport.slice(0, 1500),
+        value: parsed.writer_rapport.slice(0, WRITER_RAPPORT_CAP),
         updatedBy: 'digest',
-        charCap: 1500,
+        charCap: WRITER_RAPPORT_CAP,
       });
     }
 
