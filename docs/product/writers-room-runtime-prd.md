@@ -298,6 +298,11 @@ Before the Phase 1 branch is cut:
 5. Old roadmap Phase 5 (workflows-as-tools) is superseded by the §7.1 toolset.
    OpenSwarm retirement (old Phase 4) remains valid and gains urgency — the room
    must not inherit a dead dependency.
+6. **DEPLOY BLOCKER (not a spike blocker):** `server/room/supabaseClient.ts`
+   connects with `SUPABASE_ANON_KEY`. Before any non-local deployment, the room
+   tables' RLS posture MUST be resolved: either explicit RLS policies scoped to
+   the app's access pattern, or a server-side service-role key (never bundled
+   client-side). Local development may proceed without this.
 
 ## 14. Build Phases
 
@@ -305,26 +310,53 @@ Before the Phase 1 branch is cut:
 Morgan + Casey only. Deliverables:
 1. Tables from §5 migrated in Supabase.
 2. `runRoomTurn` with the §7.1 toolset (no message_agent yet).
-3. One event source wired: Story Bible character field change → doc_field_changed.
+3. One ambient event source wired: Story Bible character field change → doc_field_changed; writer_message reactive loop wakes Casey on explicit character-psychology requests even before the Story Bible is complete.
 4. Idle_tick digest for Casey only.
 5. Minimal channel UI: stream, send, proposal card with adopt/reject.
 
-**Acceptance (the "is it alive" test):** Open any active project. Change a lead
-character's `want` field. Within a minute, Casey — unprompted — says something in
-the channel that references BOTH the change AND something from a previous session's
-conversation, and files a proposal or a pass. If that moment doesn't feel different from the current app,
-stop and reassess before Phase 2.
+**Acceptance (the "is it alive" test):**
+1. Reactive room flow: open any active project with an incomplete or empty Story
+   Bible. Open the room and ask Casey to help define a lead character's `want`.
+   Within a minute, Casey speaks in the channel, streams live, and either offers
+   a concrete field-ready value or asks the one next question needed to make it
+   field-ready.
+2. Ambient integration: in any project with a Story Bible character card, edit
+   that character's `want` / `need` / `flaw` / `secret` / `arc` field and verify
+   the resulting `doc_field_changed` event wakes Casey without a direct room
+   prompt.
 
-### Phase 2 — Full Cast
+If an exact Story Bible character card exists, Casey may also file a proposal
+card that the writer can adopt. No DevTools, manual project-id lookup, or
+pre-seeded Story Bible data is part of the product acceptance path.
+
+**Status note:** these are SMOKE TESTS. They prove the chassis (reactive
+response, ambient wake, streaming, proposals). They do not prove the product.
+Test 1 is passable by any competent chatbot. The "is it alive" proof —
+unprompted agent reaction connecting a silent edit to prior-session memory —
+is the EXIT GATE of Phase 3 (see below), staged through the product path only.
+
+### Phase 2 — The First Meeting (writer-facing product)
+The agent-led concept interview. Full normative contract in **Addendum A** —
+flow, question bank, provenance model, banking rules, and the PitchStudio
+export contract. Addendum A is binding; this heading is a pointer.
+
+Runs on the Phase 1 chassis (turn runner, streaming, proposals, memory
+blocks, channel UI). Does NOT require Phase 3 machinery. Morgan + specialist
+turns run as a directed session, not ambient wake.
+
+### Phase 3 — Full Cast Ambient
 All seven agents, full wake-rule table, message_agent + mention chains, bench
 mechanic, budget ledger, presence UI.
 
-### Phase 3 — The First Meeting
-The concept interview (see prior design discussion) implemented as the room's
-opening session on a new project: Morgan hosts, specialists ask their lane
-questions, answers land in canon fields with provenance, skips land in
-open_questions, readback assigns locked / leaning / open. Output banks as
-concept_seed and exports in CONCEPT_TEMPLATE.md shape for PitchStudio.
+**Exit gate (the restored "is it alive" test), product path only:**
+1. Converse with Casey about a character in the room. Close the project.
+2. Idle digest files Casey's memory (automated tests MAY use a seeded
+   clock/test helper to advance time; product QA MUST NOT — real path only).
+3. In a later session, silently edit that character's `want` field. Within
+   the debounce window plus one minute, Casey speaks unprompted, connecting
+   the edit to the prior conversation, and files a proposal or a pass.
+No DevTools, no seeded data in QA. If this moment does not feel categorically
+different from a chatbot, stop and reassess before further ambient work.
 
 ### Phase 4 — Round Trip
 Import a completed PitchStudio run: filled sections land as pending proposals
@@ -337,7 +369,10 @@ Import a completed PitchStudio run: filled sections land as pending proposals
   are the defense; tune them before adding personality flourish.
 - **Memory rot.** Digest prompts need real iteration. Bad digests = agents
   confidently remembering things wrong, which is worse than forgetting. Ledger +
-  block history (updated_by/updated_at) make this auditable.
+  block history (updated_by/updated_at) make this auditable. CONDITIONAL
+  mitigation (build only on observed drift, never preemptively): read-only
+  markdown export of memory blocks for human audit. Not in scope for any
+  currently planned phase.
 - **Cost.** Seven residents with ambient triggers is a token faucet. The ledger
   exists so this is measured, not felt. Digest tier on local models is the
   long-term answer and the provider abstraction already supports adding it.
@@ -354,3 +389,339 @@ Import a completed PitchStudio run: filled sections land as pending proposals
   digest's job? (Lean: digest's job — keeps Morgan's voice in the loop.)
 - Per-agent model casting (Casey on a warmer model, Alex on a colder one)? Fun,
   cheap to try post-Phase 2, zero architectural cost thanks to modelProvider.
+
+---
+
+# Addendum A — The First Meeting (Phase 2 Contract)
+
+**Status:** Normative. MUST/SHOULD/MAY per RFC 2119. This addendum is binding
+for Phase 2 implementation; where it conflicts with earlier prose, it wins.
+**Source-of-truth files:** `~/Projects/PitchStudio/CONCEPT_TEMPLATE.md` and
+`~/Projects/PitchStudio/PATTERN.md` (v1.2). The export contract in §A10 was
+derived from those files directly; if they change, §A10 MUST be re-verified.
+
+## A1. Product Definition
+
+The First Meeting is an agent-led interview that develops a writer's raw idea
+into a **sufficient seed**: locks, open questions, load-bearing specifics, and
+a stated-or-explicitly-open ending. It is the project-level analog of the
+Voice Profile: interactive, skippable, and the canonical statement of intent.
+
+Outputs (dual-write, single interview):
+1. **WriterOS canon:** confirmed answers land in document fields and memory
+   blocks via the proposal path (§A7).
+2. **PitchStudio handoff:** a seed-stage concept file in CONCEPT_TEMPLATE
+   shape that passes PATTERN.md Step 1.5 as SUFFICIENT (§A10–A11).
+
+Non-goals: the interview does NOT produce loglines, beats, spines, or any
+`## Development` content. Those are room/PitchStudio outputs. An interview
+that starts drafting development material has failed its scope.
+
+## A2. Modes & Casting
+
+Two interview modes, chosen by the writer at start (Morgan MAY recommend):
+
+| Mode | Cast | Budget ceiling | Use |
+|------|------|----------------|-----|
+| `quick` | Morgan only | 1 question per THIN area, ≤8 total | Game out an idea fast |
+| `full` | Morgan + eligible specialists | Per-lane budgets (§A6) | New project intake |
+
+Bench rules (normative): Zoe is benched unless the project is flagged
+speculative (writer sets flag at intake; Morgan MAY ask once). Alex is benched
+in `quick` mode. A benched lane's audit areas fall to Morgan.
+
+These modes are interview depth only. PitchStudio's `run_mode`
+(Scout/Room/Full) is Morgan-at-PitchStudio's casting decision and is NOT set
+by the interview (§A10).
+
+## A3. Entry Points
+
+1. **New project flow:** after project creation (and Voice Profile if first
+   project), the app MUST offer the First Meeting as an explicit choice with
+   a visible skip. Skipping is one click and MUST NOT nag afterward.
+2. **Room surface:** a "First Meeting" action MUST be available in the room
+   whenever no banked seed exists for the project; after banking, the same
+   action reads "New interview round" (§A9 append-only).
+3. The interview MUST NOT auto-start. Ever.
+
+## A4. Session State Machine
+
+Module home: `server/room/interview/` (own family; the scheduler wakes things,
+the interview owns session state). Persistence:
+
+```sql
+create table interview_sessions (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null,
+  mode text not null,                    -- 'quick' | 'full'
+  state text not null default 'intake',  -- see below
+  seed_text text not null default '',    -- verbatim, never edited after intake
+  audit jsonb not null default '{}',     -- per-area SUFFICIENT|THIN verdicts
+  cursor jsonb not null default '{}',    -- current lane, question_id, budgets spent
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+```
+
+States: `intake → auditing → interviewing → readback → banked → exported`,
+plus `paused` (reachable from any pre-banked state, resumable to the exact
+cursor). Transitions:
+
+| From | To | Trigger |
+|------|----|---------|
+| intake | auditing | writer submits seed text |
+| auditing | interviewing | audit finds ≥1 THIN area |
+| auditing | readback | audit finds all areas SUFFICIENT |
+| interviewing | readback | budgets exhausted, OR Morgan early-stop (§A5.4), OR writer "wrap it up" |
+| readback | banked | writer clicks Bank (§A9) |
+| banked | exported | writer triggers export (§A10) |
+| any pre-banked | paused | writer pauses or closes project |
+
+Pause/resume is a MUST. A paused session survives app restarts.
+
+## A5. Flow (normative sequence)
+
+**A5.1 Intake.** Writer pastes/types anything from one sentence to pages.
+Stored verbatim as `seed_text`. Morgan MAY ask the speculative flag question
+here (once).
+
+**A5.2 Audit.** Morgan classifies each audit area SUFFICIENT or THIN,
+mirroring PATTERN.md Step 1.5 checks: (a) locks present/implied, (b) open
+questions explicit, (c) backstory/relationship specifics for every
+emotionally load-bearing element, (d) ending stated or explicitly open.
+Verdicts are stored in `audit` and stated to the writer in one message —
+no hidden grading.
+
+**A5.3 Interview.** Only THIN areas generate questions, drawn from the lane
+question bank (§A6), asked by the owning persona in their voice, one at a
+time. SUFFICIENT areas earn zero questions — the room MUST NOT re-ask what
+the seed already answers. Every question is skippable; Morgan frames skips
+as delegation to the room ("that's ours to invent, noted"), never as a gap
+the writer failed to fill.
+
+**A5.4 Escape hatches (all MUST):** writer can pause/resume at any question;
+writer has a visible "wrap it up" affordance that jumps to readback; Morgan
+can stop early when signal is sufficient, stating why. On ANY early exit,
+Morgan MUST enumerate what remains open before banking.
+
+**A5.5 Readback.** Morgan summarizes: confirmed answers, their proposed
+mutability (§A8), and the open-questions list. Writer adjusts mutability
+per item (single tap per item), then banks.
+
+## A6. Question Bank — The Traceability Contract
+
+Ships as data (`server/room/interview/questionBank.ts`). This table is the
+SINGLE contract chaining question → WriterOS target → CONCEPT_TEMPLATE
+destination → provenance → requirement. §A10 governs file assembly only;
+any element not traceable through this table does not export.
+Per-lane budgets apply per THIN area, `full` mode. Wording MAY be tuned;
+triggers, targets, destinations, and requirements MUST NOT drift.
+**Req?** = the area MUST be answered OR explicitly delegated (recorded in
+Open questions) before banking. **Opt** = may remain silent.
+
+| Lane | Trigger (THIN area) | Budget | Example question | WriterOS target | Template destination | Origin on confirm | Req? |
+|------|--------------------|--------|------------------|-----------------|----------------------|-------------------|------|
+| Morgan | locks absent | 2 | "What's the one thing this story is not allowed to become?" | `story_locks` block | `## Locks — do not violate` | [SEED] | Req |
+| Morgan | ending unstated | 1 | "Do you know how it ends — even roughly? Or is the ending ours?" | `story_locks` or `open_questions` | `## Locks` (known) / `## Open questions` (ceded) | [SEED] / delegation | Req |
+| Morgan | open questions/delegation absent | 1 | "What's ours to invent — where do you want the room to surprise you?" | `open_questions` block | `## Open questions — invent here` | delegation | Req |
+| Casey | load-bearing character unspecified | 4 | "What broke this person before page one?" / "What can't they say out loud, even to themselves?" | `storyBible.characters[x].{flaw, secret, want, need}` | `## Seed` (tagged specifics) | [SEED] or [EXTRAPOLATED] | Req if load-bearing |
+| Zoe | speculative + world rules absent | 3 | "What does this world refuse to allow?" | `story_locks` (hard rules) + seed color | `## Locks` + `## Seed` | [SEED] | Req if speculative |
+| Sam | premise identity unclear | 2 | "What's the trailer moment? And what is this absolutely NOT?" | seed color + frontmatter `tone` | `## Seed` + frontmatter | [SEED] | Opt |
+| Oliver | stakes/engine unclear | 2 | "What's the worst thing that could happen at the middle of this story?" | seed color or `open_questions` | `## Seed` / `## Open questions` | [SEED] / delegation | Opt |
+| Maya | voice/texture absent | 2 | "What does this sound like — name a scene from anything that has the voice you hear." | seed color + frontmatter `tone` | `## Seed` + frontmatter | [SEED] | Opt |
+| Alex | format/scope unstated | 1 | "What is this — feature, pilot, short? And is there a budget reality I should know?" | frontmatter `format` + seed color | frontmatter + `## Seed` | [SEED] | Opt |
+
+The four Morgan/Casey Req rows map 1:1 to PATTERN.md Step 1.5's audit
+checks — locks, delegation (Open questions), load-bearing specifics,
+ending — so a banked session satisfying them is a sufficient seed BY
+CONSTRUCTION. Zoe's row is a conditional, lock-adjacent requirement for
+speculative projects; it is NOT part of the 1:1 proof.
+
+Rules: budgets are per THIN area, not per session; a lane with all areas
+SUFFICIENT asks nothing; `quick` mode collapses all lanes to Morgan at 1
+question per THIN area. Follow-ups count against the budget. No lane may
+exceed budget without an explicit writer invitation ("keep going").
+
+## A7. Transcribe-and-Confirm
+
+**A7.1 Pattern.** The writer answers in story terms. The asking agent
+transcribes into schema terms and files it through the EXISTING proposal
+path — no new write mechanism. Writer confirmation = adoption. The writer
+MAY edit the transcription before confirming.
+
+**A7.2 Proposals table extension (discriminator + provenance):**
+
+```sql
+alter table proposals add column kind text not null default 'ambient_suggestion';
+  -- 'ambient_suggestion' | 'interview_answer'
+alter table proposals add column session_id uuid references interview_sessions(id);
+alter table proposals add column question_id text;
+alter table proposals add column origin text;
+  -- 'seed' | 'extrapolated'  (interview never produces 'invented';
+  --  ambient_suggestion rows record 'extrapolated' or 'invented')
+```
+
+`origin` is set by the transcribing agent and is writer-adjustable at
+confirm (an agent may mistag a restatement as extrapolation). Export tags
+(§A8, §A10) are rendered FROM this column — never inferred at export time.
+
+Additionally, `interview_sessions` gains the full transcript, so answers
+that never become proposals (seed color, skips) still carry provenance:
+
+```sql
+alter table interview_sessions add column answers jsonb not null default '[]';
+  -- [{question_id, lane, answer_text, origin, disposition, at}]
+  -- disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'
+```
+
+The transcript is the export's source of record; proposals are the write
+path into WriterOS fields.
+
+UI renders `interview_answer` proposals as inline confirmations in the
+interview flow (single-tap confirm/edit/decline), not as ambient cards.
+Same persistence, different presentation.
+
+**A7.3 Refusal & seed color.** If the writer declines the field mapping
+("don't put that in a field"), the answer is preserved verbatim as **seed
+color** — appended to the seed record (dated, marked as interview answer)
+and exported inside `## Seed`, but written to NO WriterOS field. Refusal is
+a valid outcome, not an error state. Answers with no natural field target
+(Sam/Maya/Oliver texture answers) default to seed color without asking.
+
+## A8. Provenance Model — Two Axes, No Automatic Mapping
+
+**Origin axis** (PitchStudio vocabulary, carried in the export):
+`[SEED]` — stated by the writer. `[EXTRAPOLATED]` — derived from writer
+material and writer-approved. `[INVENTED]` — the room's creation.
+
+**Mutability axis** (WriterOS vocabulary, carried in UI + blocks):
+`locked` — inviolable, fidelity-gate enforced. `leaning` — challengeable
+with reasoning (dissent territory). `open` — explicitly ceded to the room.
+
+The axes are orthogonal. There is NO automatic mapping between them.
+Assignment rules:
+
+| Case | Origin | Mutability |
+|------|--------|------------|
+| Writer states it flatly ("she wants revenge") | [SEED] | writer assigns at readback (default: locked) |
+| Writer states it tentatively ("maybe she wants revenge") | [SEED] | leaning (writer may promote) |
+| Agent infers, writer approves as challengeable ("revenge masks grief — yes, but push on it") | [EXTRAPOLATED] | leaning |
+| Agent infers, writer adopts as canon | [EXTRAPOLATED] | locked |
+| Writer skips/cedes the area | — (room will fill as [INVENTED]) | open |
+
+Storage: origin is recorded on the proposal row and carried into the export's
+tags. Mutability lives where it already lives — `story_locks` block (locked),
+`open_questions` block (open), and a `leanings` list inside `concept_seed`
+(leaning). Interview UI MUST show all three states with distinct affordances
+at readback; the export MUST NOT emit mutability labels beyond the Locks and
+Open-questions sections (PitchStudio's contract only knows those two, plus
+origin tags).
+
+## A9. Banking Rules
+
+**Minimum bankable session:** seed verbatim + audit verdicts + a Locks
+section (MAY be empty only with the explicit line "No locks — writer cedes
+broadly") + an Open-questions section (MAY be empty only with the explicit
+line "Nothing delegated — writer holds all intent"; the §A6 delegation
+question MUST have been asked or the area audited SUFFICIENT). Nothing
+else is required; a `quick` session with four answers banks fine.
+
+**The bank moment is visible UX (MUST):** a "Bank this round" action showing
+exactly what will be written — seed text, dated interview answers, locks,
+leanings, open questions — before commit. No silent memory-block writes.
+Banking writes `concept_seed` (append), `story_locks`, and `open_questions`
+blocks, and sets session state `banked`.
+
+**Append-only:** banked rounds are never edited in place. A later "New
+interview round" (§A3.2) appends a dated round to `concept_seed`. Story
+Bible wins on current state; the seed wins on original intent.
+
+## A10. Export Contract (PitchStudio handoff)
+
+Export target: a seed-stage concept file, written to
+`~/Projects/PitchStudio/concepts/<slug>.md` (path configurable). Trigger: an
+explicit "Export to PitchStudio" action, available from state `banked`.
+The export is byte-shape compatible with CONCEPT_TEMPLATE.md. Normative map:
+
+| Template element | Interview source | Rule |
+|------------------|------------------|------|
+| frontmatter `title` | project title | MUST set |
+| frontmatter `logline` | seed's own logline if the writer stated one | MUST NOT synthesize; empty if unstated |
+| frontmatter `format`, `tone`, `device` | Alex/Sam/Maya confirmed answers | set if confirmed, else empty |
+| frontmatter `status` | — | MUST be `seed` |
+| frontmatter `date` | export date | MUST set |
+| frontmatter `run_mode`, `seed_fidelity` | — | MUST be empty — Morgan-at-PitchStudio's calls |
+| frontmatter provenance fields (`developed_on` … `feedback_rounds`) | — | MUST be empty/defaults |
+| `# <Working Title>` | project title | MUST set |
+| `## Seed` | seed verbatim + dated interview answers (marked as writer interview answers) + seed color (§A7.3), with origin tags `[SEED]`/`[EXTRAPOLATED]` inline | MUST populate; verbatim seed first, never edited |
+| `## Locks — do not violate` | locked items at readback | MUST emit (section added below Seed, per PATTERN Step 1.5 audit) |
+| `## Open questions — invent here` | open items + all skips | MUST emit |
+| `## Development` + all `###` subsections | — | MUST emit the template skeleton UNFILLED, exactly as in CONCEPT_TEMPLATE.md |
+
+Leanings export inside `## Seed` as tagged lines ("writer is leaning X —
+challenge permitted"), since PitchStudio's contract has no leaning section.
+
+## A11. Validation Gates (both MUST pass before Phase 2 closes)
+
+**Gate 1 — automated shape check (`server/room/interview/exportCheck.ts`):**
+frontmatter parses with every TEMPLATE key present; `status: seed`; Seed,
+Locks, and Open-questions sections present and non-empty (Locks and
+Open-questions each MAY carry only their explicit empty-state line per
+§A9); every `## Development` subsection present and
+unfilled. Runs on every export; a failing export MUST NOT write the file.
+
+**Gate 2 — live PitchStudio smoke (once, at phase close):** hand a real
+exported concept file to Hermes with: *"Run the standard PitchStudio
+workflow on concepts/<slug>.md through Step 1.5 only. Report the seed
+fidelity verdict and list any interview questions you would ask."*
+
+PASS = verdict SUFFICIENT. Full stop.
+
+A THIN verdict is ALWAYS a Phase 2 defect, classified by the questions
+PitchStudio asks: a question the interview already answered = the
+conformance map lied (fix §A10 rendering); a question the interview never
+asked and never recorded as delegated = coverage gap (fix §A6 triggers or
+the skip-to-delegation path). Rationale: §A6's Req rows mirror PATTERN.md
+Step 1.5's audit checks one-to-one, so a correctly banked and correctly
+rendered export is sufficient by construction — every audit area is either
+answered or explicitly delegated in `## Open questions`. If PitchStudio
+disagrees, our contract is broken, not its audit. Fix, re-export, re-run
+until SUFFICIENT.
+
+## A12. Phase 2 Acceptance (product path, no DevTools)
+
+**Track A — thin seed (interview exercised):**
+1. Create a new project with a one-sentence idea. Start a `full` First
+   Meeting. Morgan audits aloud, THIN areas trigger lane questions in
+   persona voices, SUFFICIENT areas trigger none.
+2. Answer some questions, skip at least one, refuse at least one field
+   mapping, pause mid-session, close the app, reopen, resume at the exact
+   question.
+3. Reach readback: adjust one item's mutability, see remaining-open list,
+   bank with the visible bank moment. Confirmed answers are now in Story
+   Bible fields with provenance; locks in the locks block.
+4. Export. Gate 1 passes. Open the file: verbatim seed intact, tags
+   present, Development skeleton unfilled.
+5. Run a second interview round; verify append (round 1 untouched).
+6. Gate 2 smoke passes on a real export.
+
+**Track B — rich seed (restraint exercised):**
+7. Create a second project with a rich seed: locks stated, open questions
+   explicitly delegated, backstory specifics for every load-bearing
+   relationship, ending stated (or explicitly ceded). Start a `full` First
+   Meeting. Morgan MUST audit every area SUFFICIENT, ask ZERO targeted
+   questions, and proceed directly to readback. Any question asked against
+   this seed is a §A5.3 violation ("the room MUST NOT re-ask what the seed
+   already answers") and fails acceptance.
+8. Bank and export the rich seed; Gate 1 passes; the export carries the
+   writer's locks and delegations verbatim.
+
+If the interview feels like a form with extra steps — if a writer staring
+at it blanks the way they blank at the Story Bible — stop and fix question
+craft before shipping. That is the failure mode this phase exists to kill.
+
+## A13. Explicitly Out of Scope for Phase 2
+
+message_agent chains, bench-mechanic UI, budget ledger UI, ambient wake
+tuning (all Phase 3); PitchStudio import/round-trip (Phase 4); memory
+markdown export (conditional, §15); any generalization beyond one room.
