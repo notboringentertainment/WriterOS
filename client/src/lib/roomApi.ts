@@ -24,6 +24,16 @@ export interface RoomProposal {
   created_at: string
 }
 
+export interface RoomCharacterBrief {
+  id: string
+  name: string
+  want?: string
+  need?: string
+  flaw?: string
+  secret?: string
+  arc?: string
+}
+
 export type RoomStreamEvent =
   | { type: 'turn_started'; agentId: string; turnId: string }
   | { type: 'speak_delta'; agentId: string; turnId: string; content: string }
@@ -56,11 +66,12 @@ export async function sendRoomMessage(
   projectId: string,
   content: string,
   characterNames: string[],
+  characters: RoomCharacterBrief[] = [],
 ): Promise<RoomMessage> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, characterNames }),
+    body: JSON.stringify({ content, characterNames, characters }),
   })
   const body = await jsonOrThrow<{ message: RoomMessage }>(res)
   return body.message

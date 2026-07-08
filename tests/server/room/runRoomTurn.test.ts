@@ -44,6 +44,19 @@ const event: RoomEventRow = {
   created_at: new Date().toISOString(),
 }
 
+const writerMessageEvent: RoomEventRow = {
+  id: 'evt-writer',
+  project_id: 'p1',
+  kind: 'writer_message',
+  payload: {
+    content: "Casey, help me figure out Rosa's want.",
+    characterNames: ['Rosa'],
+    characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+  },
+  processed_at: null,
+  created_at: new Date().toISOString(),
+}
+
 const toolTurn = (uses: Array<{ id: string; name: string; input: unknown }>, text = '') => ({
   stopReason: 'tool_use',
   toolUses: uses,
@@ -118,6 +131,21 @@ describe('runRoomTurn', () => {
     expect(userMsg).toContain('Rosa is the lead.') // channel window
     expect(userMsg).toContain('characters[r1].want') // trigger
     expect(userMsg).toContain('win back the restaurant')
+  })
+
+  it('writer-message turns include visible character cards and active field-fill guidance', async () => {
+    sendToolTurnMock.mockResolvedValueOnce(
+      toolTurn([{ id: 'u1', name: 'pass', input: { reason: 'n/a' } }]),
+    )
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event: writerMessageEvent })
+
+    const call = sendToolTurnMock.mock.calls[0][0]
+    const userMsg = JSON.stringify(call.messages)
+    expect(userMsg).toContain("Casey, help me figure out Rosa's want.")
+    expect(userMsg).toContain('VISIBLE STORY BIBLE CHARACTER CARDS')
+    expect(userMsg).toContain('Rosa [id: r1]')
+    expect(userMsg).toContain('file propose_field_write')
   })
 
   it('malformed turns get the retry nudge and ledger errored if still malformed', async () => {

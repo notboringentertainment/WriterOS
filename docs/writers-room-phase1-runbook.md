@@ -1,9 +1,7 @@
 # Writers' Room Phase 1 — Acceptance Test Runbook
 
-The §14 "is it alive" test: open a project, change a lead character's `want`
-field, and within a minute Casey speaks unprompted in the channel, referencing
-BOTH the change AND something from a previous session, then files a proposal
-or a pass.
+This is the active "is it alive" test. It should feel like using the room, not
+setting up fake form data.
 
 ## Prerequisites
 
@@ -16,36 +14,7 @@ SUPABASE_ANON_KEY=...
 ANTHROPIC_DIGEST_MODEL=      # optional; defaults to claude-haiku-4-5
 ```
 
-## Step 1 — Find your project id
-
-Open WriterOS in the browser, DevTools console:
-
-```js
-localStorage.getItem('writeros_active_project_id')
-```
-
-Copy the id (call it `PROJECT_ID`). Also note your lead character's **name**
-and, for nicer seeded notes, their character **id**:
-
-```js
-JSON.parse(localStorage.getItem('writeros_project_library'))
-  .find(p => p.id === localStorage.getItem('writeros_active_project_id'))
-  ?.state.documents.storyBible.content.characters.map(c => ({ id: c.id, name: c.name }))
-```
-
-## Step 2 — Seed the "previous session"
-
-```bash
-npx tsx scripts/seedWritersRoom.ts <PROJECT_ID> "<CharacterName>" [<characterId>]
-```
-
-This creates: a backdated (~2 days ago) channel conversation where Casey
-analyzed that character's want/need split, Casey's private `lane_notes` +
-`writer_rapport` carrying the same thread, and the standard shared blocks
-attached to Morgan and Casey. Idempotent — safe to re-run; the backdated
-transcript only inserts into an empty channel.
-
-## Step 3 — Start the dev server (fresh — server/* changed)
+Start a fresh dev server after checking out the branch:
 
 ```bash
 npm run dev
@@ -54,43 +23,75 @@ npm run dev
 Look for `[room] scheduler started (5s tick)` in the server log. If you see
 `[room] scheduler not started`, an env var is missing.
 
-## Step 4 — Run the moment
+## Active Acceptance Test
 
-1. Open the project in the browser.
-2. Open the Writer's Room dock (top-right button, or Cmd+6). The dock opens on
-   **The Room** — you should see the seeded previous-session conversation.
-3. Switch to the **Story Bible** tab (keep the dock open), go to Characters,
-   and change the lead character's **want** field to something meaningfully
-   different. The event fires immediately on the first change (leading-edge
-   debounce) — no need to stop typing.
-4. Watch the channel. Within ~5–60s (scheduler tick + generation): Casey's
-   typing indicator appears, her message **streams live**, and it should
-   reference both the want change and the previous session's thread. She then
-   files a proposal card (adopt/reject buttons) or passes (check
-   `agent_turn_ledger` if silent — a pass is a logged success, not a bug).
-5. If she filed a proposal: **Adopt** writes the field into the Story Bible
-   with provenance logged to the channel; **Reject** just resolves the card.
+1. Open any active project in WriterOS. The Story Bible does not need to be
+   filled out.
+2. Open the Writer's Room dock with Cmd+6, or the top-right Writer's Room
+   button. The dock opens on **The Room**.
+3. In the room message box, ask Casey for character-field help:
 
-## What "alive" looks like
+```text
+Casey, help me figure out my lead character's want. I only know this: they are chasing the wrong thing because of an old wound.
+```
 
-Casey enters mid-thought, no greeting, e.g. referencing "when we dug into her
-want/need split" AND the concrete new value you typed. If her message would
-not change what you do next, she should have passed instead — that's the value
-gate working, also a pass.
+4. Watch the channel. Within roughly 5-60s, Casey's typing indicator should
+   appear and her answer should stream live.
+5. Casey should either:
+   - give a concrete, field-ready `want` value, or
+   - ask one sharp next question needed to make the `want` field usable.
+
+That is the core Phase 1 pass: writer speaks in the room, Casey wakes without a
+manual Story Bible setup, and the room helps create pertinent field material.
+
+## Proposal Path
+
+If the project already has a Story Bible character card, ask with that name:
+
+```text
+Casey, help me sharpen <CharacterName>'s want into a Story Bible field value.
+```
+
+Expected stronger pass:
+
+1. Casey wakes because the message names a character or directly asks for Casey.
+2. Casey uses the visible character card id sent by the client.
+3. Casey files a proposal card for `storyBible → characters[<id>].want`, or
+   explains what missing input blocks a useful proposal.
+4. Adopt writes the field into the Story Bible. Reject leaves the document alone.
+
+## What This Proves
+
+- writer_message event persists
+- scheduler wakes Morgan and Casey correctly
+- Casey can respond before forms are complete
+- Anthropic stream drives the live typing bubble
+- room channel receives the final message
+- proposal cards work when an exact character field exists
+- pass remains valid when Casey has nothing useful to add
+
+## Optional Plumbing Smoke
+
+The old field-change path still exists for ambient behavior: changing an existing
+Story Bible character `want` / `need` / `flaw` / `secret` / `arc` emits
+`doc_field_changed` and can wake Casey unprompted. That is an engineering smoke,
+not the product acceptance path.
 
 ## Troubleshooting
 
-- **Nothing happens:** dev server restarted after the checkout? (stale-server
-  trap). Scheduler line present? `select * from room_events order by
-  created_at desc limit 5;` — is the event queued/processed?
-- **Casey speaks but no memory reference:** check the seed ran against the
-  SAME project id the browser is using.
-- **Room entry missing in the dock:** no active project id, or the room API
-  returned 503 (env vars).
+- **Nothing happens:** restart the dev server; confirm `[room] scheduler started
+  (5s tick)` appears.
+- **Room entry missing:** no active project id, or room API returned 503 because
+  env vars are missing.
+- **Casey never wakes:** include `Casey` plus a character-psychology word like
+  `want`, `need`, `flaw`, `secret`, `arc`, `lead`, or `motivation`.
+- **Proposal does not appear:** no exact Story Bible character card exists, or
+  Casey chose to ask a clarifying question instead. This is valid for incomplete
+  projects.
 - **Ledger check:** `select agent_id, action, input_tokens, output_tokens,
   created_at from agent_turn_ledger order by created_at desc limit 10;`
 
-## Not production-safe
+## Not Production-Safe
 
 RLS is disabled on all six room tables and the server uses the anon key.
 Local spike posture only — harden before any deploy (DECISIONS.md D2).

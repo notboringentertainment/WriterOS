@@ -105,6 +105,28 @@ describe('POST /api/room/:projectId/messages', () => {
     expect(storeMock.insertMessage).not.toHaveBeenCalled()
     expect(storeMock.insertEvent).not.toHaveBeenCalled()
   })
+
+  it('persists writer_message events with visible character card context', async () => {
+    storeMock.insertMessage.mockResolvedValueOnce({ id: 'm1', author: 'writer', kind: 'say', content: 'Casey, help with Rosa.' })
+    storeMock.insertEvent.mockResolvedValueOnce({ id: 'e1' })
+
+    const res = await post('/api/room/project-A/messages', {
+      content: 'Casey, help with Rosa.',
+      characterNames: ['Rosa'],
+      characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+    })
+
+    expect(res.status).toBe(200)
+    expect(storeMock.insertEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'writer_message',
+        payload: expect.objectContaining({
+          characterNames: ['Rosa'],
+          characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+        }),
+      }),
+    )
+  })
 })
 
 describe('POST /api/room/:projectId/proposals/:id/resolve', () => {

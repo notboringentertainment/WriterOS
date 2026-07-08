@@ -44,6 +44,7 @@ function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
     <RoomChannel
       projectId="p1"
       characterNames={['Rosa']}
+      characterBriefs={[{ id: 'r1', name: 'Rosa', want: 'win the contest' }]}
       locksText=""
       onAdoptProposal={onAdoptProposal}
     />,
@@ -59,7 +60,14 @@ describe('RoomChannel proposal adoption ordering', () => {
     fireEvent.change(input, { target: { value: 'keep this thought' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send message to the room' }))
 
-    await waitFor(() => expect(apiMock.sendRoomMessage).toHaveBeenCalledWith('p1', 'keep this thought', ['Rosa']))
+    await waitFor(() =>
+      expect(apiMock.sendRoomMessage).toHaveBeenCalledWith(
+        'p1',
+        'keep this thought',
+        ['Rosa'],
+        [{ id: 'r1', name: 'Rosa', want: 'win the contest' }],
+      ),
+    )
     expect(input).toHaveValue('keep this thought')
     expect(await screen.findByText(/network down/)).toBeInTheDocument()
   })

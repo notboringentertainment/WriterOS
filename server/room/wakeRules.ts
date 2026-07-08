@@ -8,6 +8,9 @@ export const CASEY_ID = 'casey';
 
 // Casey's lane: character psychology fields (§8).
 export const CASEY_CHARACTER_FIELDS = ['want', 'need', 'flaw', 'secret', 'arc'] as const;
+const CASEY_DIRECT_RE = /\bcasey\b/i;
+const CHARACTER_INTENT_RE =
+  /\b(character|protagonist|lead|hero|heroine|cast|arc|want|need|flaw|secret|wound|motivation|desire)\b/i;
 
 const CHARACTER_FIELD_RE = new RegExp(
   String.raw`^characters\[[^\]]+\]\.(${CASEY_CHARACTER_FIELDS.join('|')})$`,
@@ -15,6 +18,16 @@ const CHARACTER_FIELD_RE = new RegExp(
 
 export function isCaseyCharacterField(fieldPath: string): boolean {
   return CHARACTER_FIELD_RE.test(fieldPath);
+}
+
+export function isCaseyWriterMessage(input: { content: string; characterNames?: string[] }): boolean {
+  const content = input.content.trim();
+  if (!content) return false;
+  if (CASEY_DIRECT_RE.test(content) && CHARACTER_INTENT_RE.test(content)) return true;
+  const names = input.characterNames ?? [];
+  return names.some(
+    (name) => name.trim().length > 1 && content.toLowerCase().includes(name.trim().toLowerCase()),
+  );
 }
 
 export type WakeDecision =
@@ -27,16 +40,14 @@ export function decideSpeakers(event: RoomEventRow): WakeDecision[] {
     case 'writer_message': {
       // Morgan always evaluates a writer message (he passes freely).
       const decisions: WakeDecision[] = [{ agentId: MORGAN_ID, mode: 'turn' }];
-      // Casey joins only when a known character is mentioned (D12: literal
-      // name match; the client sends character names in the payload).
+      // Casey joins when a known character is mentioned OR the writer directly
+      // asks for character-psychology work. This keeps the room useful before a
+      // Story Bible is fully filled out.
       const content = String(event.payload.content ?? '');
       const names = Array.isArray(event.payload.characterNames)
         ? (event.payload.characterNames as string[])
         : [];
-      const mentioned = names.some(
-        (name) => name.trim().length > 1 && content.toLowerCase().includes(name.trim().toLowerCase()),
-      );
-      if (mentioned) decisions.push({ agentId: CASEY_ID, mode: 'turn' });
+      if (isCaseyWriterMessage({ content, characterNames: names })) decisions.push({ agentId: CASEY_ID, mode: 'turn' });
       return decisions;
     }
     case 'doc_field_changed': {

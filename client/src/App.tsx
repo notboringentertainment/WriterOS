@@ -870,6 +870,15 @@ export default function App() {
                     characterNames: project.state.documents.storyBible.content.characters
                       .map((c) => c.name)
                       .filter(Boolean),
+                    characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
+                      id: c.id,
+                      name: c.name,
+                      want: c.want,
+                      need: c.need,
+                      flaw: c.flaw,
+                      secret: c.secret,
+                      arc: c.arc,
+                    })),
                     locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
                     onAdoptProposal: handleAdoptRoomProposal,
                   }

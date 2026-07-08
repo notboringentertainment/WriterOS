@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideSpeakers, isCaseyCharacterField } from '../../../server/room/wakeRules'
+import { decideSpeakers, isCaseyCharacterField, isCaseyWriterMessage } from '../../../server/room/wakeRules'
 import type { RoomEventRow } from '../../../server/room/types'
 
 const event = (kind: RoomEventRow['kind'], payload: Record<string, unknown> = {}): RoomEventRow => ({
@@ -41,6 +41,17 @@ describe('decideSpeakers', () => {
       { agentId: 'writingPartner', mode: 'turn' },
       { agentId: 'casey', mode: 'turn' },
     ])
+  })
+
+  it('adds Casey for direct character-psychology requests even before character cards exist', () => {
+    const speakers = decideSpeakers(
+      event('writer_message', { content: "Casey, help me figure out the lead character's want." }),
+    )
+    expect(speakers).toEqual([
+      { agentId: 'writingPartner', mode: 'turn' },
+      { agentId: 'casey', mode: 'turn' },
+    ])
+    expect(isCaseyWriterMessage({ content: 'Casey, is this premise too expensive?' })).toBe(false)
   })
 
   it('wakes Casey on a story bible character psychology change', () => {

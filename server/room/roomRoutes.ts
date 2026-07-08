@@ -75,13 +75,19 @@ export function registerRoomRoutes(app: Express): void {
       const characterNames = Array.isArray(req.body?.characterNames)
         ? (req.body.characterNames as unknown[]).filter((n): n is string => typeof n === 'string')
         : [];
+      const characters = Array.isArray(req.body?.characters)
+        ? (req.body.characters as unknown[]).filter(
+            (c): c is Record<string, unknown> =>
+              !!c && typeof c === 'object' && typeof (c as Record<string, unknown>).id === 'string',
+          )
+        : [];
 
       const message = await store.insertMessage({ projectId, author: 'writer', content });
       broadcast(projectId, { type: 'message', message });
       await store.insertEvent({
         projectId,
         kind: 'writer_message',
-        payload: { content, characterNames, messageId: message.id },
+        payload: { content, characterNames, characters, messageId: message.id },
       });
       res.json({ message });
     } catch (error) {

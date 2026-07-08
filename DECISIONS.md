@@ -76,10 +76,13 @@ idle_tick needs "while a project is open" (§6.2). The room UI holds an SSE
 connection per project; the scheduler treats a project as open iff it has a live
 connection. No heartbeat endpoint, no presence table.
 
-## D12 — Writer-message wake includes Casey only on character mention
-§8 Casey wakes when a "character mentioned in writer_message." Phase 1 check is
-literal: case-insensitive match of any Story Bible character name (sent with the
-message payload) in the text. LLM-grade relevance detection is Phase 2 tuning.
+## D12 — Writer-message wake includes Casey on character intent
+§8 Casey wakes when a "character mentioned in writer_message." That literal
+name match remains, using Story Bible character names sent with the message
+payload. Phase 1 also wakes Casey when the writer directly invokes Casey for
+character-psychology work (`want`, `need`, `flaw`, `secret`, `arc`, motivation,
+lead/protagonist, etc.). This keeps the room useful before the Story Bible is
+fully filled out. LLM-grade relevance detection remains Phase 2 tuning.
 
 ## D13 — project_id is text, not uuid (Codex review P1)
 WriterOS project ids are client-generated strings, not guaranteed UUIDs

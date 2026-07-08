@@ -88,8 +88,33 @@ export function renderChannel(messages: RoomMessageRow[]): string {
 
 export function renderTriggerEvent(event: RoomEventRow): string {
   switch (event.kind) {
-    case 'writer_message':
-      return `TRIGGER: The writer just said (final message in the channel above): ${String(event.payload.content ?? '')}`;
+    case 'writer_message': {
+      const content = String(event.payload.content ?? '');
+      const characters = Array.isArray(event.payload.characters)
+        ? (event.payload.characters as Array<Record<string, unknown>>)
+        : [];
+      const characterContext =
+        characters.length > 0
+          ? [
+              'VISIBLE STORY BIBLE CHARACTER CARDS (use exact ids if filing storyBible proposals):',
+              ...characters.map((c) => {
+                const bits = ['want', 'need', 'flaw', 'secret', 'arc']
+                  .map((field) => {
+                    const value = typeof c[field] === 'string' ? String(c[field]).trim() : '';
+                    return value ? `${field}: ${value}` : null;
+                  })
+                  .filter(Boolean)
+                  .join('; ');
+                return `- ${String(c.name || c.id || 'Unnamed')} [id: ${String(c.id || 'unknown')}]${bits ? ` — ${bits}` : ''}`;
+              }),
+            ].join('\n')
+          : 'VISIBLE STORY BIBLE CHARACTER CARDS: none. If the writer asks for character-field help, do not invent a field path; help them shape the answer in the channel and ask them to create/select a character card before filing a proposal.';
+      return [
+        `TRIGGER: The writer just said (final message in the channel above): ${content}`,
+        characterContext,
+        'If the writer is asking for character psychology help, help actively. If an exact character id is visible and the value is ready, file propose_field_write before you speak. Otherwise speak one useful next step or one sharp question.',
+      ].join('\n');
+    }
     case 'doc_field_changed': {
       const { surface, fieldPath, characterName, oldValue, newValue } = event.payload as Record<string, unknown>;
       return [

@@ -12,6 +12,7 @@ import {
   resolveRoomProposal,
   sendRoomMessage,
   syncStoryLocksBlock,
+  type RoomCharacterBrief,
   type RoomMessage,
   type RoomProposal,
   type RoomStreamEvent,
@@ -21,6 +22,7 @@ import { canApplyProposal } from '../../lib/roomProposals'
 export interface RoomChannelProps {
   projectId: string
   characterNames: string[]
+  characterBriefs?: RoomCharacterBrief[]
   locksText: string
   // Applies the proposal to the local document. Returns false when the field
   // path can't be applied (the proposal is left pending).
@@ -43,7 +45,7 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-export function RoomChannel({ projectId, characterNames, locksText, onAdoptProposal }: RoomChannelProps) {
+export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
@@ -135,7 +137,7 @@ export function RoomChannel({ projectId, characterNames, locksText, onAdoptPropo
     if (!text) return
     setInputText('')
     try {
-      await sendRoomMessage(projectId, text, characterNames)
+      await sendRoomMessage(projectId, text, characterNames, characterBriefs)
       // The message itself arrives via the SSE broadcast.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
