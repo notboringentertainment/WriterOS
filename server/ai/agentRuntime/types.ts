@@ -5,9 +5,18 @@ import type {
   RuntimeDeps,
   SpecialistConsultTrace,
   ToolSpec,
+  ToolTurn,
   ToolUse,
 } from '../morganRuntime/types';
 import type { TraceSink } from '../morganRuntime/trace';
+
+// One model turn, injectable so callers can wrap the default Anthropic client
+// (streaming taps, model overrides, usage accounting) without the loop knowing.
+export type SendTurn = (input: {
+  system: string;
+  messages: unknown[];
+  tools: ToolSpec[];
+}) => Promise<ToolTurn>;
 
 export type AgentRuntimeResult = MorganRuntimeResult;
 
@@ -49,4 +58,6 @@ export interface RunAgentInput {
   trace?: TraceSink;
   runId?: string;
   errorLogLabel?: string;
+  // Optional model-turn override; defaults to the shared Anthropic tool client.
+  sendTurn?: SendTurn;
 }

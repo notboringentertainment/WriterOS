@@ -18,6 +18,9 @@ describe("App Writer's Room layout", () => {
 
     expect(screen.getByRole('heading', { name: 'Outline' })).toBeInTheDocument()
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
+    // Phase 1: the dock opens on the live room channel; 1:1 chats sit below it.
+    expect(screen.getByTestId('room-channel')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByText('Oliver')[0])
     expect(screen.getByText('Oliver Chat')).toBeInTheDocument()
     expect(screen.queryByTestId('specialist-workspace')).not.toBeInTheDocument()
   })

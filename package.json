@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
+    "@supabase/supabase-js": "^2.110.1",
     "@tiptap/core": "^3.22.5",
     "@tiptap/extension-document": "^3.22.5",
     "@tiptap/extension-history": "^3.22.5",

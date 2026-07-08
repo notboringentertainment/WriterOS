@@ -63,6 +63,7 @@ describe('anthropic tool client', () => {
       .mockReturnValueOnce({
         finalMessage: async () => ({
           stop_reason: 'pause_turn',
+          usage: { input_tokens: 11, output_tokens: 7 },
           content: [
             { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'Damascus Gate' } },
             {
@@ -76,14 +77,17 @@ describe('anthropic tool client', () => {
       .mockReturnValueOnce({
         finalMessage: async () => ({
           stop_reason: 'end_turn',
+          usage: { input_tokens: 13, output_tokens: 5 },
           content: [{ type: 'text', text: 'done' }],
         }),
       })
+    const onUsage = vi.fn()
 
     const turn = await sendToolTurn({
       system: 'SYS',
       messages: [userTurn('hi')],
       tools: [{ name: 'web_search', type: 'web_search_20260209', max_uses: 3 } as any],
+      onUsage,
     })
 
     expect(streamMock).toHaveBeenCalledTimes(2)
@@ -95,6 +99,9 @@ describe('anthropic tool client', () => {
     ]))
     expect(turn.stopReason).toBe('end_turn')
     expect(turn.assistantContent).toEqual([{ type: 'text', text: 'done' }])
+    expect(onUsage).toHaveBeenCalledTimes(2)
+    expect(onUsage).toHaveBeenNthCalledWith(1, { inputTokens: 11, outputTokens: 7 })
+    expect(onUsage).toHaveBeenNthCalledWith(2, { inputTokens: 13, outputTokens: 5 })
   })
 
   it('constructs the client with an explicit timeout + retries', async () => {

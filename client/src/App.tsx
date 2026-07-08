@@ -34,6 +34,9 @@ import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, 
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
+import { roomFieldEmitter } from './lib/roomFieldEmitter'
+import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProposals'
+import type { RoomProposal } from './lib/roomApi'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -665,6 +668,20 @@ export default function App() {
     }
   }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
+  // Room proposal adoption (D7): applies the field via the same document path
+  // the writer uses. Deliberately NOT routed through onContentPatch — adopted
+  // proposals must not re-emit doc_field_changed back into the room.
+  const handleAdoptRoomProposal = useCallback((proposal: RoomProposal): boolean => {
+    const next = applyProposalToStoryBible(
+      project.state.documents.storyBible.content,
+      proposal.field_path,
+      proposal.proposed_value,
+    )
+    if (!next) return false
+    project.setStoryBibleDocument(() => next)
+    return true
+  }, [project])
+
   const handleSpecialistSend = useCallback(async (specialistId: AgentId, text: string) => {
     // Snapshot BEFORE appending
     const conversationHistory = historyFromTranscript(project.state.agents[specialistId].transcript)
@@ -765,7 +782,17 @@ export default function App() {
             projectFormat={project.state.meta.format}
             onProjectFormatChange={project.setProjectFormat}
             onContentPatch={(patch) =>
-              project.setStoryBibleDocument((content) => ({ ...content, ...patch }))
+              project.setStoryBibleDocument((content) => {
+                const next = { ...content, ...patch }
+                // Room event source (§6.1): diff character psychology fields
+                // and emit doc_field_changed with a leading-edge 90s debounce.
+                // Idempotent per identical (prev, next) pair, so StrictMode's
+                // double-invoke of this updater cannot double-fire.
+                if (project.activeProjectId) {
+                  roomFieldEmitter.observe(project.activeProjectId, content, next)
+                }
+                return next
+              })
             }
             onMigrateLegacyStoryBible={project.migrateStoryBibleLegacyToDocument}
             onSectionChange={shellState.setStoryBibleSection}
@@ -836,6 +863,27 @@ export default function App() {
             projectState={project.state}
             onSendToSpecialist={handleSpecialistSend}
             onClearTranscript={project.clearTranscript}
+            roomProps={
+              project.activeProjectId
+                ? {
+                    projectId: project.activeProjectId,
+                    characterNames: project.state.documents.storyBible.content.characters
+                      .map((c) => c.name)
+                      .filter(Boolean),
+                    characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
+                      id: c.id,
+                      name: c.name,
+                      want: c.want,
+                      need: c.need,
+                      flaw: c.flaw,
+                      secret: c.secret,
+                      arc: c.arc,
+                    })),
+                    locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
+                    onAdoptProposal: handleAdoptRoomProposal,
+                  }
+                : undefined
+            }
           />
         )}
       </div>

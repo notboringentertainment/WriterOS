@@ -52,9 +52,10 @@ async function runLoop(
   ];
   const consultLedger = new Map<string, SpecialistConsultTrace>();
   const toolset = input.toolset;
+  const sendTurn = input.sendTurn ?? sendToolTurn;
 
   for (let i = 0; i < MAX_ITERS; i++) {
-    const turn = await sendToolTurn({ system: input.systemPrompt, messages, tools: toolset.tools });
+    const turn = await sendTurn({ system: input.systemPrompt, messages, tools: toolset.tools });
 
     if (turn.toolUses.length === 0) {
       return null;

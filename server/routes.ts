@@ -14,6 +14,7 @@ import { WorkspaceLocationSchema } from "@shared/workspaceLocation";
 import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
+import { registerRoomRoutes } from "./room/roomRoutes";
 
 const openaiService = new OpenAIService();
 
@@ -865,6 +866,10 @@ function personaResponseBody(response: PersonaResponse) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
+  // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
+  registerRoomRoutes(app);
+
   // Chat with persona
   app.post("/api/chat", async (req, res) => {
     try {

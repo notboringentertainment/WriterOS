@@ -43,6 +43,14 @@ export async function sendStreamingMessage(input: {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  // Optional model override — the room's digest tier passes a cheap model here;
+  // absent, behavior is identical to before this param existed.
+  model?: string;
+  // Optional raw stream-event tap — the room runtime extracts live `speak`
+  // input deltas for SSE. Absent, nothing changes.
+  onStreamEvent?: (event: Anthropic.RawMessageStreamEvent) => void;
+  // Fired once per internal API call, including pause_turn continuations.
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
 }): Promise<Anthropic.Message> {
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -55,7 +63,7 @@ export async function sendStreamingMessage(input: {
 
   for (let i = 0; i <= MAX_PAUSE_TURNS; i += 1) {
     const stream = client.messages.stream({
-      model: ANTHROPIC_MODEL,
+      model: input.model ?? ANTHROPIC_MODEL,
       max_tokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(input.system ? { system: input.system } : {}),
       messages: messages as Anthropic.MessageParam[],
@@ -63,7 +71,17 @@ export async function sendStreamingMessage(input: {
       ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),
     }, input.signal ? { signal: input.signal } : undefined);
 
+    if (input.onStreamEvent) {
+      stream.on('streamEvent', input.onStreamEvent);
+    }
+
     response = await stream.finalMessage();
+    if (input.onUsage && response.usage) {
+      input.onUsage({
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+      });
+    }
     if (response.stop_reason !== 'pause_turn') return response;
     messages = [...messages, assistantTurn(response.content)];
   }
@@ -76,12 +94,19 @@ export async function sendToolTurn(input: {
   messages: unknown[];
   tools: AnthropicToolSpec[];
   maxTokens?: number;
+  model?: string;
+  onStreamEvent?: (event: Anthropic.RawMessageStreamEvent) => void;
+  // Token accounting tap for the room's agent_turn_ledger. Absent, no change.
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
 }): Promise<ToolTurn> {
   const response = await sendStreamingMessage({
     system: input.system,
     messages: input.messages as Anthropic.MessageParam[],
     tools: input.tools,
     maxTokens: input.maxTokens,
+    model: input.model,
+    onStreamEvent: input.onStreamEvent,
+    onUsage: input.onUsage,
   });
 
   const toolUses: ToolUse[] = [];
