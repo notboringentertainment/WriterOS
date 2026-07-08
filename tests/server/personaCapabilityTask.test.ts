@@ -7,6 +7,7 @@ import {
   type PersonaCapabilitySynthesisInput,
 } from '../../server/persona-capability/runPersonaTask'
 import type { PersonaCapabilityRequest } from '@shared/personaCapability'
+import type { NativeResearchToolResult } from '../../server/ai/agentRuntime/tools/research'
 
 function makeRequest(overrides: Partial<PersonaCapabilityRequest> = {}): PersonaCapabilityRequest {
   return {
@@ -18,13 +19,6 @@ function makeRequest(overrides: Partial<PersonaCapabilityRequest> = {}): Persona
     clientRequestId: 'req-1',
     ...overrides,
   }
-}
-
-function okResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
 }
 
 describe('parseResearchTaskResult', () => {
@@ -88,38 +82,41 @@ describe('parseResearchTaskResult', () => {
 })
 
 describe('runPersonaTask', () => {
-  it('includes project format in the bounded research prompt', async () => {
+  it('passes the bounded request into the native research tool', async () => {
     const state = defaultProjectState()
     state.meta.format = 'series'
-    const fetchImpl = vi.fn().mockResolvedValue(okResponse({
-      response: JSON.stringify({
+    const runResearch = vi.fn(async (): Promise<NativeResearchToolResult> => ({
+      taskResult: {
         findings: [],
         sources: [],
         missing: [],
         unverified: [],
-      }),
+      },
+      citedSourceUrls: [],
     }))
 
     await runPersonaTask(makeRequest({ projectContext: buildProjectContext(state) }), {
-      fetchImpl,
+      runResearch,
       synthesizeFinal: vi.fn(async () => ({ finalMessage: 'Zoe final.', citedLabels: [] })),
-      baseUrl: 'http://localhost:8080',
     })
 
-    const upstreamBody = JSON.parse(fetchImpl.mock.calls[0][1].body)
-    expect(upstreamBody.message).toContain('Format: series')
+    expect(runResearch).toHaveBeenCalledWith(expect.objectContaining({
+      projectContext: expect.objectContaining({ format: 'series' }),
+      taskKind: 'research_world_context',
+    }), expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
-  it('calls OpenSwarm with a fresh bounded task and returns only synthesized final text plus receipt', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(okResponse({
-      response: JSON.stringify({
+  it('calls the native research tool and returns only synthesized final text plus receipt', async () => {
+    const runResearch = vi.fn(async (): Promise<NativeResearchToolResult> => ({
+      taskResult: {
         findings: [
           { claim: 'The present gate is commonly dated to the Ottoman rebuilding.', sourceLabel: 'Archive', verified: true },
         ],
         sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
         missing: [],
         unverified: [],
-      }),
+      },
+      citedSourceUrls: [],
     }))
     const synthesizeFinal = vi.fn(async (input: PersonaCapabilitySynthesisInput) => ({
       finalMessage: `Zoe final with ${input.sources[0].label}. [Archive]`,
@@ -127,25 +124,10 @@ describe('runPersonaTask', () => {
     }))
 
     const response = await runPersonaTask(makeRequest(), {
-      fetchImpl,
+      runResearch,
       synthesizeFinal,
-      baseUrl: 'http://localhost:8080',
       now: () => new Date('2026-05-14T20:00:00.000Z'),
     })
-
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'http://localhost:8080/open-swarm/get_response',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.any(String),
-      })
-    )
-    const upstreamBody = JSON.parse(fetchImpl.mock.calls[0][1].body)
-    expect(upstreamBody).toMatchObject({
-      recipient_agent: 'Deep Research Agent',
-      chat_history: [],
-    })
-    expect(upstreamBody).not.toHaveProperty('thread_id')
 
     expect(response.status).toBe('ok')
     expect(response.finalMessage).toBe('Zoe final with Archive. [Archive]')
@@ -155,32 +137,120 @@ describe('runPersonaTask', () => {
     ])
   })
 
-  it('turns upstream errors into a soft-fail receipt without leaking raw upstream content', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response('raw upstream failure text', { status: 502 }))
+  it('uses research citation URLs as receipt citation evidence even when synthesis cites by label', async () => {
+    const runResearch = vi.fn(async (): Promise<NativeResearchToolResult> => ({
+      taskResult: {
+        findings: [
+          { claim: 'The present gate is commonly dated to the Ottoman rebuilding.', sourceLabel: 'Archive', verified: true },
+        ],
+        sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
+        missing: [],
+        unverified: [],
+      },
+      citedSourceUrls: ['https://example.com/archive'],
+    }))
 
     const response = await runPersonaTask(makeRequest(), {
-      fetchImpl,
+      runResearch,
+      synthesizeFinal: vi.fn(async () => ({ finalMessage: 'Zoe final.', citedLabels: [] })),
+    })
+
+    expect(response.receipt.sources).toEqual([
+      { label: 'Archive', url: 'https://example.com/archive', citedInFinal: true },
+    ])
+  })
+
+  it('turns research tool errors into a soft-fail receipt without leaking raw upstream content', async () => {
+    const runResearch = vi.fn().mockRejectedValue(
+      Object.assign(new Error('raw web_search_tool_result_error max_uses_exceeded'), { failureReason: 'upstream_error' })
+    )
+
+    const response = await runPersonaTask(makeRequest(), {
+      runResearch,
       synthesizeFinal: vi.fn(async () => ({ finalMessage: 'Zoe fallback.', citedLabels: [] })),
-      baseUrl: 'http://localhost:8080',
     })
 
     expect(response.status).toBe('soft_fail')
     expect(response.receipt.failureReason).toBe('upstream_error')
     expect(response.receipt.sources).toEqual([])
-    expect(JSON.stringify(response)).not.toContain('raw upstream failure text')
+    expect(JSON.stringify(response)).not.toContain('web_search_tool_result_error')
+    expect(JSON.stringify(response)).not.toContain('max_uses_exceeded')
   })
 
-  it('returns a timeout receipt when the upstream request is aborted', async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError'))
+  it('returns a timeout receipt when the native research tool times out', async () => {
+    const runResearch = vi.fn().mockRejectedValue(Object.assign(new Error('research timeout'), { failureReason: 'timeout' }))
 
     const response = await runPersonaTask(makeRequest(), {
-      fetchImpl,
+      runResearch,
       synthesizeFinal: vi.fn(async () => ({ finalMessage: 'Zoe timeout fallback.', citedLabels: [] })),
-      baseUrl: 'http://localhost:8080',
     })
 
     expect(response.status).toBe('timeout')
     expect(response.receipt.failureReason).toBe('timeout')
     expect(response.finalMessage).toBe('Zoe timeout fallback.')
+  })
+
+  it('returns a timeout receipt when research resolves after the soft timeout fires', async () => {
+    vi.useFakeTimers()
+    const runResearch = vi.fn(async (): Promise<NativeResearchToolResult> => {
+      await new Promise(resolve => setTimeout(resolve, 240_001))
+      return {
+        taskResult: {
+          findings: [{ claim: 'Too late to use.', sourceLabel: 'Archive', verified: true }],
+          sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
+          missing: [],
+          unverified: [],
+        },
+        citedSourceUrls: [],
+      }
+    })
+    const synthesizeFinal = vi.fn(async () => ({ finalMessage: 'Zoe timeout fallback.', citedLabels: [] }))
+
+    try {
+      const promise = runPersonaTask(makeRequest(), {
+        runResearch,
+        synthesizeFinal,
+      })
+      await vi.advanceTimersByTimeAsync(240_001)
+      const response = await promise
+
+      expect(response.status).toBe('timeout')
+      expect(response.receipt.failureReason).toBe('timeout')
+      expect(response.receipt.sources).toEqual([])
+      expect(synthesizeFinal).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'timeout',
+        sources: [],
+      }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns cancelled and skips synthesis when the client aborts before synthesis', async () => {
+    const controller = new AbortController()
+    const runResearch = vi.fn(async (): Promise<NativeResearchToolResult> => {
+      controller.abort()
+      return {
+        taskResult: {
+          findings: [{ claim: 'Should not synthesize.', sourceLabel: 'Archive', verified: true }],
+          sources: [{ label: 'Archive', url: 'https://example.com/archive' }],
+          missing: [],
+          unverified: [],
+        },
+        citedSourceUrls: [],
+      }
+    })
+    const synthesizeFinal = vi.fn(async () => ({ finalMessage: 'Should not run.', citedLabels: [] }))
+
+    const response = await runPersonaTask(makeRequest(), {
+      runResearch,
+      synthesizeFinal,
+      signal: controller.signal,
+    })
+
+    expect(response.status).toBe('cancelled')
+    expect(response.receipt.failureReason).toBe('aborted')
+    expect(response.finalMessage).toBe('')
+    expect(synthesizeFinal).not.toHaveBeenCalled()
   })
 })
