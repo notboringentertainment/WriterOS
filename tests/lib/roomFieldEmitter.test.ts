@@ -102,4 +102,18 @@ describe('createRoomFieldEmitter', () => {
     expect(emitted).toHaveLength(2)
     expect(emitted[1]).toMatchObject({ oldValue: 'b', newValue: 'c' })
   })
+
+  it('clears a stale trailing timer when a fresh window opens', () => {
+    vi.setSystemTime(0)
+    emitter.observe('p1', content([character('r1', { want: 'a' })]), content([character('r1', { want: 'b' })]))
+    vi.setSystemTime(10)
+    emitter.observe('p1', content([character('r1', { want: 'b' })]), content([character('r1', { want: 'c' })]))
+
+    vi.setSystemTime(90_001)
+    emitter.observe('p1', content([character('r1', { want: 'c' })]), content([character('r1', { want: 'd' })]))
+    expect(emitted.map((e) => e.newValue)).toEqual(['b', 'd'])
+
+    vi.advanceTimersByTime(90_000)
+    expect(emitted.map((e) => e.newValue)).toEqual(['b', 'd'])
+  })
 })

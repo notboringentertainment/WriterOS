@@ -98,11 +98,19 @@ export async function resolveRoomProposal(
 }
 
 export async function syncStoryLocksBlock(projectId: string, locksText: string): Promise<void> {
-  await fetch(`/api/room/${encodeURIComponent(projectId)}/blocks/story-locks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: locksText }),
-  }).catch(() => {})
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/blocks/story-locks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: locksText }),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error(`[roomApi] story-locks sync failed: ${res.status} ${text.slice(0, 160)}`)
+    }
+  } catch (err) {
+    console.error('[roomApi] story-locks sync failed:', err)
+  }
 }
 
 export function openRoomStream(

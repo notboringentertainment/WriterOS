@@ -18,19 +18,19 @@ export async function runCaseyDigest(input: {
 }): Promise<void> {
   const { projectId, event } = input;
 
-  const [privateBlocks, channel] = await Promise.all([
-    store.getPrivateBlocks(projectId, CASEY_ID),
-    store.listRecentMessages(projectId, 50),
-  ]);
-
-  const persona = PERSONAS[CASEY_ID];
-  const laneNotes = privateBlocks.find((b) => b.label === 'lane_notes')?.value ?? '';
-  const rapport = privateBlocks.find((b) => b.label === 'writer_rapport')?.value ?? '';
-  const transcript = channel
-    .map((m) => `${m.author === 'writer' ? 'WRITER' : m.author}: ${m.content}`)
-    .join('\n');
-
   try {
+    const [privateBlocks, channel] = await Promise.all([
+      store.getPrivateBlocks(projectId, CASEY_ID),
+      store.listRecentMessages(projectId, 50),
+    ]);
+
+    const persona = PERSONAS[CASEY_ID];
+    const laneNotes = privateBlocks.find((b) => b.label === 'lane_notes')?.value ?? '';
+    const rapport = privateBlocks.find((b) => b.label === 'writer_rapport')?.value ?? '';
+    const transcript = channel
+      .map((m) => `${m.author === 'writer' ? 'WRITER' : m.author}: ${m.content}`)
+      .join('\n');
+
     const response = await sendStreamingMessage({
       model: DIGEST_MODEL,
       maxTokens: 1200,

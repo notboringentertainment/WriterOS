@@ -15,8 +15,8 @@ export interface LockCheckResult {
 
 const cache = new Map<string, LockCheckResult>();
 
-function cacheKey(locksText: string, fieldPath: string, proposedValue: string): string {
-  return createHash('sha256').update(`${locksText}\u0000${fieldPath}\u0000${proposedValue}`).digest('hex');
+function cacheKey(locksText: string, surface: string, fieldPath: string, proposedValue: string): string {
+  return createHash('sha256').update(`${locksText}\u0000${surface}\u0000${fieldPath}\u0000${proposedValue}`).digest('hex');
 }
 
 export async function checkProposalAgainstLocks(input: {
@@ -28,7 +28,7 @@ export async function checkProposalAgainstLocks(input: {
   const locks = input.locksText.trim();
   if (!locks) return { blocked: false };
 
-  const key = cacheKey(locks, input.fieldPath, input.proposedValue);
+  const key = cacheKey(locks, input.surface, input.fieldPath, input.proposedValue);
   const cached = cache.get(key);
   if (cached) return cached;
 

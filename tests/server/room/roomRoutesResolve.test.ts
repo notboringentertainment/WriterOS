@@ -59,6 +59,54 @@ function post(path: string, body: unknown): Promise<{ status: number; json: Reco
   })
 }
 
+function get(path: string): Promise<{ status: number; json: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port, path, method: 'GET' },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c) => chunks.push(Buffer.from(c)))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString() || '{}') }))
+      },
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+describe('GET /api/room/:projectId/messages', () => {
+  it('falls back to 50 for negative limits and caps large positive limits', async () => {
+    storeMock.listRecentMessages.mockResolvedValue([])
+
+    await get('/api/room/project-A/messages?limit=-5')
+    await get('/api/room/project-A/messages?limit=999')
+
+    expect(storeMock.listRecentMessages).toHaveBeenNthCalledWith(1, 'project-A', 50)
+    expect(storeMock.listRecentMessages).toHaveBeenNthCalledWith(2, 'project-A', 200)
+  })
+})
+
+describe('GET /api/room/:projectId/proposals', () => {
+  it('does not forward invalid status filters', async () => {
+    storeMock.listProposals.mockResolvedValue([])
+
+    const res = await get('/api/room/project-A/proposals?status=wat')
+
+    expect(res.status).toBe(200)
+    expect(storeMock.listProposals).toHaveBeenCalledWith('project-A', undefined)
+  })
+})
+
+describe('POST /api/room/:projectId/messages', () => {
+  it('rejects oversized writer messages before inserting anything', async () => {
+    const res = await post('/api/room/project-A/messages', { content: 'x'.repeat(4001), characterNames: [] })
+
+    expect(res.status).toBe(413)
+    expect(storeMock.insertMessage).not.toHaveBeenCalled()
+    expect(storeMock.insertEvent).not.toHaveBeenCalled()
+  })
+})
+
 describe('POST /api/room/:projectId/proposals/:id/resolve', () => {
   it('passes the route projectId into the store (cross-project scoping)', async () => {
     storeMock.resolveProposal.mockResolvedValueOnce({

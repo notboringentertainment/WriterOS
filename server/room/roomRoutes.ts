@@ -11,6 +11,8 @@ import { isRoomConfigured } from './supabaseClient';
 import type { RoomEventKind } from './types';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
+const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
+const MAX_WRITER_MESSAGE_CHARS = 4000;
 
 function requireRoom(res: Response): boolean {
   if (isRoomConfigured()) return true;
@@ -30,7 +32,8 @@ export function registerRoomRoutes(app: Express): void {
   app.get('/api/room/:projectId/messages', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+      const parsedLimit = parseInt(String(req.query.limit ?? '50'), 10);
+      const limit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
       const messages = await store.listRecentMessages(projectIdOf(req), limit);
       res.json({ messages });
     } catch (error) {
@@ -42,7 +45,11 @@ export function registerRoomRoutes(app: Express): void {
   app.get('/api/room/:projectId/proposals', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      const status = typeof req.query.status === 'string' ? (req.query.status as never) : undefined;
+      const rawStatus = req.query.status;
+      const status =
+        typeof rawStatus === 'string' && (PROPOSAL_STATUSES as readonly string[]).includes(rawStatus)
+          ? (rawStatus as (typeof PROPOSAL_STATUSES)[number])
+          : undefined;
       const proposals = await store.listProposals(projectIdOf(req), status);
       res.json({ proposals });
     } catch (error) {
@@ -59,6 +66,10 @@ export function registerRoomRoutes(app: Express): void {
       const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
       if (!content) {
         res.status(400).json({ message: 'content is required.' });
+        return;
+      }
+      if (content.length > MAX_WRITER_MESSAGE_CHARS) {
+        res.status(413).json({ message: `content must be ${MAX_WRITER_MESSAGE_CHARS} characters or fewer.` });
         return;
       }
       const characterNames = Array.isArray(req.body?.characterNames)

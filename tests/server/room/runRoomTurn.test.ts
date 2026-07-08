@@ -146,4 +146,18 @@ describe('runRoomTurn', () => {
     expect(storeMock.insertMessage).toHaveBeenCalledTimes(1)
     expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'spoke' }))
   })
+
+  it('clears the streaming turn and ledgers errored when message persistence fails', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    storeMock.insertMessage.mockRejectedValueOnce(new Error('insert failed'))
+    sendToolTurnMock.mockResolvedValueOnce(
+      toolTurn([{ id: 'u1', name: 'speak', input: { content: 'This should stream before insert fails.' } }]),
+    )
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event })
+
+    expect(broadcastMock).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'turn_ended', action: 'errored' }))
+    expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'errored' }))
+    consoleSpy.mockRestore()
+  })
 })

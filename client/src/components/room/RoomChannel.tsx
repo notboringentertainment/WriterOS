@@ -139,6 +139,7 @@ export function RoomChannel({ projectId, characterNames, locksText, onAdoptPropo
       // The message itself arrives via the SSE broadcast.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
+      setInputText(text)
     }
   }
 

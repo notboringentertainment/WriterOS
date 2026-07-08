@@ -31,7 +31,7 @@ const pendingProposal: RoomProposal = {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
   apiMock.fetchRoomProposals.mockResolvedValue([pendingProposal])
   apiMock.openRoomStream.mockReturnValue(() => {})
@@ -51,6 +51,19 @@ function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
 }
 
 describe('RoomChannel proposal adoption ordering', () => {
+  it('restores the writer draft when send fails', async () => {
+    apiMock.sendRoomMessage.mockRejectedValueOnce(new Error('network down'))
+    renderChannel(vi.fn())
+
+    const input = screen.getByPlaceholderText('Say something to the room…')
+    fireEvent.change(input, { target: { value: 'keep this thought' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message to the room' }))
+
+    await waitFor(() => expect(apiMock.sendRoomMessage).toHaveBeenCalledWith('p1', 'keep this thought', ['Rosa']))
+    expect(input).toHaveValue('keep this thought')
+    expect(await screen.findByText(/network down/)).toBeInTheDocument()
+  })
+
   it('does NOT write the document when the server resolve fails', async () => {
     apiMock.resolveRoomProposal.mockRejectedValueOnce(new Error('room api 409: not pending'))
     const onAdopt = vi.fn().mockReturnValue(true)

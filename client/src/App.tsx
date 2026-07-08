@@ -672,14 +672,14 @@ export default function App() {
   // the writer uses. Deliberately NOT routed through onContentPatch — adopted
   // proposals must not re-emit doc_field_changed back into the room.
   const handleAdoptRoomProposal = useCallback((proposal: RoomProposal): boolean => {
-    let applied = false
-    project.setStoryBibleDocument((content) => {
-      const next = applyProposalToStoryBible(content, proposal.field_path, proposal.proposed_value)
-      if (!next) return content
-      applied = true
-      return next
-    })
-    return applied
+    const next = applyProposalToStoryBible(
+      project.state.documents.storyBible.content,
+      proposal.field_path,
+      proposal.proposed_value,
+    )
+    if (!next) return false
+    project.setStoryBibleDocument(() => next)
+    return true
   }, [project])
 
   const handleSpecialistSend = useCallback(async (specialistId: AgentId, text: string) => {

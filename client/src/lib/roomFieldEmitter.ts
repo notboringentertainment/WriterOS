@@ -70,6 +70,7 @@ export function createRoomFieldEmitter(emit: EmitFn = defaultEmit, now: () => nu
         const nowMs = now()
 
         if (!existing || nowMs - existing.openedAt >= DEBOUNCE_MS) {
+          if (existing?.trailingTimer) clearTimeout(existing.trailingTimer)
           // Leading edge: emit immediately, open a suppression window.
           const window: FieldWindow = {
             openedAt: nowMs,

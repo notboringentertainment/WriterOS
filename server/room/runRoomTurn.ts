@@ -75,35 +75,46 @@ export async function runRoomTurn(input: {
   });
 
   let action: LedgerAction;
-  if (!result.ok) {
+  let messageLanded = false;
+  try {
+    if (!result.ok) {
+      action = 'errored';
+    } else if (recorder.speak) {
+      // Channel insert happens HERE, after the guard accepted the turn.
+      const message = await store.insertMessage({
+        projectId,
+        author: agentId,
+        content: recorder.speak.content,
+        replyTo: recorder.speak.replyTo,
+      });
+      broadcast(projectId, { type: 'message', message, turnId });
+      messageLanded = true;
+      action = 'spoke';
+    } else if (recorder.proposalsFiled > 0) {
+      action = 'proposed';
+    } else {
+      action = 'passed';
+    }
+  } catch (error) {
+    console.error(`[room.turn] persistence failed (${agentId}):`, error);
     action = 'errored';
-  } else if (recorder.speak) {
-    // Channel insert happens HERE, after the guard accepted the turn.
-    const message = await store.insertMessage({
-      projectId,
-      author: agentId,
-      content: recorder.speak.content,
-      replyTo: recorder.speak.replyTo,
-    });
-    broadcast(projectId, { type: 'message', message, turnId });
-    action = 'spoke';
-  } else if (recorder.proposalsFiled > 0) {
-    action = 'proposed';
-  } else {
-    action = 'passed';
   }
 
-  if (action !== 'spoke') {
+  if (!messageLanded) {
     // No message landed for this turn — tell the UI to drop provisional bubbles.
     broadcast(projectId, { type: 'turn_ended', agentId, turnId, action });
   }
 
-  await store.insertLedger({
-    projectId,
-    agentId,
-    action,
-    triggerEvent: event.id,
-    inputTokens: recorder.inputTokens || undefined,
-    outputTokens: recorder.outputTokens || undefined,
-  });
+  try {
+    await store.insertLedger({
+      projectId,
+      agentId,
+      action,
+      triggerEvent: event.id,
+      inputTokens: recorder.inputTokens || undefined,
+      outputTokens: recorder.outputTokens || undefined,
+    });
+  } catch (error) {
+    console.error(`[room.turn] ledger insert failed (${agentId}):`, error);
+  }
 }
