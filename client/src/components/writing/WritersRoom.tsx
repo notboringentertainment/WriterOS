@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { PERSONAS } from '@shared/personas'
 import type { AgentId, ProjectState } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
+import { RoomChannel, type RoomChannelProps } from '../room/RoomChannel'
 
 type SpecialistId = 'sam' | 'casey' | 'oliver' | 'maya' | 'zoe' | 'alex'
+type SelectedId = SpecialistId | 'room'
 
 const SPECIALISTS: SpecialistId[] = ['sam', 'casey', 'oliver', 'maya', 'zoe', 'alex']
 
@@ -12,6 +14,8 @@ interface WritersRoomProps {
   onSendToSpecialist: (specialistId: SpecialistId, text: string) => void
   onClearTranscript?: (specialistId: AgentId) => void
   mode?: 'full' | 'dock'
+  // Live room channel (Phase 1 spike). Absent = entry hidden, 1:1 chats only.
+  roomProps?: RoomChannelProps
 }
 
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
@@ -51,13 +55,15 @@ export function WritersRoom({
   onSendToSpecialist,
   onClearTranscript,
   mode = 'full',
+  roomProps,
 }: WritersRoomProps) {
-  const [selectedId, setSelectedId] = useState<SpecialistId>('oliver')
+  const [selectedId, setSelectedId] = useState<SelectedId>(roomProps ? 'room' : 'oliver')
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
 
-  const persona = PERSONAS[selectedId]
-  const transcript = projectState.agents[selectedId].transcript
+  const specialistId: SpecialistId = selectedId === 'room' ? 'oliver' : selectedId
+  const persona = PERSONAS[specialistId]
+  const transcript = projectState.agents[specialistId].transcript
 
   // Auto-scroll the specialist transcript to the latest message — on new
   // messages and when switching specialists (which swaps the whole transcript).
@@ -66,14 +72,14 @@ export function WritersRoom({
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
     }
   }, [transcript.length, selectedId])
-  const contextSummary = getContextSummary(selectedId, projectState)
+  const contextSummary = getContextSummary(specialistId, projectState)
   const docked = mode === 'dock'
   const canSend = inputText.trim().length > 0
 
   function handleSend() {
     const text = inputText.trim()
     if (!text) return
-    onSendToSpecialist(selectedId, text)
+    onSendToSpecialist(specialistId, text)
     setInputText('')
   }
 
@@ -81,6 +87,18 @@ export function WritersRoom({
     <div style={docked ? styles.dockRoot : styles.root}>
       {/* Left nav */}
       <nav style={docked ? styles.dockNav : styles.nav} data-testid="specialist-nav">
+        {roomProps && (
+          <button
+            onClick={() => setSelectedId('room')}
+            style={{
+              ...styles.navBtn,
+              ...(selectedId === 'room' ? styles.navBtnActive : {}),
+            }}
+          >
+            <span style={styles.navName}>The Room</span>
+            <span style={styles.navRole}>Live channel</span>
+          </button>
+        )}
         {SPECIALISTS.map(id => {
           const p = PERSONAS[id]
           return (
@@ -119,7 +137,10 @@ export function WritersRoom({
         </div>
       )}
 
-      {/* Right chat */}
+      {/* Right pane: live room channel or 1:1 specialist chat */}
+      {selectedId === 'room' && roomProps ? (
+        <RoomChannel {...roomProps} />
+      ) : (
       <div style={docked ? styles.dockChat : styles.chat}>
         <div style={styles.chatHeader}>
           <span style={styles.chatTitle}>
@@ -130,7 +151,7 @@ export function WritersRoom({
             <button
               type="button"
               style={styles.clearButton}
-              onClick={() => onClearTranscript(selectedId)}
+              onClick={() => onClearTranscript(specialistId)}
             >
               Clear
             </button>
@@ -180,6 +201,7 @@ export function WritersRoom({
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }

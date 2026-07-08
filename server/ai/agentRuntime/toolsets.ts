@@ -13,9 +13,11 @@ const ONE_AT_A_TIME =
 const PREMATURE_FINAL =
   'You called respond_to_writer before seeing the specialist answer. Wait for the askSpecialist result, then call respond_to_writer with your synthesized answer.';
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const ATTRIBUTION_PATTERNS = [
+// Exported for reuse: the room runtime applies the same patterns against
+// channel-author evidence instead of a consult ledger (§7.2).
+export const ATTRIBUTION_PATTERNS = [
   (name: string) => String.raw`\b(?:I|we|Morgan)\s+(?:asked|consulted|called|checked with|brought in)\s+${name}\b`,
   (name: string) => String.raw`\b(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\s+from\s+${name}\b`,
   (name: string) => String.raw`\b${name}'s\s+(?:read|take|view|note|notes|question|questions|diagnosis|assessment|analysis)\b`,
