@@ -2,7 +2,7 @@
 // Row shapes mirror the §A4 + §A7.2 Supabase schema. These types are the
 // contract between the interview store layer and future runtime/UI code.
 
-import type { ProposalRow } from '../types';
+import type { ProposalKind, ProposalOrigin, ProposalRow } from '../types';
 
 // ---- §A4 session state machine ----
 
@@ -51,10 +51,6 @@ export const DEFAULT_INTERVIEW_CURSOR: Readonly<InterviewCursor> = Object.freeze
 // ---- §A7.2 transcript entry ----
 
 export type AnswerDisposition = 'field_mapped' | 'seed_color' | 'skipped_delegated';
-
-export type ProposalOrigin = 'seed' | 'extrapolated' | 'invented';
-
-export type ProposalKind = 'ambient_suggestion' | 'interview_answer';
 
 export interface TranscriptEntry {
   question_id: string;

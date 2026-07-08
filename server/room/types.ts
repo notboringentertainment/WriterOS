@@ -43,6 +43,8 @@ export interface RoomEventRow {
 }
 
 export type ProposalStatus = 'pending' | 'adopted' | 'rejected' | 'superseded' | 'blocked';
+export type ProposalKind = 'ambient_suggestion' | 'interview_answer';
+export type ProposalOrigin = 'seed' | 'extrapolated' | 'invented';
 
 export interface ProposalRow {
   id: string;
@@ -51,9 +53,15 @@ export interface ProposalRow {
   surface: string; // 'storyBible' | 'outline' | 'synopsis' | 'treatment'
   field_path: string; // e.g. 'characters[ace].want'
   proposed_value: string;
+  // Writer-confirmed/edited value. Consumers applying an adopted proposal should use resolved_value ?? proposed_value.
+  resolved_value?: string | null;
   rationale: string;
   status: ProposalStatus;
   resolved_at: string | null;
+  kind?: ProposalKind;
+  session_id?: string | null;
+  question_id?: string | null;
+  origin?: ProposalOrigin | null;
   created_at: string;
 }
 

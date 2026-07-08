@@ -5,6 +5,8 @@ import { getRoomDb } from './supabaseClient';
 import type {
   LedgerAction,
   MemoryBlockRow,
+  ProposalKind,
+  ProposalOrigin,
   ProposalRow,
   ProposalStatus,
   RoomEventKind,
@@ -203,18 +205,28 @@ export async function insertProposal(input: {
   proposedValue: string;
   rationale: string;
   status?: ProposalStatus;
+  kind?: ProposalKind;
+  sessionId?: string;
+  questionId?: string;
+  origin?: ProposalOrigin;
 }): Promise<ProposalRow> {
+  const insert: Record<string, unknown> = {
+    project_id: input.projectId,
+    agent_id: input.agentId,
+    surface: input.surface,
+    field_path: input.fieldPath,
+    proposed_value: input.proposedValue,
+    rationale: input.rationale,
+    status: input.status ?? 'pending',
+  };
+  if (input.kind !== undefined) insert.kind = input.kind;
+  if (input.sessionId !== undefined) insert.session_id = input.sessionId;
+  if (input.questionId !== undefined) insert.question_id = input.questionId;
+  if (input.origin !== undefined) insert.origin = input.origin;
+
   const res = await getRoomDb()
     .from('proposals')
-    .insert({
-      project_id: input.projectId,
-      agent_id: input.agentId,
-      surface: input.surface,
-      field_path: input.fieldPath,
-      proposed_value: input.proposedValue,
-      rationale: input.rationale,
-      status: input.status ?? 'pending',
-    })
+    .insert(insert)
     .select()
     .single();
   return throwOnError(res, 'insertProposal') as ProposalRow;
@@ -227,10 +239,15 @@ export async function resolveProposal(
   projectId: string,
   id: string,
   status: 'adopted' | 'rejected',
+  opts?: { resolvedValue?: string; origin?: ProposalOrigin },
 ): Promise<ProposalRow | null> {
+  const update: Record<string, unknown> = { status, resolved_at: new Date().toISOString() };
+  if (opts?.resolvedValue !== undefined) update.resolved_value = opts.resolvedValue;
+  if (opts?.origin !== undefined) update.origin = opts.origin;
+
   const res = await getRoomDb()
     .from('proposals')
-    .update({ status, resolved_at: new Date().toISOString() })
+    .update(update)
     .eq('id', id)
     .eq('project_id', projectId) // never resolve another project's proposal
     .eq('status', 'pending') // only pending proposals resolve
