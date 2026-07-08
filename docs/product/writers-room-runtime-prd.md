@@ -396,9 +396,11 @@ Import a completed PitchStudio run: filled sections land as pending proposals
 
 **Status:** Normative. MUST/SHOULD/MAY per RFC 2119. This addendum is binding
 for Phase 2 implementation; where it conflicts with earlier prose, it wins.
-**Source-of-truth files:** `~/Projects/PitchStudio/CONCEPT_TEMPLATE.md` and
-`~/Projects/PitchStudio/PATTERN.md` (v1.2). The export contract in §A10 was
-derived from those files directly; if they change, §A10 MUST be re-verified.
+**PitchStudio compatibility target:** `~/Projects/PitchStudio/PATTERN.md`
+(v1.2) + `~/Projects/PitchStudio/TEMPLATE.md`. The export contract in §A10
+is verified against those files. `CONCEPT_TEMPLATE.md` was a historical
+design reference for WriterOS's concept workflow, not a source of truth for
+either tool; do not implement against it.
 
 ## A1. Product Definition
 
@@ -410,8 +412,9 @@ Voice Profile: interactive, skippable, and the canonical statement of intent.
 Outputs (dual-write, single interview):
 1. **WriterOS canon:** confirmed answers land in document fields and memory
    blocks via the proposal path (§A7).
-2. **PitchStudio handoff:** a seed-stage concept file in CONCEPT_TEMPLATE
-   shape that passes PATTERN.md Step 1.5 as SUFFICIENT (§A10–A11).
+2. **PitchStudio handoff:** a seed-stage concept file rendered in
+   PitchStudio `TEMPLATE.md` shape that passes PATTERN.md Step 1.5 as
+   SUFFICIENT (§A10–A11).
 
 Non-goals: the interview does NOT produce loglines, beats, spines, or any
 `## Development` content. Those are room/PitchStudio outputs. An interview
@@ -485,19 +488,24 @@ Pause/resume is a MUST. A paused session survives app restarts.
 Stored verbatim as `seed_text`. Morgan MAY ask the speculative flag question
 here (once).
 
-**A5.2 Audit.** Morgan classifies each audit area SUFFICIENT or THIN,
-mirroring PATTERN.md Step 1.5 checks: (a) locks present/implied, (b) open
-questions explicit, (c) backstory/relationship specifics for every
+**A5.2 Audit.** Morgan classifies each required audit area SUFFICIENT or
+THIN, mirroring PATTERN.md Step 1.5 checks: (a) locks present/implied,
+(b) open questions explicit, (c) backstory/relationship specifics for every
 emotionally load-bearing element, (d) ending stated or explicitly open.
+If the project is speculative, Zoe's world-rule row (§A6) is also audited as
+a conditional, lock-adjacent requirement. Opt rows in §A6 are not audit gates.
 Verdicts are stored in `audit` and stated to the writer in one message —
 no hidden grading.
 
-**A5.3 Interview.** Only THIN areas generate questions, drawn from the lane
-question bank (§A6), asked by the owning persona in their voice, one at a
-time. SUFFICIENT areas earn zero questions — the room MUST NOT re-ask what
-the seed already answers. Every question is skippable; Morgan frames skips
-as delegation to the room ("that's ours to invent, noted"), never as a gap
-the writer failed to fill.
+**A5.3 Interview.** Only THIN required audit areas generate the interview,
+with questions drawn from the lane question bank (§A6), asked by the owning
+persona in their voice, one at a time. SUFFICIENT required areas earn zero
+questions — the room MUST NOT re-ask what the seed already answers. Opt rows
+may be asked only as opportunistic follow-ups after the session is already
+interviewing, or on explicit writer invitation; they MUST NOT open an
+interview by themselves and MUST NOT make Track B fail. Every question is
+skippable; Morgan frames skips as delegation to the room ("that's ours to
+invent, noted"), never as a gap the writer failed to fill.
 
 **A5.4 Escape hatches (all MUST):** writer can pause/resume at any question;
 writer has a visible "wrap it up" affordance that jumps to readback; Morgan
@@ -511,7 +519,7 @@ per item (single tap per item), then banks.
 ## A6. Question Bank — The Traceability Contract
 
 Ships as data (`server/room/interview/questionBank.ts`). This table is the
-SINGLE contract chaining question → WriterOS target → CONCEPT_TEMPLATE
+SINGLE contract chaining question → WriterOS target → PitchStudio `TEMPLATE.md`
 destination → provenance → requirement. §A10 governs file assembly only;
 any element not traceable through this table does not export.
 Per-lane budgets apply per THIN area, `full` mode. Wording MAY be tuned;
@@ -537,10 +545,12 @@ ending — so a banked session satisfying them is a sufficient seed BY
 CONSTRUCTION. Zoe's row is a conditional, lock-adjacent requirement for
 speculative projects; it is NOT part of the 1:1 proof.
 
-Rules: budgets are per THIN area, not per session; a lane with all areas
-SUFFICIENT asks nothing; `quick` mode collapses all lanes to Morgan at 1
-question per THIN area. Follow-ups count against the budget. No lane may
-exceed budget without an explicit writer invitation ("keep going").
+Rules: budgets are per THIN required audit area, not per session; a lane with
+all required areas SUFFICIENT asks nothing; `quick` mode collapses all
+required audit areas to Morgan at 1 question per THIN area. Opt rows keep
+their own budget ceilings when used as follow-ups or writer-invited questions.
+Follow-ups count against the budget. No lane may exceed budget without an
+explicit writer invitation ("keep going").
 
 ## A7. Transcribe-and-Confirm
 
@@ -641,7 +651,7 @@ Bible wins on current state; the seed wins on original intent.
 Export target: a seed-stage concept file, written to
 `~/Projects/PitchStudio/concepts/<slug>.md` (path configurable). Trigger: an
 explicit "Export to PitchStudio" action, available from state `banked`.
-The export is byte-shape compatible with CONCEPT_TEMPLATE.md. Normative map:
+The export is rendered in PitchStudio `TEMPLATE.md` shape. Normative map:
 
 | Template element | Interview source | Rule |
 |------------------|------------------|------|
@@ -654,9 +664,9 @@ The export is byte-shape compatible with CONCEPT_TEMPLATE.md. Normative map:
 | frontmatter provenance fields (`developed_on` … `feedback_rounds`) | — | MUST be empty/defaults |
 | `# <Working Title>` | project title | MUST set |
 | `## Seed` | seed verbatim + dated interview answers (marked as writer interview answers) + seed color (§A7.3), with origin tags `[SEED]`/`[EXTRAPOLATED]` inline | MUST populate; verbatim seed first, never edited |
-| `## Locks — do not violate` | locked items at readback | MUST emit (section added below Seed, per PATTERN Step 1.5 audit) |
+| `## Locks — do not violate` | locked items at readback | MUST emit in the TEMPLATE.md section |
 | `## Open questions — invent here` | open items + all skips | MUST emit |
-| `## Development` + all `###` subsections | — | MUST emit the template skeleton UNFILLED, exactly as in CONCEPT_TEMPLATE.md |
+| `## Development` + all `###` subsections | — | MUST emit the template skeleton UNFILLED, exactly as in TEMPLATE.md |
 
 Leanings export inside `## Seed` as tagged lines ("writer is leaning X —
 challenge permitted"), since PitchStudio's contract has no leaning section.
@@ -667,7 +677,7 @@ challenge permitted"), since PitchStudio's contract has no leaning section.
 frontmatter parses with every TEMPLATE key present; `status: seed`; Seed,
 Locks, and Open-questions sections present and non-empty (Locks and
 Open-questions each MAY carry only their explicit empty-state line per
-§A9); every `## Development` subsection present and
+§A9); every `## Development` subsection from TEMPLATE.md present and
 unfilled. Runs on every export; a failing export MUST NOT write the file.
 
 **Gate 2 — live PitchStudio smoke (once, at phase close):** hand a real
