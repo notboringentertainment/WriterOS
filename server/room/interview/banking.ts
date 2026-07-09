@@ -84,14 +84,16 @@ export function buildBankPreview(input: {
     const value = effectiveValue(proposal);
     if (!value) continue;
     const fieldPath = resolveCanonicalFieldPath(proposal.field_path, proposal);
-    const mutability = input.mutability[proposal.id] ?? (fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.') ? 'open' : 'locked');
-    if (mutability === 'open' || fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.')) {
-      openQuestions.push(value);
+    const defaultMutability = fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.') ? 'open' : 'locked';
+    const mutability = input.mutability[proposal.id] ?? defaultMutability;
+    if (mutability === 'locked') {
+      locks.push(`${originTag(proposal.origin)} ${value}`);
     } else if (mutability === 'leaning') {
       leanings.push(`${originTag(proposal.origin)} ${value} — challenge permitted`);
-      datedAnswers.push(`${originTag(proposal.origin)} ${value}`);
     } else {
-      locks.push(`${originTag(proposal.origin)} ${value}`);
+      openQuestions.push(value);
+    }
+    if (mutability !== 'open') {
       datedAnswers.push(`${originTag(proposal.origin)} ${value}`);
     }
   }

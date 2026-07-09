@@ -78,4 +78,11 @@ describe('First Meeting banking', () => {
 
     expect(preview.seedColor).toEqual(['Interview answer, 2026-07-08: Writer skipped/delegated this area to the room.']);
   });
+
+  it('writer mutability decision overrides default open-question routing', () => {
+    const preview = buildBankPreview({ session: session(), proposals: [adoptedOpen], mutability: { 'p-open': 'locked' } });
+
+    expect(preview.locks).toEqual(['[SEED] Who buys the restaurant if Mara fails?']);
+    expect(preview.openQuestions).toEqual([]);
+  });
 });
