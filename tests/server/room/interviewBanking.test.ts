@@ -45,6 +45,15 @@ const adoptedOpen: InterviewProposalRow = {
   question_id: 'morgan-open-questions',
 };
 
+const adoptedEnding: InterviewProposalRow = {
+  ...adoptedLock,
+  id: 'p-ending',
+  field_path: 'interview_answer.morgan-ending',
+  proposed_value: 'Mara takes over the restaurant and burns the old menu.',
+  resolved_value: null,
+  question_id: 'morgan-ending',
+};
+
 describe('First Meeting banking', () => {
   it('builds a visible preview before writing memory blocks', () => {
     const preview = buildBankPreview({ session: session(), proposals: [adoptedLock, adoptedOpen], mutability: { 'p-lock': 'locked', 'p-open': 'open' } });
@@ -84,5 +93,13 @@ describe('First Meeting banking', () => {
 
     expect(preview.locks).toEqual(['[SEED] Who buys the restaurant if Mara fails?']);
     expect(preview.openQuestions).toEqual([]);
+  });
+
+  it('routes known Morgan ending answers to locks instead of open questions by default', () => {
+    const preview = buildBankPreview({ session: session(), proposals: [adoptedEnding], mutability: {} });
+
+    expect(preview.locks).toEqual(['[SEED] Mara takes over the restaurant and burns the old menu.']);
+    expect(preview.openQuestions).toEqual([]);
+    expect(preview.conceptSeedAppend).toContain('### Locks\n[SEED] Mara takes over the restaurant and burns the old menu.');
   });
 });

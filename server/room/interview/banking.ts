@@ -31,6 +31,10 @@ function datedAnswer(entry: TranscriptEntry): string {
   return `${tag} Interview answer, ${day}: ${entry.answer_text.trim()}`;
 }
 
+const BANK_FIELD_BY_INTERVIEW_QUESTION: Record<string, string> = {
+  'morgan-ending': 'story_locks',
+};
+
 export function renderStoryLocksBlock(preview: BankPreview): string {
   return preview.locks.length ? preview.locks.join('\n') : 'No locks — writer cedes broadly';
 }
@@ -58,12 +62,22 @@ export function renderBankedConceptSeed(preview: BankPreview): string {
   return parts.filter((part) => part !== '').join('\n').trim();
 }
 
+function questionIdForFieldPath(rawTarget: string, proposal: InterviewProposalRow): string | null {
+  if (proposal.question_id) return proposal.question_id;
+  return rawTarget.startsWith('interview_answer.') ? rawTarget.slice('interview_answer.'.length) : null;
+}
+
 function resolveCanonicalFieldPath(rawTarget: string, proposal: InterviewProposalRow): string {
+  const questionId = questionIdForFieldPath(rawTarget, proposal);
+  if (questionId && BANK_FIELD_BY_INTERVIEW_QUESTION[questionId]) {
+    return BANK_FIELD_BY_INTERVIEW_QUESTION[questionId];
+  }
+
   // Composite writerOSTarget patterns are not literal field paths. Use the
   // proposal's own question_id/session metadata or a stable sentinel so the
   // value still surfaces correctly in the bank preview / export.
   if (!rawTarget || rawTarget.includes('{') || rawTarget.includes('[') || rawTarget.includes('|')) {
-    return proposal.question_id ? `interview_answer.${proposal.question_id}` : 'interview_answer';
+    return questionId ? `interview_answer.${questionId}` : 'interview_answer';
   }
   return rawTarget;
 }
