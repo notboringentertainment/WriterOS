@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -13,6 +14,7 @@ const fdxSource = `<?xml version="1.0" encoding="UTF-8"?>
 describe('App FDX import', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 

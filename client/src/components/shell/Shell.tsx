@@ -191,7 +191,11 @@ export function Shell({
           />
         )}
       </div>
-      <VoiceProfileDrawer open={voiceProfileOpen} onClose={closeVoiceProfile} />
+      <VoiceProfileDrawer
+        open={voiceProfileOpen}
+        onClose={closeVoiceProfile}
+        onOpenRitual={() => openRitual('voiceProfile')}
+      />
     </div>
   )
 }

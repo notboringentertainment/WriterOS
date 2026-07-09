@@ -2,18 +2,18 @@ import React, { useEffect, useState } from 'react'
 import type { VoiceProfileDocument, VoiceProfileState } from '@shared/voiceProfile'
 import {
   clearVoiceProfileState,
-  loadVoiceProfileState,
   saveVoiceProfileState,
 } from '../../lib/voiceProfile'
 import {
   VOICE_PROFILE_ASSESSMENT_SECTIONS,
-  cleanAssessmentAnswers,
-  countAnsweredAssessmentQuestions,
 } from '../../lib/voiceProfileAssessment'
+import { useVoiceProfileFlow } from '../../lib/useVoiceProfileFlow'
 
 interface VoiceProfileDrawerProps {
   open: boolean
   onClose: () => void
+  /** Opens the full-bleed Voice Profile ritual (closing the drawer first). */
+  onOpenRitual?: () => void
 }
 
 type DrawerMode = 'view' | 'edit' | 'assessment' | 'review'
@@ -142,38 +142,18 @@ function editDraftToProfile(draft: EditDraft, existing: VoiceProfileDocument): V
   }
 }
 
-function buildDraftAssessmentState(
-  answers: Record<string, string>,
-  existingState: VoiceProfileState | undefined
-): VoiceProfileState {
-  const now = new Date().toISOString()
-  return {
-    version: 1,
-    status: 'draft_answers',
-    answers: cleanAssessmentAnswers(answers),
-    createdAt: existingState?.createdAt ?? now,
-    updatedAt: now,
-    ...(existingState?.deepDiveAnswers ? { deepDiveAnswers: existingState.deepDiveAnswers } : {}),
-    ...(existingState?.refinementAnswers ? { refinementAnswers: existingState.refinementAnswers } : {}),
-  }
-}
-
-export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
-  const [profileState, setProfileState] = useState<VoiceProfileState | undefined>(undefined)
+export function VoiceProfileDrawer({ open, onClose, onOpenRitual }: VoiceProfileDrawerProps) {
+  const flow = useVoiceProfileFlow()
   const [mode, setMode] = useState<DrawerMode>('view')
   const [editDraft, setEditDraft] = useState<EditDraft | undefined>(undefined)
-  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string>>({})
   const [assessmentSaved, setAssessmentSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>(undefined)
   const [clearPending, setClearPending] = useState(false)
-  const [synthesisLoading, setSynthesisLoading] = useState(false)
-  const [synthesisError, setSynthesisError] = useState<string | undefined>(undefined)
+  const { reload } = flow
 
   useEffect(() => {
     if (!open) return
-    const loadedState = loadVoiceProfileState()
-    setProfileState(loadedState)
-    setAssessmentAnswers(loadedState?.answers ?? {})
+    const loadedState = reload()
     setMode(
       loadedState && !loadedState.profile && loadedState.status === 'draft_answers' ? 'assessment'
         : loadedState?.status === 'draft_profile' ? 'review'
@@ -183,15 +163,17 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
     setAssessmentSaved(false)
     setSaveError(undefined)
     setClearPending(false)
-    setSynthesisLoading(false)
-    setSynthesisError(undefined)
-  }, [open])
+  }, [open, reload])
 
   if (!open) return null
 
+  const profileState = flow.profileState
+  const assessmentAnswers = flow.answers
+  const synthesisLoading = flow.synthesisLoading
+  const synthesisError = flow.synthesisError
   const profile = profileState?.profile
   const status = profileState?.status ?? 'not_started'
-  const answeredCount = countAnsweredAssessmentQuestions(assessmentAnswers)
+  const answeredCount = flow.answeredCount
 
   function handleStartEdit() {
     if (!profile) return
@@ -208,27 +190,18 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
   }
 
   function handleStartAssessment() {
-    setAssessmentAnswers(profileState?.answers ?? {})
     setAssessmentSaved(false)
     setClearPending(false)
     setMode('assessment')
   }
 
   function handleAssessmentAnswer(questionId: string, value: string) {
-    const nextAnswers = { ...assessmentAnswers, [questionId]: value }
-    const updatedState = buildDraftAssessmentState(nextAnswers, profileState)
-    saveVoiceProfileState(updatedState)
-    setProfileState(updatedState)
-    setAssessmentAnswers(nextAnswers)
+    flow.setAnswer(questionId, value)
     setAssessmentSaved(true)
-    setSynthesisError(undefined)
   }
 
   function handleSaveAssessment() {
-    const updatedState = buildDraftAssessmentState(assessmentAnswers, profileState)
-    saveVoiceProfileState(updatedState)
-    setProfileState(updatedState)
-    setAssessmentAnswers(updatedState.answers)
+    flow.saveDraftAnswers()
     setAssessmentSaved(true)
   }
 
@@ -247,7 +220,7 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
       updatedAt: new Date().toISOString(),
     }
     saveVoiceProfileState(updatedState)
-    setProfileState(updatedState)
+    flow.applyState(updatedState)
     setEditDraft(undefined)
     setSaveError(undefined)
     setMode('view')
@@ -259,59 +232,21 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
       return
     }
     clearVoiceProfileState()
-    setProfileState(undefined)
-    setAssessmentAnswers({})
+    flow.applyState(undefined)
     setAssessmentSaved(false)
     setClearPending(false)
     setMode('view')
   }
 
   async function handleGenerateProfile() {
-    setSynthesisLoading(true)
-    setSynthesisError(undefined)
-    try {
-      const cleanedAnswers = cleanAssessmentAnswers(assessmentAnswers)
-      const response = await fetch('/api/voice-profile/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: cleanedAnswers }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json() as { message?: string }
-        setSynthesisError(errorData.message ?? 'Synthesis failed. Please try again.')
-        return
-      }
-      const data = await response.json() as { profile: VoiceProfileDocument }
-      const now = new Date().toISOString()
-      const newState: VoiceProfileState = {
-        version: 1,
-        status: 'draft_profile',
-        answers: cleanedAnswers,
-        profile: data.profile,
-        createdAt: profileState?.createdAt ?? now,
-        updatedAt: now,
-        ...(profileState?.deepDiveAnswers ? { deepDiveAnswers: profileState.deepDiveAnswers } : {}),
-        ...(profileState?.refinementAnswers ? { refinementAnswers: profileState.refinementAnswers } : {}),
-      }
-      saveVoiceProfileState(newState)
-      setProfileState(newState)
+    if (await flow.generateProfile()) {
       setMode('review')
-    } catch {
-      setSynthesisError('Network error. Please try again.')
-    } finally {
-      setSynthesisLoading(false)
     }
   }
 
   function handleApprove() {
     if (!profileState?.profile) return
-    const updatedState: VoiceProfileState = {
-      ...profileState,
-      status: 'complete',
-      updatedAt: new Date().toISOString(),
-    }
-    saveVoiceProfileState(updatedState)
-    setProfileState(updatedState)
+    flow.approveProfile()
     setMode('view')
   }
 
@@ -397,6 +332,18 @@ export function VoiceProfileDrawer({ open, onClose }: VoiceProfileDrawerProps) {
             <button type="button" style={styles.editButton} onClick={handleStartAssessment}>
               {answeredCount > 0 ? 'Continue assessment' : 'Start assessment'}
             </button>
+            {onOpenRitual && (
+              <button
+                type="button"
+                style={styles.cancelButton}
+                onClick={() => {
+                  onClose()
+                  onOpenRitual()
+                }}
+              >
+                Begin the full ritual
+              </button>
+            )}
             <span style={styles.footerHint}>{answeredCount}/20 answered</span>
           </div>
         )}
@@ -493,6 +440,10 @@ function AssessmentMode({
       ))}
     </div>
   )
+}
+
+export function VoiceProfileView({ profile }: { profile: VoiceProfileDocument }) {
+  return <ViewMode profile={profile} />
 }
 
 function ViewMode({ profile }: { profile: VoiceProfileDocument }) {

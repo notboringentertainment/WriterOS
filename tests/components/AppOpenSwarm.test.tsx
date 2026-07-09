@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -75,6 +76,7 @@ async function sendSwarmMessage() {
 describe('App OpenSwarm handoff', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

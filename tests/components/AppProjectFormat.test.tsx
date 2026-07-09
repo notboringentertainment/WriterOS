@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -13,6 +14,7 @@ function formatSelector() {
 describe('App project format selectors', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 

@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -66,6 +67,7 @@ function openRailAndSend(text: string) {
 describe('App Zoe persona capability routing', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 

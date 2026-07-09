@@ -7,11 +7,12 @@ import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWriting
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
-import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
+import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced, loadVoiceProfileState } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
 import { Shell } from './components/shell/Shell'
 import { ProjectMeetingPage } from './components/ritual/ProjectMeetingPage'
+import { VoiceProfileRitualPage } from './components/ritual/VoiceProfileRitualPage'
 import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -121,6 +122,16 @@ export default function App() {
     [project.storedProjects],
   )
   const folderSaveNonceRef = useRef(0)
+
+  // Voice Profile first-run gate (writer-voice-profile-prd): offer the ritual once
+  // when no profile state exists at all. A skip writes status:'skipped', so the
+  // gate never re-prompts; the TopBar Voice button remains the standing entry.
+  const { openRitual } = shellState
+  useEffect(() => {
+    if (!loadVoiceProfileState()) {
+      openRitual('voiceProfile')
+    }
+  }, [openRitual])
   const writeProjectRef = useRef(projectFolder.writeProject)
   const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
@@ -810,6 +821,10 @@ export default function App() {
 
   const renderCenter = () => {
     // Ritual takeovers render before Home so closing one restores whatever was underneath.
+    if (shellState.ritual === 'voiceProfile') {
+      return <VoiceProfileRitualPage onExit={shellState.closeRitual} />
+    }
+
     if (shellState.ritual === 'projectMeeting' && project.activeProjectId) {
       return (
         <ProjectMeetingPage

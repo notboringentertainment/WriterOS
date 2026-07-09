@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -26,6 +27,7 @@ function wpChatBody(fetchMock: ReturnType<typeof mockFetchCapturing>) {
 describe('App surface awareness — live request path', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 
