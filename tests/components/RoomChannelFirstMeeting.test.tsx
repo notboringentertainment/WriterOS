@@ -25,7 +25,7 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
 
 import { RoomChannel } from '../../client/src/components/room/RoomChannel'
-import type { InterviewSession } from '../../client/src/lib/roomApi'
+import type { InterviewSession, RoomProposal } from '../../client/src/lib/roomApi'
 
 function session(state: InterviewSession['state']): InterviewSession {
   return {
@@ -40,6 +40,23 @@ function session(state: InterviewSession['state']): InterviewSession {
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }
+}
+
+const interviewProposal: RoomProposal = {
+  id: 'proposal-1',
+  project_id: 'p1',
+  agent_id: 'morgan',
+  surface: 'memory',
+  field_path: 'story_locks',
+  proposed_value: 'Never become cynical.',
+  rationale: 'First Meeting answer to morgan-locks',
+  status: 'pending',
+  resolved_at: null,
+  kind: 'interview_answer',
+  session_id: 's1',
+  question_id: 'morgan-locks',
+  origin: 'extrapolated',
+  created_at: '2026-07-08T00:00:00Z',
 }
 
 function renderChannel() {
@@ -75,7 +92,8 @@ describe('RoomChannel First Meeting panel', () => {
   it('starts from seed, answers, skips, pauses/resumes, banks, and exports through visible controls', async () => {
     const firstQuestion = { id: 'morgan-locks', lane: 'morgan', trigger: 'locks', question: 'What is not allowed?', writerOSTarget: 'story_locks', templateDestination: '## Locks', originOnConfirm: 'seed', requirement: 'required', budget: 2 }
     apiMock.startInterview.mockResolvedValueOnce({ session: session('interviewing'), auditMessage: 'Morgan audit', currentQuestion: firstQuestion })
-    apiMock.answerInterviewQuestion.mockResolvedValueOnce({ session: session('interviewing'), currentQuestion: firstQuestion })
+    apiMock.answerInterviewQuestion.mockResolvedValueOnce({ session: session('interviewing'), proposal: interviewProposal, currentQuestion: firstQuestion })
+    apiMock.resolveRoomProposal.mockResolvedValueOnce({ ...interviewProposal, status: 'adopted', resolved_at: '2026-07-08T00:01:00Z', resolved_value: 'Never become cynical.' })
     apiMock.skipInterviewQuestion.mockResolvedValueOnce({ session: session('readback'), currentQuestion: null })
     apiMock.fetchInterviewBankPreview.mockResolvedValueOnce({ conceptSeedAppend: '## First Meeting Round\nseed', seedText: 'seed', locks: [], openQuestions: [], datedAnswers: [], seedColor: [], leanings: [], title: 'Untitled' })
     apiMock.bankInterview.mockResolvedValueOnce({ session: session('banked'), preview: { conceptSeedAppend: 'banked seed' } })
@@ -87,8 +105,10 @@ describe('RoomChannel First Meeting panel', () => {
     await waitFor(() => expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'thin seed' }))
 
     fireEvent.change(await screen.findByLabelText('First Meeting answer'), { target: { value: 'Never become cynical.' } })
+    fireEvent.change(screen.getByLabelText('First Meeting answer origin'), { target: { value: 'extrapolated' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirm mapping' }))
-    await waitFor(() => expect(apiMock.answerInterviewQuestion).toHaveBeenCalledWith('p1', 's1', { answerText: 'Never become cynical.', origin: 'seed', rejectMapping: false }))
+    await waitFor(() => expect(apiMock.answerInterviewQuestion).toHaveBeenCalledWith('p1', 's1', { answerText: 'Never become cynical.', origin: 'extrapolated', rejectMapping: false }))
+    await waitFor(() => expect(apiMock.resolveRoomProposal).toHaveBeenCalledWith('p1', 'proposal-1', 'adopted', { resolvedValue: 'Never become cynical.', origin: 'extrapolated' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip / delegate' }))
     await waitFor(() => expect(apiMock.skipInterviewQuestion).toHaveBeenCalledWith('p1', 's1'))

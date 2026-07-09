@@ -72,6 +72,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
   const [interviewStatus, setInterviewStatus] = useState<InterviewStatus>(emptyInterviewStatus)
   const [interviewSeed, setInterviewSeed] = useState('')
   const [interviewAnswer, setInterviewAnswer] = useState('')
+  const [interviewOrigin, setInterviewOrigin] = useState<'seed' | 'extrapolated'>('seed')
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
   const [exportMarkdown, setExportMarkdown] = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
@@ -231,9 +232,13 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     const answerText = interviewAnswer.trim()
     if (!session || !answerText) return
     try {
-      const result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: 'seed', rejectMapping })
+      const result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: interviewOrigin, rejectMapping })
+      if (result.proposal && !rejectMapping) {
+        await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: interviewOrigin })
+      }
       setInterviewResult(result)
       setInterviewAnswer('')
+      setInterviewOrigin('seed')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'First Meeting answer failed')
     }
@@ -369,6 +374,15 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
               rows={3}
               style={styles.input}
             />
+            <select
+              aria-label="First Meeting answer origin"
+              value={interviewOrigin}
+              onChange={e => setInterviewOrigin(e.target.value as 'seed' | 'extrapolated')}
+              style={styles.input}
+            >
+              <option value="seed">Seed</option>
+              <option value="extrapolated">Extrapolated</option>
+            </select>
             <div style={styles.proposalActions}>
               <button type="button" style={styles.adoptButton} onClick={() => void handleAnswerInterview(false)}>Confirm mapping</button>
               <button type="button" style={styles.rejectButton} onClick={() => void handleAnswerInterview(true)}>Reject mapping / keep as seed color</button>
