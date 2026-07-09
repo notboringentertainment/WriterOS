@@ -10,7 +10,7 @@ import type { TranscriptMessage } from '../../lib/projectState'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import type { ActiveTab } from '../../lib/wpRouting'
-import type { StoryBibleSection } from '../../lib/shellState'
+import type { ActiveRitual, StoryBibleSection } from '../../lib/shellState'
 
 interface ShellState {
   homeActive: boolean
@@ -20,6 +20,7 @@ interface ShellState {
   focusMode: boolean
   storyBibleSection: StoryBibleSection | null
   voiceProfileOpen: boolean
+  ritual: ActiveRitual
   setActiveTab: (tab: ActiveTab) => void
   openHome: () => void
   openProjectWorkspace: () => void
@@ -30,6 +31,8 @@ interface ShellState {
   toggleFocusMode: () => void
   toggleVoiceProfile: () => void
   closeVoiceProfile: () => void
+  openRitual: (ritual: Exclude<ActiveRitual, null>) => void
+  closeRitual: () => void
 }
 
 interface RailProps {
@@ -73,9 +76,9 @@ export function Shell({
 }: ShellProps) {
   const {
     homeActive, activeTab, writersRoomActive, panelOpen, focusMode,
-    storyBibleSection, voiceProfileOpen,
+    storyBibleSection, voiceProfileOpen, ritual,
     setActiveTab, openHome, togglePanel, toggleWritersRoom, toggleFocusMode,
-    toggleVoiceProfile, closeVoiceProfile,
+    toggleVoiceProfile, closeVoiceProfile, openRitual, closeRitual,
   } = shellState
 
   // Shell keyboard shortcuts
@@ -100,19 +103,23 @@ export function Shell({
         closeVoiceProfile()
         return
       }
+      if (e.key === 'Escape' && ritual) {
+        closeRitual()
+        return
+      }
       if (e.key === 'Escape' && focusMode) {
         toggleFocusMode()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePanel, openHome, setActiveTab, toggleWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile])
+  }, [togglePanel, openHome, setActiveTab, toggleWritersRoom, focusMode, toggleFocusMode, voiceProfileOpen, closeVoiceProfile, ritual, closeRitual])
 
   const displayProjectTitle = getDisplayProjectTitle(projectTitle)
-  // Home and focus mode are full-bleed (no shell chrome). Workspace and Writer's Room both
-  // flow through ThreeZoneShell so the paper subtree is never reparented across that toggle;
-  // Writer's Room runs chromeless (zones hidden via CSS, paper stays mounted).
-  const fullBleed = homeActive || focusMode
+  // Home, focus mode, and ritual takeovers are full-bleed (no shell chrome). Workspace and
+  // Writer's Room both flow through ThreeZoneShell so the paper subtree is never reparented
+  // across that toggle; Writer's Room runs chromeless (zones hidden via CSS, paper stays mounted).
+  const fullBleed = homeActive || focusMode || ritual !== null
 
   const morganRail = (
     <LeftRail
@@ -165,6 +172,8 @@ export function Shell({
           onWritersRoom={toggleWritersRoom}
           onVoiceProfile={toggleVoiceProfile}
           voiceProfileOpen={voiceProfileOpen}
+          ritual={ritual}
+          onFirstMeeting={activeProjectId ? () => openRitual('firstMeeting') : undefined}
         />
       )}
       <div style={styles.body}>

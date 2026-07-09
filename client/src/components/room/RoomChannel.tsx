@@ -5,33 +5,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
 import {
-  answerInterviewQuestion,
-  bankInterview,
-  exportInterview,
-  fetchInterviewBankPreview,
-  fetchInterviewStatus,
   fetchRoomMessages,
   fetchRoomProposals,
   openRoomStream,
-  pauseInterview,
   postRoomEvent,
   resolveRoomProposal,
-  resumeInterview,
   sendRoomMessage,
-  skipInterviewQuestion,
-  startInterview,
   syncStoryLocksBlock,
-  wrapInterview,
-  type InterviewBankPreview,
-  type InterviewQuestion,
-  type InterviewSession,
-  type InterviewStatus,
   type RoomCharacterBrief,
   type RoomMessage,
   type RoomProposal,
   type RoomStreamEvent,
 } from '../../lib/roomApi'
 import { canApplyProposal } from '../../lib/roomProposals'
+import { useInterviewSession } from '../../lib/useInterviewSession'
 
 export interface RoomChannelProps {
   projectId: string
@@ -59,22 +46,16 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-function emptyInterviewStatus(): InterviewStatus {
-  return { activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null }
-}
-
 export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
   const [inputText, setInputText] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [interviewStatus, setInterviewStatus] = useState<InterviewStatus>(emptyInterviewStatus)
+  const interview = useInterviewSession(projectId)
   const [interviewSeed, setInterviewSeed] = useState('')
   const [interviewAnswer, setInterviewAnswer] = useState('')
   const [interviewOrigin, setInterviewOrigin] = useState<'seed' | 'extrapolated'>('seed')
-  const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
-  const [exportMarkdown, setExportMarkdown] = useState('')
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -146,23 +127,6 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }, [projectId, handleStreamEvent])
 
-  useEffect(() => {
-    let cancelled = false
-    setInterviewStatus(emptyInterviewStatus())
-    setBankPreview(null)
-    setExportMarkdown('')
-    fetchInterviewStatus(projectId)
-      .then(status => {
-        if (!cancelled) setInterviewStatus(status)
-      })
-      .catch(() => {
-        // First Meeting is an explicit enhancement; room chat remains usable if unavailable.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [projectId])
-
   // Writer-only sync of the story_locks shared block (§10).
   useEffect(() => {
     void syncStoryLocksBlock(projectId, locksText)
@@ -208,120 +172,27 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }
 
-  function setInterviewResult(result: { session: InterviewSession; currentQuestion?: InterviewQuestion | null }) {
-    setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion ?? prev.currentQuestion }))
-  }
-
   async function handleStartInterview() {
     const seedText = interviewSeed.trim()
     if (!seedText) {
       setError('Paste or type a seed before starting First Meeting.')
       return
     }
-    try {
-      const result = await startInterview(projectId, { mode: 'full', seedText })
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion }))
+    if (await interview.start({ mode: 'full', seedText })) {
       setInterviewSeed('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting start failed')
     }
   }
 
   async function handleAnswerInterview(rejectMapping = false) {
-    const session = interviewStatus.activeSession
-    const answerText = interviewAnswer.trim()
-    if (!session || !answerText) return
-    try {
-      const result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: interviewOrigin, rejectMapping })
-      if (result.proposal && !rejectMapping) {
-        await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: interviewOrigin })
-      }
-      setInterviewResult(result)
+    if (await interview.answer({ answerText: interviewAnswer, origin: interviewOrigin, rejectMapping })) {
       setInterviewAnswer('')
       setInterviewOrigin('seed')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting answer failed')
-    }
-  }
-
-  async function handleSkipInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      setInterviewResult(await skipInterviewQuestion(projectId, session.id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting skip failed')
-    }
-  }
-
-  async function handlePauseInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await pauseInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting pause failed')
-    }
-  }
-
-  async function handleResumeInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await resumeInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting resume failed')
-    }
-  }
-
-  async function handleWrapInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await wrapInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: null }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting wrap failed')
-    }
-  }
-
-  async function handlePreviewBank() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      setBankPreview(await fetchInterviewBankPreview(projectId, session.id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bank preview failed')
-    }
-  }
-
-  async function handleBankInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await bankInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
-      setBankPreview(result.preview)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bank failed')
-    }
-  }
-
-  async function handleExportInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await exportInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-      setExportMarkdown(result.markdown)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
     }
   }
 
   const canSend = inputText.trim().length > 0
+  const interviewStatus = interview.status
+  const displayError = error ?? interview.error
 
   return (
     <div style={styles.root} data-testid="room-channel">
@@ -358,7 +229,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         {interviewStatus.activeSession?.state === 'paused' && (
           <div style={styles.interviewStack}>
             <div style={styles.interviewMeta}>Paused at {interviewStatus.activeSession.cursor.question_id ?? 'readback'}.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void handleResumeInterview()}>Resume First Meeting</button>
+            <button type="button" style={styles.adoptButton} onClick={() => void interview.resume()}>Resume First Meeting</button>
           </div>
         )}
 
@@ -386,9 +257,9 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
             <div style={styles.proposalActions}>
               <button type="button" style={styles.adoptButton} onClick={() => void handleAnswerInterview(false)}>Confirm mapping</button>
               <button type="button" style={styles.rejectButton} onClick={() => void handleAnswerInterview(true)}>Reject mapping / keep as seed color</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleSkipInterview()}>Skip / delegate</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePauseInterview()}>Pause</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleWrapInterview()}>Wrap it up</button>
+              <button type="button" style={styles.rejectButton} onClick={() => void interview.skip()}>Skip / delegate</button>
+              <button type="button" style={styles.rejectButton} onClick={() => void interview.pause()}>Pause</button>
+              <button type="button" style={styles.rejectButton} onClick={() => void interview.wrap()}>Wrap it up</button>
             </div>
           </div>
         )}
@@ -397,12 +268,12 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
           <div style={styles.interviewStack}>
             <div style={styles.body}>Readback ready: review locks, leanings, and open questions before banking. No memory blocks are written until Bank this round.</div>
             <div style={styles.proposalActions}>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePreviewBank()}>Preview banking</button>
-              <button type="button" style={styles.adoptButton} onClick={() => void handleBankInterview()}>Bank this round</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePauseInterview()}>Pause</button>
+              <button type="button" style={styles.rejectButton} onClick={() => void interview.previewBank()}>Preview banking</button>
+              <button type="button" style={styles.adoptButton} onClick={() => void interview.bank()}>Bank this round</button>
+              <button type="button" style={styles.rejectButton} onClick={() => void interview.pause()}>Pause</button>
             </div>
-            {bankPreview && (
-              <pre style={styles.previewBox}>{bankPreview.conceptSeedAppend}</pre>
+            {interview.bankPreview && (
+              <pre style={styles.previewBox}>{interview.bankPreview.conceptSeedAppend}</pre>
             )}
           </div>
         )}
@@ -410,21 +281,21 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         {interviewStatus.activeSession?.state === 'banked' && (
           <div style={styles.interviewStack}>
             <div style={styles.body}>This First Meeting round is banked. Future rounds append; they do not edit this one.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void handleExportInterview()}>Export to PitchStudio</button>
+            <button type="button" style={styles.adoptButton} onClick={() => void interview.exportToPitchStudio()}>Export to PitchStudio</button>
           </div>
         )}
 
         {interviewStatus.activeSession?.state === 'exported' && (
           <div style={styles.interviewStack}>
             <div style={styles.body}>Export prepared for PitchStudio.</div>
-            {exportMarkdown && <pre style={styles.previewBox}>{exportMarkdown}</pre>}
+            {interview.exportMarkdown && <pre style={styles.previewBox}>{interview.exportMarkdown}</pre>}
           </div>
         )}
       </section>
 
       <div ref={feedRef} style={styles.feed}>
-        {error && <p style={styles.error}>{error}</p>}
-        {messages.length === 0 && streaming.size === 0 && !error && (
+        {displayError && <p style={styles.error}>{displayError}</p>}
+        {messages.length === 0 && streaming.size === 0 && !displayError && (
           <p style={styles.empty}>The room is quiet. Say something, or change the work — they're watching it.</p>
         )}
 

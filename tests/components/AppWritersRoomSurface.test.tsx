@@ -13,8 +13,8 @@ describe("App Writer's Room layout", () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
 
-    expect(await screen.findByTestId('first-meeting-panel')).toBeInTheDocument()
-    expect(screen.getByText('First Meeting')).toBeInTheDocument()
+    const panel = await screen.findByTestId('first-meeting-panel')
+    expect(panel).toHaveTextContent('First Meeting')
     expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start First Meeting' })).toBeInTheDocument()
   })

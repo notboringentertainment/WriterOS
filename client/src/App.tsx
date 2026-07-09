@@ -11,6 +11,8 @@ import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './li
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
 import { Shell } from './components/shell/Shell'
+import { FirstMeetingPage } from './components/ritual/FirstMeetingPage'
+import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
 import { OutlineTab } from './components/writing/OutlineTab'
@@ -807,6 +809,17 @@ export default function App() {
   }
 
   const renderCenter = () => {
+    // Ritual takeovers render before Home so closing one restores whatever was underneath.
+    if (shellState.ritual === 'firstMeeting' && project.activeProjectId) {
+      return (
+        <FirstMeetingPage
+          projectId={project.activeProjectId}
+          projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+          onExit={shellState.closeRitual}
+        />
+      )
+    }
+
     if (shellState.homeActive) {
       return (
         <HomeSurface

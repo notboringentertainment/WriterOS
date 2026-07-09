@@ -3,6 +3,7 @@ import { getDisplayProjectTitle, normalizeProjectTitle } from '../../lib/project
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { ProjectMenu } from './ProjectMenu'
 import { SavedToast } from './SavedToast'
+import type { ActiveRitual } from '../../lib/shellState'
 
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
 
@@ -32,6 +33,8 @@ interface TopBarProps {
   onWritersRoom: () => void
   onVoiceProfile: () => void
   voiceProfileOpen: boolean
+  ritual?: ActiveRitual
+  onFirstMeeting?: () => void
 }
 
 export function TopBar({
@@ -52,6 +55,8 @@ export function TopBar({
   onWritersRoom,
   onVoiceProfile,
   voiceProfileOpen,
+  ritual = null,
+  onFirstMeeting,
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -211,12 +216,23 @@ export function TopBar({
         <button
           type="button"
           aria-label="Voice Profile"
-          aria-pressed={voiceProfileOpen}
-          style={{ ...styles.cmdK, ...(voiceProfileOpen ? styles.voiceActive : {}) }}
+          aria-pressed={voiceProfileOpen || ritual === 'voiceProfile'}
+          style={{ ...styles.cmdK, ...(voiceProfileOpen || ritual === 'voiceProfile' ? styles.voiceActive : {}) }}
           onClick={onVoiceProfile}
         >
           Voice
         </button>
+        {onFirstMeeting && !homeActive && (
+          <button
+            type="button"
+            aria-label="First Meeting"
+            aria-pressed={ritual === 'firstMeeting'}
+            style={{ ...styles.cmdK, ...(ritual === 'firstMeeting' ? styles.voiceActive : {}) }}
+            onClick={onFirstMeeting}
+          >
+            First Meeting
+          </button>
+        )}
         <button
           role="tab"
           aria-selected={writersRoomActive}
