@@ -24,6 +24,9 @@ function effectiveValue(proposal: InterviewProposalRow): string {
 
 function datedAnswer(entry: TranscriptEntry): string {
   const day = entry.at.slice(0, 10);
+  if (entry.disposition === 'skipped_delegated') {
+    return `Interview answer, ${day}: ${entry.answer_text.trim()}`;
+  }
   const tag = originTag(entry.origin);
   return `${tag} Interview answer, ${day}: ${entry.answer_text.trim()}`;
 }
@@ -55,6 +58,16 @@ export function renderBankedConceptSeed(preview: BankPreview): string {
   return parts.filter((part) => part !== '').join('\n').trim();
 }
 
+function resolveCanonicalFieldPath(rawTarget: string, proposal: InterviewProposalRow): string {
+  // Composite writerOSTarget patterns are not literal field paths. Use the
+  // proposal's own question_id/session metadata or a stable sentinel so the
+  // value still surfaces correctly in the bank preview / export.
+  if (!rawTarget || rawTarget.includes('{') || rawTarget.includes('[') || rawTarget.includes('|')) {
+    return proposal.question_id ? `interview_answer.${proposal.question_id}` : 'interview_answer';
+  }
+  return rawTarget;
+}
+
 export function buildBankPreview(input: {
   session: InterviewSessionRow;
   proposals: readonly InterviewProposalRow[];
@@ -70,8 +83,9 @@ export function buildBankPreview(input: {
   for (const proposal of adopted) {
     const value = effectiveValue(proposal);
     if (!value) continue;
-    const mutability = input.mutability[proposal.id] ?? (proposal.field_path === 'open_questions' ? 'open' : 'locked');
-    if (mutability === 'open' || proposal.field_path === 'open_questions') {
+    const fieldPath = resolveCanonicalFieldPath(proposal.field_path, proposal);
+    const mutability = input.mutability[proposal.id] ?? (fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.') ? 'open' : 'locked');
+    if (mutability === 'open' || fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.')) {
       openQuestions.push(value);
     } else if (mutability === 'leaning') {
       leanings.push(`${originTag(proposal.origin)} ${value} — challenge permitted`);

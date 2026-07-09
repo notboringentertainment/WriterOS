@@ -70,4 +70,12 @@ describe('First Meeting banking', () => {
 
     expect(conceptSeed).toContain('[SEED] Interview answer, 2026-07-08: Do not put this in a field, just keep the color.');
   });
+
+  it('renders skipped/delegated answers without origin tags', () => {
+    const skipped = session([{ question_id: 'morgan-open-questions', lane: 'morgan', answer_text: 'Writer skipped/delegated this area to the room.', origin: null, disposition: 'skipped_delegated', at: '2026-07-08T02:00:00Z' }]);
+
+    const preview = buildBankPreview({ session: skipped, proposals: [], mutability: {} });
+
+    expect(preview.seedColor).toEqual(['Interview answer, 2026-07-08: Writer skipped/delegated this area to the room.']);
+  });
 });

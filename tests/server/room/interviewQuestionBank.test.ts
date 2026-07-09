@@ -62,5 +62,14 @@ describe('First Meeting question bank traceability contract', () => {
     expect(selected).toHaveLength(4);
     expect(selected.every(q => q.lane === 'morgan')).toBe(true);
     expect(selected.map(q => q.trigger)).toEqual(['locks', 'ending', 'open_questions', 'load_bearing_character']);
+    expect(selected.every(q => q.budget === 1)).toBe(true);
+  });
+
+  it('preserves quick-mode lane override in returned question objects', () => {
+    const selected = selectQuestionsForAudit({ audit: thinRequiredAudit, mode: 'quick', speculative: false });
+
+    for (const question of selected) {
+      expect(question.lane).toBe('morgan');
+    }
   });
 });

@@ -49,6 +49,31 @@ function currentQuestionFor(session: InterviewSessionRow): QuestionBankRow | nul
   return session.cursor.question_id ? getQuestionById(session.cursor.question_id) ?? null : null;
 }
 
+function assertSessionProject(sessionProjectId: string, routeProjectId: string): void {
+  if (sessionProjectId !== routeProjectId) {
+    throw new Error(`Interview session does not belong to project ${routeProjectId}.`);
+  }
+}
+
+const MAX_INTERVIEW_TEXT_LENGTH = 20000;
+
+function validateTextLength(label: string, value: string | undefined): void {
+  if (value === undefined) return;
+  if (value.length > MAX_INTERVIEW_TEXT_LENGTH) {
+    throw new Error(`${label} exceeds maximum length of ${MAX_INTERVIEW_TEXT_LENGTH} characters.`);
+  }
+}
+
+function normalizeFieldPath(rawTarget: string, questionId: string): string {
+  // Composite writerOSTarget patterns (e.g. storyBible.characters[x].{flaw,secret,want,need})
+  // are not valid field paths. Fall back to a stable sentinel keyed by question so
+  // banking/export can decide how to surface the value without corrupting field_path.
+  if (rawTarget.includes('{') || rawTarget.includes('[') || rawTarget.includes('|')) {
+    return `interview_answer.${questionId}`;
+  }
+  return rawTarget;
+}
+
 export async function getInterviewStatus(projectId: string): Promise<InterviewStatus> {
   const sessions = await interviewStore.listInterviewSessions(projectId);
   const activeSession = sessions.find((session) => isPreBanked(session.state)) ?? null;
@@ -68,6 +93,7 @@ export async function startInterview(input: {
 }): Promise<InterviewStartResult> {
   const seedText = input.seedText.trim();
   if (!seedText) throw new Error('seedText is required.');
+  validateTextLength('seedText', seedText);
 
   let session = await interviewStore.createInterviewSession({ projectId: input.projectId, mode: input.mode, seedText });
   const audit = auditSeed(seedText, { speculative: Boolean(input.speculative) });
@@ -85,6 +111,7 @@ export async function startInterview(input: {
 
 export async function answerInterviewQuestion(input: {
   sessionId: string;
+  projectId: string;
   answerText: string;
   disposition?: 'field_mapped' | 'seed_color' | 'skipped_delegated';
   resolvedValue?: string;
@@ -93,12 +120,15 @@ export async function answerInterviewQuestion(input: {
 }): Promise<InterviewAnswerResult> {
   const session = await interviewStore.getInterviewSession(input.sessionId);
   if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   if (session.state !== 'interviewing') throw new Error('Interview session is not accepting answers.');
   const question = currentQuestionFor(session);
   if (!question) throw new Error('Interview session has no active question.');
 
   const answerText = input.answerText.trim();
   if (!answerText) throw new Error('answerText is required.');
+  validateTextLength('answerText', answerText);
+  validateTextLength('resolvedValue', input.resolvedValue);
   const disposition = input.rejectMapping ? 'seed_color' : input.disposition ?? 'field_mapped';
   await interviewStore.appendInterviewAnswer(session.id, {
     question_id: question.id,
@@ -114,7 +144,7 @@ export async function answerInterviewQuestion(input: {
       projectId: session.project_id,
       agentId: question.lane,
       surface: question.writerOSTarget.startsWith('storyBible') ? 'storyBible' : 'memory',
-      fieldPath: question.writerOSTarget === 'story_locks' ? 'story_locks' : question.writerOSTarget === 'open_questions' ? 'open_questions' : question.writerOSTarget,
+      fieldPath: normalizeFieldPath(question.writerOSTarget, question.id),
       proposedValue: input.resolvedValue ?? answerText,
       rationale: `First Meeting answer to ${question.id}`,
       kind: 'interview_answer',
@@ -130,40 +160,48 @@ export async function answerInterviewQuestion(input: {
   return { session: nextSession, proposal, currentQuestion: currentQuestionFor(nextSession) };
 }
 
-export async function skipInterviewQuestion(sessionId: string): Promise<InterviewAnswerResult> {
-  return answerInterviewQuestion({ sessionId, answerText: 'Writer skipped/delegated this area to the room.', disposition: 'skipped_delegated' });
+export async function skipInterviewQuestion(input: { sessionId: string; projectId: string }): Promise<InterviewAnswerResult> {
+  return answerInterviewQuestion({ ...input, answerText: 'Writer skipped/delegated this area to the room.', disposition: 'skipped_delegated' });
 }
 
-export async function wrapInterview(sessionId: string): Promise<InterviewSessionRow> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function wrapInterview(input: { sessionId: string; projectId: string }): Promise<InterviewSessionRow> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
+  if (session.state === 'banked' || session.state === 'exported') {
+    throw new Error(`Cannot wrap interview session that is already ${session.state}.`);
+  }
   return interviewStore.updateInterviewSession(session.id, { state: 'readback', cursor: { lane: null, question_id: null, budgets_spent: session.cursor.budgets_spent } });
 }
 
-export async function pauseInterview(sessionId: string): Promise<InterviewSessionRow> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function pauseInterview(input: { sessionId: string; projectId: string }): Promise<InterviewSessionRow> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   return interviewStore.updateInterviewSession(session.id, pauseInterviewSessionState(session));
 }
 
-export async function resumeInterview(sessionId: string): Promise<InterviewSessionRow> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function resumeInterview(input: { sessionId: string; projectId: string }): Promise<InterviewSessionRow> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   return interviewStore.updateInterviewSession(session.id, resumeInterviewSessionState(session));
 }
 
-export async function previewBank(sessionId: string, mutability: Record<string, Mutability> = {}): Promise<BankPreview> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function previewBank(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability> }): Promise<BankPreview> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   const proposals = await interviewStore.listInterviewProposals(session.id, 'adopted');
-  return buildBankPreview({ session, proposals, mutability });
+  return buildBankPreview({ session, proposals, mutability: input.mutability ?? {} });
 }
 
-export async function bankInterview(sessionId: string, mutability: Record<string, Mutability> = {}): Promise<InterviewBankResult> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function bankInterview(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability> }): Promise<InterviewBankResult> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   if (session.state !== 'readback') throw new Error('Only readback sessions can be banked.');
-  const preview = await previewBank(sessionId, mutability);
+  const preview = await previewBank(input);
   const existingConceptSeed = await roomStore.getSharedBlockValue(session.project_id, 'concept_seed');
   const conceptSeedValue = [existingConceptSeed.trim(), preview.conceptSeedAppend].filter(Boolean).join('\n\n');
 
@@ -180,12 +218,13 @@ export async function bankInterview(sessionId: string, mutability: Record<string
   return { session: updated, preview };
 }
 
-export async function exportInterview(sessionId: string, opts: { date?: string } = {}): Promise<InterviewExportResult> {
-  const session = await interviewStore.getInterviewSession(sessionId);
-  if (!session) throw new Error(`Interview session ${sessionId} not found.`);
+export async function exportInterview(input: { sessionId: string; projectId: string; date?: string }): Promise<InterviewExportResult> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
   if (session.state !== 'banked' && session.state !== 'exported') throw new Error('Only banked sessions can be exported.');
-  const preview = await previewBank(sessionId);
-  const markdown = renderPitchStudioSeedExport(preview, opts);
+  const preview = await previewBank(input);
+  const markdown = renderPitchStudioSeedExport(preview, { date: input.date });
   const check = checkInterviewExport(markdown);
   if (!check.ok) throw new Error(`Export shape invalid: ${check.errors.join('; ')}`);
   const updated = session.state === 'exported' ? session : await interviewStore.updateInterviewSession(session.id, { state: 'exported' });

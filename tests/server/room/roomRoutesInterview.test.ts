@@ -95,6 +95,15 @@ describe('First Meeting routes', () => {
     expect(runtimeMock.startInterview).not.toHaveBeenCalled()
   })
 
+  it('rejects action on interview session belonging to a different project', async () => {
+    runtimeMock.answerInterviewQuestion.mockRejectedValueOnce(new Error('Interview session does not belong to project project-A.'))
+
+    const res = await post('/api/room/project-A/interview/s1/answer', { answerText: 'hello' })
+
+    expect(res.status).toBe(409)
+    expect(runtimeMock.answerInterviewQuestion).toHaveBeenCalled()
+  })
+
   it('answers, skips, pauses/resumes, banks, and exports through explicit actions', async () => {
     runtimeMock.answerInterviewQuestion.mockResolvedValueOnce({ session: { id: 's1', state: 'interviewing' }, currentQuestion: { id: 'morgan-ending' } })
     runtimeMock.skipInterviewQuestion.mockResolvedValueOnce({ session: { id: 's1', state: 'readback' }, currentQuestion: null })
@@ -111,5 +120,16 @@ describe('First Meeting routes', () => {
     expect((await get('/api/room/project-A/interview/s1/bank-preview')).json).toMatchObject({ preview: { seedText: 'seed' } })
     expect((await post('/api/room/project-A/interview/s1/bank', { mutability: {} })).json).toMatchObject({ session: { state: 'banked' } })
     expect((await post('/api/room/project-A/interview/s1/export')).json).toMatchObject({ markdown: '# Export' })
+  })
+
+  it('rejects overly long seed, answer, and resolved values', async () => {
+    const oversized = 'a'.repeat(20001)
+    runtimeMock.startInterview.mockRejectedValueOnce(new Error('seedText exceeds maximum length of 20000 characters.'))
+    runtimeMock.answerInterviewQuestion.mockRejectedValueOnce(new Error('answerText exceeds maximum length of 20000 characters.'))
+    runtimeMock.answerInterviewQuestion.mockRejectedValueOnce(new Error('resolvedValue exceeds maximum length of 20000 characters.'))
+
+    expect((await post('/api/room/project-A/interview/start', { mode: 'full', seedText: oversized })).status).toBe(413)
+    expect((await post('/api/room/project-A/interview/s1/answer', { answerText: oversized })).status).toBe(413)
+    expect((await post('/api/room/project-A/interview/s1/answer', { answerText: 'short', resolvedValue: oversized })).status).toBe(413)
   })
 })

@@ -23,6 +23,20 @@ function requireRoom(res: Response): boolean {
 
 const projectIdOf = (req: Request): string => String(req.params.projectId ?? '').trim();
 
+function handleInterviewError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : 'Failed to execute First Meeting action.';
+  if (message.includes('does not belong to project')) {
+    res.status(409).json({ message });
+    return;
+  }
+  if (message.includes('exceeds maximum length')) {
+    res.status(413).json({ message });
+    return;
+  }
+  console.error('[room.routes] interview action failed:', error);
+  res.status(500).json({ message });
+}
+
 export function registerRoomRoutes(app: Express): void {
   // Live channel stream. An open connection = "project is open" for idle_tick.
   app.get('/api/room/:projectId/stream', (req, res) => {
@@ -226,8 +240,7 @@ export function registerRoomRoutes(app: Express): void {
       });
       res.json(result);
     } catch (error) {
-      console.error('[room.routes] interview start failed:', error);
-      res.status(500).json({ message: 'Failed to start First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
@@ -246,6 +259,7 @@ export function registerRoomRoutes(app: Express): void {
       }
       const result = await interviewRuntime.answerInterviewQuestion({
         sessionId: String(req.params.sessionId),
+        projectId: projectIdOf(req),
         answerText,
         resolvedValue: typeof req.body?.resolvedValue === 'string' ? req.body.resolvedValue : undefined,
         origin,
@@ -253,78 +267,70 @@ export function registerRoomRoutes(app: Express): void {
       });
       res.json(result);
     } catch (error) {
-      console.error('[room.routes] interview answer failed:', error);
-      res.status(500).json({ message: 'Failed to record First Meeting answer.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/skip', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json(await interviewRuntime.skipInterviewQuestion(String(req.params.sessionId)));
+      res.json(await interviewRuntime.skipInterviewQuestion({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
     } catch (error) {
-      console.error('[room.routes] interview skip failed:', error);
-      res.status(500).json({ message: 'Failed to skip First Meeting question.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/wrap', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ session: await interviewRuntime.wrapInterview(String(req.params.sessionId)) });
+      res.json({ session: await interviewRuntime.wrapInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
-      console.error('[room.routes] interview wrap failed:', error);
-      res.status(500).json({ message: 'Failed to wrap First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/pause', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ session: await interviewRuntime.pauseInterview(String(req.params.sessionId)) });
+      res.json({ session: await interviewRuntime.pauseInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
-      console.error('[room.routes] interview pause failed:', error);
-      res.status(500).json({ message: 'Failed to pause First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/resume', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ session: await interviewRuntime.resumeInterview(String(req.params.sessionId)) });
+      res.json({ session: await interviewRuntime.resumeInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
-      console.error('[room.routes] interview resume failed:', error);
-      res.status(500).json({ message: 'Failed to resume First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.get('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ preview: await interviewRuntime.previewBank(String(req.params.sessionId)) });
+      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
-      console.error('[room.routes] interview bank preview failed:', error);
-      res.status(500).json({ message: 'Failed to preview First Meeting banking.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/bank', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json(await interviewRuntime.bankInterview(String(req.params.sessionId), req.body?.mutability ?? {}));
+      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: req.body?.mutability ?? {} }));
     } catch (error) {
-      console.error('[room.routes] interview bank failed:', error);
-      res.status(500).json({ message: 'Failed to bank First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
   app.post('/api/room/:projectId/interview/:sessionId/export', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json(await interviewRuntime.exportInterview(String(req.params.sessionId)));
+      res.json(await interviewRuntime.exportInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
     } catch (error) {
-      console.error('[room.routes] interview export failed:', error);
-      res.status(500).json({ message: 'Failed to export First Meeting.' });
+      handleInterviewError(res, error);
     }
   });
 
