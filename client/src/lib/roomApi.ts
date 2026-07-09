@@ -143,17 +143,22 @@ export async function resolveRoomProposal(
   projectId: string,
   proposalId: string,
   status: 'adopted' | 'rejected',
+  opts: { resolvedValue?: string; origin?: 'seed' | 'extrapolated' | 'invented' } = {},
 ): Promise<RoomProposal> {
+  const body: { status: 'adopted' | 'rejected'; resolved_value?: string; origin?: 'seed' | 'extrapolated' | 'invented' } = { status }
+  if (opts.resolvedValue !== undefined) body.resolved_value = opts.resolvedValue
+  if (opts.origin !== undefined) body.origin = opts.origin
+
   const res = await fetch(
     `/api/room/${encodeURIComponent(projectId)}/proposals/${encodeURIComponent(proposalId)}/resolve`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(body),
     },
   )
-  const body = await jsonOrThrow<{ proposal: RoomProposal }>(res)
-  return body.proposal
+  const response = await jsonOrThrow<{ proposal: RoomProposal }>(res)
+  return response.proposal
 }
 
 export async function fetchInterviewStatus(projectId: string): Promise<InterviewStatus> {

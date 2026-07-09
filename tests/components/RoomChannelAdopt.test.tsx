@@ -40,6 +40,15 @@ const pendingProposal: RoomProposal = {
   created_at: '2026-07-07T00:00:00Z',
 }
 
+const pendingInterviewProposal: RoomProposal = {
+  ...pendingProposal,
+  id: 'prop-interview-1',
+  kind: 'interview_answer',
+  session_id: 's1',
+  question_id: 'morgan-locks',
+  origin: 'seed',
+}
+
 beforeEach(() => {
   Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
@@ -81,6 +90,14 @@ describe('RoomChannel proposal adoption ordering', () => {
     )
     expect(input).toHaveValue('keep this thought')
     expect(await screen.findByText(/network down/)).toBeInTheDocument()
+  })
+
+  it('does not render interview answer proposals as ambient proposal cards', async () => {
+    apiMock.fetchRoomProposals.mockResolvedValueOnce([pendingProposal, pendingInterviewProposal])
+    renderChannel(vi.fn())
+
+    expect(await screen.findByText('win back the restaurant')).toBeInTheDocument()
+    expect(screen.getAllByTestId('proposal-card')).toHaveLength(1)
   })
 
   it('does NOT write the document when the server resolve fails', async () => {

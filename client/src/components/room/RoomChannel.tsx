@@ -77,7 +77,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
-    () => proposals.filter((p) => p.status === 'pending'),
+    () => proposals.filter((p) => p.status === 'pending' && p.kind !== 'interview_answer'),
     [proposals],
   )
 
