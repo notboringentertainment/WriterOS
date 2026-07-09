@@ -341,7 +341,7 @@ export function VoiceProfileDrawer({ open, onClose, onOpenRitual }: VoiceProfile
                   onOpenRitual()
                 }}
               >
-                Begin the full ritual
+                Open full assessment
               </button>
             )}
             <span style={styles.footerHint}>{answeredCount}/20 answered</span>

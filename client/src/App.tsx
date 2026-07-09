@@ -37,6 +37,7 @@ import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, 
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
+import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib/projectMeetingStatus'
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
 import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProposals'
 import type { RoomProposal } from './lib/roomApi'
@@ -132,6 +133,27 @@ export default function App() {
       openRitual('voiceProfile')
     }
   }, [openRitual])
+
+  // Project Meeting standings for the Home cards. Best effort, only while Home is
+  // visible; a down room API simply hides the chips. Keyed on a stable id string —
+  // `project.projects` is rebuilt every render, so depending on the array identity
+  // would refetch (and re-render) in an infinite loop.
+  const [projectMeetingStandings, setProjectMeetingStandings] = useState<Record<string, ProjectMeetingStanding>>({})
+  const meetingStandingIdsKey = Array.from(new Set([
+    ...project.projects.map(p => p.id),
+    ...projectFolder.projects.map(p => p.id),
+  ])).sort().join(',')
+  useEffect(() => {
+    if (!shellState.homeActive || !meetingStandingIdsKey) return
+    let cancelled = false
+    void fetchProjectMeetingStandings(meetingStandingIdsKey.split(',')).then(standings => {
+      if (!cancelled) setProjectMeetingStandings(standings)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [shellState.homeActive, meetingStandingIdsKey])
+
   const writeProjectRef = useRef(projectFolder.writeProject)
   const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
@@ -273,12 +295,25 @@ export default function App() {
         packageName: openedProject.packageName,
       })
       shellState.openProjectWorkspace()
+      return true
     } catch (error) {
       setFolderProjectError(formatFolderProjectError(error))
+      return false
     } finally {
       setOpeningFolderProjectId(null)
     }
   }, [cancelPendingFolderSave, formatFolderProjectError, project, projectFolder, shellState])
+
+  const handleOpenProjectMeetingFromHome = useCallback(async (projectId: string, storageKind: 'browser' | 'folder') => {
+    if (storageKind === 'browser') {
+      handleOpenBrowserProject(projectId)
+      openRitual('projectMeeting')
+      return
+    }
+    if (await handleOpenFolderProject(projectId)) {
+      openRitual('projectMeeting')
+    }
+  }, [handleOpenBrowserProject, handleOpenFolderProject, openRitual])
 
   const handleNewProject = useCallback(() => {
     cancelPendingFolderSave()
@@ -298,9 +333,11 @@ export default function App() {
       setActiveProjectStorage({ kind: 'browser' })
     }
 
-    // Project Meeting entry point (§A3): new projects visibly offer the interview,
-    // but the interview itself never auto-starts.
-    shellState.enterWritersRoom()
+    // Project Meeting entry point (§A3): a new project lands on the meeting page in
+    // its intake state — the page is the offer, and the interview never auto-starts.
+    // "Skip for now" drops the writer into the workspace underneath.
+    shellState.openProjectWorkspace()
+    shellState.openRitual('projectMeeting')
   }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
 
   const handleImportFdxAsNewProject = useCallback(async (file: File) => {
@@ -876,6 +913,8 @@ export default function App() {
           folderLabel={projectFolder.label}
           onMigrateLocalStorage={handleMigrateLocalStorage}
           migratingLocalStorage={migratingLocalStorage}
+          projectMeetingStandings={projectMeetingStandings}
+          onOpenProjectMeeting={(projectId, storageKind) => void handleOpenProjectMeetingFromHome(projectId, storageKind)}
         />
       )
     }
@@ -911,6 +950,7 @@ export default function App() {
                     })),
                     locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
                     onAdoptProposal: handleAdoptRoomProposal,
+                    onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
                   }
                 : undefined
             }

@@ -15,10 +15,16 @@ describe("App Writer's Room layout", () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
 
-    const panel = await screen.findByTestId('project-meeting-panel')
-    expect(panel).toHaveTextContent('Project Meeting')
-    expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start Project Meeting' })).toBeInTheDocument()
+    // A new project lands on the Project Meeting page in its intake state — the
+    // page is the offer; nothing starts until the writer begins explicitly.
+    const page = await screen.findByTestId('ritual-page')
+    expect(page).toHaveTextContent('Project Meeting')
+    expect(screen.getByLabelText('Project Meeting seed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Begin the meeting' })).toBeInTheDocument()
+
+    // Skipping drops the writer into the workspace underneath.
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(screen.queryByTestId('ritual-page')).not.toBeInTheDocument()
   })
 
   it('keeps the active writing surface visible when Writer Room is open', () => {

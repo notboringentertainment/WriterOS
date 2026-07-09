@@ -7,6 +7,7 @@ import type {
   WriterOSProjectsFolderStatus,
 } from '../../lib/useWriterOSProjectsFolder'
 import { MigrateLocalStorageModal } from './MigrateLocalStorageModal'
+import { projectMeetingStandingLabel, type ProjectMeetingStanding } from '../../lib/projectMeetingStatus'
 
 export type HomeDeleteTarget =
   | { storageKind: 'browser'; projectId: string; title: string }
@@ -58,6 +59,8 @@ interface HomeSurfaceProps {
   folderLabel?: string | null
   onMigrateLocalStorage?: () => void
   migratingLocalStorage?: boolean
+  projectMeetingStandings?: Record<string, ProjectMeetingStanding>
+  onOpenProjectMeeting?: (projectId: string, storageKind: 'browser' | 'folder') => void
 }
 
 type SortKey = 'updated' | 'title' | 'created'
@@ -119,6 +122,8 @@ export function HomeSurface({
   folderLabel,
   onMigrateLocalStorage,
   migratingLocalStorage = false,
+  projectMeetingStandings,
+  onOpenProjectMeeting,
 }: HomeSurfaceProps) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated')
@@ -455,6 +460,22 @@ export function HomeSurface({
                     {row.packageName}
                     {row.warnings.length > 0 ? ` · ${row.warnings.length} warning${row.warnings.length === 1 ? '' : 's'}` : ''}
                   </p>
+                )}
+                {!row.archived && projectMeetingStandings?.[row.project.id] && (
+                  <button
+                    type="button"
+                    aria-label={`Project Meeting for ${projectTitle}: ${projectMeetingStandingLabel(projectMeetingStandings[row.project.id])}`}
+                    style={{
+                      ...styles.meetingChip,
+                      ...(projectMeetingStandings[row.project.id] === 'paused' || projectMeetingStandings[row.project.id] === 'in_progress'
+                        ? styles.meetingChipActive
+                        : {}),
+                    }}
+                    disabled={!onOpenProjectMeeting}
+                    onClick={() => onOpenProjectMeeting?.(row.project.id, row.storageKind)}
+                  >
+                    Project Meeting · {projectMeetingStandingLabel(projectMeetingStandings[row.project.id])}
+                  </button>
                 )}
               </div>
               <div style={styles.projectActions}>
@@ -1040,6 +1061,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-mono)',
     fontSize: 12,
     marginTop: 5,
+  },
+  meetingChip: {
+    marginTop: 7,
+    padding: '2px 10px',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--border)',
+    background: 'none',
+    color: 'var(--fg-subtle)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+  },
+  meetingChipActive: {
+    borderColor: 'var(--wp-amber)',
+    color: 'var(--wp-amber)',
+    background: 'hsla(41, 100%, 60%, 0.08)',
   },
   primarySmallButton: {
     borderWidth: 1,

@@ -19,6 +19,7 @@ import {
 } from '../../lib/roomApi'
 import { canApplyProposal } from '../../lib/roomProposals'
 import { useInterviewSession } from '../../lib/useInterviewSession'
+import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
 
 export interface RoomChannelProps {
   projectId: string
@@ -28,6 +29,8 @@ export interface RoomChannelProps {
   // Applies the proposal to the local document. Returns false when the field
   // path can't be applied (the proposal is left pending).
   onAdoptProposal: (proposal: RoomProposal) => boolean
+  // Opens the full-page Project Meeting (the interview no longer lives in this dock).
+  onOpenProjectMeeting?: () => void
 }
 
 interface StreamingTurn {
@@ -46,16 +49,14 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal }: RoomChannelProps) {
+export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
   const [inputText, setInputText] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Read-only: the interview itself lives on the Project Meeting page.
   const interview = useInterviewSession(projectId)
-  const [interviewSeed, setInterviewSeed] = useState('')
-  const [interviewAnswer, setInterviewAnswer] = useState('')
-  const [interviewOrigin, setInterviewOrigin] = useState<'seed' | 'extrapolated'>('seed')
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -172,27 +173,14 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }
 
-  async function handleStartInterview() {
-    const seedText = interviewSeed.trim()
-    if (!seedText) {
-      setError('Paste or type a seed before starting Project Meeting.')
-      return
-    }
-    if (await interview.start({ mode: 'full', seedText })) {
-      setInterviewSeed('')
-    }
-  }
-
-  async function handleAnswerInterview(rejectMapping = false) {
-    if (await interview.answer({ answerText: interviewAnswer, origin: interviewOrigin, rejectMapping })) {
-      setInterviewAnswer('')
-      setInterviewOrigin('seed')
-    }
-  }
-
   const canSend = inputText.trim().length > 0
-  const interviewStatus = interview.status
   const displayError = error ?? interview.error
+  const meetingStanding = deriveProjectMeetingStanding(interview.status)
+  const meetingAction =
+    meetingStanding === 'paused' ? 'Resume Project Meeting'
+      : meetingStanding === 'in_progress' ? 'Continue Project Meeting'
+      : meetingStanding === 'banked' ? 'New interview round'
+      : 'Start Project Meeting'
 
   return (
     <div style={styles.root} data-testid="room-channel">
@@ -201,97 +189,14 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         <span style={styles.subtitle}>Morgan · Casey — live</span>
       </div>
 
-      <section style={styles.interviewPanel} data-testid="project-meeting-panel">
-        <div style={styles.interviewHeader}>
-          <div>
-            <div style={styles.interviewTitle}>{interviewStatus.actionLabel}</div>
-            <div style={styles.interviewMeta}>Explicit start · audit-driven · never auto-started</div>
-          </div>
-          {!interviewStatus.activeSession && <span style={styles.interviewMeta}>Skip is simply: do nothing.</span>}
+      {onOpenProjectMeeting && (
+        <div style={styles.meetingLine} data-testid="project-meeting-status">
+          <span style={styles.meetingLabel}>Project Meeting · {projectMeetingStandingLabel(meetingStanding)}</span>
+          <button type="button" style={styles.meetingLink} onClick={onOpenProjectMeeting}>
+            {meetingAction}
+          </button>
         </div>
-
-        {!interviewStatus.activeSession && (
-          <div style={styles.interviewStack}>
-            <textarea
-              aria-label="Project Meeting seed"
-              placeholder="Paste the seed or one-sentence idea…"
-              value={interviewSeed}
-              onChange={e => setInterviewSeed(e.target.value)}
-              rows={3}
-              style={styles.input}
-            />
-            <button type="button" style={styles.adoptButton} onClick={() => void handleStartInterview()}>
-              Start Project Meeting
-            </button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'paused' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.interviewMeta}>Paused at {interviewStatus.activeSession.cursor.question_id ?? 'readback'}.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void interview.resume()}>Resume Project Meeting</button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'interviewing' && interviewStatus.currentQuestion && (
-          <div style={styles.interviewStack}>
-            <div style={styles.interviewMeta}>{personaLabel(interviewStatus.currentQuestion.lane)} · {interviewStatus.currentQuestion.trigger}</div>
-            <div style={styles.body}>{interviewStatus.currentQuestion.question}</div>
-            <textarea
-              aria-label="Project Meeting answer"
-              placeholder="Answer in story terms…"
-              value={interviewAnswer}
-              onChange={e => setInterviewAnswer(e.target.value)}
-              rows={3}
-              style={styles.input}
-            />
-            <select
-              aria-label="Project Meeting answer origin"
-              value={interviewOrigin}
-              onChange={e => setInterviewOrigin(e.target.value as 'seed' | 'extrapolated')}
-              style={styles.input}
-            >
-              <option value="seed">Seed</option>
-              <option value="extrapolated">Extrapolated</option>
-            </select>
-            <div style={styles.proposalActions}>
-              <button type="button" style={styles.adoptButton} onClick={() => void handleAnswerInterview(false)}>Confirm mapping</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleAnswerInterview(true)}>Reject mapping / keep as seed color</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void interview.skip()}>Skip / delegate</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void interview.pause()}>Pause</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void interview.wrap()}>Wrap it up</button>
-            </div>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'readback' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>Readback ready: review locks, leanings, and open questions before banking. No memory blocks are written until Bank this round.</div>
-            <div style={styles.proposalActions}>
-              <button type="button" style={styles.rejectButton} onClick={() => void interview.previewBank()}>Preview banking</button>
-              <button type="button" style={styles.adoptButton} onClick={() => void interview.bank()}>Bank this round</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void interview.pause()}>Pause</button>
-            </div>
-            {interview.bankPreview && (
-              <pre style={styles.previewBox}>{interview.bankPreview.conceptSeedAppend}</pre>
-            )}
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'banked' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>This Project Meeting round is banked. Future rounds append; they do not edit this one.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void interview.exportToPitchStudio()}>Export to PitchStudio</button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'exported' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>Export prepared for PitchStudio.</div>
-            {interview.exportMarkdown && <pre style={styles.previewBox}>{interview.exportMarkdown}</pre>}
-          </div>
-        )}
-      </section>
+      )}
 
       <div ref={feedRef} style={styles.feed}>
         {displayError && <p style={styles.error}>{displayError}</p>}
@@ -412,47 +317,31 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10,
     color: 'var(--fg-subtle)',
   },
-  interviewPanel: {
+  meetingLine: {
     borderBottom: '1px solid var(--border)',
-    padding: 12,
+    padding: '8px 16px',
     display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    background: 'var(--surface-1)',
-  },
-  interviewHeader: {
-    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    alignItems: 'flex-start',
+    background: 'var(--surface-1)',
   },
-  interviewTitle: {
-    fontFamily: 'var(--font-display)',
-    color: 'var(--fg)',
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  interviewMeta: {
+  meetingLabel: {
     fontFamily: 'var(--font-mono)',
     color: 'var(--fg-subtle)',
     fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
   },
-  interviewStack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-  },
-  previewBox: {
-    maxHeight: 180,
-    overflow: 'auto',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    padding: 10,
-    background: 'var(--surface-2)',
-    color: 'var(--fg-muted)',
+  meetingLink: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--wp-amber)',
+    cursor: 'pointer',
     fontFamily: 'var(--font-mono)',
-    fontSize: 10,
-    whiteSpace: 'pre-wrap',
+    fontSize: 11,
+    fontWeight: 700,
+    padding: 0,
   },
   feed: {
     flex: 1,

@@ -59,13 +59,14 @@ const interviewProposal: RoomProposal = {
   created_at: '2026-07-08T00:00:00Z',
 }
 
-function renderChannel() {
-  return render(
+function renderChannel(onOpenProjectMeeting?: () => void) {
+  render(
     <RoomChannel
       projectId="p1"
       characterNames={[]}
       locksText=""
       onAdoptProposal={() => true}
+      onOpenProjectMeeting={onOpenProjectMeeting}
     />,
   )
 }
@@ -80,49 +81,51 @@ beforeEach(() => {
   apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
 })
 
-describe('RoomChannel Project Meeting panel', () => {
-  it('shows explicit start and visible skip without auto-starting', async () => {
-    renderChannel()
+// The interview itself lives on the Project Meeting page (ProjectMeetingPage.test.tsx);
+// the dock only surfaces standing and a way there.
+describe('RoomChannel Project Meeting status line', () => {
+  it('shows a start link when no meeting exists and opens the meeting page without auto-starting', async () => {
+    const onOpen = vi.fn()
+    renderChannel(onOpen)
 
-    expect(await screen.findByText('Project Meeting')).toBeInTheDocument()
-    expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
+    const status = await screen.findByTestId('project-meeting-status')
+    expect(status).toHaveTextContent('Project Meeting · not started')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Project Meeting' }))
+    expect(onOpen).toHaveBeenCalled()
     expect(apiMock.startInterview).not.toHaveBeenCalled()
   })
 
-  it('starts from seed, answers, skips, pauses/resumes, banks, and exports through visible controls', async () => {
-    const firstQuestion = { id: 'morgan-locks', lane: 'morgan', trigger: 'locks', question: 'What is not allowed?', writerOSTarget: 'story_locks', templateDestination: '## Locks', originOnConfirm: 'seed', requirement: 'required', budget: 2 }
-    apiMock.startInterview.mockResolvedValueOnce({ session: session('interviewing'), auditMessage: 'Morgan audit', currentQuestion: firstQuestion })
-    apiMock.answerInterviewQuestion.mockResolvedValueOnce({ session: session('interviewing'), proposal: interviewProposal, currentQuestion: firstQuestion })
-    apiMock.resolveRoomProposal.mockResolvedValueOnce({ ...interviewProposal, status: 'adopted', resolved_at: '2026-07-08T00:01:00Z', resolved_value: 'Never become cynical.' })
-    apiMock.skipInterviewQuestion.mockResolvedValueOnce({ session: session('readback'), currentQuestion: null })
-    apiMock.fetchInterviewBankPreview.mockResolvedValueOnce({ conceptSeedAppend: '## Project Meeting Round\nseed', seedText: 'seed', locks: [], openQuestions: [], datedAnswers: [], seedColor: [], leanings: [], title: 'Untitled' })
-    apiMock.bankInterview.mockResolvedValueOnce({ session: session('banked'), preview: { conceptSeedAppend: 'banked seed' } })
-    apiMock.exportInterview.mockResolvedValueOnce({ session: session('exported'), markdown: '# Hearth Ghosts\n\n## Seed' })
+  it('reflects a paused meeting with a resume link', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('paused'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
+    renderChannel(vi.fn())
 
-    renderChannel()
-    fireEvent.change(await screen.findByLabelText('Project Meeting seed'), { target: { value: 'thin seed' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start Project Meeting' }))
-    await waitFor(() => expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'thin seed' }))
+    const status = await screen.findByTestId('project-meeting-status')
+    await waitFor(() => expect(status).toHaveTextContent('Project Meeting · paused'))
+    expect(screen.getByRole('button', { name: 'Resume Project Meeting' })).toBeInTheDocument()
+  })
 
-    fireEvent.change(await screen.findByLabelText('Project Meeting answer'), { target: { value: 'Never become cynical.' } })
-    fireEvent.change(screen.getByLabelText('Project Meeting answer origin'), { target: { value: 'extrapolated' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm mapping' }))
-    await waitFor(() => expect(apiMock.answerInterviewQuestion).toHaveBeenCalledWith('p1', 's1', { answerText: 'Never become cynical.', origin: 'extrapolated', rejectMapping: false }))
-    await waitFor(() => expect(apiMock.resolveRoomProposal).toHaveBeenCalledWith('p1', 'proposal-1', 'adopted', { resolvedValue: 'Never become cynical.', origin: 'extrapolated' }))
+  it('reflects a banked meeting with a new-round link', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null })
+    renderChannel(vi.fn())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Skip / delegate' }))
-    await waitFor(() => expect(apiMock.skipInterviewQuestion).toHaveBeenCalledWith('p1', 's1'))
+    const status = await screen.findByTestId('project-meeting-status')
+    await waitFor(() => expect(status).toHaveTextContent('Project Meeting · banked'))
+    expect(screen.getByRole('button', { name: 'New interview round' })).toBeInTheDocument()
+  })
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Preview banking' }))
-    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {}))
-    expect(await screen.findByText(/Project Meeting Round/)).toBeInTheDocument()
+  it('hides the status line without an onOpenProjectMeeting handler', async () => {
+    renderChannel(undefined)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bank this round' }))
-    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {}))
-    expect(await screen.findByText(/round is banked/)).toBeInTheDocument()
+    await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalled())
+    expect(screen.queryByTestId('project-meeting-status')).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export to PitchStudio' }))
-    await waitFor(() => expect(apiMock.exportInterview).toHaveBeenCalledWith('p1', 's1'))
-    expect(await screen.findByText(/# Hearth Ghosts/)).toBeInTheDocument()
+  it('never renders interview_answer proposals as ambient cards', async () => {
+    apiMock.fetchRoomProposals.mockResolvedValue([interviewProposal])
+    renderChannel(vi.fn())
+
+    await waitFor(() => expect(apiMock.fetchRoomProposals).toHaveBeenCalled())
+    expect(screen.queryByTestId('proposal-card')).not.toBeInTheDocument()
   })
 })

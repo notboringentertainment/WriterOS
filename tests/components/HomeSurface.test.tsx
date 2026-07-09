@@ -57,6 +57,37 @@ describe('HomeSurface', () => {
     expect(onOpenProject).toHaveBeenCalledWith('project-2')
   })
 
+  it('shows Project Meeting standing chips and opens the meeting for that project', () => {
+    const onOpenProjectMeeting = vi.fn()
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+        projectMeetingStandings={{ 'project-1': 'paused', 'project-2': 'not_started' }}
+        onOpenProjectMeeting={onOpenProjectMeeting}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Project Meeting for The Salt Line: paused' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Project Meeting for Quiet Frequencies: not started' }))
+    expect(onOpenProjectMeeting).toHaveBeenCalledWith('project-2', 'browser')
+  })
+
+  it('omits meeting chips when no standings are provided', () => {
+    render(
+      <HomeSurface
+        activeProjectId="project-1"
+        projects={projects}
+        onOpenProject={vi.fn()}
+        onNewProject={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: /Project Meeting for/ })).not.toBeInTheDocument()
+  })
+
   it('creates a new project from Home', () => {
     const onNewProject = vi.fn()
     render(
