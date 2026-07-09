@@ -15,12 +15,14 @@ import {
   startInterview,
   wrapInterview,
   type InterviewBankPreview,
+  type InterviewMutability,
   type InterviewQuestion,
   type InterviewSession,
   type InterviewStatus,
 } from './roomApi'
 
 export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
+export type { InterviewMutability }
 
 export function emptyInterviewStatus(): InterviewStatus {
   return { activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null }
@@ -39,8 +41,8 @@ export interface InterviewSessionHandle {
   pause: () => Promise<void>
   resume: () => Promise<void>
   wrap: () => Promise<void>
-  previewBank: () => Promise<void>
-  bank: () => Promise<void>
+  previewBank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
+  bank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
   exportToPitchStudio: () => Promise<void>
 }
 
@@ -154,21 +156,21 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     }
   }, [projectId, status.activeSession])
 
-  const previewBank = useCallback(async () => {
+  const previewBank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
     const session = status.activeSession
     if (!session) return
     try {
-      setBankPreview(await fetchInterviewBankPreview(projectId, session.id))
+      setBankPreview(await fetchInterviewBankPreview(projectId, session.id, mutability))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bank preview failed')
     }
   }, [projectId, status.activeSession])
 
-  const bank = useCallback(async () => {
+  const bank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
     const session = status.activeSession
     if (!session) return
     try {
-      const result = await bankInterview(projectId, session.id)
+      const result = await bankInterview(projectId, session.id, mutability)
       setStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
       setBankPreview(result.preview)
     } catch (err) {

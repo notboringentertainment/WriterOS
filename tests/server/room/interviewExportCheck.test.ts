@@ -11,6 +11,7 @@ const preview: BankPreview = {
   leanings: ['[EXTRAPOLATED] Mara may sell the restaurant — challenge permitted.'],
   openQuestions: ['Who buys the restaurant if Mara fails?'],
   conceptSeedAppend: 'placeholder',
+  taggable: [],
 };
 
 describe('First Meeting PitchStudio export check', () => {

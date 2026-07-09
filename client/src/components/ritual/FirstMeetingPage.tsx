@@ -2,12 +2,13 @@
 // driven by the interview state machine; the page itself is the offer (§A3), so
 // "Skip for now" simply exits. Never auto-starts.
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
-import { useInterviewSession, type InterviewAnswerOrigin } from '../../lib/useInterviewSession'
+import { useInterviewSession, type InterviewAnswerOrigin, type InterviewMutability } from '../../lib/useInterviewSession'
 import { RitualPage } from './RitualPage'
 import { RitualQuestionCard } from './RitualQuestionCard'
 import { RitualStage } from './RitualStage'
+import { MutabilityToggle } from './MutabilityToggle'
 
 export interface FirstMeetingPageProps {
   projectId: string
@@ -26,10 +27,26 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
   const [answerDraft, setAnswerDraft] = useState('')
   const [origin, setOrigin] = useState<InterviewAnswerOrigin>('seed')
   const [seedError, setSeedError] = useState<string | null>(null)
+  const [mutabilitySelections, setMutabilitySelections] = useState<Record<string, InterviewMutability>>({})
 
   const session = interview.status.activeSession
   const stage = session?.state ?? 'intake'
   const question = interview.status.currentQuestion
+  const { previewBank } = interview
+
+  // Entering readback loads the taggable answers so the writer reviews before banking.
+  useEffect(() => {
+    if (stage === 'readback') {
+      setMutabilitySelections({})
+      void previewBank({})
+    }
+  }, [stage, previewBank])
+
+  function handleMutabilityChange(proposalId: string, value: InterviewMutability) {
+    const next = { ...mutabilitySelections, [proposalId]: value }
+    setMutabilitySelections(next)
+    void interview.previewBank(next)
+  }
 
   async function handleBegin() {
     const seedText = seedDraft.trim()
@@ -156,15 +173,61 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
         <RitualStage stageKey="readback">
           <div style={styles.stack}>
             <p style={styles.prose}>
-              Readback ready: review locks, leanings, and open questions before banking.
-              No memory blocks are written until you bank this round.
+              Here's what the room heard. Tag each answer — locked is canon, leaning invites
+              challenge, open delegates it. No memory blocks are written until you bank this round.
             </p>
+
+            {interview.bankPreview && interview.bankPreview.taggable.length > 0 && (
+              <ul style={styles.taggableList} data-testid="readback-taggable">
+                {interview.bankPreview.taggable.map(item => (
+                  <li key={item.proposalId} style={styles.taggableItem}>
+                    <div style={styles.taggableValueRow}>
+                      <span style={styles.originTag}>{item.origin === 'extrapolated' ? 'EXTRAPOLATED' : 'SEED'}</span>
+                      <span style={styles.taggableValue}>{item.value}</span>
+                    </div>
+                    <MutabilityToggle
+                      value={mutabilitySelections[item.proposalId] ?? item.applied}
+                      onChange={value => handleMutabilityChange(item.proposalId, value)}
+                      ariaLabel={`Mutability for: ${item.value.slice(0, 60)}`}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {interview.bankPreview && (
+              <div style={styles.groupedPreview} data-testid="readback-grouped-preview">
+                <div style={styles.previewGroup}>
+                  <div style={styles.previewGroupTitle}>Locks</div>
+                  {interview.bankPreview.locks.length
+                    ? interview.bankPreview.locks.map((line, i) => <div key={i} style={styles.previewLine}>{line}</div>)
+                    : <div style={styles.previewEmpty}>No locks — writer cedes broadly</div>}
+                </div>
+                <div style={styles.previewGroup}>
+                  <div style={styles.previewGroupTitle}>Leanings</div>
+                  {interview.bankPreview.leanings.length
+                    ? interview.bankPreview.leanings.map((line, i) => <div key={i} style={styles.previewLine}>{line}</div>)
+                    : <div style={styles.previewEmpty}>None</div>}
+                </div>
+                <div style={styles.previewGroup}>
+                  <div style={styles.previewGroupTitle}>Open questions</div>
+                  {interview.bankPreview.openQuestions.length
+                    ? interview.bankPreview.openQuestions.map((line, i) => <div key={i} style={styles.previewLine}>{line}</div>)
+                    : <div style={styles.previewEmpty}>Nothing delegated — writer holds all intent</div>}
+                </div>
+                {interview.bankPreview.seedColor.length > 0 && (
+                  <div style={styles.previewGroup}>
+                    <div style={styles.previewGroupTitle}>Seed color</div>
+                    {interview.bankPreview.seedColor.map((line, i) => <div key={i} style={styles.previewLine}>{line}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={styles.actionRow}>
-              <button type="button" style={styles.ghostButton} onClick={() => void interview.previewBank()}>Preview banking</button>
-              <button type="button" style={styles.primaryButton} onClick={() => void interview.bank()}>Bank this round</button>
+              <button type="button" style={styles.primaryButton} onClick={() => void interview.bank(mutabilitySelections)}>Bank this round</button>
               <button type="button" style={styles.ghostButton} onClick={() => void interview.pause()}>Pause</button>
             </div>
-            {interview.bankPreview && <pre style={styles.previewBox}>{interview.bankPreview.conceptSeedAppend}</pre>}
           </div>
         </RitualStage>
       )}
@@ -323,5 +386,73 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     whiteSpace: 'pre-wrap',
     margin: 0,
+  },
+  taggableList: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+  },
+  taggableItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+    padding: '12px 14px',
+    background: 'var(--surface-1, var(--surface))',
+  },
+  taggableValueRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 10,
+  },
+  originTag: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 9,
+    color: 'var(--fg-subtle)',
+    letterSpacing: '0.08em',
+    flexShrink: 0,
+  },
+  taggableValue: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 14,
+    color: 'var(--fg)',
+    lineHeight: 1.55,
+  },
+  groupedPreview: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+    padding: 14,
+    background: 'var(--surface-2)',
+  },
+  previewGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  previewGroupTitle: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    color: 'var(--wp-amber)',
+  },
+  previewLine: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 13,
+    color: 'var(--fg-muted)',
+    lineHeight: 1.5,
+  },
+  previewEmpty: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 13,
+    color: 'var(--fg-subtle)',
+    fontStyle: 'italic',
   },
 }

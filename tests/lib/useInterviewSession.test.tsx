@@ -110,9 +110,28 @@ describe('useInterviewSession', () => {
     await act(async () => {
       await result.current.bank()
     })
+    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {})
     expect(result.current.status.hasBankedSeed).toBe(true)
     expect(result.current.status.actionLabel).toBe('New interview round')
     expect(result.current.bankPreview?.conceptSeedAppend).toContain('### Locks')
+  })
+
+  it('previewBank and bank pass the writer mutability map through', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ conceptSeedAppend: '', taggable: [] })
+    apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '', taggable: [] } })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('readback'))
+
+    await act(async () => {
+      await result.current.previewBank({ 'p-1': 'leaning' })
+    })
+    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' })
+
+    await act(async () => {
+      await result.current.bank({ 'p-1': 'leaning', 'p-2': 'open' })
+    })
+    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning', 'p-2': 'open' })
   })
 
   it('surfaces action errors without crashing and clears them', async () => {

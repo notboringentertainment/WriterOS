@@ -102,4 +102,46 @@ describe('First Meeting banking', () => {
     expect(preview.openQuestions).toEqual([]);
     expect(preview.conceptSeedAppend).toContain('### Locks\n[SEED] Mara takes over the restaurant and burns the old menu.');
   });
+
+  it('exposes taggable answers with server-owned default mutability', () => {
+    const preview = buildBankPreview({ session: session(), proposals: [adoptedLock, adoptedOpen, adoptedEnding], mutability: {} });
+
+    expect(preview.taggable).toEqual([
+      {
+        proposalId: 'p-lock',
+        questionId: 'morgan-locks',
+        value: 'Never become cynical.',
+        origin: 'seed',
+        defaultMutability: 'locked',
+        applied: 'locked',
+      },
+      {
+        proposalId: 'p-open',
+        questionId: 'morgan-open-questions',
+        value: 'Who buys the restaurant if Mara fails?',
+        origin: 'seed',
+        defaultMutability: 'open',
+        applied: 'open',
+      },
+      {
+        proposalId: 'p-ending',
+        questionId: 'morgan-ending',
+        value: 'Mara takes over the restaurant and burns the old menu.',
+        origin: 'seed',
+        defaultMutability: 'locked',
+        applied: 'locked',
+      },
+    ]);
+  });
+
+  it('taggable applied reflects writer overrides while defaults stay server-owned', () => {
+    const preview = buildBankPreview({ session: session(), proposals: [adoptedLock, adoptedOpen], mutability: { 'p-lock': 'leaning', 'p-open': 'locked' } });
+
+    const byId = Object.fromEntries(preview.taggable.map(item => [item.proposalId, item]));
+    expect(byId['p-lock']).toMatchObject({ defaultMutability: 'locked', applied: 'leaning' });
+    expect(byId['p-open']).toMatchObject({ defaultMutability: 'open', applied: 'locked' });
+    expect(preview.leanings).toEqual(['[SEED] Never become cynical. — challenge permitted']);
+    expect(preview.locks).toEqual(['[SEED] Who buys the restaurant if Mara fails?']);
+    expect(preview.openQuestions).toEqual([]);
+  });
 });

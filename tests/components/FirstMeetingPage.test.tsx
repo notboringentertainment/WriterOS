@@ -128,18 +128,62 @@ describe('FirstMeetingPage', () => {
     await waitFor(() => expect(apiMock.resumeInterview).toHaveBeenCalledWith('p1', 's1'))
   })
 
-  it('readback previews and banks the round', async () => {
+  it('readback auto-previews, tags answers, and banks with the writer selections', async () => {
+    const readbackPreview = {
+      title: 'Ace Handler',
+      seedText: 'A grieving chef returns home.',
+      datedAnswers: [],
+      seedColor: [],
+      locks: ['[SEED] She never sells the recipes.'],
+      leanings: [],
+      openQuestions: ['Who taught her to cook?'],
+      conceptSeedAppend: '### Locks\n[SEED] She never sells the recipes.',
+      taggable: [
+        { proposalId: 'p-1', questionId: 'morgan-locks', value: 'She never sells the recipes.', origin: 'seed' as const, defaultMutability: 'locked' as const, applied: 'locked' as const },
+        { proposalId: 'p-2', questionId: 'morgan-open-questions', value: 'Who taught her to cook?', origin: 'seed' as const, defaultMutability: 'open' as const, applied: 'open' as const },
+      ],
+    }
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
-    apiMock.fetchInterviewBankPreview.mockResolvedValue({ conceptSeedAppend: '### Locks\n[SEED] She never sells the recipes.' })
-    apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '### Locks\n[SEED] She never sells the recipes.' } })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue(readbackPreview)
+    apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: readbackPreview })
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Preview banking' }))
-    expect(await screen.findByText(/never sells the recipes/)).toBeInTheDocument()
+    // Entering readback fetches the preview without an extra click.
+    expect(await screen.findByTestId('readback-taggable')).toBeInTheDocument()
+    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {})
+    expect(screen.getAllByTestId('mutability-toggle')).toHaveLength(2)
+    expect(screen.getByTestId('readback-grouped-preview')).toHaveTextContent('Locks')
 
+    // Tagging an answer re-previews with the writer's in-flight choices.
+    fireEvent.click(screen.getAllByRole('radio', { name: 'Leaning' })[0])
+    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }))
+
+    // Banking sends the accumulated selections — not an empty map.
     fireEvent.click(screen.getByRole('button', { name: 'Bank this round' }))
-    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1'))
+    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }))
     expect(await screen.findByText(/This round is banked/)).toBeInTheDocument()
+  })
+
+  it('readback toggles reflect the server default until the writer overrides', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({
+      title: 'Ace Handler',
+      seedText: 'seed',
+      datedAnswers: [],
+      seedColor: [],
+      locks: [],
+      leanings: [],
+      openQuestions: ['Who taught her to cook?'],
+      conceptSeedAppend: '',
+      taggable: [
+        { proposalId: 'p-2', questionId: 'morgan-open-questions', value: 'Who taught her to cook?', origin: 'seed' as const, defaultMutability: 'open' as const, applied: 'open' as const },
+      ],
+    })
+    renderPage()
+
+    await screen.findByTestId('readback-taggable')
+    expect(screen.getByRole('radio', { name: 'Open' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Locked' })).toHaveAttribute('aria-checked', 'false')
   })
 
   it('banked stage exports to PitchStudio', async () => {

@@ -307,10 +307,22 @@ export function registerRoomRoutes(app: Express): void {
     }
   });
 
-  app.get('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
+  // Writer mutability decisions arrive from the client; keep only well-formed entries.
+  function sanitizeMutability(raw: unknown): Record<string, 'locked' | 'leaning' | 'open'> {
+    const result: Record<string, 'locked' | 'leaning' | 'open'> = {};
+    if (!raw || typeof raw !== 'object') return result;
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (value === 'locked' || value === 'leaning' || value === 'open') result[key] = value;
+    }
+    return result;
+  }
+
+  // POST because the preview is parameterized by the writer's in-flight mutability
+  // choices (live re-preview while tagging in readback).
+  app.post('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
+      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }) });
     } catch (error) {
       handleInterviewError(res, error);
     }
@@ -319,7 +331,7 @@ export function registerRoomRoutes(app: Express): void {
   app.post('/api/room/:projectId/interview/:sessionId/bank', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: req.body?.mutability ?? {} }));
+      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
     } catch (error) {
       handleInterviewError(res, error);
     }

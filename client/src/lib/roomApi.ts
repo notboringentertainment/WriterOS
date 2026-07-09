@@ -71,6 +71,17 @@ export interface InterviewStatus {
   currentQuestion: InterviewQuestion | null
 }
 
+export type InterviewMutability = 'locked' | 'leaning' | 'open'
+
+export interface InterviewTaggableAnswer {
+  proposalId: string
+  questionId: string | null
+  value: string
+  origin: 'seed' | 'extrapolated' | null
+  defaultMutability: InterviewMutability
+  applied: InterviewMutability
+}
+
 export interface InterviewBankPreview {
   title: string
   seedText: string
@@ -80,6 +91,7 @@ export interface InterviewBankPreview {
   leanings: string[]
   openQuestions: string[]
   conceptSeedAppend: string
+  taggable: InterviewTaggableAnswer[]
 }
 
 export type RoomStreamEvent =
@@ -211,17 +223,30 @@ export async function wrapInterview(projectId: string, sessionId: string): Promi
   return jsonOrThrow(res)
 }
 
-export async function fetchInterviewBankPreview(projectId: string, sessionId: string): Promise<InterviewBankPreview> {
-  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`)
+export async function fetchInterviewBankPreview(
+  projectId: string,
+  sessionId: string,
+  mutability: Record<string, InterviewMutability> = {},
+): Promise<InterviewBankPreview> {
+  // POST: the preview is parameterized by the writer's in-flight mutability choices.
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mutability }),
+  })
   const body = await jsonOrThrow<{ preview: InterviewBankPreview }>(res)
   return body.preview
 }
 
-export async function bankInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession; preview: InterviewBankPreview }> {
+export async function bankInterview(
+  projectId: string,
+  sessionId: string,
+  mutability: Record<string, InterviewMutability> = {},
+): Promise<{ session: InterviewSession; preview: InterviewBankPreview }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mutability: {} }),
+    body: JSON.stringify({ mutability }),
   })
   return jsonOrThrow(res)
 }

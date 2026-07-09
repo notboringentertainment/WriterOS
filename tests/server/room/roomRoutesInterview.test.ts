@@ -117,9 +117,20 @@ describe('First Meeting routes', () => {
     expect((await post('/api/room/project-A/interview/s1/skip')).status).toBe(200)
     expect((await post('/api/room/project-A/interview/s1/pause')).json).toMatchObject({ session: { state: 'paused' } })
     expect((await post('/api/room/project-A/interview/s1/resume')).json).toMatchObject({ session: { state: 'interviewing' } })
-    expect((await get('/api/room/project-A/interview/s1/bank-preview')).json).toMatchObject({ preview: { seedText: 'seed' } })
+    expect((await post('/api/room/project-A/interview/s1/bank-preview', { mutability: {} })).json).toMatchObject({ preview: { seedText: 'seed' } })
     expect((await post('/api/room/project-A/interview/s1/bank', { mutability: {} })).json).toMatchObject({ session: { state: 'banked' } })
     expect((await post('/api/room/project-A/interview/s1/export')).json).toMatchObject({ markdown: '# Export' })
+  })
+
+  it('passes writer mutability choices through preview and bank, dropping malformed entries', async () => {
+    runtimeMock.previewBank.mockResolvedValueOnce({ seedText: 'seed', locks: [], openQuestions: [], taggable: [] })
+    runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: { seedText: 'seed' } })
+
+    await post('/api/room/project-A/interview/s1/bank-preview', { mutability: { 'p-1': 'leaning', 'p-2': 'bogus', 'p-3': 42 } })
+    expect(runtimeMock.previewBank).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' } })
+
+    await post('/api/room/project-A/interview/s1/bank', { mutability: { 'p-1': 'open', 'p-2': null } })
+    expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' } })
   })
 
   it('rejects overly long seed, answer, and resolved values', async () => {

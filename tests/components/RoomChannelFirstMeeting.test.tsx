@@ -114,11 +114,11 @@ describe('RoomChannel First Meeting panel', () => {
     await waitFor(() => expect(apiMock.skipInterviewQuestion).toHaveBeenCalledWith('p1', 's1'))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Preview banking' }))
-    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1'))
+    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {}))
     expect(await screen.findByText(/First Meeting Round/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Bank this round' }))
-    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1'))
+    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {}))
     expect(await screen.findByText(/round is banked/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Export to PitchStudio' }))
