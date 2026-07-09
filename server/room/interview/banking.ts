@@ -55,7 +55,7 @@ export function renderOpenQuestionsBlock(preview: BankPreview): string {
 
 export function renderBankedConceptSeed(preview: BankPreview): string {
   const parts = [
-    `## First Meeting Round — ${new Date().toISOString().slice(0, 10)}`,
+    `## Project Meeting Round — ${new Date().toISOString().slice(0, 10)}`,
     '',
     '### Verbatim seed',
     preview.seedText.trim(),

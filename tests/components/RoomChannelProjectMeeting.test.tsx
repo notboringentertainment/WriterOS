@@ -49,7 +49,7 @@ const interviewProposal: RoomProposal = {
   surface: 'memory',
   field_path: 'story_locks',
   proposed_value: 'Never become cynical.',
-  rationale: 'First Meeting answer to morgan-locks',
+  rationale: 'Project Meeting answer to morgan-locks',
   status: 'pending',
   resolved_at: null,
   kind: 'interview_answer',
@@ -74,17 +74,17 @@ beforeEach(() => {
   Object.values(apiMock).forEach(mock => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
   apiMock.fetchRoomProposals.mockResolvedValue([])
-  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
   apiMock.postRoomEvent.mockResolvedValue(undefined)
   apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
 })
 
-describe('RoomChannel First Meeting panel', () => {
+describe('RoomChannel Project Meeting panel', () => {
   it('shows explicit start and visible skip without auto-starting', async () => {
     renderChannel()
 
-    expect(await screen.findByText('First Meeting')).toBeInTheDocument()
+    expect(await screen.findByText('Project Meeting')).toBeInTheDocument()
     expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
     expect(apiMock.startInterview).not.toHaveBeenCalled()
   })
@@ -95,17 +95,17 @@ describe('RoomChannel First Meeting panel', () => {
     apiMock.answerInterviewQuestion.mockResolvedValueOnce({ session: session('interviewing'), proposal: interviewProposal, currentQuestion: firstQuestion })
     apiMock.resolveRoomProposal.mockResolvedValueOnce({ ...interviewProposal, status: 'adopted', resolved_at: '2026-07-08T00:01:00Z', resolved_value: 'Never become cynical.' })
     apiMock.skipInterviewQuestion.mockResolvedValueOnce({ session: session('readback'), currentQuestion: null })
-    apiMock.fetchInterviewBankPreview.mockResolvedValueOnce({ conceptSeedAppend: '## First Meeting Round\nseed', seedText: 'seed', locks: [], openQuestions: [], datedAnswers: [], seedColor: [], leanings: [], title: 'Untitled' })
+    apiMock.fetchInterviewBankPreview.mockResolvedValueOnce({ conceptSeedAppend: '## Project Meeting Round\nseed', seedText: 'seed', locks: [], openQuestions: [], datedAnswers: [], seedColor: [], leanings: [], title: 'Untitled' })
     apiMock.bankInterview.mockResolvedValueOnce({ session: session('banked'), preview: { conceptSeedAppend: 'banked seed' } })
     apiMock.exportInterview.mockResolvedValueOnce({ session: session('exported'), markdown: '# Hearth Ghosts\n\n## Seed' })
 
     renderChannel()
-    fireEvent.change(await screen.findByLabelText('First Meeting seed'), { target: { value: 'thin seed' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start First Meeting' }))
+    fireEvent.change(await screen.findByLabelText('Project Meeting seed'), { target: { value: 'thin seed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start Project Meeting' }))
     await waitFor(() => expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'thin seed' }))
 
-    fireEvent.change(await screen.findByLabelText('First Meeting answer'), { target: { value: 'Never become cynical.' } })
-    fireEvent.change(screen.getByLabelText('First Meeting answer origin'), { target: { value: 'extrapolated' } })
+    fireEvent.change(await screen.findByLabelText('Project Meeting answer'), { target: { value: 'Never become cynical.' } })
+    fireEvent.change(screen.getByLabelText('Project Meeting answer origin'), { target: { value: 'extrapolated' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirm mapping' }))
     await waitFor(() => expect(apiMock.answerInterviewQuestion).toHaveBeenCalledWith('p1', 's1', { answerText: 'Never become cynical.', origin: 'extrapolated', rejectMapping: false }))
     await waitFor(() => expect(apiMock.resolveRoomProposal).toHaveBeenCalledWith('p1', 'proposal-1', 'adopted', { resolvedValue: 'Never become cynical.', origin: 'extrapolated' }))
@@ -115,7 +115,7 @@ describe('RoomChannel First Meeting panel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Preview banking' }))
     await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {}))
-    expect(await screen.findByText(/First Meeting Round/)).toBeInTheDocument()
+    expect(await screen.findByText(/Project Meeting Round/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Bank this round' }))
     await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {}))

@@ -1,4 +1,4 @@
-// The First Meeting — the project-level identity ritual (§A1). A full-bleed page
+// The Project Meeting — the project-level identity ritual (§A1). A full-bleed page
 // driven by the interview state machine; the page itself is the offer (§A3), so
 // "Skip for now" simply exits. Never auto-starts.
 
@@ -10,7 +10,7 @@ import { RitualQuestionCard } from './RitualQuestionCard'
 import { RitualStage } from './RitualStage'
 import { MutabilityToggle } from './MutabilityToggle'
 
-export interface FirstMeetingPageProps {
+export interface ProjectMeetingPageProps {
   projectId: string
   projectTitle?: string
   onExit: () => void
@@ -21,7 +21,7 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeetingPageProps) {
+export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectMeetingPageProps) {
   const interview = useInterviewSession(projectId)
   const [seedDraft, setSeedDraft] = useState('')
   const [answerDraft, setAnswerDraft] = useState('')
@@ -51,7 +51,7 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
   async function handleBegin() {
     const seedText = seedDraft.trim()
     if (!seedText) {
-      setSeedError('Paste or type a seed before starting the First Meeting.')
+      setSeedError('Paste or type a seed before starting the Project Meeting.')
       return
     }
     setSeedError(null)
@@ -72,8 +72,8 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
 
   return (
     <RitualPage
-      eyebrow="First Meeting"
-      title={interview.status.actionLabel === 'New interview round' ? 'A new round with the room' : 'The First Meeting'}
+      eyebrow="Project Meeting"
+      title={interview.status.actionLabel === 'New interview round' ? 'A new round with the room' : 'The Project Meeting'}
       subtitle={
         stage === 'intake'
           ? `Bring the raw idea${projectTitle ? ` for ${projectTitle}` : ''}. The room reads it, then asks only what the story actually needs. Skipping is fine — the meeting waits.`
@@ -88,7 +88,7 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
         <RitualStage stageKey="intake">
           <div style={styles.stack}>
             <textarea
-              aria-label="First Meeting seed"
+              aria-label="Project Meeting seed"
               placeholder="Paste the seed or one-sentence idea…"
               value={seedDraft}
               onChange={e => setSeedDraft(e.target.value)}
@@ -142,14 +142,14 @@ export function FirstMeetingPage({ projectId, projectTitle, onExit }: FirstMeeti
               }
             >
               <textarea
-                aria-label="First Meeting answer"
+                aria-label="Project Meeting answer"
                 placeholder="Answer in story terms…"
                 value={answerDraft}
                 onChange={e => setAnswerDraft(e.target.value)}
                 rows={4}
                 style={styles.answerInput}
               />
-              <div style={styles.originRow} role="radiogroup" aria-label="First Meeting answer origin">
+              <div style={styles.originRow} role="radiogroup" aria-label="Project Meeting answer origin">
                 <span style={styles.originLabel}>This answer comes from</span>
                 {(['seed', 'extrapolated'] as const).map(value => (
                   <button

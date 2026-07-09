@@ -24,7 +24,7 @@ function requireRoom(res: Response): boolean {
 const projectIdOf = (req: Request): string => String(req.params.projectId ?? '').trim();
 
 function handleInterviewError(res: Response, error: unknown): void {
-  const message = error instanceof Error ? error.message : 'Failed to execute First Meeting action.';
+  const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
   if (message.includes('does not belong to project')) {
     res.status(409).json({ message });
     return;
@@ -208,14 +208,14 @@ export function registerRoomRoutes(app: Express): void {
     }
   });
 
-  // First Meeting — explicit, never auto-started (§A3-A12).
+  // Project Meeting — explicit, never auto-started (§A3-A12).
   app.get('/api/room/:projectId/interview', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
       res.json(await interviewRuntime.getInterviewStatus(projectIdOf(req)));
     } catch (error) {
       console.error('[room.routes] interview status failed:', error);
-      res.status(500).json({ message: 'Failed to load First Meeting status.' });
+      res.status(500).json({ message: 'Failed to load Project Meeting status.' });
     }
   });
 

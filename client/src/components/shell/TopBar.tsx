@@ -34,7 +34,7 @@ interface TopBarProps {
   onVoiceProfile: () => void
   voiceProfileOpen: boolean
   ritual?: ActiveRitual
-  onFirstMeeting?: () => void
+  onProjectMeeting?: () => void
 }
 
 export function TopBar({
@@ -56,7 +56,7 @@ export function TopBar({
   onVoiceProfile,
   voiceProfileOpen,
   ritual = null,
-  onFirstMeeting,
+  onProjectMeeting,
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -222,15 +222,15 @@ export function TopBar({
         >
           Voice
         </button>
-        {onFirstMeeting && !homeActive && (
+        {onProjectMeeting && !homeActive && (
           <button
             type="button"
-            aria-label="First Meeting"
-            aria-pressed={ritual === 'firstMeeting'}
-            style={{ ...styles.cmdK, ...(ritual === 'firstMeeting' ? styles.voiceActive : {}) }}
-            onClick={onFirstMeeting}
+            aria-label="Project Meeting"
+            aria-pressed={ritual === 'projectMeeting'}
+            style={{ ...styles.cmdK, ...(ritual === 'projectMeeting' ? styles.voiceActive : {}) }}
+            onClick={onProjectMeeting}
           >
-            First Meeting
+            Project Meeting
           </button>
         )}
         <button

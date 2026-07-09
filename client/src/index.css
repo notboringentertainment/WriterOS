@@ -267,7 +267,7 @@ textarea, input { resize: vertical; }
   }
 }
 
-/* Identity ritual pages (Voice Profile, First Meeting) — stage entrance. */
+/* Identity ritual pages (Voice Profile, Project Meeting) — stage entrance. */
 .ritual-stage {
   animation: ritual-stage-in 300ms ease-out both;
 }

@@ -18,7 +18,7 @@ const { apiMock } = vi.hoisted(() => ({
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
 
-import { FirstMeetingPage } from '../../client/src/components/ritual/FirstMeetingPage'
+import { ProjectMeetingPage } from '../../client/src/components/ritual/ProjectMeetingPage'
 import type { InterviewSession } from '../../client/src/lib/roomApi'
 
 function session(state: InterviewSession['state']): InterviewSession {
@@ -52,13 +52,13 @@ function statusOf(state: InterviewSession['state'] | null, currentQuestion: type
   return {
     activeSession: state ? session(state) : null,
     hasBankedSeed: false,
-    actionLabel: 'First Meeting' as const,
+    actionLabel: 'Project Meeting' as const,
     currentQuestion,
   }
 }
 
 function renderPage(onExit = vi.fn()) {
-  render(<FirstMeetingPage projectId="p1" projectTitle="Ace Handler" onExit={onExit} />)
+  render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" onExit={onExit} />)
   return onExit
 }
 
@@ -67,11 +67,11 @@ beforeEach(() => {
   apiMock.fetchInterviewStatus.mockResolvedValue(statusOf(null))
 })
 
-describe('FirstMeetingPage', () => {
+describe('ProjectMeetingPage', () => {
   it('renders the intake offer with a skip affordance that exits', async () => {
     const onExit = renderPage()
     expect(await screen.findByTestId('ritual-page')).toBeInTheDocument()
-    expect(screen.getByLabelText('First Meeting seed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Project Meeting seed')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Begin the meeting' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
@@ -82,7 +82,7 @@ describe('FirstMeetingPage', () => {
   it('requires a seed before starting', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Begin the meeting' }))
-    expect(await screen.findByText('Paste or type a seed before starting the First Meeting.')).toBeInTheDocument()
+    expect(await screen.findByText('Paste or type a seed before starting the Project Meeting.')).toBeInTheDocument()
     expect(apiMock.startInterview).not.toHaveBeenCalled()
   })
 
@@ -90,12 +90,12 @@ describe('FirstMeetingPage', () => {
     apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
     renderPage()
 
-    fireEvent.change(await screen.findByLabelText('First Meeting seed'), { target: { value: 'A grieving chef returns home.' } })
+    fireEvent.change(await screen.findByLabelText('Project Meeting seed'), { target: { value: 'A grieving chef returns home.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Begin the meeting' }))
 
     expect(await screen.findByText('What must stay true no matter what?')).toBeInTheDocument()
     expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'A grieving chef returns home.' })
-    expect(screen.getByLabelText('First Meeting answer')).toBeInTheDocument()
+    expect(screen.getByLabelText('Project Meeting answer')).toBeInTheDocument()
   })
 
   it('answers with the selected origin and adopts the mapping', async () => {
@@ -104,7 +104,7 @@ describe('FirstMeetingPage', () => {
     apiMock.resolveRoomProposal.mockResolvedValue({ id: 'proposal-1', status: 'adopted' })
     renderPage()
 
-    fireEvent.change(await screen.findByLabelText('First Meeting answer'), { target: { value: 'She never sells the recipes.' } })
+    fireEvent.change(await screen.findByLabelText('Project Meeting answer'), { target: { value: 'She never sells the recipes.' } })
     fireEvent.click(screen.getByRole('radio', { name: 'Extrapolation' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm mapping' }))
 

@@ -66,19 +66,19 @@ function get(path: string): Promise<{ status: number; json: Record<string, unkno
   })
 }
 
-describe('First Meeting routes', () => {
+describe('Project Meeting routes', () => {
   it('loads status without auto-starting a session', async () => {
-    runtimeMock.getInterviewStatus.mockResolvedValueOnce({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+    runtimeMock.getInterviewStatus.mockResolvedValueOnce({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
 
     const res = await get('/api/room/project-A/interview')
 
     expect(res.status).toBe(200)
     expect(runtimeMock.getInterviewStatus).toHaveBeenCalledWith('project-A')
     expect(runtimeMock.startInterview).not.toHaveBeenCalled()
-    expect(res.json).toMatchObject({ actionLabel: 'First Meeting' })
+    expect(res.json).toMatchObject({ actionLabel: 'Project Meeting' })
   })
 
-  it('starts an explicit full First Meeting with seed text and speculative flag', async () => {
+  it('starts an explicit full Project Meeting with seed text and speculative flag', async () => {
     runtimeMock.startInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'interviewing' }, auditMessage: 'Morgan audit', currentQuestion: { id: 'morgan-locks' } })
 
     const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: 'thin seed', speculative: true })

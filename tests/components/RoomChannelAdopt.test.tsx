@@ -53,7 +53,7 @@ beforeEach(() => {
   Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
   apiMock.fetchRoomProposals.mockResolvedValue([pendingProposal])
-  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
   apiMock.postRoomEvent.mockResolvedValue(undefined)
   apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)

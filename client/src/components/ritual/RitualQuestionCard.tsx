@@ -1,6 +1,6 @@
 // One ritual question: who's asking, the question in display type, then the
 // caller-supplied input and action row. Purely presentational so Voice Profile
-// and First Meeting share the same conversational shape.
+// and Project Meeting share the same conversational shape.
 
 import React from 'react'
 

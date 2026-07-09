@@ -334,7 +334,7 @@ Test 1 is passable by any competent chatbot. The "is it alive" proof —
 unprompted agent reaction connecting a silent edit to prior-session memory —
 is the EXIT GATE of Phase 3 (see below), staged through the product path only.
 
-### Phase 2 — The First Meeting (writer-facing product)
+### Phase 2 — The Project Meeting (writer-facing product)
 The agent-led concept interview. Full normative contract in **Addendum A** —
 flow, question bank, provenance model, banking rules, and the PitchStudio
 export contract. Addendum A is binding; this heading is a pointer.
@@ -391,7 +391,12 @@ Import a completed PitchStudio run: filled sections land as pending proposals
 
 ---
 
-# Addendum A — The First Meeting (Phase 2 Contract)
+# Addendum A — The Project Meeting (Phase 2 Contract)
+
+**Terminology (2026-07-09):** renamed from "First Meeting." The Voice Profile
+is a writer-level, one-and-done ritual; this meeting recurs for every new
+project (and supports repeat rounds within one), so the name is project-scoped.
+API routes remain `/api/room/:projectId/interview/*`.
 
 **Status:** Normative. MUST/SHOULD/MAY per RFC 2119. This addendum is binding
 for Phase 2 implementation; where it conflicts with earlier prose, it wins.
@@ -403,7 +408,7 @@ either tool; do not implement against it.
 
 ## A1. Product Definition
 
-The First Meeting is an agent-led interview that develops a writer's raw idea
+The Project Meeting is an agent-led interview that develops a writer's raw idea
 into a **sufficient seed**: locks, open questions, load-bearing specifics, and
 a stated-or-explicitly-open ending. It is the project-level analog of the
 Voice Profile: interactive, skippable, and the canonical statement of intent.
@@ -439,9 +444,9 @@ by the interview (§A10).
 ## A3. Entry Points
 
 1. **New project flow:** after project creation (and Voice Profile if first
-   project), the app MUST offer the First Meeting as an explicit choice with
+   project), the app MUST offer the Project Meeting as an explicit choice with
    a visible skip. Skipping is one click and MUST NOT nag afterward.
-2. **Room surface:** a "First Meeting" action MUST be available in the room
+2. **Room surface:** a "Project Meeting" action MUST be available in the room
    whenever no banked seed exists for the project; after banking, the same
    action reads "New interview round" (§A9 append-only).
 3. The interview MUST NOT auto-start. Ever.

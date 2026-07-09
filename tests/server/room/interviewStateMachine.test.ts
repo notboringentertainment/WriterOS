@@ -19,7 +19,7 @@ function session(overrides: Partial<InterviewSessionRow> = {}): InterviewSession
   };
 }
 
-describe('First Meeting state machine helpers', () => {
+describe('Project Meeting state machine helpers', () => {
   it('advances one audit-driven question at a time and reaches readback when exhausted', () => {
     const questions = selectQuestionsForAudit({ audit: session().audit, mode: 'full', speculative: false });
 

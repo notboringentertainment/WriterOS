@@ -175,7 +175,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
   async function handleStartInterview() {
     const seedText = interviewSeed.trim()
     if (!seedText) {
-      setError('Paste or type a seed before starting First Meeting.')
+      setError('Paste or type a seed before starting Project Meeting.')
       return
     }
     if (await interview.start({ mode: 'full', seedText })) {
@@ -201,7 +201,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         <span style={styles.subtitle}>Morgan · Casey — live</span>
       </div>
 
-      <section style={styles.interviewPanel} data-testid="first-meeting-panel">
+      <section style={styles.interviewPanel} data-testid="project-meeting-panel">
         <div style={styles.interviewHeader}>
           <div>
             <div style={styles.interviewTitle}>{interviewStatus.actionLabel}</div>
@@ -213,7 +213,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         {!interviewStatus.activeSession && (
           <div style={styles.interviewStack}>
             <textarea
-              aria-label="First Meeting seed"
+              aria-label="Project Meeting seed"
               placeholder="Paste the seed or one-sentence idea…"
               value={interviewSeed}
               onChange={e => setInterviewSeed(e.target.value)}
@@ -221,7 +221,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
               style={styles.input}
             />
             <button type="button" style={styles.adoptButton} onClick={() => void handleStartInterview()}>
-              Start First Meeting
+              Start Project Meeting
             </button>
           </div>
         )}
@@ -229,7 +229,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         {interviewStatus.activeSession?.state === 'paused' && (
           <div style={styles.interviewStack}>
             <div style={styles.interviewMeta}>Paused at {interviewStatus.activeSession.cursor.question_id ?? 'readback'}.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void interview.resume()}>Resume First Meeting</button>
+            <button type="button" style={styles.adoptButton} onClick={() => void interview.resume()}>Resume Project Meeting</button>
           </div>
         )}
 
@@ -238,7 +238,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
             <div style={styles.interviewMeta}>{personaLabel(interviewStatus.currentQuestion.lane)} · {interviewStatus.currentQuestion.trigger}</div>
             <div style={styles.body}>{interviewStatus.currentQuestion.question}</div>
             <textarea
-              aria-label="First Meeting answer"
+              aria-label="Project Meeting answer"
               placeholder="Answer in story terms…"
               value={interviewAnswer}
               onChange={e => setInterviewAnswer(e.target.value)}
@@ -246,7 +246,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
               style={styles.input}
             />
             <select
-              aria-label="First Meeting answer origin"
+              aria-label="Project Meeting answer origin"
               value={interviewOrigin}
               onChange={e => setInterviewOrigin(e.target.value as 'seed' | 'extrapolated')}
               style={styles.input}
@@ -280,7 +280,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
 
         {interviewStatus.activeSession?.state === 'banked' && (
           <div style={styles.interviewStack}>
-            <div style={styles.body}>This First Meeting round is banked. Future rounds append; they do not edit this one.</div>
+            <div style={styles.body}>This Project Meeting round is banked. Future rounds append; they do not edit this one.</div>
             <button type="button" style={styles.adoptButton} onClick={() => void interview.exportToPitchStudio()}>Export to PitchStudio</button>
           </div>
         )}

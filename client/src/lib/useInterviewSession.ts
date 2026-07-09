@@ -1,4 +1,4 @@
-// First Meeting interview session state + actions, extracted from RoomChannel so the
+// Project Meeting interview session state + actions, extracted from RoomChannel so the
 // ritual page and the room's status line share one implementation (§A3-A12).
 
 import { useCallback, useEffect, useState } from 'react'
@@ -25,7 +25,7 @@ export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
 export type { InterviewMutability }
 
 export function emptyInterviewStatus(): InterviewStatus {
-  return { activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null }
+  return { activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null }
 }
 
 export interface InterviewSessionHandle {
@@ -63,7 +63,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
         if (!cancelled) setStatus(next)
       })
       .catch(() => {
-        // First Meeting is an explicit enhancement; callers remain usable if unavailable.
+        // Project Meeting is an explicit enhancement; callers remain usable if unavailable.
       })
     return () => {
       cancelled = true
@@ -90,7 +90,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion }))
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting start failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting start failed')
       return false
     }
   }, [projectId])
@@ -108,7 +108,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setSessionResult(result)
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting answer failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting answer failed')
       return false
     }
   }, [projectId, status.activeSession, setSessionResult])
@@ -119,7 +119,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     try {
       setSessionResult(await skipInterviewQuestion(projectId, session.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting skip failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting skip failed')
     }
   }, [projectId, status.activeSession, setSessionResult])
 
@@ -130,7 +130,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       const result = await pauseInterview(projectId, session.id)
       setStatus(prev => ({ ...prev, activeSession: result.session }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting pause failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting pause failed')
     }
   }, [projectId, status.activeSession])
 
@@ -141,7 +141,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       const result = await resumeInterview(projectId, session.id)
       setStatus(prev => ({ ...prev, activeSession: result.session }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting resume failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting resume failed')
     }
   }, [projectId, status.activeSession])
 
@@ -152,7 +152,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       const result = await wrapInterview(projectId, session.id)
       setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: null }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting wrap failed')
+      setError(err instanceof Error ? err.message : 'Project Meeting wrap failed')
     }
   }, [projectId, status.activeSession])
 

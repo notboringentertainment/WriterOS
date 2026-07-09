@@ -1,4 +1,4 @@
-// Shared full-bleed shell for the identity rituals (Voice Profile, First Meeting).
+// Shared full-bleed shell for the identity rituals (Voice Profile, Project Meeting).
 // One visual language: centered column, mono eyebrow, Fraunces display title,
 // quiet exit affordance. The ritual must never feel like a form with extra steps.
 

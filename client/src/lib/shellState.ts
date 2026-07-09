@@ -4,9 +4,9 @@ type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis
 type PanelByTab = Record<WritingTab, boolean>
 export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'rules'
 // Full-bleed identity ritual takeovers: writer-level (Voice Profile) and
-// project-level (First Meeting). Checked before homeActive when rendering, so
+// project-level (Project Meeting). Checked before homeActive when rendering, so
 // closing a ritual restores whatever surface was underneath.
-export type ActiveRitual = 'firstMeeting' | 'voiceProfile' | null
+export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | null
 
 export function useShellState() {
   const [homeActive, setHomeActive] = useState(true)

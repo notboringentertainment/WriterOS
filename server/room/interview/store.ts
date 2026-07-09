@@ -1,4 +1,4 @@
-// First Meeting interview — data access helpers (Phase 2, Slice 1).
+// Project Meeting interview — data access helpers (Phase 2, Slice 1).
 // Every Supabase query for the interview lives here; runtime modules consume
 // these helpers and never touch the client directly. Mirrors the pattern in
 // server/room/store.ts.

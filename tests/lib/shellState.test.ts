@@ -125,8 +125,8 @@ describe('useShellState', () => {
   it('ritual starts null and opens/closes explicitly', () => {
     const { result } = renderHook(() => useShellState())
     expect(result.current.ritual).toBeNull()
-    act(() => result.current.openRitual('firstMeeting'))
-    expect(result.current.ritual).toBe('firstMeeting')
+    act(() => result.current.openRitual('projectMeeting'))
+    expect(result.current.ritual).toBe('projectMeeting')
     act(() => result.current.closeRitual())
     expect(result.current.ritual).toBeNull()
   })
@@ -144,23 +144,23 @@ describe('useShellState', () => {
   it('navigation actions clear an active ritual', () => {
     const { result } = renderHook(() => useShellState())
 
-    act(() => result.current.openRitual('firstMeeting'))
+    act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.setActiveTab('outline'))
     expect(result.current.ritual).toBeNull()
 
-    act(() => result.current.openRitual('firstMeeting'))
+    act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.openHome())
     expect(result.current.ritual).toBeNull()
 
-    act(() => result.current.openRitual('firstMeeting'))
+    act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.openProjectWorkspace())
     expect(result.current.ritual).toBeNull()
 
-    act(() => result.current.openRitual('firstMeeting'))
+    act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.enterWritersRoom())
     expect(result.current.ritual).toBeNull()
 
-    act(() => result.current.openRitual('firstMeeting'))
+    act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.toggleWritersRoom())
     expect(result.current.ritual).toBeNull()
   })

@@ -173,7 +173,7 @@ export function Shell({
           onVoiceProfile={toggleVoiceProfile}
           voiceProfileOpen={voiceProfileOpen}
           ritual={ritual}
-          onFirstMeeting={activeProjectId ? () => openRitual('firstMeeting') : undefined}
+          onProjectMeeting={activeProjectId ? () => openRitual('projectMeeting') : undefined}
         />
       )}
       <div style={styles.body}>

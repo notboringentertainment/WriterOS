@@ -50,12 +50,12 @@ const question = {
 
 beforeEach(() => {
   Object.values(apiMock).forEach(mock => mock.mockReset())
-  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
 })
 
 describe('useInterviewSession', () => {
   it('loads interview status on mount', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('paused'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('paused'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(result.current.status.activeSession?.state).toBe('paused'))
     expect(apiMock.fetchInterviewStatus).toHaveBeenCalledWith('p1')
@@ -76,7 +76,7 @@ describe('useInterviewSession', () => {
   })
 
   it('answer adopts the confirmed proposal server-first', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: question })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
     apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: null, proposal: { id: 'proposal-1' } })
     apiMock.resolveRoomProposal.mockResolvedValue({ id: 'proposal-1', status: 'adopted' })
     const { result } = renderHook(() => useInterviewSession('p1'))
@@ -90,7 +90,7 @@ describe('useInterviewSession', () => {
   })
 
   it('answer with rejectMapping does not adopt the proposal', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: question })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
     apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: null, proposal: { id: 'proposal-1' } })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(result.current.status.activeSession?.state).toBe('interviewing'))
@@ -102,7 +102,7 @@ describe('useInterviewSession', () => {
   })
 
   it('bank marks the seed banked and stores the preview', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
     apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '### Locks\n[SEED] x' } })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(result.current.status.activeSession?.state).toBe('readback'))
@@ -117,7 +117,7 @@ describe('useInterviewSession', () => {
   })
 
   it('previewBank and bank pass the writer mutability map through', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
     apiMock.fetchInterviewBankPreview.mockResolvedValue({ conceptSeedAppend: '', taggable: [] })
     apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '', taggable: [] } })
     const { result } = renderHook(() => useInterviewSession('p1'))
@@ -150,7 +150,7 @@ describe('useInterviewSession', () => {
   })
 
   it('pause and resume update the active session state', async () => {
-    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: question })
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
     apiMock.pauseInterview.mockResolvedValue({ session: session('paused') })
     apiMock.resumeInterview.mockResolvedValue({ session: session('interviewing') })
     const { result } = renderHook(() => useInterviewSession('p1'))

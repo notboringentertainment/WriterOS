@@ -67,7 +67,7 @@ export interface InterviewQuestion {
 export interface InterviewStatus {
   activeSession: InterviewSession | null
   hasBankedSeed: boolean
-  actionLabel: 'First Meeting' | 'New interview round'
+  actionLabel: 'Project Meeting' | 'New interview round'
   currentQuestion: InterviewQuestion | null
 }
 

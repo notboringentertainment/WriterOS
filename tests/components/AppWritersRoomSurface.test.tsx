@@ -8,15 +8,15 @@ describe("App Writer's Room layout", () => {
     vi.restoreAllMocks()
   })
 
-  it('offers First Meeting after creating a new project without auto-starting it', async () => {
+  it('offers Project Meeting after creating a new project without auto-starting it', async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
 
-    const panel = await screen.findByTestId('first-meeting-panel')
-    expect(panel).toHaveTextContent('First Meeting')
+    const panel = await screen.findByTestId('project-meeting-panel')
+    expect(panel).toHaveTextContent('Project Meeting')
     expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start First Meeting' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start Project Meeting' })).toBeInTheDocument()
   })
 
   it('keeps the active writing surface visible when Writer Room is open', () => {

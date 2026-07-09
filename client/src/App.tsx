@@ -11,7 +11,7 @@ import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './li
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
 import { Shell } from './components/shell/Shell'
-import { FirstMeetingPage } from './components/ritual/FirstMeetingPage'
+import { ProjectMeetingPage } from './components/ritual/ProjectMeetingPage'
 import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -287,7 +287,7 @@ export default function App() {
       setActiveProjectStorage({ kind: 'browser' })
     }
 
-    // First Meeting entry point (§A3): new projects visibly offer the interview,
+    // Project Meeting entry point (§A3): new projects visibly offer the interview,
     // but the interview itself never auto-starts.
     shellState.enterWritersRoom()
   }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
@@ -810,9 +810,9 @@ export default function App() {
 
   const renderCenter = () => {
     // Ritual takeovers render before Home so closing one restores whatever was underneath.
-    if (shellState.ritual === 'firstMeeting' && project.activeProjectId) {
+    if (shellState.ritual === 'projectMeeting' && project.activeProjectId) {
       return (
-        <FirstMeetingPage
+        <ProjectMeetingPage
           projectId={project.activeProjectId}
           projectTitle={getDisplayProjectTitle(project.state.meta.title)}
           onExit={shellState.closeRitual}

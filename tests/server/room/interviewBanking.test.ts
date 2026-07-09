@@ -54,7 +54,7 @@ const adoptedEnding: InterviewProposalRow = {
   question_id: 'morgan-ending',
 };
 
-describe('First Meeting banking', () => {
+describe('Project Meeting banking', () => {
   it('builds a visible preview before writing memory blocks', () => {
     const preview = buildBankPreview({ session: session(), proposals: [adoptedLock, adoptedOpen], mutability: { 'p-lock': 'locked', 'p-open': 'open' } });
 

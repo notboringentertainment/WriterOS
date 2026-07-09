@@ -6,13 +6,13 @@ import { RitualProgress } from '../../client/src/components/ritual/RitualProgres
 describe('RitualPage', () => {
   it('renders eyebrow, title, subtitle, and content', () => {
     render(
-      <RitualPage eyebrow="First Meeting" title="The First Meeting" subtitle="Bring the raw idea.">
+      <RitualPage eyebrow="Project Meeting" title="The Project Meeting" subtitle="Bring the raw idea.">
         <p>content</p>
       </RitualPage>,
     )
     expect(screen.getByTestId('ritual-page')).toBeInTheDocument()
-    expect(screen.getByText('First Meeting')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'The First Meeting' })).toBeInTheDocument()
+    expect(screen.getByText('Project Meeting')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'The Project Meeting' })).toBeInTheDocument()
     expect(screen.getByText('Bring the raw idea.')).toBeInTheDocument()
     expect(screen.getByText('content')).toBeInTheDocument()
   })
