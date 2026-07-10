@@ -11,9 +11,10 @@ const preview: BankPreview = {
   leanings: ['[EXTRAPOLATED] Mara may sell the restaurant — challenge permitted.'],
   openQuestions: ['Who buys the restaurant if Mara fails?'],
   conceptSeedAppend: 'placeholder',
+  taggable: [],
 };
 
-describe('First Meeting PitchStudio export check', () => {
+describe('Project Meeting PitchStudio export check', () => {
   it('renders TEMPLATE.md-compatible seed export with verbatim seed first and unfilled Development skeleton', () => {
     const markdown = renderPitchStudioSeedExport(preview, { date: '2026-07-08' });
 

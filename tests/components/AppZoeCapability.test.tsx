@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -66,6 +67,7 @@ function openRailAndSend(text: string) {
 describe('App Zoe persona capability routing', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 
@@ -110,8 +112,8 @@ describe('App Zoe persona capability routing', () => {
       )
     })
 
-    const [, init] = vi.mocked(fetch).mock.calls[0]
-    const body = JSON.parse(String(init?.body))
+    const capabilityCall = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/persona-capability/run')
+    const body = JSON.parse(String(capabilityCall?.[1]?.body))
     expect(body.personaId).toBe('zoe')
     expect(body.taskKind).toBe('research_world_context')
     expect(body.voiceProfile.slice).toBe('world_context')
@@ -139,7 +141,9 @@ describe('App Zoe persona capability routing', () => {
       )
     })
 
-    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/wp-chat')
+    // No capability call was made — the request stayed on wp-chat. (Other ambient
+    // fetches, e.g. Project Meeting standings on Home, are allowed.)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/persona-capability'))).toBe(false)
     expect(await screen.findByText('Zoe direct answer.')).toBeInTheDocument()
   })
 })

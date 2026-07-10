@@ -3,6 +3,15 @@ import type { InterviewProposalRow, InterviewSessionRow, TranscriptEntry } from 
 
 export type Mutability = 'locked' | 'leaning' | 'open';
 
+export interface TaggableAnswer {
+  proposalId: string;
+  questionId: string | null;
+  value: string;
+  origin: ProposalOrigin | null;
+  defaultMutability: Mutability;
+  applied: Mutability;
+}
+
 export interface BankPreview {
   title: string;
   seedText: string;
@@ -12,6 +21,7 @@ export interface BankPreview {
   leanings: string[];
   openQuestions: string[];
   conceptSeedAppend: string;
+  taggable: TaggableAnswer[];
 }
 
 function originTag(origin: ProposalOrigin | null | undefined): string {
@@ -45,7 +55,7 @@ export function renderOpenQuestionsBlock(preview: BankPreview): string {
 
 export function renderBankedConceptSeed(preview: BankPreview): string {
   const parts = [
-    `## First Meeting Round — ${new Date().toISOString().slice(0, 10)}`,
+    `## Project Meeting Round — ${new Date().toISOString().slice(0, 10)}`,
     '',
     '### Verbatim seed',
     preview.seedText.trim(),
@@ -93,6 +103,7 @@ export function buildBankPreview(input: {
   const leanings: string[] = [];
   const openQuestions: string[] = [];
   const datedAnswers: string[] = [];
+  const taggable: TaggableAnswer[] = [];
 
   for (const proposal of adopted) {
     const value = effectiveValue(proposal);
@@ -100,6 +111,14 @@ export function buildBankPreview(input: {
     const fieldPath = resolveCanonicalFieldPath(proposal.field_path, proposal);
     const defaultMutability = fieldPath === 'open_questions' || fieldPath.startsWith('interview_answer.') ? 'open' : 'locked';
     const mutability = input.mutability[proposal.id] ?? defaultMutability;
+    taggable.push({
+      proposalId: proposal.id,
+      questionId: questionIdForFieldPath(proposal.field_path, proposal),
+      value,
+      origin: proposal.origin ?? null,
+      defaultMutability,
+      applied: mutability,
+    });
     if (mutability === 'locked') {
       locks.push(`${originTag(proposal.origin)} ${value}`);
     } else if (mutability === 'leaning') {
@@ -125,6 +144,7 @@ export function buildBankPreview(input: {
     leanings,
     openQuestions,
     conceptSeedAppend: '',
+    taggable,
   };
   preview.conceptSeedAppend = renderBankedConceptSeed(preview);
   return preview;

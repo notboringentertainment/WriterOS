@@ -5,33 +5,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
 import {
-  answerInterviewQuestion,
-  bankInterview,
-  exportInterview,
-  fetchInterviewBankPreview,
-  fetchInterviewStatus,
   fetchRoomMessages,
   fetchRoomProposals,
   openRoomStream,
-  pauseInterview,
   postRoomEvent,
   resolveRoomProposal,
-  resumeInterview,
   sendRoomMessage,
-  skipInterviewQuestion,
-  startInterview,
   syncStoryLocksBlock,
-  wrapInterview,
-  type InterviewBankPreview,
-  type InterviewQuestion,
-  type InterviewSession,
-  type InterviewStatus,
   type RoomCharacterBrief,
   type RoomMessage,
   type RoomProposal,
   type RoomStreamEvent,
 } from '../../lib/roomApi'
 import { canApplyProposal } from '../../lib/roomProposals'
+import { useInterviewSession } from '../../lib/useInterviewSession'
+import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
 
 export interface RoomChannelProps {
   projectId: string
@@ -41,6 +29,8 @@ export interface RoomChannelProps {
   // Applies the proposal to the local document. Returns false when the field
   // path can't be applied (the proposal is left pending).
   onAdoptProposal: (proposal: RoomProposal) => boolean
+  // Opens the full-page Project Meeting (the interview no longer lives in this dock).
+  onOpenProjectMeeting?: () => void
 }
 
 interface StreamingTurn {
@@ -59,22 +49,14 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-function emptyInterviewStatus(): InterviewStatus {
-  return { activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null }
-}
-
-export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal }: RoomChannelProps) {
+export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
   const [inputText, setInputText] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [interviewStatus, setInterviewStatus] = useState<InterviewStatus>(emptyInterviewStatus)
-  const [interviewSeed, setInterviewSeed] = useState('')
-  const [interviewAnswer, setInterviewAnswer] = useState('')
-  const [interviewOrigin, setInterviewOrigin] = useState<'seed' | 'extrapolated'>('seed')
-  const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
-  const [exportMarkdown, setExportMarkdown] = useState('')
+  // Read-only: the interview itself lives on the Project Meeting page.
+  const interview = useInterviewSession(projectId)
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -146,23 +128,6 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }, [projectId, handleStreamEvent])
 
-  useEffect(() => {
-    let cancelled = false
-    setInterviewStatus(emptyInterviewStatus())
-    setBankPreview(null)
-    setExportMarkdown('')
-    fetchInterviewStatus(projectId)
-      .then(status => {
-        if (!cancelled) setInterviewStatus(status)
-      })
-      .catch(() => {
-        // First Meeting is an explicit enhancement; room chat remains usable if unavailable.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [projectId])
-
   // Writer-only sync of the story_locks shared block (§10).
   useEffect(() => {
     void syncStoryLocksBlock(projectId, locksText)
@@ -208,120 +173,14 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }
 
-  function setInterviewResult(result: { session: InterviewSession; currentQuestion?: InterviewQuestion | null }) {
-    setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion ?? prev.currentQuestion }))
-  }
-
-  async function handleStartInterview() {
-    const seedText = interviewSeed.trim()
-    if (!seedText) {
-      setError('Paste or type a seed before starting First Meeting.')
-      return
-    }
-    try {
-      const result = await startInterview(projectId, { mode: 'full', seedText })
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion }))
-      setInterviewSeed('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting start failed')
-    }
-  }
-
-  async function handleAnswerInterview(rejectMapping = false) {
-    const session = interviewStatus.activeSession
-    const answerText = interviewAnswer.trim()
-    if (!session || !answerText) return
-    try {
-      const result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: interviewOrigin, rejectMapping })
-      if (result.proposal && !rejectMapping) {
-        await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: interviewOrigin })
-      }
-      setInterviewResult(result)
-      setInterviewAnswer('')
-      setInterviewOrigin('seed')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting answer failed')
-    }
-  }
-
-  async function handleSkipInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      setInterviewResult(await skipInterviewQuestion(projectId, session.id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting skip failed')
-    }
-  }
-
-  async function handlePauseInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await pauseInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting pause failed')
-    }
-  }
-
-  async function handleResumeInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await resumeInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting resume failed')
-    }
-  }
-
-  async function handleWrapInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await wrapInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: null }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'First Meeting wrap failed')
-    }
-  }
-
-  async function handlePreviewBank() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      setBankPreview(await fetchInterviewBankPreview(projectId, session.id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bank preview failed')
-    }
-  }
-
-  async function handleBankInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await bankInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
-      setBankPreview(result.preview)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bank failed')
-    }
-  }
-
-  async function handleExportInterview() {
-    const session = interviewStatus.activeSession
-    if (!session) return
-    try {
-      const result = await exportInterview(projectId, session.id)
-      setInterviewStatus(prev => ({ ...prev, activeSession: result.session }))
-      setExportMarkdown(result.markdown)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
-    }
-  }
-
   const canSend = inputText.trim().length > 0
+  const displayError = error ?? interview.error
+  const meetingStanding = deriveProjectMeetingStanding(interview.status)
+  const meetingAction =
+    meetingStanding === 'paused' ? 'Resume Project Meeting'
+      : meetingStanding === 'in_progress' ? 'Continue Project Meeting'
+      : meetingStanding === 'banked' ? 'New interview round'
+      : 'Start Project Meeting'
 
   return (
     <div style={styles.root} data-testid="room-channel">
@@ -330,101 +189,18 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         <span style={styles.subtitle}>Morgan · Casey — live</span>
       </div>
 
-      <section style={styles.interviewPanel} data-testid="first-meeting-panel">
-        <div style={styles.interviewHeader}>
-          <div>
-            <div style={styles.interviewTitle}>{interviewStatus.actionLabel}</div>
-            <div style={styles.interviewMeta}>Explicit start · audit-driven · never auto-started</div>
-          </div>
-          {!interviewStatus.activeSession && <span style={styles.interviewMeta}>Skip is simply: do nothing.</span>}
+      {onOpenProjectMeeting && (
+        <div style={styles.meetingLine} data-testid="project-meeting-status">
+          <span style={styles.meetingLabel}>Project Meeting · {projectMeetingStandingLabel(meetingStanding)}</span>
+          <button type="button" style={styles.meetingLink} onClick={onOpenProjectMeeting}>
+            {meetingAction}
+          </button>
         </div>
-
-        {!interviewStatus.activeSession && (
-          <div style={styles.interviewStack}>
-            <textarea
-              aria-label="First Meeting seed"
-              placeholder="Paste the seed or one-sentence idea…"
-              value={interviewSeed}
-              onChange={e => setInterviewSeed(e.target.value)}
-              rows={3}
-              style={styles.input}
-            />
-            <button type="button" style={styles.adoptButton} onClick={() => void handleStartInterview()}>
-              Start First Meeting
-            </button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'paused' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.interviewMeta}>Paused at {interviewStatus.activeSession.cursor.question_id ?? 'readback'}.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void handleResumeInterview()}>Resume First Meeting</button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'interviewing' && interviewStatus.currentQuestion && (
-          <div style={styles.interviewStack}>
-            <div style={styles.interviewMeta}>{personaLabel(interviewStatus.currentQuestion.lane)} · {interviewStatus.currentQuestion.trigger}</div>
-            <div style={styles.body}>{interviewStatus.currentQuestion.question}</div>
-            <textarea
-              aria-label="First Meeting answer"
-              placeholder="Answer in story terms…"
-              value={interviewAnswer}
-              onChange={e => setInterviewAnswer(e.target.value)}
-              rows={3}
-              style={styles.input}
-            />
-            <select
-              aria-label="First Meeting answer origin"
-              value={interviewOrigin}
-              onChange={e => setInterviewOrigin(e.target.value as 'seed' | 'extrapolated')}
-              style={styles.input}
-            >
-              <option value="seed">Seed</option>
-              <option value="extrapolated">Extrapolated</option>
-            </select>
-            <div style={styles.proposalActions}>
-              <button type="button" style={styles.adoptButton} onClick={() => void handleAnswerInterview(false)}>Confirm mapping</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleAnswerInterview(true)}>Reject mapping / keep as seed color</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleSkipInterview()}>Skip / delegate</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePauseInterview()}>Pause</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handleWrapInterview()}>Wrap it up</button>
-            </div>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'readback' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>Readback ready: review locks, leanings, and open questions before banking. No memory blocks are written until Bank this round.</div>
-            <div style={styles.proposalActions}>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePreviewBank()}>Preview banking</button>
-              <button type="button" style={styles.adoptButton} onClick={() => void handleBankInterview()}>Bank this round</button>
-              <button type="button" style={styles.rejectButton} onClick={() => void handlePauseInterview()}>Pause</button>
-            </div>
-            {bankPreview && (
-              <pre style={styles.previewBox}>{bankPreview.conceptSeedAppend}</pre>
-            )}
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'banked' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>This First Meeting round is banked. Future rounds append; they do not edit this one.</div>
-            <button type="button" style={styles.adoptButton} onClick={() => void handleExportInterview()}>Export to PitchStudio</button>
-          </div>
-        )}
-
-        {interviewStatus.activeSession?.state === 'exported' && (
-          <div style={styles.interviewStack}>
-            <div style={styles.body}>Export prepared for PitchStudio.</div>
-            {exportMarkdown && <pre style={styles.previewBox}>{exportMarkdown}</pre>}
-          </div>
-        )}
-      </section>
+      )}
 
       <div ref={feedRef} style={styles.feed}>
-        {error && <p style={styles.error}>{error}</p>}
-        {messages.length === 0 && streaming.size === 0 && !error && (
+        {displayError && <p style={styles.error}>{displayError}</p>}
+        {messages.length === 0 && streaming.size === 0 && !displayError && (
           <p style={styles.empty}>The room is quiet. Say something, or change the work — they're watching it.</p>
         )}
 
@@ -541,47 +317,31 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10,
     color: 'var(--fg-subtle)',
   },
-  interviewPanel: {
+  meetingLine: {
     borderBottom: '1px solid var(--border)',
-    padding: 12,
+    padding: '8px 16px',
     display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    background: 'var(--surface-1)',
-  },
-  interviewHeader: {
-    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    alignItems: 'flex-start',
+    background: 'var(--surface-1)',
   },
-  interviewTitle: {
-    fontFamily: 'var(--font-display)',
-    color: 'var(--fg)',
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  interviewMeta: {
+  meetingLabel: {
     fontFamily: 'var(--font-mono)',
     color: 'var(--fg-subtle)',
     fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
   },
-  interviewStack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-  },
-  previewBox: {
-    maxHeight: 180,
-    overflow: 'auto',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    padding: 10,
-    background: 'var(--surface-2)',
-    color: 'var(--fg-muted)',
+  meetingLink: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--wp-amber)',
+    cursor: 'pointer',
     fontFamily: 'var(--font-mono)',
-    fontSize: 10,
-    whiteSpace: 'pre-wrap',
+    fontSize: 11,
+    fontWeight: 700,
+    padding: 0,
   },
   feed: {
     flex: 1,

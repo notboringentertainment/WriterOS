@@ -8,7 +8,7 @@ const thinRequiredAudit = {
   load_bearing_character: 'THIN',
 } as const;
 
-describe('First Meeting question bank traceability contract', () => {
+describe('Project Meeting question bank traceability contract', () => {
   it('encodes every A6 row with trigger, target, template destination, origin, requirement, and budget', () => {
     expect(QUESTION_BANK).toEqual(
       expect.arrayContaining([

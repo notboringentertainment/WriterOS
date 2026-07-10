@@ -121,4 +121,57 @@ describe('useShellState', () => {
     act(() => result.current.closeVoiceProfile())
     expect(result.current.voiceProfileOpen).toBe(false)
   })
+
+  it('ritual starts null and opens/closes explicitly', () => {
+    const { result } = renderHook(() => useShellState())
+    expect(result.current.ritual).toBeNull()
+    act(() => result.current.openRitual('projectMeeting'))
+    expect(result.current.ritual).toBe('projectMeeting')
+    act(() => result.current.closeRitual())
+    expect(result.current.ritual).toBeNull()
+  })
+
+  it('openRitual exits focus mode and closes the voice drawer', () => {
+    const { result } = renderHook(() => useShellState())
+    act(() => result.current.toggleFocusMode())
+    act(() => result.current.toggleVoiceProfile())
+    act(() => result.current.openRitual('voiceProfile'))
+    expect(result.current.focusMode).toBe(false)
+    expect(result.current.voiceProfileOpen).toBe(false)
+    expect(result.current.ritual).toBe('voiceProfile')
+  })
+
+  it('navigation actions clear an active ritual', () => {
+    const { result } = renderHook(() => useShellState())
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.setActiveTab('outline'))
+    expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.openHome())
+    expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.openProjectWorkspace())
+    expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.enterWritersRoom())
+    expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.toggleWritersRoom())
+    expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.toggleVoiceProfile())
+    expect(result.current.ritual).toBeNull()
+    expect(result.current.voiceProfileOpen).toBe(true)
+
+    act(() => result.current.closeVoiceProfile())
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.toggleFocusMode())
+    expect(result.current.ritual).toBeNull()
+  })
 })

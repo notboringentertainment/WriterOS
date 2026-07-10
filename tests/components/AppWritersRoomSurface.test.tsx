@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -5,18 +6,25 @@ import App from '../../client/src/App'
 describe("App Writer's Room layout", () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
   })
 
-  it('offers First Meeting after creating a new project without auto-starting it', async () => {
+  it('offers Project Meeting after creating a new project without auto-starting it', async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
 
-    expect(await screen.findByTestId('first-meeting-panel')).toBeInTheDocument()
-    expect(screen.getByText('First Meeting')).toBeInTheDocument()
-    expect(screen.getByText(/Skip is simply/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start First Meeting' })).toBeInTheDocument()
+    // A new project lands on the Project Meeting page in its intake state — the
+    // page is the offer; nothing starts until the writer begins explicitly.
+    const page = await screen.findByTestId('ritual-page')
+    expect(page).toHaveTextContent('Project Meeting')
+    expect(screen.getByLabelText('Project Meeting seed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Begin the meeting' })).toBeInTheDocument()
+
+    // Skipping drops the writer into the workspace underneath.
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(screen.queryByTestId('ritual-page')).not.toBeInTheDocument()
   })
 
   it('keeps the active writing surface visible when Writer Room is open', () => {

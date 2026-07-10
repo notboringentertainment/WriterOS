@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -75,6 +76,7 @@ async function sendSwarmMessage() {
 describe('App OpenSwarm handoff', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -94,8 +96,8 @@ describe('App OpenSwarm handoff', () => {
 
     await sendSwarmMessage()
 
-    const [, init] = vi.mocked(fetch).mock.calls[0]
-    const body = JSON.parse(String(init?.body))
+    const swarmCall = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/openswarm/writing-partner')
+    const body = JSON.parse(String(swarmCall?.[1]?.body))
     expect(body.message).toBe('review this against my voice')
     expect(body.voiceProfile?.archetype).toBe(profile.archetype)
     expect(body.voiceProfile?.dialogue.rules).toEqual(['subtext before explanation'])
@@ -113,8 +115,8 @@ describe('App OpenSwarm handoff', () => {
 
     await sendSwarmMessage()
 
-    const [, init] = vi.mocked(fetch).mock.calls[0]
-    const body = JSON.parse(String(init?.body))
+    const swarmCall = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/openswarm/writing-partner')
+    const body = JSON.parse(String(swarmCall?.[1]?.body))
     expect(body.message).toBe('review this against my voice')
     expect(body.voiceProfile).toBeUndefined()
   })

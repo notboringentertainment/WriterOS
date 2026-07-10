@@ -1,3 +1,4 @@
+import { seedSkippedVoiceProfileState } from '../helpers/voiceProfileTestState'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../../client/src/App'
@@ -87,6 +88,7 @@ function bodyFor(url: string) {
 describe('App voice profile — wp-chat conditioning', () => {
   beforeEach(() => {
     localStorage.clear()
+    seedSkippedVoiceProfileState()
     vi.restoreAllMocks()
     vi.stubGlobal('fetch', vi.fn(async (url: string | URL) => {
       if (String(url).includes('/api/persona-capability/run')) {

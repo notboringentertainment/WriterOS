@@ -11,7 +11,7 @@ import type { ProposalOrigin } from '../types';
 export interface InterviewStatus {
   activeSession: InterviewSessionRow | null;
   hasBankedSeed: boolean;
-  actionLabel: 'First Meeting' | 'New interview round';
+  actionLabel: 'Project Meeting' | 'New interview round';
   currentQuestion: QuestionBankRow | null;
 }
 
@@ -80,7 +80,7 @@ export async function getInterviewStatus(projectId: string): Promise<InterviewSt
   return {
     activeSession,
     hasBankedSeed: hasBankedSeed(sessions),
-    actionLabel: hasBankedSeed(sessions) ? 'New interview round' : 'First Meeting',
+    actionLabel: hasBankedSeed(sessions) ? 'New interview round' : 'Project Meeting',
     currentQuestion: activeSession ? currentQuestionFor(activeSession) : null,
   };
 }
@@ -146,7 +146,7 @@ export async function answerInterviewQuestion(input: {
       surface: question.writerOSTarget.startsWith('storyBible') ? 'storyBible' : 'memory',
       fieldPath: normalizeFieldPath(question.writerOSTarget, question.id),
       proposedValue: input.resolvedValue ?? answerText,
-      rationale: `First Meeting answer to ${question.id}`,
+      rationale: `Project Meeting answer to ${question.id}`,
       kind: 'interview_answer',
       sessionId: session.id,
       questionId: question.id,

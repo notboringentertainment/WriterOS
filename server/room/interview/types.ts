@@ -1,4 +1,4 @@
-// First Meeting interview — shared type contracts (Phase 2, Slice 1).
+// Project Meeting interview — shared type contracts (Phase 2, Slice 1).
 // Row shapes mirror the §A4 + §A7.2 Supabase schema. These types are the
 // contract between the interview store layer and future runtime/UI code.
 

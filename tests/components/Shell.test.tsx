@@ -27,6 +27,9 @@ function makeShellState(overrides = {}) {
     toggleFocusMode: vi.fn(),
     toggleVoiceProfile: vi.fn(),
     closeVoiceProfile: vi.fn(),
+    ritual: null as import('../../client/src/lib/shellState').ActiveRitual,
+    openRitual: vi.fn(),
+    closeRitual: vi.fn(),
     ...overrides,
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { auditSeed, formatAuditMessage } from '../../../server/room/interview/audit';
 import { selectQuestionsForAudit } from '../../../server/room/interview/questionBank';
 
-describe('First Meeting audit engine', () => {
+describe('Project Meeting audit engine', () => {
   it('marks a thin one-sentence seed as THIN in required areas and asks only those areas', () => {
     const audit = auditSeed('A grieving chef returns home to save a haunted restaurant.', { speculative: false });
 

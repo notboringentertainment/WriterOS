@@ -7,10 +7,13 @@ import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWriting
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
-import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced } from './lib/voiceProfile'
+import { loadCompletedVoiceProfile, loadCompletedVoiceProfileSliced, loadVoiceProfileState } from './lib/voiceProfile'
 import { classifyPersonaCapability } from './lib/personaCapabilityRouting'
 import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability'
 import { Shell } from './components/shell/Shell'
+import { ProjectMeetingPage } from './components/ritual/ProjectMeetingPage'
+import { VoiceProfileRitualPage } from './components/ritual/VoiceProfileRitualPage'
+import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
 import { OutlineTab } from './components/writing/OutlineTab'
@@ -34,6 +37,7 @@ import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, 
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
+import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib/projectMeetingStatus'
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
 import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProposals'
 import type { RoomProposal } from './lib/roomApi'
@@ -119,6 +123,37 @@ export default function App() {
     [project.storedProjects],
   )
   const folderSaveNonceRef = useRef(0)
+
+  // Voice Profile first-run gate (writer-voice-profile-prd): offer the ritual once
+  // when no profile state exists at all. A skip writes status:'skipped', so the
+  // gate never re-prompts; the TopBar Voice button remains the standing entry.
+  const { openRitual } = shellState
+  useEffect(() => {
+    if (!loadVoiceProfileState()) {
+      openRitual('voiceProfile')
+    }
+  }, [openRitual])
+
+  // Project Meeting standings for the Home cards. Best effort, only while Home is
+  // visible; a down room API simply hides the chips. Keyed on a stable id string —
+  // `project.projects` is rebuilt every render, so depending on the array identity
+  // would refetch (and re-render) in an infinite loop.
+  const [projectMeetingStandings, setProjectMeetingStandings] = useState<Record<string, ProjectMeetingStanding>>({})
+  const meetingStandingIdsKey = Array.from(new Set([
+    ...project.projects.map(p => p.id),
+    ...projectFolder.projects.map(p => p.id),
+  ])).sort().join(',')
+  useEffect(() => {
+    if (!shellState.homeActive || !meetingStandingIdsKey) return
+    let cancelled = false
+    void fetchProjectMeetingStandings(meetingStandingIdsKey.split(',')).then(standings => {
+      if (!cancelled) setProjectMeetingStandings(standings)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [shellState.homeActive, meetingStandingIdsKey])
+
   const writeProjectRef = useRef(projectFolder.writeProject)
   const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
@@ -260,12 +295,25 @@ export default function App() {
         packageName: openedProject.packageName,
       })
       shellState.openProjectWorkspace()
+      return true
     } catch (error) {
       setFolderProjectError(formatFolderProjectError(error))
+      return false
     } finally {
       setOpeningFolderProjectId(null)
     }
   }, [cancelPendingFolderSave, formatFolderProjectError, project, projectFolder, shellState])
+
+  const handleOpenProjectMeetingFromHome = useCallback(async (projectId: string, storageKind: 'browser' | 'folder') => {
+    if (storageKind === 'browser') {
+      handleOpenBrowserProject(projectId)
+      openRitual('projectMeeting')
+      return
+    }
+    if (await handleOpenFolderProject(projectId)) {
+      openRitual('projectMeeting')
+    }
+  }, [handleOpenBrowserProject, handleOpenFolderProject, openRitual])
 
   const handleNewProject = useCallback(() => {
     cancelPendingFolderSave()
@@ -285,9 +333,11 @@ export default function App() {
       setActiveProjectStorage({ kind: 'browser' })
     }
 
-    // First Meeting entry point (§A3): new projects visibly offer the interview,
-    // but the interview itself never auto-starts.
-    shellState.enterWritersRoom()
+    // Project Meeting entry point (§A3): a new project lands on the meeting page in
+    // its intake state — the page is the offer, and the interview never auto-starts.
+    // "Skip for now" drops the writer into the workspace underneath.
+    shellState.openProjectWorkspace()
+    shellState.openRitual('projectMeeting')
   }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
 
   const handleImportFdxAsNewProject = useCallback(async (file: File) => {
@@ -807,6 +857,21 @@ export default function App() {
   }
 
   const renderCenter = () => {
+    // Ritual takeovers render before Home so closing one restores whatever was underneath.
+    if (shellState.ritual === 'voiceProfile') {
+      return <VoiceProfileRitualPage onExit={shellState.closeRitual} />
+    }
+
+    if (shellState.ritual === 'projectMeeting' && project.activeProjectId) {
+      return (
+        <ProjectMeetingPage
+          projectId={project.activeProjectId}
+          projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+          onExit={shellState.closeRitual}
+        />
+      )
+    }
+
     if (shellState.homeActive) {
       return (
         <HomeSurface
@@ -848,6 +913,8 @@ export default function App() {
           folderLabel={projectFolder.label}
           onMigrateLocalStorage={handleMigrateLocalStorage}
           migratingLocalStorage={migratingLocalStorage}
+          projectMeetingStandings={projectMeetingStandings}
+          onOpenProjectMeeting={(projectId, storageKind) => void handleOpenProjectMeetingFromHome(projectId, storageKind)}
         />
       )
     }
@@ -883,6 +950,7 @@ export default function App() {
                     })),
                     locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
                     onAdoptProposal: handleAdoptRoomProposal,
+                    onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
                   }
                 : undefined
             }

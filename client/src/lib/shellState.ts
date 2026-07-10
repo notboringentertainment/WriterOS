@@ -3,6 +3,10 @@ import { useState, useCallback } from 'react'
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
 type PanelByTab = Record<WritingTab, boolean>
 export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'rules'
+// Full-bleed identity ritual takeovers: writer-level (Voice Profile) and
+// project-level (Project Meeting). Checked before homeActive when rendering, so
+// closing a ritual restores whatever surface was underneath.
+export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | null
 
 export function useShellState() {
   const [homeActive, setHomeActive] = useState(true)
@@ -18,25 +22,39 @@ export function useShellState() {
   const [focusMode, setFocusMode] = useState(false)
   const [storyBibleSection, setStoryBibleSectionRaw] = useState<StoryBibleSection | null>(null)
   const [voiceProfileOpen, setVoiceProfileOpen] = useState(false)
+  const [ritual, setRitual] = useState<ActiveRitual>(null)
 
   const panelOpen = panelByTab[activeTab]
+
+  const openRitual = useCallback((next: Exclude<ActiveRitual, null>) => {
+    setFocusMode(false)
+    setVoiceProfileOpen(false)
+    setRitual(next)
+  }, [])
+
+  const closeRitual = useCallback(() => {
+    setRitual(null)
+  }, [])
 
   const setActiveTab = useCallback((tab: WritingTab) => {
     setHomeActive(false)
     setActiveTabRaw(tab)
     setFocusMode(false)
+    setRitual(null)
   }, [])
 
   const openHome = useCallback(() => {
     setHomeActive(true)
     setWritersRoomActive(false)
     setFocusMode(false)
+    setRitual(null)
   }, [])
 
   const openProjectWorkspace = useCallback(() => {
     setHomeActive(false)
     setWritersRoomActive(false)
     setFocusMode(false)
+    setRitual(null)
   }, [])
 
   const togglePanel = useCallback(() => {
@@ -47,6 +65,7 @@ export function useShellState() {
     setHomeActive(false)
     setPanelByTab(prev => ({ ...prev, [activeTab]: false }))
     setFocusMode(false)
+    setRitual(null)
     setWritersRoomActive(true)
   }, [activeTab])
 
@@ -58,10 +77,12 @@ export function useShellState() {
     setHomeActive(false)
     setPanelByTab(prev => ({ ...prev, [activeTab]: false }))
     setFocusMode(false)
+    setRitual(null)
     setWritersRoomActive(prev => !prev)
   }, [activeTab])
 
   const toggleFocusMode = useCallback(() => {
+    setRitual(null)
     setFocusMode(prev => !prev)
   }, [])
 
@@ -70,6 +91,9 @@ export function useShellState() {
   }, [])
 
   const toggleVoiceProfile = useCallback(() => {
+    // The drawer is a workspace overlay, not a ritual companion — never stack it
+    // over a ritual takeover.
+    setRitual(null)
     setVoiceProfileOpen(prev => !prev)
   }, [])
 
@@ -85,6 +109,9 @@ export function useShellState() {
     focusMode,
     storyBibleSection,
     voiceProfileOpen,
+    ritual,
+    openRitual,
+    closeRitual,
     setActiveTab,
     openHome,
     openProjectWorkspace,

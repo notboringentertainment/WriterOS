@@ -266,3 +266,23 @@ textarea, input { resize: vertical; }
     overflow-y: auto;
   }
 }
+
+/* Identity ritual pages (Voice Profile, Project Meeting) — stage entrance. */
+.ritual-stage {
+  animation: ritual-stage-in 300ms ease-out both;
+}
+@keyframes ritual-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ritual-stage {
+    animation: none;
+  }
+}
