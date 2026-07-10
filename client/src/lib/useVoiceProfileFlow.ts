@@ -13,10 +13,14 @@ export function buildDraftAssessmentState(
   const now = new Date().toISOString()
   return {
     version: 1,
-    status: 'draft_answers',
+    // Editing answers must never silently destroy an already-synthesized draft
+    // profile — keep it (and the draft_profile status) until a regeneration
+    // replaces it or the writer clears the state.
+    status: existingState?.profile ? 'draft_profile' : 'draft_answers',
     answers: cleanAssessmentAnswers(answers),
     createdAt: existingState?.createdAt ?? now,
     updatedAt: now,
+    ...(existingState?.profile ? { profile: existingState.profile } : {}),
     ...(existingState?.deepDiveAnswers ? { deepDiveAnswers: existingState.deepDiveAnswers } : {}),
     ...(existingState?.refinementAnswers ? { refinementAnswers: existingState.refinementAnswers } : {}),
   }

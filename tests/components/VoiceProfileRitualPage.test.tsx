@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('VoiceProfileRitualPage', () => {
@@ -107,6 +108,22 @@ describe('VoiceProfileRitualPage', () => {
     render(<VoiceProfileRitualPage onExit={vi.fn()} />)
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  })
+
+  it('keeps the draft profile when the writer goes back and edits an answer', async () => {
+    localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({
+      version: 1, status: 'draft_profile', answers: { q1: 'original answer' }, profile: profileDoc,
+      createdAt: '2026-07-09T00:00:00Z', updatedAt: '2026-07-09T00:00:00Z',
+    }))
+    render(<VoiceProfileRitualPage onExit={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to questions' }))
+    fireEvent.change(screen.getByPlaceholderText('Answer in your own voice…'), { target: { value: 'revised answer' } })
+
+    const stored = JSON.parse(localStorage.getItem(VOICE_PROFILE_STORAGE_KEY) ?? '{}')
+    expect(stored.answers.q1).toBe('revised answer')
+    expect(stored.profile?.archetype).toBe(profileDoc.archetype)
+    expect(stored.status).toBe('draft_profile')
   })
 
   it('shows the synthesis error and allows retry', async () => {

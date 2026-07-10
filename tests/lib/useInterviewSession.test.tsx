@@ -89,6 +89,60 @@ describe('useInterviewSession', () => {
     expect(apiMock.resolveRoomProposal).toHaveBeenCalledWith('p1', 'proposal-1', 'adopted', { resolvedValue: 'She never sells the recipes.', origin: 'extrapolated' })
   })
 
+  it('advances the session even when proposal adoption fails after a recorded answer', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
+    const nextQuestion = { ...question, id: 'morgan-ending' }
+    apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: nextQuestion, proposal: { id: 'proposal-1' } })
+    apiMock.resolveRoomProposal.mockRejectedValue(new Error('room api 409: already resolved'))
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('interviewing'))
+
+    let ok = false
+    await act(async () => {
+      ok = await result.current.answer({ answerText: 'She never sells the recipes.', origin: 'seed' })
+    })
+    // The answer was recorded server-side: the UI moves on and surfaces a scoped error.
+    expect(ok).toBe(true)
+    expect(result.current.status.currentQuestion?.id).toBe('morgan-ending')
+    expect(result.current.error).toContain('Answer recorded, but adopting the mapping failed')
+  })
+
+  it('an explicit null currentQuestion clears the question instead of pinning the stale one', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
+    apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: null })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.currentQuestion?.id).toBe('morgan-locks'))
+
+    await act(async () => {
+      await result.current.answer({ answerText: 'final answer', origin: 'seed' })
+    })
+    expect(result.current.status.currentQuestion).toBeNull()
+  })
+
+  it('a stale preview response never overwrites a newer one', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
+    let resolveFirst: (v: unknown) => void = () => {}
+    apiMock.fetchInterviewBankPreview
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({ conceptSeedAppend: 'NEWER', taggable: [] })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('readback'))
+
+    let firstRequest: Promise<void>
+    await act(async () => {
+      firstRequest = result.current.previewBank({})
+      await result.current.previewBank({ 'p-1': 'leaning' })
+    })
+    expect(result.current.bankPreview?.conceptSeedAppend).toBe('NEWER')
+
+    // The slow first response arrives last — and must be discarded.
+    await act(async () => {
+      resolveFirst({ conceptSeedAppend: 'STALE', taggable: [] })
+      await firstRequest!
+    })
+    expect(result.current.bankPreview?.conceptSeedAppend).toBe('NEWER')
+  })
+
   it('answer with rejectMapping does not adopt the proposal', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
     apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: null, proposal: { id: 'proposal-1' } })

@@ -1,7 +1,7 @@
 // Project Meeting interview session state + actions, extracted from RoomChannel so the
 // ritual page and the room's status line share one implementation (§A3-A12).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   answerInterviewQuestion,
   bankInterview,
@@ -51,6 +51,9 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
   const [exportMarkdown, setExportMarkdown] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Monotonic id for preview requests: rapid mutability toggles fire overlapping
+  // fetches, and only the latest response may write bankPreview.
+  const previewSeqRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -81,7 +84,13 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   }, [projectId])
 
   const setSessionResult = useCallback((result: { session: InterviewSession; currentQuestion?: InterviewQuestion | null }) => {
-    setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion ?? prev.currentQuestion }))
+    // An explicit null clears the question (e.g. the lane ran dry); only an ABSENT
+    // field keeps the previous one. `??` would conflate the two and pin a stale question.
+    setStatus(prev => ({
+      ...prev,
+      activeSession: result.session,
+      currentQuestion: result.currentQuestion !== undefined ? result.currentQuestion : prev.currentQuestion,
+    }))
   }, [])
 
   const start = useCallback(async (input: { mode: 'quick' | 'full'; seedText: string }) => {
@@ -100,17 +109,27 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     const answerText = input.answerText.trim()
     if (!session || !answerText) return false
     const rejectMapping = input.rejectMapping ?? false
+    let result: Awaited<ReturnType<typeof answerInterviewQuestion>>
     try {
-      const result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: input.origin, rejectMapping })
-      if (result.proposal && !rejectMapping) {
-        await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: input.origin })
-      }
-      setSessionResult(result)
-      return true
+      result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: input.origin, rejectMapping })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Project Meeting answer failed')
       return false
     }
+    // The answer is recorded and the session advanced server-side — reflect that
+    // locally BEFORE the follow-up proposal adoption, so an adoption failure can't
+    // strand the UI on a question that was already answered.
+    setSessionResult(result)
+    if (result.proposal && !rejectMapping) {
+      try {
+        await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: input.origin })
+      } catch (err) {
+        setError(err instanceof Error
+          ? `Answer recorded, but adopting the mapping failed: ${err.message}`
+          : 'Answer recorded, but adopting the mapping failed.')
+      }
+    }
+    return true
   }, [projectId, status.activeSession, setSessionResult])
 
   const skip = useCallback(async () => {
@@ -159,10 +178,12 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const previewBank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
     const session = status.activeSession
     if (!session) return
+    const seq = ++previewSeqRef.current
     try {
-      setBankPreview(await fetchInterviewBankPreview(projectId, session.id, mutability))
+      const preview = await fetchInterviewBankPreview(projectId, session.id, mutability)
+      if (seq === previewSeqRef.current) setBankPreview(preview)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bank preview failed')
+      if (seq === previewSeqRef.current) setError(err instanceof Error ? err.message : 'Bank preview failed')
     }
   }, [projectId, status.activeSession])
 
@@ -171,6 +192,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     if (!session) return
     try {
       const result = await bankInterview(projectId, session.id, mutability)
+      // The banked preview is authoritative; invalidate any preview still in flight.
+      previewSeqRef.current++
       setStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
       setBankPreview(result.preview)
     } catch (err) {
