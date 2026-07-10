@@ -80,6 +80,58 @@ describe('interviewRuntime.project ownership guard', () => {
   });
 });
 
+// Sequenced fake: each query terminal (order/single/maybeSingle) consumes the
+// next queued result, so one test can script list-then-insert behavior.
+function sequencedDb(results: Array<{ data: unknown; error: { message: string } | null }>): SupabaseClient {
+  let index = 0
+  const next = () => results[Math.min(index++, results.length - 1)]
+  const chain = {
+    insert: () => chain,
+    update: () => chain,
+    select: () => chain,
+    eq: () => chain,
+    single: async () => next(),
+    maybeSingle: async () => next(),
+    order: () => Promise.resolve(next()),
+    then: (resolve: (v: unknown) => void) => resolve(next()),
+  }
+  return { from: () => chain } as unknown as SupabaseClient
+}
+
+describe('interviewRuntime.single active session guard', () => {
+  it('refuses to start when the project already has an active session', async () => {
+    __setRoomDbForTests(fakeDb({ data: [activeSession], error: null }));
+
+    const { startInterview } = await import('../../../server/room/interview/runtime');
+    await expect(startInterview({ projectId: 'p1', mode: 'full', seedText: 'another seed' })).rejects.toThrow(/already in progress/);
+  });
+
+  it('allows a new round when previous sessions are banked or exported', async () => {
+    // list → no active; insert/update/etc. proceed normally.
+    __setRoomDbForTests(sequencedDb([
+      { data: [bankedSession, exportedSession], error: null },
+      { data: { ...activeSession, state: 'intake' }, error: null },
+      { data: activeSession, error: null },
+      { data: activeSession, error: null },
+    ]));
+
+    const { startInterview } = await import('../../../server/room/interview/runtime');
+    const result = await startInterview({ projectId: 'p1', mode: 'full', seedText: 'new round seed' });
+    expect(result.session.state).toBe('interviewing');
+  });
+
+  it('translates a unique-index race loss into the friendly conflict error', async () => {
+    // list → empty (we lost the race after checking), insert → unique violation.
+    __setRoomDbForTests(sequencedDb([
+      { data: [], error: null },
+      { data: null, error: { message: 'duplicate key value violates unique constraint "interview_sessions_one_active_per_project"' } },
+    ]));
+
+    const { startInterview } = await import('../../../server/room/interview/runtime');
+    await expect(startInterview({ projectId: 'p1', mode: 'full', seedText: 'raced seed' })).rejects.toThrow(/already in progress/);
+  });
+});
+
 describe('interviewRuntime.length caps', () => {
   it('rejects oversized seed text', async () => {
     const { startInterview } = await import('../../../server/room/interview/runtime');
