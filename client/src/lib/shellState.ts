@@ -82,6 +82,7 @@ export function useShellState() {
   }, [activeTab])
 
   const toggleFocusMode = useCallback(() => {
+    setRitual(null)
     setFocusMode(prev => !prev)
   }, [])
 
@@ -90,6 +91,9 @@ export function useShellState() {
   }, [])
 
   const toggleVoiceProfile = useCallback(() => {
+    // The drawer is a workspace overlay, not a ritual companion — never stack it
+    // over a ritual takeover.
+    setRitual(null)
     setVoiceProfileOpen(prev => !prev)
   }, [])
 

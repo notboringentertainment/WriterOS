@@ -177,6 +177,8 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
               challenge, open delegates it. No memory blocks are written until you bank this round.
             </p>
 
+            {!interview.bankPreview && <p style={styles.hint}>Preparing the readback…</p>}
+
             {interview.bankPreview && interview.bankPreview.taggable.length > 0 && (
               <ul style={styles.taggableList} data-testid="readback-taggable">
                 {interview.bankPreview.taggable.map(item => (
@@ -225,7 +227,15 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
             )}
 
             <div style={styles.actionRow}>
-              <button type="button" style={styles.primaryButton} onClick={() => void interview.bank(mutabilitySelections)}>Bank this round</button>
+              <button
+                type="button"
+                style={{ ...styles.primaryButton, ...(interview.bankPreview ? {} : styles.buttonDisabled) }}
+                disabled={!interview.bankPreview}
+                title={interview.bankPreview ? undefined : 'The readback is still loading — bank only what you can see'}
+                onClick={() => void interview.bank(mutabilitySelections)}
+              >
+                Bank this round
+              </button>
               <button type="button" style={styles.ghostButton} onClick={() => void interview.pause()}>Pause</button>
             </div>
           </div>
@@ -372,6 +382,10 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: 'var(--font-mono)',
     fontSize: 12,
+  },
+  buttonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
   previewBox: {
     maxHeight: 320,

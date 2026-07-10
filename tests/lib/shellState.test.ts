@@ -163,5 +163,15 @@ describe('useShellState', () => {
     act(() => result.current.openRitual('projectMeeting'))
     act(() => result.current.toggleWritersRoom())
     expect(result.current.ritual).toBeNull()
+
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.toggleVoiceProfile())
+    expect(result.current.ritual).toBeNull()
+    expect(result.current.voiceProfileOpen).toBe(true)
+
+    act(() => result.current.closeVoiceProfile())
+    act(() => result.current.openRitual('projectMeeting'))
+    act(() => result.current.toggleFocusMode())
+    expect(result.current.ritual).toBeNull()
   })
 })

@@ -164,6 +164,26 @@ describe('ProjectMeetingPage', () => {
     expect(await screen.findByText(/This round is banked/)).toBeInTheDocument()
   })
 
+  it('disables banking until the readback preview is visible', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
+    let resolvePreview: (value: unknown) => void = () => {}
+    apiMock.fetchInterviewBankPreview.mockReturnValue(new Promise(resolve => { resolvePreview = resolve }))
+    renderPage()
+
+    // Preview still in flight: the bank moment must stay invisible and unclickable.
+    const bankButton = await screen.findByRole('button', { name: 'Bank this round' })
+    expect(bankButton).toBeDisabled()
+    expect(screen.getByText('Preparing the readback…')).toBeInTheDocument()
+    fireEvent.click(bankButton)
+    expect(apiMock.bankInterview).not.toHaveBeenCalled()
+
+    resolvePreview({
+      title: 'Ace Handler', seedText: 'seed', datedAnswers: [], seedColor: [],
+      locks: [], leanings: [], openQuestions: [], conceptSeedAppend: '', taggable: [],
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Bank this round' })).toBeEnabled())
+  })
+
   it('readback toggles reflect the server default until the writer overrides', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
     apiMock.fetchInterviewBankPreview.mockResolvedValue({
