@@ -66,7 +66,7 @@ async function tick(): Promise<void> {
 export function startRoomScheduler(): boolean {
   if (timer) return true;
   if (!isRoomConfigured() || !isAnthropicConfigured()) {
-    console.log('[room] scheduler not started (needs SUPABASE_URL, SUPABASE_ANON_KEY, ANTHROPIC_API_KEY)');
+    console.log('[room] scheduler not started (needs SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY)');
     return false;
   }
   timer = setInterval(() => void tick(), TICK_MS);

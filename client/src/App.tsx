@@ -285,7 +285,9 @@ export default function App() {
       setActiveProjectStorage({ kind: 'browser' })
     }
 
-    shellState.openProjectWorkspace()
+    // First Meeting entry point (§A3): new projects visibly offer the interview,
+    // but the interview itself never auto-starts.
+    shellState.enterWritersRoom()
   }, [cancelPendingFolderSave, persistFolderProject, project, projectFolder.status, shellState])
 
   const handleImportFdxAsNewProject = useCallback(async (file: File) => {
@@ -675,7 +677,7 @@ export default function App() {
     const next = applyProposalToStoryBible(
       project.state.documents.storyBible.content,
       proposal.field_path,
-      proposal.proposed_value,
+      proposal.resolved_value ?? proposal.proposed_value,
     )
     if (!next) return false
     project.setStoryBibleDocument(() => next)

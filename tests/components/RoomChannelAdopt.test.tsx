@@ -3,13 +3,23 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
+    answerInterviewQuestion: vi.fn(),
+    bankInterview: vi.fn(),
+    exportInterview: vi.fn(),
+    fetchInterviewBankPreview: vi.fn(),
+    fetchInterviewStatus: vi.fn(),
     fetchRoomMessages: vi.fn(),
     fetchRoomProposals: vi.fn(),
     openRoomStream: vi.fn(),
+    pauseInterview: vi.fn(),
     postRoomEvent: vi.fn(),
     resolveRoomProposal: vi.fn(),
+    resumeInterview: vi.fn(),
     sendRoomMessage: vi.fn(),
+    skipInterviewQuestion: vi.fn(),
+    startInterview: vi.fn(),
     syncStoryLocksBlock: vi.fn(),
+    wrapInterview: vi.fn(),
   },
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
@@ -30,10 +40,20 @@ const pendingProposal: RoomProposal = {
   created_at: '2026-07-07T00:00:00Z',
 }
 
+const pendingInterviewProposal: RoomProposal = {
+  ...pendingProposal,
+  id: 'prop-interview-1',
+  kind: 'interview_answer',
+  session_id: 's1',
+  question_id: 'morgan-locks',
+  origin: 'seed',
+}
+
 beforeEach(() => {
   Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
   apiMock.fetchRoomProposals.mockResolvedValue([pendingProposal])
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'First Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
   apiMock.postRoomEvent.mockResolvedValue(undefined)
   apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
@@ -72,6 +92,14 @@ describe('RoomChannel proposal adoption ordering', () => {
     expect(await screen.findByText(/network down/)).toBeInTheDocument()
   })
 
+  it('does not render interview answer proposals as ambient proposal cards', async () => {
+    apiMock.fetchRoomProposals.mockResolvedValueOnce([pendingProposal, pendingInterviewProposal])
+    renderChannel(vi.fn())
+
+    expect(await screen.findByText('win back the restaurant')).toBeInTheDocument()
+    expect(screen.getAllByTestId('proposal-card')).toHaveLength(1)
+  })
+
   it('does NOT write the document when the server resolve fails', async () => {
     apiMock.resolveRoomProposal.mockRejectedValueOnce(new Error('room api 409: not pending'))
     const onAdopt = vi.fn().mockReturnValue(true)
@@ -85,11 +113,17 @@ describe('RoomChannel proposal adoption ordering', () => {
     expect(await screen.findByText(/409/)).toBeInTheDocument() // surfaced, not swallowed
   })
 
-  it('writes the document only AFTER a successful resolve', async () => {
+  it('writes the document only AFTER a successful resolve and applies the server-confirmed resolved value', async () => {
     const order: string[] = []
+    const resolvedProposal = {
+      ...pendingProposal,
+      status: 'adopted' as const,
+      resolved_at: 'now',
+      resolved_value: 'win back the restaurant on her own terms',
+    }
     apiMock.resolveRoomProposal.mockImplementation(async () => {
       order.push('resolve')
-      return { ...pendingProposal, status: 'adopted' as const, resolved_at: 'now' }
+      return resolvedProposal
     })
     const onAdopt = vi.fn(() => {
       order.push('apply')
@@ -99,7 +133,7 @@ describe('RoomChannel proposal adoption ordering', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Adopt' }))
 
-    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(pendingProposal))
+    await waitFor(() => expect(onAdopt).toHaveBeenCalledWith(resolvedProposal))
     expect(order).toEqual(['resolve', 'apply'])
   })
 

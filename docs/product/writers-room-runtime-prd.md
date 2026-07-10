@@ -298,11 +298,10 @@ Before the Phase 1 branch is cut:
 5. Old roadmap Phase 5 (workflows-as-tools) is superseded by the §7.1 toolset.
    OpenSwarm retirement (old Phase 4) remains valid and gains urgency — the room
    must not inherit a dead dependency.
-6. **DEPLOY BLOCKER (not a spike blocker):** `server/room/supabaseClient.ts`
-   connects with `SUPABASE_ANON_KEY`. Before any non-local deployment, the room
-   tables' RLS posture MUST be resolved: either explicit RLS policies scoped to
-   the app's access pattern, or a server-side service-role key (never bundled
-   client-side). Local development may proceed without this.
+6. **Deploy posture:** room persistence is server-only. Production MUST use
+   `SUPABASE_SERVICE_ROLE_KEY`; anon-key room access is local fallback only.
+   Room tables have RLS enabled with no permissive anon policies, so direct
+   client access is denied and all app access goes through server routes.
 
 ## 14. Build Phases
 

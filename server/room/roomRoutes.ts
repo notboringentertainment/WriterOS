@@ -7,6 +7,7 @@ import { PERSONAS } from '../../shared/personas';
 import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
+import * as interviewRuntime from './interview/runtime';
 import { isRoomConfigured } from './supabaseClient';
 import type { ProposalOrigin, RoomEventKind } from './types';
 
@@ -16,11 +17,25 @@ const MAX_WRITER_MESSAGE_CHARS = 4000;
 
 function requireRoom(res: Response): boolean {
   if (isRoomConfigured()) return true;
-  res.status(503).json({ message: 'Writers Room is not configured (SUPABASE_URL / SUPABASE_ANON_KEY missing).' });
+  res.status(503).json({ message: 'Writers Room is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing).' });
   return false;
 }
 
 const projectIdOf = (req: Request): string => String(req.params.projectId ?? '').trim();
+
+function handleInterviewError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : 'Failed to execute First Meeting action.';
+  if (message.includes('does not belong to project')) {
+    res.status(409).json({ message });
+    return;
+  }
+  if (message.includes('exceeds maximum length')) {
+    res.status(413).json({ message });
+    return;
+  }
+  console.error('[room.routes] interview action failed:', error);
+  res.status(500).json({ message });
+}
 
 export function registerRoomRoutes(app: Express): void {
   // Live channel stream. An open connection = "project is open" for idle_tick.
@@ -190,6 +205,132 @@ export function registerRoomRoutes(app: Express): void {
     } catch (error) {
       console.error('[room.routes] story-locks failed:', error);
       res.status(500).json({ message: 'Failed to update story locks block.' });
+    }
+  });
+
+  // First Meeting — explicit, never auto-started (§A3-A12).
+  app.get('/api/room/:projectId/interview', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.getInterviewStatus(projectIdOf(req)));
+    } catch (error) {
+      console.error('[room.routes] interview status failed:', error);
+      res.status(500).json({ message: 'Failed to load First Meeting status.' });
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/start', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      const mode = req.body?.mode === 'quick' ? 'quick' : req.body?.mode === 'full' ? 'full' : null;
+      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText.trim() : '';
+      if (!mode) {
+        res.status(400).json({ message: "mode must be 'quick' or 'full'." });
+        return;
+      }
+      if (!seedText) {
+        res.status(400).json({ message: 'seedText is required.' });
+        return;
+      }
+      const result = await interviewRuntime.startInterview({
+        projectId: projectIdOf(req),
+        mode,
+        seedText,
+        speculative: Boolean(req.body?.speculative),
+      });
+      res.json(result);
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/answer', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText.trim() : '';
+      if (!answerText) {
+        res.status(400).json({ message: 'answerText is required.' });
+        return;
+      }
+      const origin = req.body?.origin;
+      if (origin !== undefined && origin !== 'seed' && origin !== 'extrapolated') {
+        res.status(400).json({ message: "origin must be 'seed' or 'extrapolated' for interview answers." });
+        return;
+      }
+      const result = await interviewRuntime.answerInterviewQuestion({
+        sessionId: String(req.params.sessionId),
+        projectId: projectIdOf(req),
+        answerText,
+        resolvedValue: typeof req.body?.resolvedValue === 'string' ? req.body.resolvedValue : undefined,
+        origin,
+        rejectMapping: Boolean(req.body?.rejectMapping),
+      });
+      res.json(result);
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/skip', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.skipInterviewQuestion({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/wrap', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.wrapInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pause', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.pauseInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/resume', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ session: await interviewRuntime.resumeInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.get('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/bank', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: req.body?.mutability ?? {} }));
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/export', async (req, res) => {
+    if (!requireRoom(res)) return;
+    try {
+      res.json(await interviewRuntime.exportInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
+    } catch (error) {
+      handleInterviewError(res, error);
     }
   });
 
