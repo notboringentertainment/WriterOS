@@ -766,7 +766,7 @@ from writer content.
 | Label | Cap | Owner (writers) | Update rule | Sentinel value |
 |---|---|---|---|---|
 | `concept_seed` | 4,000 | Project Meeting bank only | Append-only, dated rounds, never edited in place (§A9) | `No concept seed banked yet. Offer the Project Meeting.` |
-| `story_locks` | 2,000 | Story Bible sync + Meeting bank | Structured merge by origin section (B3) | `No locks — writer cedes broadly.` |
+| `story_locks` | 2,000 | Story Bible sync + Meeting bank | Structured merge by origin section (B3) | Canonical two-section value from B3, with `None declared.` in both sections |
 | `open_questions` | 2,000 | Meeting bank; Morgan (synthesis) | Replace own-origin section only (B3) | `Nothing delegated — writer holds all intent.` |
 | `project_state` | 2,000 | Morgan only (digest path) | Full replace by Morgan | `No project state recorded yet.` |
 
@@ -781,16 +781,19 @@ for an absent row is retired; callers MUST be able to detect absence.
 All room agents see all shared blocks. No per-agent curation in Phase 2 —
 curation is a Phase 3 option, not an accident of missing rows.
 
-| Block | morgan | casey | oliver | maya | zoe | alex |
-|---|---|---|---|---|---|---|
-| `concept_seed` | ● | ● | ● | ● | ● | ● |
-| `story_locks` | ● | ● | ● | ● | ● | ● |
-| `open_questions` | ● | ● | ● | ● | ● | ● |
-| `project_state` | ● | ● | ● | ● | ● | ● |
-| `voice_profile` | ● | ● | ● | ● | ● | ● |
+| Block | morgan | sam | casey | oliver | maya | zoe | alex |
+|---|---|---|---|---|---|---|---|
+| `concept_seed` | ● | ● | ● | ● | ● | ● | ● |
+| `story_locks` | ● | ● | ● | ● | ● | ● | ● |
+| `open_questions` | ● | ● | ● | ● | ● | ● | ● |
+| `project_state` | ● | ● | ● | ● | ● | ● | ● |
+| `voice_profile` | ● | ● | ● | ● | ● | ● | ● |
 
 Attachments are created by the initializer in the same transaction as the
 blocks (B4). A shared block without its attachment rows is a system error.
+Context assembly MUST return attached project blocks whose `project_id`
+matches the active project plus attached writer-global blocks whose
+`project_id IS NULL`; the current project-only post-filter is retired.
 
 ## B3. story_locks merge rule (replaces last-writer-wins)
 
@@ -803,6 +806,10 @@ The block value is two origin sections, both binding for enforcement:
 ## Meeting locks
 <[SEED]/[EXTRAPOLATED] lines from banked rounds, or "None declared.">
 ```
+
+The initializer MUST create this canonical two-section value. Bare sentinel
+text is not a valid initialized `story_locks` value. Bare pre-contract values
+remain legacy input and follow the B6 adoption rule.
 
 - Story Bible sync MUST rewrite only the `## Bible locks` section.
 - Meeting bank MUST rewrite only the `## Meeting locks` section.
@@ -821,9 +828,13 @@ rows untouched), then insert missing attachment rows for the full agent
 roster × all shared blocks visible to the project (including writer-global
 `voice_profile` when present).
 
-Invoked from every room entry point: interview start, room stream open,
-first message send, block sync, proposal routes. First contact initializes;
-later calls no-op (SELECT-only fast path).
+Invoked before every entry point that can mutate room state or enable an agent
+turn: room stream open; writer message POST; client event POST; Story Bible
+lock sync; Project Meeting start, answer, skip, wrap, pause, resume, preview,
+bank, and export; and any future route that queues or directly runs an agent.
+Read-only message/proposal/status routes and proposal resolution do not
+initialize memory because they neither enable a turn nor author shared memory.
+First contact initializes; later calls no-op (SELECT-only fast path).
 
 ## B5. Failure behavior
 
