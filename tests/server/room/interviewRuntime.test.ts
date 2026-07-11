@@ -84,7 +84,12 @@ describe('interviewRuntime.project ownership guard', () => {
 // next queued result, so one test can script list-then-insert behavior.
 function sequencedDb(results: Array<{ data: unknown; error: { message: string } | null }>): SupabaseClient {
   let index = 0
-  const next = () => results[Math.min(index++, results.length - 1)]
+  const next = () => {
+    if (index >= results.length) {
+      throw new Error(`sequencedDb: script exhausted after ${results.length} results — an unexpected extra query ran`)
+    }
+    return results[index++]
+  }
   const chain = {
     insert: () => chain,
     update: () => chain,
