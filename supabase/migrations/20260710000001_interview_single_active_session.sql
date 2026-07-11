@@ -4,6 +4,11 @@
 -- check in testing (11ms apart) and both created sessions. Banked/exported
 -- sessions are history and stay unconstrained (new rounds append).
 
+-- Block concurrent session writes for the duration of this migration's
+-- transaction, so nothing can reintroduce a duplicate between the cleanup
+-- below and the index creation. Reads stay unblocked.
+lock table interview_sessions in share row exclusive mode;
+
 -- Deterministic preflight: any duplicate active sessions can only have been
 -- produced by the pre-guard race bug. Keep the most recent active session per
 -- project (created_at desc, id desc as tiebreak) and retire the older strays
