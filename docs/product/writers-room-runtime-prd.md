@@ -739,3 +739,115 @@ craft before shipping. That is the failure mode this phase exists to kill.
 message_agent chains, bench-mechanic UI, budget ledger UI, ambient wake
 tuning (all Phase 3); PitchStudio import/round-trip (Phase 4); memory
 markdown export (conditional, §15); any generalization beyond one room.
+
+---
+
+# Addendum B — Shared Memory Contract (Normative)
+
+**Status:** Normative, MUST/SHOULD/MAY per RFC 2119. Added 2026-07-11 after
+audit found: no initializer for shared memory (blocks exist only as side
+effects of navigation), no runtime writer for `block_attachments` (banked
+shared blocks invisible to agent prompts), no writer for `project_state`,
+and `story_locks` fought over by two uncoordinated writers (Bible sync
+replaces meeting locks and vice versa). Where this conflicts with earlier
+prose, this addendum wins.
+
+**Framing decision:** "Mandatory" describes initialized memory, not a
+mandatory interview. The Project Meeting remains offered-never-forced (§A3).
+What is mandatory: every project the room touches has all shared blocks
+present, attached, and carrying explicit semantics — before any agent turn.
+
+## B1. Block contract
+
+Per-project shared blocks (`agent_id = null`). Sentinel = initial value; its
+presence means "initialized, nothing declared" and MUST be distinguishable
+from writer content.
+
+| Label | Cap | Owner (writers) | Update rule | Sentinel value |
+|---|---|---|---|---|
+| `concept_seed` | 4,000 | Project Meeting bank only | Append-only, dated rounds, never edited in place (§A9) | `No concept seed banked yet. Offer the Project Meeting.` |
+| `story_locks` | 2,000 | Story Bible sync + Meeting bank | Structured merge by origin section (B3) | `No locks — writer cedes broadly.` |
+| `open_questions` | 2,000 | Meeting bank; Morgan (synthesis) | Replace own-origin section only (B3) | `Nothing delegated — writer holds all intent.` |
+| `project_state` | 2,000 | Morgan only (digest path) | Full replace by Morgan | `No project state recorded yet.` |
+
+`voice_profile` is writer-global (`project_id = null`), synced from the
+client profile, out of scope for the per-project initializer except
+attachment (B2). Missing-vs-empty: after initialization, a missing block is
+a **system error**, not an empty state. `getSharedBlockValue` returning `''`
+for an absent row is retired; callers MUST be able to detect absence.
+
+## B2. Attachment matrix
+
+All room agents see all shared blocks. No per-agent curation in Phase 2 —
+curation is a Phase 3 option, not an accident of missing rows.
+
+| Block | morgan | casey | oliver | maya | zoe | alex |
+|---|---|---|---|---|---|---|
+| `concept_seed` | ● | ● | ● | ● | ● | ● |
+| `story_locks` | ● | ● | ● | ● | ● | ● |
+| `open_questions` | ● | ● | ● | ● | ● | ● |
+| `project_state` | ● | ● | ● | ● | ● | ● |
+| `voice_profile` | ● | ● | ● | ● | ● | ● |
+
+Attachments are created by the initializer in the same transaction as the
+blocks (B4). A shared block without its attachment rows is a system error.
+
+## B3. story_locks merge rule (replaces last-writer-wins)
+
+The block value is two origin sections, both binding for enforcement:
+
+```
+## Bible locks
+<verbatim from Story Bible locks editor, or "None declared.">
+
+## Meeting locks
+<[SEED]/[EXTRAPOLATED] lines from banked rounds, or "None declared.">
+```
+
+- Story Bible sync MUST rewrite only the `## Bible locks` section.
+- Meeting bank MUST rewrite only the `## Meeting locks` section.
+- Enforcement (proposal blocking) reads the union of both sections.
+- Contradictions between sections are surfaced to the writer as a Morgan
+  message/proposal; the system MUST NOT auto-resolve them.
+- `open_questions` uses the same pattern with `## Meeting` and `## Morgan`
+  sections when Morgan synthesis lands (until then, meeting bank owns the
+  whole body under the sentinel rules).
+
+## B4. Initializer
+
+`ensureProjectMemory(projectId)` — server-side, idempotent, atomic (single
+Postgres RPC): upsert the four per-project blocks with sentinels (existing
+rows untouched), then insert missing attachment rows for the full agent
+roster × all shared blocks visible to the project (including writer-global
+`voice_profile` when present).
+
+Invoked from every room entry point: interview start, room stream open,
+first message send, block sync, proposal routes. First contact initializes;
+later calls no-op (SELECT-only fast path).
+
+## B5. Failure behavior
+
+If `ensureProjectMemory` fails, the invoking action fails loudly (503, "room
+memory unavailable") — agents MUST NOT run against uninitialized memory.
+No partial initialization is observable (atomicity, B4). Client surfaces
+the error inline; the room stays closed rather than open-and-amnesiac.
+
+## B6. Existing-project backfill
+
+No migration backfill. First room contact after deploy runs the initializer:
+missing blocks get sentinels, existing blocks are preserved verbatim, missing
+attachments are created. Pre-contract `story_locks` values are treated as the
+`## Bible locks` section on the next sync; a banked meeting then writes its
+own section without destroying them.
+
+## B7. Invariant and tests
+
+Invariant: **after any successful room action, every shared block for that
+project exists, carries either a sentinel or writer content, and is attached
+to every room agent.**
+
+Required tests: initializer idempotence (double-call); sentinel vs writer
+content distinguishability; attachment completeness after init; Bible sync
+preserves meeting locks and vice versa (the clobber regression); agent
+context assembly includes all shared blocks after a bank with no manual DB
+setup; entry-point failure returns 503 and no agent turn runs.
