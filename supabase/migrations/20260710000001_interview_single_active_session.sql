@@ -6,10 +6,14 @@
 
 -- Deterministic preflight: any duplicate active sessions can only have been
 -- produced by the pre-guard race bug. Keep the most recent active session per
--- project (created_at desc, id desc as tiebreak) and remove the older strays,
--- so the index creation below cannot abort on legacy data.
-delete from interview_sessions victim
-using interview_sessions keeper
+-- project (created_at desc, id desc as tiebreak) and retire the older strays
+-- to the terminal 'exported' state, so the index creation below cannot abort
+-- on legacy data. Retire rather than delete: proposals.session_id references
+-- interview_sessions(id) with NO ACTION, so a stray with proposals attached
+-- would abort a hard delete.
+update interview_sessions victim
+set state = 'exported', updated_at = now()
+from interview_sessions keeper
 where victim.project_id = keeper.project_id
   and victim.id <> keeper.id
   and victim.state in ('intake', 'auditing', 'interviewing', 'readback', 'paused')
