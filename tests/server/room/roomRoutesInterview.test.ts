@@ -88,6 +88,15 @@ describe('Project Meeting routes', () => {
     expect(res.json).toMatchObject({ session: { id: 's1' }, auditMessage: 'Morgan audit' })
   })
 
+  it('returns 409 when a Project Meeting is already in progress', async () => {
+    runtimeMock.startInterview.mockRejectedValueOnce(new Error('A Project Meeting is already in progress for project project-A.'))
+
+    const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: 'second seed' })
+
+    expect(res.status).toBe(409)
+    expect(res.json).toMatchObject({ message: expect.stringContaining('already in progress') })
+  })
+
   it('rejects blank start seed before creating anything', async () => {
     const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: '   ' })
 

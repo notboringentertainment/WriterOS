@@ -25,7 +25,7 @@ const projectIdOf = (req: Request): string => String(req.params.projectId ?? '')
 
 function handleInterviewError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
-  if (message.includes('does not belong to project')) {
+  if (message.includes('does not belong to project') || message.includes('already in progress')) {
     res.status(409).json({ message });
     return;
   }

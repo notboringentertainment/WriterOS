@@ -95,7 +95,24 @@ export async function startInterview(input: {
   if (!seedText) throw new Error('seedText is required.');
   validateTextLength('seedText', seedText);
 
-  let session = await interviewStore.createInterviewSession({ projectId: input.projectId, mode: input.mode, seedText });
+  // One active Project Meeting per project (§A4 assumes a single live session).
+  // This check is advisory; the unique partial index on interview_sessions is the
+  // authoritative guard — a race that slips past the check loses at insert time.
+  const existingSessions = await interviewStore.listInterviewSessions(input.projectId);
+  if (existingSessions.some((existing) => isPreBanked(existing.state))) {
+    throw new Error(`A Project Meeting is already in progress for project ${input.projectId}.`);
+  }
+
+  let session: InterviewSessionRow;
+  try {
+    session = await interviewStore.createInterviewSession({ projectId: input.projectId, mode: input.mode, seedText });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('interview_sessions_one_active_per_project')) {
+      throw new Error(`A Project Meeting is already in progress for project ${input.projectId}.`);
+    }
+    throw error;
+  }
   const audit = auditSeed(seedText, { speculative: Boolean(input.speculative) });
   const questions = selectQuestionsForAudit({ audit: audit.verdicts, mode: input.mode, speculative: Boolean(input.speculative) });
   session = await interviewStore.updateInterviewSession(session.id, {
