@@ -61,17 +61,19 @@ into an agent's context every turn. Two scopes:
 - **Private** (`agent_id` set): the agent's own working memory. Casey's notes on
   Ace's wound live here. Editable only by that agent (via `remember` tool) and the writer.
 - **Shared** (`agent_id` null, attached via join table): the blackboard. All attached
-  agents see the current value every turn. When one updates it (Morgan only, see 10),
-  everyone has it next turn. No sync code — it's a read at context-assembly time.
+  agents see the current value every turn. Each block has an explicit owner and
+  merge rule (Addendum B); no surface receives blanket authority over the others.
 
 Standard shared blocks per project:
 | Label            | Content                                          | Cap    |
 |------------------|--------------------------------------------------|--------|
-| `story_locks`    | Active locks verbatim from Story Bible           | 2,000  |
+| `story_locks`    | Explicit writer locks from structured surfaces    | 2,000  |
 | `concept_seed`   | Banked concept doc / seed (never silently edited)| 4,000  |
 | `project_state`  | Morgan-maintained "where we are" digest          | 2,000  |
-| `voice_profile`  | Writer's synthesized voice profile               | 3,000  |
 | `open_questions` | Current open questions ("invent here")           | 2,000  |
+
+Writer-global `voice_profile` memory integration is outside this contract;
+see Addendum B1.
 
 Standard private blocks per agent: `lane_notes` (their domain, 4,000),
 `writer_rapport` (what they've learned about Ben, 1,500).
@@ -739,3 +741,142 @@ craft before shipping. That is the failure mode this phase exists to kill.
 message_agent chains, bench-mechanic UI, budget ledger UI, ambient wake
 tuning (all Phase 3); PitchStudio import/round-trip (Phase 4); memory
 markdown export (conditional, §15); any generalization beyond one room.
+
+---
+
+# Addendum B — Shared Memory Contract (Normative)
+
+**Status:** Normative, MUST/SHOULD/MAY per RFC 2119. Added 2026-07-11 after
+audit found: no initializer for shared memory (blocks exist only as side
+effects of navigation), no runtime writer for `block_attachments` (banked
+shared blocks invisible to agent prompts), no writer for `project_state`,
+and `story_locks` fought over by two uncoordinated writers (Bible sync
+replaces meeting locks and vice versa). Where this conflicts with earlier
+prose, this addendum wins.
+
+**Framing decision:** "Mandatory" describes initialized memory, not a
+mandatory interview. The Project Meeting remains offered-never-forced (§A3).
+What is mandatory: every project the room touches has all shared blocks
+present, attached, and carrying explicit semantics — before any agent turn.
+
+**Surface authority:** Script, Outline, Synopsis, Treatment, and Story Bible
+are peer authoring surfaces; none is the primary or canonical story source.
+`story_locks` records explicit lock declarations, not surface rank. Phase 2
+receives those declarations from the Story Bible lock editor because that is
+where the lock control currently lives; that UI placement gives Story Bible
+no authority over other surfaces. Future cross-surface synthesis belongs in
+`project_state` and MUST preserve source provenance.
+
+## B1. Block contract
+
+Per-project shared blocks (`agent_id = null`). Row presence distinguishes an
+initialized block from a missing-block system error. Each sentinel is the
+canonical initialized-empty value. It need not distinguish initialization
+from a writer later returning that block to the same empty meaning.
+
+| Label | Cap | Owner (writers) | Update rule | Sentinel value |
+|---|---|---|---|---|
+| `concept_seed` | 4,000 | Project Meeting bank only | Append-only, dated rounds, never edited in place (§A9) | `No concept seed banked yet. Offer the Project Meeting.` |
+| `story_locks` | 2,000 | Structured-surface lock sync + Meeting bank | Structured merge by origin section (B3) | Canonical two-section value from B3, with `None declared.` in both sections |
+| `open_questions` | 2,000 | Meeting bank; Morgan (synthesis) | Replace own-origin section only (B3) | `Nothing delegated — writer holds all intent.` |
+| `project_state` | 2,000 | Morgan only (digest path) | Full replace by Morgan | `No project state recorded yet.` |
+
+`voice_profile` remains client-owned and is outside this four-block room-memory
+contract. Addendum B does not promise a `memory_blocks` row or attachments for
+it. Any future room-profile sync MUST define one owner for creating/updating
+the writer-global row, atomically attach it to the full room roster, include
+`project_id IS NULL` blocks during context assembly, and test that lifecycle.
+Missing-vs-empty: after initialization, a missing contracted block is a
+**system error**, not an empty state. `getSharedBlockValue` returning `''` for
+an absent row is retired; callers MUST be able to detect absence.
+
+## B2. Attachment matrix
+
+All room agents see all shared blocks. No per-agent curation in Phase 2 —
+curation is a Phase 3 option, not an accident of missing rows.
+
+| Block | morgan | sam | casey | oliver | maya | zoe | alex |
+|---|---|---|---|---|---|---|---|
+| `concept_seed` | ● | ● | ● | ● | ● | ● | ● |
+| `story_locks` | ● | ● | ● | ● | ● | ● | ● |
+| `open_questions` | ● | ● | ● | ● | ● | ● | ● |
+| `project_state` | ● | ● | ● | ● | ● | ● | ● |
+
+Attachments are created by the initializer in the same transaction as the
+blocks (B4). A shared block without its attachment rows is a system error.
+
+## B3. story_locks merge rule (replaces last-writer-wins)
+
+The block value is two origin sections, both binding for enforcement:
+
+```
+## Surface-declared locks
+<explicit locks from structured-surface lock controls, or "None declared.">
+
+## Meeting locks
+<[SEED]/[EXTRAPOLATED] lines from banked rounds, or "None declared.">
+```
+
+The initializer MUST create this canonical two-section value. Bare sentinel
+text is not a valid initialized `story_locks` value. Bare pre-contract values
+remain legacy input and follow the B6 adoption rule.
+
+- Structured-surface lock sync MUST rewrite only the
+  `## Surface-declared locks` section. Phase 2 has one such input: the Story
+  Bible lock editor. Adding another input requires an origin-preserving merge;
+  no surface may replace another surface's declarations.
+- Meeting bank MUST rewrite only the `## Meeting locks` section.
+- Enforcement (proposal blocking) reads the union of both sections.
+- Contradictions between sections are surfaced to the writer as a Morgan
+  message/proposal; the system MUST NOT auto-resolve them.
+- `open_questions` uses the same pattern with `## Meeting` and `## Morgan`
+  sections when Morgan synthesis lands (until then, meeting bank owns the
+  whole body under the sentinel rules).
+
+## B4. Initializer
+
+`ensureProjectMemory(projectId)` — server-side, idempotent, atomic (single
+Postgres RPC): upsert the four per-project blocks with sentinels (existing
+rows untouched), then insert missing attachment rows for the full agent
+roster × all four blocks: seven agents × four blocks = 28 attachments.
+
+Invoked before every entry point that can mutate room state or enable an agent
+turn: room stream open; writer message POST; client event POST; Story Bible
+lock sync; Project Meeting start, answer, skip, wrap, pause, resume,
+bank-preview, bank, and export; and any future route that queues or directly
+runs an agent.
+Read-only message/proposal/status routes and proposal resolution do not
+initialize memory because they neither enable a turn nor author shared memory.
+The SELECT-only fast path is permitted only when all four blocks and all 28
+attachments exist. Any missing block or attachment runs the idempotent repair.
+First contact initializes; later complete calls no-op.
+
+## B5. Failure behavior
+
+If `ensureProjectMemory` fails, the invoking action fails loudly (503, "room
+memory unavailable") — agents MUST NOT run against uninitialized memory.
+No partial initialization is observable (atomicity, B4). Client surfaces
+the error inline; the room stays closed rather than open-and-amnesiac.
+
+## B6. Existing-project backfill
+
+No migration backfill. First room contact after deploy runs the initializer:
+missing blocks get sentinels, existing blocks are preserved verbatim, missing
+attachments are created. Pre-contract `story_locks` values are treated as the
+`## Meeting locks` section when they contain `[SEED]` or `[EXTRAPOLATED]`
+markers; all other legacy values become `## Surface-declared locks`. The
+other section starts as `None declared.`. The next surface sync or Meeting
+bank rewrites only its own section without destroying the adopted values.
+
+## B7. Invariant and tests
+
+Invariant: **after any successful room action, every shared block for that
+project exists, carries either a sentinel or writer content, and is attached
+to every room agent.**
+
+Required tests: initializer idempotence (double-call); missing row vs
+initialized-empty sentinel behavior; attachment completeness after init;
+surface sync preserves meeting locks and vice versa (the clobber regression);
+agent context assembly includes all shared blocks after a bank with no manual
+DB setup; legacy `[SEED]`/`[EXTRAPOLATED]` locks survive first post-contract
+surface sync; entry-point failure returns 503 and no agent turn runs.
