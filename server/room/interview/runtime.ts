@@ -220,6 +220,9 @@ export async function bankInterview(input: { sessionId: string; projectId: strin
   if (session.state !== 'readback') throw new Error('Only readback sessions can be banked.');
   const preview = await previewBank(input);
   const existingConceptSeed = await roomStore.getSharedBlockValue(session.project_id, 'concept_seed');
+  if (existingConceptSeed === null) {
+    throw new Error('concept_seed block missing — room memory not initialized.');
+  }
   const conceptSeedValue = [existingConceptSeed.trim(), preview.conceptSeedAppend].filter(Boolean).join('\n\n');
 
   for (const write of [

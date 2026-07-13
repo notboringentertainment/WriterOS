@@ -41,6 +41,10 @@ export async function runRoomTurn(input: {
     store.getSharedBlockValue(projectId, 'story_locks'),
   ]);
 
+  if (locksText === null) {
+    throw new Error(`[room.turn] story_locks block missing for project ${projectId} — memory not initialized.`);
+  }
+
   const ambient = event.kind !== 'writer_message';
   const systemPrompt = buildRoomSystemPrompt({ agentId, sharedBlocks, privateBlocks, ambient });
   const userMessage = buildTurnUserMessage({ channel, event });
