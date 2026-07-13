@@ -9,6 +9,7 @@ import { DIGEST_MODEL } from './lockGate';
 import { broadcast } from './sseHub';
 import * as store from './store';
 import type { RoomEventRow } from './types';
+import { RoomMemoryError, ensureProjectMemory } from './memoryContract';
 
 const CASEY_ID = 'casey';
 const LANE_NOTES_CAP = 3400;
@@ -21,8 +22,10 @@ export async function runCaseyDigest(input: {
   const { projectId, event } = input;
 
   try {
-    const [privateBlocks, channel] = await Promise.all([
+    await ensureProjectMemory(projectId);
+    const [privateBlocks, sharedBlocks, channel] = await Promise.all([
       store.getPrivateBlocks(projectId, CASEY_ID),
+      store.getSharedBlocksForAgent(projectId, CASEY_ID),
       store.listRecentMessages(projectId, 50),
     ]);
 
@@ -32,6 +35,7 @@ export async function runCaseyDigest(input: {
     const transcript = channel
       .map((m) => `${m.author === 'writer' ? 'WRITER' : m.author}: ${m.content}`)
       .join('\n');
+    const sharedContext = sharedBlocks.map((b) => `SHARED ${b.label}:\n${b.value}`).join('\n\n');
 
     const response = await sendStreamingMessage({
       model: DIGEST_MODEL,
@@ -47,6 +51,7 @@ export async function runCaseyDigest(input: {
         {
           role: 'user',
           content:
+            `${sharedContext ? `SHARED MEMORY (room blackboard):\n\n${sharedContext}\n\n` : ''}` +
             `CURRENT lane_notes:\n${laneNotes || '(empty)'}\n\n` +
             `CURRENT writer_rapport:\n${rapport || '(empty)'}\n\n` +
             `CHANNEL HISTORY (oldest first):\n${transcript || '(empty)'}`,
@@ -101,5 +106,6 @@ export async function runCaseyDigest(input: {
   } catch (error) {
     console.error('[room.digest] Casey digest failed:', error);
     await store.insertLedger({ projectId, agentId: CASEY_ID, action: 'errored', triggerEvent: event.id });
+    if (error instanceof RoomMemoryError) throw error;
   }
 }

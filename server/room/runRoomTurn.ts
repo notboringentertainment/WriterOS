@@ -14,6 +14,7 @@ import { broadcast } from './sseHub';
 import * as store from './store';
 import type { LedgerAction, RoomEventRow } from './types';
 import { newRecorder } from './types';
+import { ensureProjectMemory } from './memoryContract';
 
 // The room's honest reach contract: agents see blocks + channel + the trigger,
 // nothing else. Static because the room's reach IS static in Phase 1.
@@ -32,6 +33,8 @@ export async function runRoomTurn(input: {
   const { projectId, agentId, event } = input;
   const turnId = createRunId();
   const recorder = newRecorder();
+
+  await ensureProjectMemory(projectId);
 
   // §6.3 context assembly.
   const [sharedBlocks, privateBlocks, channel, locksText] = await Promise.all([

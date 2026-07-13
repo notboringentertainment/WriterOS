@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { storeMock, sendStreamingMessageMock } = vi.hoisted(() => ({
   storeMock: {
     getPrivateBlocks: vi.fn(),
+    getSharedBlocksForAgent: vi.fn(),
     listRecentMessages: vi.fn(),
     writeBlock: vi.fn(),
     insertMessage: vi.fn(),
@@ -13,6 +14,10 @@ const { storeMock, sendStreamingMessageMock } = vi.hoisted(() => ({
 
 vi.mock('../../../server/room/store', () => storeMock)
 vi.mock('../../../server/room/sseHub', () => ({ broadcast: vi.fn() }))
+const memoryMock = vi.hoisted(() => ({ ensureProjectMemory: vi.fn(async () => undefined) }))
+vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
+  ...(await importOriginal<object>()), ensureProjectMemory: memoryMock.ensureProjectMemory,
+}))
 vi.mock('../../../server/ai/morganRuntime/anthropicToolClient', () => ({
   sendStreamingMessage: (input: unknown) => sendStreamingMessageMock(input),
 }))
@@ -32,6 +37,7 @@ const event: RoomEventRow = {
 beforeEach(() => {
   vi.clearAllMocks()
   storeMock.insertLedger.mockResolvedValue(undefined)
+  storeMock.getSharedBlocksForAgent.mockResolvedValue([])
 })
 
 describe('runCaseyDigest', () => {
@@ -76,5 +82,20 @@ describe('runCaseyDigest', () => {
       expect.objectContaining({ projectId: 'p1', agentId: 'casey', action: 'errored', triggerEvent: 'evt-digest' }),
     )
     consoleSpy.mockRestore()
+  })
+
+  it('guards model execution and includes shared memory', async () => {
+    storeMock.getPrivateBlocks.mockResolvedValue([])
+    storeMock.getSharedBlocksForAgent.mockResolvedValue([
+      { label: 'concept_seed', value: 'Banked founding seed' },
+      { label: 'story_locks', value: '[SEED] ending fixed' },
+    ])
+    storeMock.listRecentMessages.mockResolvedValue([])
+    sendStreamingMessageMock.mockResolvedValue({ content: [{ type: 'text', text: '{"flag":null}' }] })
+    await runCaseyDigest({ projectId: 'p1', event })
+    expect(memoryMock.ensureProjectMemory).toHaveBeenCalledWith('p1')
+    const content = String(sendStreamingMessageMock.mock.calls[0][0].messages[0].content)
+    expect(content).toContain('Banked founding seed')
+    expect(content).toContain('[SEED] ending fixed')
   })
 })

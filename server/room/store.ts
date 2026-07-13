@@ -238,6 +238,11 @@ export async function claimQueuedEvents(limit = 10): Promise<RoomEventRow[]> {
   return events;
 }
 
+export async function requeueRoomEvent(eventId: string, payload: Record<string, unknown>): Promise<void> {
+  const res = await getRoomDb().from('room_events').update({ payload, processed_at: null }).eq('id', eventId);
+  if (res.error) throw new Error(`[room.store] requeueRoomEvent: ${res.error.message}`);
+}
+
 // ---- proposals ----
 
 export async function insertProposal(input: {
