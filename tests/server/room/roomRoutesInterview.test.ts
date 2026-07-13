@@ -13,6 +13,7 @@ const { runtimeMock } = vi.hoisted(() => ({
     pauseInterview: vi.fn(),
     resumeInterview: vi.fn(),
     previewBank: vi.fn(),
+    previewBankFinal: vi.fn(),
     bankInterview: vi.fn(),
     exportInterview: vi.fn(),
   },
@@ -21,6 +22,9 @@ vi.mock('../../../server/room/interview/runtime', () => runtimeMock)
 vi.mock('../../../server/room/supabaseClient', () => ({ isRoomConfigured: () => true }))
 vi.mock('../../../server/room/scheduler', () => ({ startRoomScheduler: () => true }))
 vi.mock('../../../server/room/sseHub', () => ({ addSseClient: vi.fn(), broadcast: vi.fn() }))
+vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
+  ...(await importOriginal<object>()), ensureProjectMemory: vi.fn(async () => undefined),
+}))
 
 import { registerRoomRoutes } from '../../../server/room/roomRoutes'
 
@@ -118,7 +122,7 @@ describe('Project Meeting routes', () => {
     runtimeMock.skipInterviewQuestion.mockResolvedValueOnce({ session: { id: 's1', state: 'readback' }, currentQuestion: null })
     runtimeMock.pauseInterview.mockResolvedValueOnce({ id: 's1', state: 'paused' })
     runtimeMock.resumeInterview.mockResolvedValueOnce({ id: 's1', state: 'interviewing' })
-    runtimeMock.previewBank.mockResolvedValueOnce({ seedText: 'seed', locks: [], openQuestions: [] })
+    runtimeMock.previewBankFinal.mockResolvedValueOnce({ preview: { seedText: 'seed', locks: [], openQuestions: [] }, finalValues: {} })
     runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: { seedText: 'seed' } })
     runtimeMock.exportInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'exported' }, markdown: '# Export' })
 
@@ -132,11 +136,11 @@ describe('Project Meeting routes', () => {
   })
 
   it('passes writer mutability choices through preview and bank, dropping malformed entries', async () => {
-    runtimeMock.previewBank.mockResolvedValueOnce({ seedText: 'seed', locks: [], openQuestions: [], taggable: [] })
+    runtimeMock.previewBankFinal.mockResolvedValueOnce({ preview: { seedText: 'seed', locks: [], openQuestions: [], taggable: [] }, finalValues: {} })
     runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: { seedText: 'seed' } })
 
     await post('/api/room/project-A/interview/s1/bank-preview', { mutability: { 'p-1': 'leaning', 'p-2': 'bogus', 'p-3': 42 } })
-    expect(runtimeMock.previewBank).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' } })
+    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' } })
 
     await post('/api/room/project-A/interview/s1/bank', { mutability: { 'p-1': 'open', 'p-2': null } })
     expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' } })

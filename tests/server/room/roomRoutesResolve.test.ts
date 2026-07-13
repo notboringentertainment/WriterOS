@@ -17,6 +17,9 @@ vi.mock('../../../server/room/store', () => storeMock)
 vi.mock('../../../server/room/supabaseClient', () => ({ isRoomConfigured: () => true }))
 vi.mock('../../../server/room/scheduler', () => ({ startRoomScheduler: () => true }))
 vi.mock('../../../server/room/sseHub', () => ({ addSseClient: vi.fn(), broadcast: vi.fn() }))
+vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
+  ...(await importOriginal<object>()), ensureProjectMemory: vi.fn(async () => undefined),
+}))
 
 import { registerRoomRoutes } from '../../../server/room/roomRoutes'
 
