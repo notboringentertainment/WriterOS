@@ -10,6 +10,8 @@ const { apiMock } = vi.hoisted(() => ({
     fetchInterviewStatus: vi.fn(),
     fetchRoomMessages: vi.fn(),
     fetchRoomProposals: vi.fn(),
+    ensureRoomMemory: vi.fn(),
+    isRoomMemoryUnavailable: vi.fn(),
     openRoomStream: vi.fn(),
     pauseInterview: vi.fn(),
     postRoomEvent: vi.fn(),
@@ -78,8 +80,10 @@ beforeEach(() => {
   apiMock.fetchRoomProposals.mockResolvedValue([])
   apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
-  apiMock.postRoomEvent.mockResolvedValue(undefined)
-  apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
+  apiMock.postRoomEvent.mockResolvedValue({ outcome: 'ok' })
+  apiMock.syncStoryLocksBlock.mockResolvedValue({ outcome: 'ok' })
+  apiMock.ensureRoomMemory.mockResolvedValue({ outcome: 'ok' })
+  apiMock.isRoomMemoryUnavailable.mockReturnValue(false)
 })
 
 // The interview itself lives on the Project Meeting page (ProjectMeetingPage.test.tsx);

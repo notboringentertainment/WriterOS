@@ -7,6 +7,8 @@ import { PERSONAS } from '@shared/personas'
 import {
   fetchRoomMessages,
   fetchRoomProposals,
+  ensureRoomMemory,
+  isRoomMemoryUnavailable,
   openRoomStream,
   postRoomEvent,
   resolveRoomProposal,
@@ -16,6 +18,7 @@ import {
   type RoomMessage,
   type RoomProposal,
   type RoomStreamEvent,
+  type RoomMutationResult,
 } from '../../lib/roomApi'
 import { canApplyProposal } from '../../lib/roomProposals'
 import { useInterviewSession } from '../../lib/useInterviewSession'
@@ -55,6 +58,9 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
   const [inputText, setInputText] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [memoryDown, setMemoryDown] = useState(false)
+  const [memoryRetrying, setMemoryRetrying] = useState(false)
+  const [streamDown, setStreamDown] = useState(false)
   // Read-only: the interview itself lives on the Project Meeting page.
   const interview = useInterviewSession(projectId)
   const feedRef = useRef<HTMLDivElement>(null)
@@ -65,6 +71,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
   )
 
   const handleStreamEvent = useCallback((event: RoomStreamEvent) => {
+    setStreamDown(false)
     switch (event.type) {
       case 'turn_started':
         setStreaming((prev) => new Map(prev).set(event.turnId, { agentId: event.agentId, content: '' }))
@@ -101,6 +108,34 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }, [])
 
+  const loadRoom = useCallback(async () => {
+    const [msgs, props] = await Promise.all([fetchRoomMessages(projectId), fetchRoomProposals(projectId, 'pending')])
+    setMessages(msgs)
+    setProposals(props)
+  }, [projectId])
+
+  const handleMutationResult = useCallback((result: RoomMutationResult) => {
+    if (result.outcome === 'memory_unavailable') setMemoryDown(true)
+    else if (result.outcome === 'failed') setError(result.message ?? "Couldn't reach the room — retrying may help.")
+  }, [])
+
+  const retryMemory = useCallback(async () => {
+    setMemoryRetrying(true)
+    const result = await ensureRoomMemory(projectId)
+    if (result.outcome === 'ok') {
+      try {
+        await loadRoom()
+        setMemoryDown(false)
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Room unavailable')
+      }
+    } else {
+      handleMutationResult(result)
+    }
+    setMemoryRetrying(false)
+  }, [handleMutationResult, loadRoom, projectId])
+
   // Connect: load history, open the stream, announce the session.
   useEffect(() => {
     let cancelled = false
@@ -109,29 +144,27 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     setStreaming(new Map())
     setError(null)
 
-    Promise.all([fetchRoomMessages(projectId), fetchRoomProposals(projectId, 'pending')])
-      .then(([msgs, props]) => {
-        if (cancelled) return
-        setMessages(msgs)
-        setProposals(props)
-      })
+    loadRoom()
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Room unavailable')
+        if (!cancelled) {
+          if (isRoomMemoryUnavailable(err)) setMemoryDown(true)
+          else setError(err instanceof Error ? err.message : 'Room unavailable')
+        }
       })
 
-    const close = openRoomStream(projectId, handleStreamEvent)
-    void postRoomEvent(projectId, 'session_opened', {})
+    const close = openRoomStream(projectId, handleStreamEvent, () => setStreamDown(true))
+    void postRoomEvent(projectId, 'session_opened', {}).then(handleMutationResult)
 
     return () => {
       cancelled = true
       close()
     }
-  }, [projectId, handleStreamEvent])
+  }, [projectId, handleStreamEvent, handleMutationResult, loadRoom])
 
   // Writer-only sync of the story_locks shared block (§10).
   useEffect(() => {
-    void syncStoryLocksBlock(projectId, locksText)
-  }, [projectId, locksText])
+    void syncStoryLocksBlock(projectId, locksText).then(handleMutationResult)
+  }, [projectId, locksText, handleMutationResult])
 
   // Keep the feed pinned to the latest activity.
   useEffect(() => {
@@ -146,6 +179,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
       await sendRoomMessage(projectId, text, characterNames, characterBriefs)
       // The message itself arrives via the SSE broadcast.
     } catch (err) {
+      if (isRoomMemoryUnavailable(err)) setMemoryDown(true)
       setError(err instanceof Error ? err.message : 'Send failed')
       setInputText(text)
     }
@@ -173,7 +207,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     }
   }
 
-  const canSend = inputText.trim().length > 0
+  const canSend = inputText.trim().length > 0 && !memoryDown
   const displayError = error ?? interview.error
   const meetingStanding = deriveProjectMeetingStanding(interview.status)
   const meetingAction =
@@ -199,6 +233,13 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
       )}
 
       <div ref={feedRef} style={styles.feed}>
+        {memoryDown && (
+          <div role="alert" style={styles.error}>
+            <p>Room memory unavailable — the room is closed until it recovers. Your work outside the room is unaffected.</p>
+            <button disabled={memoryRetrying} onClick={() => void retryMemory()}>{memoryRetrying ? 'Retrying…' : 'Retry'}</button>
+          </div>
+        )}
+        {streamDown && <p style={styles.error}>Live updates disconnected — reconnecting…</p>}
         {displayError && <p style={styles.error}>{displayError}</p>}
         {messages.length === 0 && streaming.size === 0 && !displayError && (
           <p style={styles.empty}>The room is quiet. Say something, or change the work — they're watching it.</p>
@@ -269,6 +310,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
           style={styles.input}
           rows={2}
           value={inputText}
+          disabled={memoryDown}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -280,7 +322,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
         <button
           type="button"
           aria-label="Send message to the room"
-          disabled={!canSend}
+          disabled={!canSend || memoryDown}
           onClick={() => void handleSend()}
           style={{ ...styles.sendButton, ...(!canSend ? styles.buttonDisabled : {}) }}
         >
