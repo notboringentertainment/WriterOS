@@ -10,6 +10,7 @@ import * as store from './store';
 import * as interviewRuntime from './interview/runtime';
 import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
+import { syncSurfaceLocks } from './surfaceLockSync';
 import type { ProposalOrigin, RoomEventKind } from './types';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
@@ -193,20 +194,19 @@ export function registerRoomRoutes(app: Express): void {
   app.post('/api/room/:projectId/blocks/story-locks', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      const value = typeof req.body?.value === 'string' ? req.body.value : '';
-      const written = await store.writeBlock({
-        projectId: projectIdOf(req),
-        agentId: null,
-        label: 'story_locks',
-        value: value.slice(0, 2000), // §4.1 cap; locks text is writer-owned, clip is safe
-        updatedBy: 'writer',
-        charCap: 2000,
-      });
-      if (!written.ok) {
-        res.status(400).json({ message: written.reason });
+      const body = typeof req.body?.value === 'string' ? req.body.value : '';
+      const outcome = await syncSurfaceLocks(projectIdOf(req), body);
+      if (outcome === 'ok') { res.json({ ok: true }); return; }
+      if (outcome === 'unavailable') { res.status(503).json({ message: 'Room memory unavailable.' }); return; }
+      if (outcome === 'too_large') {
+        res.status(413).json({ message: 'Story locks exceed the 2,000-character block cap — shorten the lock list in the editor. Nothing was saved.' });
         return;
       }
-      res.json({ ok: true });
+      if (outcome === 'invalid') {
+        res.status(422).json({ message: 'A lock contains a reserved section header line ("## Surface-declared locks" / "## Meeting locks") — reword it. Nothing was saved.' });
+        return;
+      }
+      res.status(409).json({ message: 'Story locks are being updated concurrently — retry the sync.' });
     } catch (error) {
       console.error('[room.routes] story-locks failed:', error);
       res.status(500).json({ message: 'Failed to update story locks block.' });
