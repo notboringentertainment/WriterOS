@@ -223,12 +223,12 @@ export function registerRoomRoutes(app: Express): void {
     if (!requireRoom(res)) return;
     try {
       const mode = req.body?.mode === 'quick' ? 'quick' : req.body?.mode === 'full' ? 'full' : null;
-      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText.trim() : '';
+      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText : '';
       if (!mode) {
         res.status(400).json({ message: "mode must be 'quick' or 'full'." });
         return;
       }
-      if (!seedText) {
+      if (!seedText.trim()) {
         res.status(400).json({ message: 'seedText is required.' });
         return;
       }
@@ -247,8 +247,8 @@ export function registerRoomRoutes(app: Express): void {
   app.post('/api/room/:projectId/interview/:sessionId/answer', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText.trim() : '';
-      if (!answerText) {
+      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText : '';
+      if (!answerText.trim()) {
         res.status(400).json({ message: 'answerText is required.' });
         return;
       }

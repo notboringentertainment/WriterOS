@@ -54,11 +54,21 @@ export type AnswerDisposition = 'field_mapped' | 'seed_color' | 'skipped_delegat
 
 export interface TranscriptEntry {
   question_id: string;
+  question_text?: string;
+  domain?: string;
   lane: string;             // persona id of the asking agent
   answer_text: string;      // verbatim writer answer
   origin: ProposalOrigin | null;     // null for skipped/delegated
   disposition: AnswerDisposition;
   at: string;               // ISO timestamp
+}
+
+export type MeetingMutability = 'locked' | 'leaning' | 'open';
+
+export interface MeetingBankSnapshot {
+  applied_classifications: Record<string, MeetingMutability>;
+  open_questions: string[];
+  legacy_open_questions: string[];
 }
 
 // ---- §A4 row shape (mirrors interview_sessions table) ----
@@ -72,6 +82,7 @@ export interface InterviewSessionRow {
   audit: AuditVerdicts;
   cursor: InterviewCursor;
   answers: TranscriptEntry[];
+  bank_snapshot: MeetingBankSnapshot | null;
   created_at: string;
   updated_at: string;
 }

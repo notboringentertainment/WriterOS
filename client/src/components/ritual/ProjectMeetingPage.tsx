@@ -49,8 +49,8 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
   }
 
   async function handleBegin() {
-    const seedText = seedDraft.trim()
-    if (!seedText) {
+    const seedText = seedDraft
+    if (!seedText.trim()) {
       setSeedError('Paste or type a seed before starting the Project Meeting.')
       return
     }

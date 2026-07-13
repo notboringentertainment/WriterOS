@@ -3,6 +3,7 @@ import * as interviewStore from './store';
 import { auditSeed, formatAuditMessage } from './audit';
 import { buildBankPreview, type BankPreview, type Mutability, renderOpenQuestionsBlock, renderStoryLocksBlock } from './banking';
 import { checkInterviewExport, renderPitchStudioSeedExport } from './exportCheck';
+import { DOMAIN_BY_TRIGGER } from './conceptSeedProjection';
 import { getQuestionById, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
 import type { InterviewMode, InterviewSessionRow } from './types';
@@ -91,8 +92,8 @@ export async function startInterview(input: {
   seedText: string;
   speculative?: boolean;
 }): Promise<InterviewStartResult> {
-  const seedText = input.seedText.trim();
-  if (!seedText) throw new Error('seedText is required.');
+  const seedText = input.seedText;
+  if (!seedText.trim()) throw new Error('seedText is required.');
   validateTextLength('seedText', seedText);
 
   // One active Project Meeting per project (§A4 assumes a single live session).
@@ -142,13 +143,15 @@ export async function answerInterviewQuestion(input: {
   const question = currentQuestionFor(session);
   if (!question) throw new Error('Interview session has no active question.');
 
-  const answerText = input.answerText.trim();
-  if (!answerText) throw new Error('answerText is required.');
+  const answerText = input.answerText;
+  if (!answerText.trim()) throw new Error('answerText is required.');
   validateTextLength('answerText', answerText);
   validateTextLength('resolvedValue', input.resolvedValue);
   const disposition = input.rejectMapping ? 'seed_color' : input.disposition ?? 'field_mapped';
   await interviewStore.appendInterviewAnswer(session.id, {
     question_id: question.id,
+    question_text: question.question,
+    domain: DOMAIN_BY_TRIGGER[question.trigger],
     lane: question.lane,
     answer_text: answerText,
     origin: disposition === 'skipped_delegated' ? null : input.origin ?? 'seed',

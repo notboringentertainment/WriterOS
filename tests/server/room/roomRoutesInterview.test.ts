@@ -81,10 +81,10 @@ describe('Project Meeting routes', () => {
   it('starts an explicit full Project Meeting with seed text and speculative flag', async () => {
     runtimeMock.startInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'interviewing' }, auditMessage: 'Morgan audit', currentQuestion: { id: 'morgan-locks' } })
 
-    const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: 'thin seed', speculative: true })
+    const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: '  thin seed  ', speculative: true })
 
     expect(res.status).toBe(200)
-    expect(runtimeMock.startInterview).toHaveBeenCalledWith({ projectId: 'project-A', mode: 'full', seedText: 'thin seed', speculative: true })
+    expect(runtimeMock.startInterview).toHaveBeenCalledWith({ projectId: 'project-A', mode: 'full', seedText: '  thin seed  ', speculative: true })
     expect(res.json).toMatchObject({ session: { id: 's1' }, auditMessage: 'Morgan audit' })
   })
 

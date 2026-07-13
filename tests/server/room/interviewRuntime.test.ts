@@ -31,6 +31,7 @@ const bankedSession: InterviewSessionRow = {
   audit: {},
   cursor: { lane: null, question_id: null, budgets_spent: {} },
   answers: [],
+  bank_snapshot: null,
   created_at: '2026-07-08T00:00:00Z',
   updated_at: '2026-07-08T00:00:00Z',
 };
@@ -141,6 +142,9 @@ describe('interviewRuntime.length caps', () => {
   it('rejects oversized seed text', async () => {
     const { startInterview } = await import('../../../server/room/interview/runtime');
     await expect(startInterview({ projectId: 'p1', mode: 'full', seedText: 'a'.repeat(20001) })).rejects.toThrow(/exceeds maximum length/);
+    await expect(
+      startInterview({ projectId: 'p1', mode: 'full', seedText: ` ${'a'.repeat(19999)} ` }),
+    ).rejects.toThrow(/exceeds maximum length/);
   });
 
   it('rejects oversized answer text and resolved value', async () => {
@@ -153,15 +157,43 @@ describe('interviewRuntime.length caps', () => {
   });
 });
 
+describe('interviewRuntime.verbatim Meeting record', () => {
+  it('persists padded seed text byte-identically', async () => {
+    const interviewStore = await import('../../../server/room/interview/store');
+    const roomStore = await import('../../../server/room/store');
+    vi.spyOn(interviewStore, 'listInterviewSessions').mockResolvedValue([]);
+    const createSpy = vi.spyOn(interviewStore, 'createInterviewSession').mockResolvedValue({
+      ...activeSession,
+      state: 'intake',
+      seed_text: '  padded seed  ',
+    });
+    vi.spyOn(interviewStore, 'updateInterviewSession').mockResolvedValue(activeSession);
+    vi.spyOn(roomStore, 'insertMessage').mockResolvedValue(undefined as never);
+
+    const { startInterview } = await import('../../../server/room/interview/runtime');
+    await startInterview({ projectId: 'p1', mode: 'full', seedText: '  padded seed  ' });
+
+    expect(createSpy).toHaveBeenCalledWith({ projectId: 'p1', mode: 'full', seedText: '  padded seed  ' });
+  });
+});
+
 describe('interviewRuntime.field_path normalization', () => {
   it('normalizes composite writerOSTarget patterns at proposal insert time', async () => {
     __setRoomDbForTests(fakeDb({ data: caseyActiveSession, error: null }));
 
     const roomStore = await import('../../../server/room/store');
+    const interviewStore = await import('../../../server/room/interview/store');
     const insertSpy = vi.spyOn(roomStore, 'insertProposal').mockResolvedValue(undefined as never);
+    const appendSpy = vi.spyOn(interviewStore, 'appendInterviewAnswer').mockResolvedValue(activeSession);
 
     const { answerInterviewQuestion } = await import('../../../server/room/interview/runtime');
-    await answerInterviewQuestion({ sessionId: 's1', projectId: 'p1', answerText: 'complex character detail' });
+    await answerInterviewQuestion({ sessionId: 's1', projectId: 'p1', answerText: '  complex character detail  ' });
+
+    expect(appendSpy).toHaveBeenCalledWith('s1', expect.objectContaining({
+      question_text: expect.any(String),
+      domain: 'character',
+      answer_text: '  complex character detail  ',
+    }));
 
     expect(insertSpy).toHaveBeenCalled();
     const fieldPath = insertSpy.mock.calls[0][0].fieldPath as string;
@@ -171,5 +203,6 @@ describe('interviewRuntime.field_path normalization', () => {
     expect(fieldPath).toBe('interview_answer.casey-load-bearing-character');
 
     insertSpy.mockRestore();
+    appendSpy.mockRestore();
   });
 });

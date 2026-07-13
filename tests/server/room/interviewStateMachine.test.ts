@@ -13,6 +13,7 @@ function session(overrides: Partial<InterviewSessionRow> = {}): InterviewSession
     audit: { locks: 'THIN', ending: 'THIN', open_questions: 'SUFFICIENT', load_bearing_character: 'SUFFICIENT' },
     cursor: { lane: 'morgan', question_id: 'morgan-locks', budgets_spent: {} },
     answers: [],
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
     ...overrides,

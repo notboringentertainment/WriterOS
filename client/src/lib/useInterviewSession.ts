@@ -106,8 +106,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
 
   const answer = useCallback(async (input: { answerText: string; origin: InterviewAnswerOrigin; rejectMapping?: boolean }) => {
     const session = status.activeSession
-    const answerText = input.answerText.trim()
-    if (!session || !answerText) return false
+    const answerText = input.answerText
+    if (!session || !answerText.trim()) return false
     const rejectMapping = input.rejectMapping ?? false
     let result: Awaited<ReturnType<typeof answerInterviewQuestion>>
     try {
