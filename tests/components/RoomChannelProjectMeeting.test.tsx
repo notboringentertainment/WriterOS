@@ -37,6 +37,7 @@ function session(state: InterviewSession['state']): InterviewSession {
     audit: { locks: 'THIN' },
     cursor: { lane: state === 'interviewing' ? 'morgan' : null, question_id: state === 'interviewing' ? 'morgan-locks' : null, budgets_spent: {} },
     answers: [],
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }

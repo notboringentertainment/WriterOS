@@ -226,12 +226,21 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
               </div>
             )}
 
+            {interview.finalValues && (
+              <details>
+                <summary>Exact block values to be written</summary>
+                <div><strong>concept_seed</strong><pre>{interview.finalValues.concept_seed}</pre></div>
+                <div><strong>story_locks</strong><pre>{interview.finalValues.story_locks}</pre></div>
+                <div><strong>open_questions</strong><pre>{interview.finalValues.open_questions}</pre></div>
+              </details>
+            )}
+
             <div style={styles.actionRow}>
               <button
                 type="button"
-                style={{ ...styles.primaryButton, ...(interview.bankPreview ? {} : styles.buttonDisabled) }}
-                disabled={!interview.bankPreview}
-                title={interview.bankPreview ? undefined : 'The readback is still loading — bank only what you can see'}
+                style={{ ...styles.primaryButton, ...(!interview.previewPending && interview.bankPreview && interview.finalValues ? {} : styles.buttonDisabled) }}
+                disabled={interview.previewPending || !interview.bankPreview || !interview.finalValues}
+                title={!interview.previewPending && interview.bankPreview && interview.finalValues ? undefined : 'The readback is still loading — bank only what you can see'}
                 onClick={() => void interview.bank(mutabilitySelections)}
               >
                 Bank this round

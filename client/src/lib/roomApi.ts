@@ -48,6 +48,7 @@ export interface InterviewSession {
   audit: Record<string, 'SUFFICIENT' | 'THIN'>
   cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; paused_from?: string }
   answers: Array<{ question_id: string; lane: string; answer_text: string; origin: 'seed' | 'extrapolated' | null; disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'; at: string }>
+  bank_snapshot: { applied_classifications: Record<string, InterviewMutability>; open_questions: string[]; legacy_open_questions: string[] } | null
   created_at: string
   updated_at: string
 }
@@ -92,6 +93,12 @@ export interface InterviewBankPreview {
   openQuestions: string[]
   conceptSeedAppend: string
   taggable: InterviewTaggableAnswer[]
+}
+
+export interface InterviewBankFinalValues {
+  concept_seed: string
+  story_locks: string
+  open_questions: string
 }
 
 export type RoomStreamEvent =
@@ -227,15 +234,14 @@ export async function fetchInterviewBankPreview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
-): Promise<InterviewBankPreview> {
+): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }> {
   // POST: the preview is parameterized by the writer's in-flight mutability choices.
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mutability }),
   })
-  const body = await jsonOrThrow<{ preview: InterviewBankPreview }>(res)
-  return body.preview
+  return jsonOrThrow<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }>(res)
 }
 
 export async function bankInterview(

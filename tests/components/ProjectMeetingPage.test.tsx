@@ -31,6 +31,7 @@ function session(state: InterviewSession['state']): InterviewSession {
     audit: { locks: 'THIN' },
     cursor: { lane: state === 'interviewing' ? 'morgan' : null, question_id: state === 'interviewing' ? 'morgan-locks' : null, budgets_spent: {} },
     answers: [],
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }
@@ -144,7 +145,7 @@ describe('ProjectMeetingPage', () => {
       ],
     }
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
-    apiMock.fetchInterviewBankPreview.mockResolvedValue(readbackPreview)
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ preview: readbackPreview, finalValues: { concept_seed: 'seed block', story_locks: 'locks block', open_questions: 'questions block' } })
     apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: readbackPreview })
     renderPage()
 
@@ -178,15 +179,15 @@ describe('ProjectMeetingPage', () => {
     expect(apiMock.bankInterview).not.toHaveBeenCalled()
 
     resolvePreview({
-      title: 'Ace Handler', seedText: 'seed', datedAnswers: [], seedColor: [],
-      locks: [], leanings: [], openQuestions: [], conceptSeedAppend: '', taggable: [],
+      preview: { title: 'Ace Handler', seedText: 'seed', datedAnswers: [], seedColor: [], locks: [], leanings: [], openQuestions: [], conceptSeedAppend: '', taggable: [] },
+      finalValues: { concept_seed: 'seed block', story_locks: 'locks block', open_questions: 'questions block' },
     })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Bank this round' })).toBeEnabled())
   })
 
   it('readback toggles reflect the server default until the writer overrides', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('readback'))
-    apiMock.fetchInterviewBankPreview.mockResolvedValue({
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ preview: {
       title: 'Ace Handler',
       seedText: 'seed',
       datedAnswers: [],
@@ -198,7 +199,7 @@ describe('ProjectMeetingPage', () => {
       taggable: [
         { proposalId: 'p-2', questionId: 'morgan-open-questions', value: 'Who taught her to cook?', origin: 'seed' as const, defaultMutability: 'open' as const, applied: 'open' as const },
       ],
-    })
+    }, finalValues: { concept_seed: 'seed block', story_locks: 'locks block', open_questions: 'questions block' } })
     renderPage()
 
     await screen.findByTestId('readback-taggable')

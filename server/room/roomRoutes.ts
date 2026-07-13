@@ -8,6 +8,7 @@ import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
 import * as interviewRuntime from './interview/runtime';
+import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
 import type { ProposalOrigin, RoomEventKind } from './types';
 
@@ -25,6 +26,10 @@ const projectIdOf = (req: Request): string => String(req.params.projectId ?? '')
 
 function handleInterviewError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
+  if (error instanceof InvalidLockSectionsError) {
+    res.status(422).json({ message: 'Story locks contain malformed reserved section headers. Repair the lock sections before banking.' });
+    return;
+  }
   if (message.includes('does not belong to project') || message.includes('already in progress')) {
     res.status(409).json({ message });
     return;
@@ -322,7 +327,7 @@ export function registerRoomRoutes(app: Express): void {
   app.post('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
     try {
-      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }) });
+      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
     } catch (error) {
       handleInterviewError(res, error);
     }

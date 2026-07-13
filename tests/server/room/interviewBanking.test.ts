@@ -70,7 +70,7 @@ describe('Project Meeting banking', () => {
     const preview = buildBankPreview({ session: session(), proposals: [], mutability: {} });
 
     expect(renderStoryLocksBlock(preview)).toBe('No locks — writer cedes broadly');
-    expect(renderOpenQuestionsBlock(preview)).toBe('Nothing delegated — writer holds all intent');
+    expect(renderOpenQuestionsBlock(preview)).toBe('Nothing delegated — writer holds all intent.');
   });
 
   it('preserves refused mappings as seed color in the concept seed append', () => {
