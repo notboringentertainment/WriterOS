@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomMemoryError } from '../../../server/room/memoryContract';
 
-const storeMock = vi.hoisted(() => ({ claimQueuedEvents: vi.fn(), requeueRoomEvent: vi.fn(), lastMessageAt: vi.fn(), insertEvent: vi.fn() }));
+const storeMock = vi.hoisted(() => ({
+  claimQueuedEvents: vi.fn(), requeueRoomEvent: vi.fn(), lastMessageAt: vi.fn(), insertEvent: vi.fn(), insertLedger: vi.fn(),
+}));
 const turnMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../server/room/store', () => storeMock);
 vi.mock('../../../server/room/runRoomTurn', () => ({ runRoomTurn: turnMock }));
@@ -17,7 +19,12 @@ import { __processEventsForTests } from '../../../server/room/scheduler';
 
 const event = { id: 'e1', project_id: 'p1', kind: 'writer_message', payload: { content: 'hello', characterNames: ['Rosa'] }, processed_at: null, created_at: '' };
 
-beforeEach(() => { vi.clearAllMocks(); storeMock.claimQueuedEvents.mockResolvedValue([event]); storeMock.requeueRoomEvent.mockResolvedValue(undefined); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  storeMock.claimQueuedEvents.mockResolvedValue([event]);
+  storeMock.requeueRoomEvent.mockResolvedValue(undefined);
+  storeMock.insertLedger.mockResolvedValue(undefined);
+});
 
 describe('scheduler memory retry', () => {
   it('preserves payload and records completed speakers', async () => {
@@ -28,12 +35,15 @@ describe('scheduler memory retry', () => {
     });
   });
 
-  it('skips completed speakers and does not requeue after retry limit', async () => {
+  it('skips completed speakers and records exhausted retries without requeueing', async () => {
     storeMock.claimQueuedEvents.mockResolvedValue([{ ...event, payload: { ...event.payload, memoryRetries: 3, memoryCompletedSpeakers: ['turn:sam'] } }]);
     turnMock.mockRejectedValueOnce(new RoomMemoryError('memory down'));
     await __processEventsForTests();
     expect(turnMock).toHaveBeenCalledTimes(1);
     expect(turnMock.mock.calls[0][0].agentId).toBe('casey');
     expect(storeMock.requeueRoomEvent).not.toHaveBeenCalled();
+    expect(storeMock.insertLedger).toHaveBeenCalledWith({
+      projectId: 'p1', agentId: 'casey', action: 'errored', triggerEvent: 'e1',
+    });
   });
 });

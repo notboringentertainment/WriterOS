@@ -14,7 +14,7 @@ import { broadcast } from './sseHub';
 import * as store from './store';
 import type { LedgerAction, RoomEventRow } from './types';
 import { newRecorder } from './types';
-import { ensureProjectMemory } from './memoryContract';
+import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
 
 // The room's honest reach contract: agents see blocks + channel + the trigger,
 // nothing else. Static because the room's reach IS static in Phase 1.
@@ -45,7 +45,7 @@ export async function runRoomTurn(input: {
   ]);
 
   if (locksText === null) {
-    throw new Error(`[room.turn] story_locks block missing for project ${projectId} — memory not initialized.`);
+    throw new RoomMemoryError(`[room.turn] story_locks block missing for project ${projectId} — memory not initialized.`);
   }
 
   const ambient = event.kind !== 'writer_message';

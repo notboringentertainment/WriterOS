@@ -60,6 +60,16 @@ async function processEvents(): Promise<void> {
               memoryRetries: retries + 1,
               memoryCompletedSpeakers: [...completed],
             });
+          } else {
+            // The event row and payload remain available for recovery; record
+            // terminal retry exhaustion explicitly instead of dropping it
+            // without an operational trace.
+            await store.insertLedger({
+              projectId: event.project_id,
+              agentId: speaker.agentId,
+              action: 'errored',
+              triggerEvent: event.id,
+            });
           }
           break;
         }
