@@ -3524,41 +3524,6 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
     }
   });
 
-  it('concurrent PRODUCTION banks of DIFFERENT sessions preserve BOTH rounds', async () => {
-    const p = freshProject();
-    await ensure(p);
-    const { __setRoomDbForTests } = await import('../../server/room/supabaseClient');
-    __setRoomDbForTests(db);
-    try {
-      const [s1, s2] = await Promise.all([
-        db.from('interview_sessions').insert({
-          project_id: p, mode: 'full', state: 'readback', seed_text: 'concurrent round alpha', answers: [],
-        }).select().single(),
-        db.from('interview_sessions').insert({
-          project_id: p, mode: 'full', state: 'readback', seed_text: 'concurrent round beta', answers: [],
-        }).select().single(),
-      ]);
-      expect(s1.error).toBeNull();
-      expect(s2.error).toBeNull();
-
-      const { bankInterview } = await import('../../server/room/interview/runtime');
-      const [r1, r2] = await Promise.all([
-        bankInterview({ sessionId: (s1.data as { id: string }).id, projectId: p }),
-        bankInterview({ sessionId: (s2.data as { id: string }).id, projectId: p }),
-      ]);
-      expect(r1.session.state).toBe('banked');
-      expect(r2.session.state).toBe('banked');
-
-      const seed = await db.from('memory_blocks').select('value, revision')
-        .eq('project_id', p).is('agent_id', null).eq('label', 'concept_seed').single();
-      expect((seed.data as { value: string }).value).toContain('concurrent round alpha');
-      expect((seed.data as { value: string }).value).toContain('concurrent round beta');
-      expect((seed.data as { revision: number }).revision).toBe(2);
-    } finally {
-      __setRoomDbForTests(null);
-    }
-  });
-
   it('banks a Meeting through the PRODUCTION path and the banked content reaches real prompt assembly', async () => {
     const p = freshProject();
     await ensure(p);
@@ -3673,7 +3638,7 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
 - [ ] **Step 2: Run the suite against the dev database**
 
 Run: `npx vitest run tests/integration/sharedMemoryContract.integration.test.ts`
-Expected: PASS with creds in `.env` (8 tests); cleanly SKIPPED without. (Migration was applied and smoke-tested in Step 0.)
+Expected: PASS with creds in `.env` (7 tests); cleanly SKIPPED without. (Migration was applied and smoke-tested in Step 0.)
 
 - [ ] **Step 3: Commit**
 
@@ -3707,7 +3672,7 @@ Expected: typecheck clean, full suite green, integration suite green against the
 - surface sync preserves meeting locks and vice versa, including under concurrency: `lockSections.test.ts`, `roomRoutesStoryLocks.test.ts`, `bankMeetingMemory.test.ts`, integration concurrent-writer test
 - meeting locks survive later no-lock rounds; exact duplicates don't multiply: `lockSections.test.ts`, `bankMeetingMemory.test.ts`
 - legacy `[SEED]`/`[EXTRAPOLATED]`/`[INVENTED]` adoption + survival: `lockSections.test.ts`, `roomRoutesStoryLocks.test.ts`
-- bank atomicity, rollback on failure, idempotent retry (RPC AND app boundary), and different-session projection-race preservation: `bankMeetingMemory.test.ts` + integration bank tests
+- bank atomicity, rollback on failure, and idempotent retry (RPC AND app boundary): `bankMeetingMemory.test.ts` + integration bank tests; different-session projection-race rejection is mock-tested because `interview_sessions_one_active_per_project` prevents that concurrent state in the real schema
 - oversized (20k) seed banks fully, no partial write; founding seed survives answer floods and round drops: `conceptSeedProjection.test.ts`, `bankMeetingMemory.test.ts`
 - verbatim persistence through UI → hook → route → runtime (raw persisted, trimmed only for empty checks, 20k on raw): `interviewRuntime.test.ts`, `roomRoutesInterview.test.ts`
 - over-cap surface locks 413 — declared locks never silently truncated: `roomRoutesStoryLocks.test.ts`
@@ -3728,7 +3693,7 @@ gh pr create --title "feat: shared memory contract — initializer, atomic banki
 ## Summary
 
 - `ensure_project_memory` RPC: four sentinel blocks + 28 attachments + blank-row repair, atomic and idempotent (B4)
-- `bank_meeting_memory` RPC: transactional bank with session lock, project-wide monotonic revision CAS, locks CAS, projections, snapshot, and state; retry-safe (`already_banked`) and lossless across concurrent different-session banks
+- `bank_meeting_memory` RPC: transactional bank with session lock, project-wide monotonic revision CAS, locks CAS, projections, snapshot, and state; retry-safe (`already_banked`); one-active-session schema prevents concurrent different-session banks while revision CAS remains defense-in-depth
 - canonical Meeting record = `interview_sessions` (verbatim 20k seed + transcript with question text/domain); `concept_seed` block is a deterministic bounded projection
 - `story_locks` writers are compare-and-swap with bounded retry — neither surface sync nor Meeting bank can clobber the opposite section, including concurrently
 - Meeting locks are round-cumulative (append + exact-line dedupe; empty rounds preserve prior locks)
@@ -3738,7 +3703,7 @@ gh pr create --title "feat: shared memory contract — initializer, atomic banki
 - migration review gate: SQL is reviewed before it touches the shared dev database; post-apply corrections are new forward migrations
 - memory guard + 503 on all 14 guarded entry/recovery routes AND final invariant checks in both model paths; scheduler wake failures use bounded per-speaker requeue (max 3), not silent drop or whole-event replay
 - client: `Room memory unavailable.` renders an inline actionable error, closes the composer, and retries cleanly
-- env-gated real-database integration suite (idempotence, surface/bank and bank/bank concurrency, rollback, blank repair, classification survival, cumulative open_questions, prompt assembly)
+- env-gated real-database integration suite (idempotence, surface/bank concurrency, rollback, blank repair, classification survival, cumulative open_questions, prompt assembly)
 
 Implements PRD Addendum B (#63) with the Task 1 PRD corrections.
 
