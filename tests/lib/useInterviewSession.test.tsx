@@ -31,6 +31,7 @@ function session(state: InterviewSession['state']): InterviewSession {
     audit: { locks: 'THIN' },
     cursor: { lane: state === 'interviewing' ? 'morgan' : null, question_id: state === 'interviewing' ? 'morgan-locks' : null, budgets_spent: {} },
     answers: [],
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }
@@ -124,7 +125,7 @@ describe('useInterviewSession', () => {
     let resolveFirst: (v: unknown) => void = () => {}
     apiMock.fetchInterviewBankPreview
       .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
-      .mockResolvedValueOnce({ conceptSeedAppend: 'NEWER', taggable: [] })
+      .mockResolvedValueOnce({ preview: { conceptSeedAppend: 'NEWER', taggable: [] }, finalValues: { concept_seed: 'new', story_locks: 'new', open_questions: 'new' } })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(result.current.status.activeSession?.state).toBe('readback'))
 
@@ -137,7 +138,7 @@ describe('useInterviewSession', () => {
 
     // The slow first response arrives last — and must be discarded.
     await act(async () => {
-      resolveFirst({ conceptSeedAppend: 'STALE', taggable: [] })
+      resolveFirst({ preview: { conceptSeedAppend: 'STALE', taggable: [] }, finalValues: { concept_seed: 'old', story_locks: 'old', open_questions: 'old' } })
       await firstRequest!
     })
     expect(result.current.bankPreview?.conceptSeedAppend).toBe('NEWER')
@@ -172,7 +173,7 @@ describe('useInterviewSession', () => {
 
   it('previewBank and bank pass the writer mutability map through', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
-    apiMock.fetchInterviewBankPreview.mockResolvedValue({ conceptSeedAppend: '', taggable: [] })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ preview: { conceptSeedAppend: '', taggable: [] }, finalValues: { concept_seed: '', story_locks: '', open_questions: '' } })
     apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '', taggable: [] } })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(result.current.status.activeSession?.state).toBe('readback'))

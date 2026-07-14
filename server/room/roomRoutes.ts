@@ -8,7 +8,10 @@ import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
 import * as interviewRuntime from './interview/runtime';
+import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
+import { syncSurfaceLocks } from './surfaceLockSync';
+import { ensureProjectMemory } from './memoryContract';
 import type { ProposalOrigin, RoomEventKind } from './types';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
@@ -23,8 +26,23 @@ function requireRoom(res: Response): boolean {
 
 const projectIdOf = (req: Request): string => String(req.params.projectId ?? '').trim();
 
+async function ensureMemoryOr503(req: Request, res: Response): Promise<boolean> {
+  try {
+    await ensureProjectMemory(projectIdOf(req));
+    return true;
+  } catch (error) {
+    console.error('[room.routes] ensureProjectMemory failed:', error);
+    res.status(503).json({ message: 'Room memory unavailable.' });
+    return false;
+  }
+}
+
 function handleInterviewError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
+  if (error instanceof InvalidLockSectionsError) {
+    res.status(422).json({ message: 'Story locks contain malformed reserved section headers. Repair the lock sections before banking.' });
+    return;
+  }
   if (message.includes('does not belong to project') || message.includes('already in progress')) {
     res.status(409).json({ message });
     return;
@@ -39,9 +57,16 @@ function handleInterviewError(res: Response, error: unknown): void {
 
 export function registerRoomRoutes(app: Express): void {
   // Live channel stream. An open connection = "project is open" for idle_tick.
-  app.get('/api/room/:projectId/stream', (req, res) => {
+  app.get('/api/room/:projectId/stream', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     addSseClient(projectIdOf(req), res);
+  });
+
+  app.post('/api/room/:projectId/memory/ensure', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    res.json({ ok: true });
   });
 
   app.get('/api/room/:projectId/messages', async (req, res) => {
@@ -76,6 +101,7 @@ export function registerRoomRoutes(app: Express): void {
   // Writer speaks in the channel.
   app.post('/api/room/:projectId/messages', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       const projectId = projectIdOf(req);
       const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
@@ -114,6 +140,7 @@ export function registerRoomRoutes(app: Express): void {
   // Client-originated events (doc_field_changed from the save path, etc — D4).
   app.post('/api/room/:projectId/events', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       const kind = String(req.body?.kind ?? '') as RoomEventKind;
       if (!ACCEPTED_CLIENT_EVENTS.includes(kind)) {
@@ -187,21 +214,21 @@ export function registerRoomRoutes(app: Express): void {
   // never write them). The client pushes on project open and on lock edits.
   app.post('/api/room/:projectId/blocks/story-locks', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      const value = typeof req.body?.value === 'string' ? req.body.value : '';
-      const written = await store.writeBlock({
-        projectId: projectIdOf(req),
-        agentId: null,
-        label: 'story_locks',
-        value: value.slice(0, 2000), // §4.1 cap; locks text is writer-owned, clip is safe
-        updatedBy: 'writer',
-        charCap: 2000,
-      });
-      if (!written.ok) {
-        res.status(400).json({ message: written.reason });
+      const body = typeof req.body?.value === 'string' ? req.body.value : '';
+      const outcome = await syncSurfaceLocks(projectIdOf(req), body);
+      if (outcome === 'ok') { res.json({ ok: true }); return; }
+      if (outcome === 'unavailable') { res.status(503).json({ message: 'Room memory unavailable.' }); return; }
+      if (outcome === 'too_large') {
+        res.status(413).json({ message: 'Story locks exceed the 2,000-character block cap — shorten the lock list in the editor. Nothing was saved.' });
         return;
       }
-      res.json({ ok: true });
+      if (outcome === 'invalid') {
+        res.status(422).json({ message: 'A lock contains a reserved section header line ("## Surface-declared locks" / "## Meeting locks") — reword it. Nothing was saved.' });
+        return;
+      }
+      res.status(409).json({ message: 'Story locks are being updated concurrently — retry the sync.' });
     } catch (error) {
       console.error('[room.routes] story-locks failed:', error);
       res.status(500).json({ message: 'Failed to update story locks block.' });
@@ -221,14 +248,15 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/start', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       const mode = req.body?.mode === 'quick' ? 'quick' : req.body?.mode === 'full' ? 'full' : null;
-      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText.trim() : '';
+      const seedText = typeof req.body?.seedText === 'string' ? req.body.seedText : '';
       if (!mode) {
         res.status(400).json({ message: "mode must be 'quick' or 'full'." });
         return;
       }
-      if (!seedText) {
+      if (!seedText.trim()) {
         res.status(400).json({ message: 'seedText is required.' });
         return;
       }
@@ -246,9 +274,10 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/answer', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText.trim() : '';
-      if (!answerText) {
+      const answerText = typeof req.body?.answerText === 'string' ? req.body.answerText : '';
+      if (!answerText.trim()) {
         res.status(400).json({ message: 'answerText is required.' });
         return;
       }
@@ -273,6 +302,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/skip', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json(await interviewRuntime.skipInterviewQuestion({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
     } catch (error) {
@@ -282,6 +312,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/wrap', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json({ session: await interviewRuntime.wrapInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
@@ -291,6 +322,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/pause', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json({ session: await interviewRuntime.pauseInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
@@ -300,6 +332,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/resume', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json({ session: await interviewRuntime.resumeInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }) });
     } catch (error) {
@@ -321,8 +354,9 @@ export function registerRoomRoutes(app: Express): void {
   // choices (live re-preview while tagging in readback).
   app.post('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      res.json({ preview: await interviewRuntime.previewBank({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }) });
+      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
     } catch (error) {
       handleInterviewError(res, error);
     }
@@ -330,6 +364,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/bank', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
     } catch (error) {
@@ -339,6 +374,7 @@ export function registerRoomRoutes(app: Express): void {
 
   app.post('/api/room/:projectId/interview/:sessionId/export', async (req, res) => {
     if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json(await interviewRuntime.exportInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req) }));
     } catch (error) {

@@ -68,9 +68,9 @@ Standard shared blocks per project:
 | Label            | Content                                          | Cap    |
 |------------------|--------------------------------------------------|--------|
 | `story_locks`    | Explicit writer locks from structured surfaces    | 2,000  |
-| `concept_seed`   | Banked concept doc / seed (never silently edited)| 4,000  |
+| `concept_seed`   | Bounded projection of the canonical Meeting record (regenerated at each bank; history lives in `interview_sessions`) | 4,000  |
 | `project_state`  | Morgan-maintained "where we are" digest          | 2,000  |
-| `open_questions` | Current open questions ("invent here")           | 2,000  |
+| `open_questions` | Bounded cumulative projection of unresolved delegated/open entries | 2,000  |
 
 Writer-global `voice_profile` memory integration is outside this contract;
 see Addendum B1.
@@ -78,7 +78,10 @@ see Addendum B1.
 Standard private blocks per agent: `lane_notes` (their domain, 4,000),
 `writer_rapport` (what they've learned about Ben, 1,500).
 
-Caps are enforced at write time. Overflow triggers a digest turn (see 7.4), never a crash.
+Caps are enforced at write time. Bounded projections use explicit omission
+markers and retain complete source data in the canonical record. Enforced
+`story_locks` writes fail visibly when over cap and are never silently
+truncated. No overflow path may crash an agent turn.
 
 ### 4.2 The channel
 One append-only `room_messages` log per project. Every speaker — writer or agent —
@@ -256,7 +259,12 @@ tokens, but their blocks persist. Unbenching is instant.
 - Only Morgan (and the writer) writes shared blocks. Specialists request changes
   via channel; Morgan synthesizes into `project_state` / `open_questions`.
 - `story_locks` and `concept_seed` are writer-only. Agents read, argue, never write.
-- `concept_seed` is banked: appended by new interview rounds, never edited in place.
+- `concept_seed` is regenerated at each bank as a bounded projection of the
+  canonical Meeting record; append-only applies to the record
+  (sessions/transcripts), not to block text.
+- Ownership per block is normative in Addendum B1: the Meeting bank and
+  structured-surface lock sync write as the writer; Morgan writes
+  `project_state` (digest) and, later, an `open_questions` synthesis section.
 
 ## 11. Model Routing & Cost
 
@@ -625,11 +633,13 @@ Assignment rules:
 | Agent infers, writer adopts as canon | [EXTRAPOLATED] | locked |
 | Writer skips/cedes the area | — (room will fill as [INVENTED]) | open |
 
-Storage: origin is recorded on the proposal row and carried into the export's
-tags. Mutability lives where it already lives — `story_locks` block (locked),
-`open_questions` block (open), and a `leanings` list inside `concept_seed`
-(leaning). Interview UI MUST show all three states with distinct affordances
-at readback; the export MUST NOT emit mutability labels beyond the Locks and
+Storage: origin is recorded on the proposal row and carried into export tags.
+At bank time, applied mutability classifications are persisted in the
+session's immutable `bank_snapshot` in the same transaction as block writes.
+`story_locks` (locked), `open_questions` (open), and the `concept_seed`
+leanings list are bounded projections of that stored decision, never its sole
+copy. Interview UI MUST show all three states with distinct affordances at
+readback; export MUST NOT emit mutability labels beyond the Locks and
 Open-questions sections (PitchStudio's contract only knows those two, plus
 origin tags).
 
@@ -645,12 +655,25 @@ else is required; a `quick` session with four answers banks fine.
 **The bank moment is visible UX (MUST):** a "Bank this round" action showing
 exactly what will be written — seed text, dated interview answers, locks,
 leanings, open questions — before commit. No silent memory-block writes.
-Banking writes `concept_seed` (append), `story_locks`, and `open_questions`
-blocks, and sets session state `banked`.
+"Exactly" means final merged/projected block values: cross-session seed and
+open-question projections plus cumulative Meeting locks. Preview and commit
+MUST use the same computation. If a structured-surface lock edit lands between
+preview and commit, lock sections may re-merge against the newer value. If a
+different Meeting session banks first, a project-wide bank-revision CAS MUST
+reject the stale projection; the losing request re-reads terminal Meeting
+records and recomputes all three values. These are the only permitted
+concurrent changes between preview and commit, and neither may discard prior
+content.
+Banking atomically writes `concept_seed`, `story_locks`, and `open_questions`,
+persists the session's immutable `bank_snapshot`, and sets state `banked`.
 
-**Append-only:** banked rounds are never edited in place. A later "New
-interview round" (§A3.2) appends a dated round to `concept_seed`. Story
-Bible wins on current state; the seed wins on original intent.
+**Append-only record, regenerated projections:** banked Meeting sessions,
+transcripts, and bank snapshots are never edited in place. A later "New
+interview round" (§A3.2) adds another canonical session; banking regenerates
+bounded blocks from that history. Empty readback Locks/Open-questions sections
+retain their explicit empty lines; `story_locks` itself uses B3's canonical
+two-section value with `None declared.`. Authoring surfaces remain peers; no
+surface wins by default (§B surface-authority rule).
 
 ## A10. Export Contract (PitchStudio handoff)
 
@@ -776,10 +799,29 @@ from a writer later returning that block to the same empty meaning.
 
 | Label | Cap | Owner (writers) | Update rule | Sentinel value |
 |---|---|---|---|---|
-| `concept_seed` | 4,000 | Project Meeting bank only | Append-only, dated rounds, never edited in place (§A9) | `No concept seed banked yet. Offer the Project Meeting.` |
+| `concept_seed` | 4,000 | Project Meeting bank only | Deterministic bounded projection of the canonical Meeting record; regenerated at each bank, newest rounds first (§A9 history lives in the record, not the block) | `No concept seed banked yet. Offer the Project Meeting.` |
 | `story_locks` | 2,000 | Structured-surface lock sync + Meeting bank | Structured merge by origin section (B3) | Canonical two-section value from B3, with `None declared.` in both sections |
-| `open_questions` | 2,000 | Meeting bank; Morgan (synthesis) | Replace own-origin section only (B3) | `Nothing delegated — writer holds all intent.` |
+| `open_questions` | 2,000 | Meeting bank; Morgan (synthesis) | Meeting bank regenerates a bounded cumulative projection from terminal Meeting records; later Morgan synthesis replaces only its own origin section (B3) | `Nothing delegated — writer holds all intent.` |
 | `project_state` | 2,000 | Morgan only (digest path) | Full replace by Morgan | `No project state recorded yet.` |
+
+**Canonical Meeting record:** the durable, project-scoped source of truth is
+`interview_sessions`: verbatim `seed_text` (up to 20,000 chars), append-only
+`answers`, adopted proposals, and immutable per-session `bank_snapshot` JSONB.
+The snapshot records applied mutability classifications, exact current-round
+open/delegated question entries, and any pre-contract block-only question units
+adopted by the first post-contract bank, in the same transaction that banks the
+round.
+Shared blocks are bounded agent-facing projections; no block is the sole copy
+of Meeting data. Transcript entries carry exact question text, exact answer
+text, asker persona, domain, sequence, provenance, and timestamp so future
+generated questions fit the same record.
+
+`open_questions` includes unresolved entries from every terminal Meeting
+record (`banked` and `exported`): both skipped/delegated transcript entries and
+adopted proposals classified `open`. Until a future explicit resolution
+workflow exists, later banks preserve them. Pre-contract block content is
+adopted into that bank's immutable snapshot before the bounded block is
+rendered; an omission marker in the block must never erase the canonical copy.
 
 `voice_profile` remains client-owned and is outside this four-block room-memory
 contract. Addendum B does not promise a `memory_blocks` row or attachments for
@@ -801,6 +843,9 @@ curation is a Phase 3 option, not an accident of missing rows.
 | `story_locks` | ● | ● | ● | ● | ● | ● | ● |
 | `open_questions` | ● | ● | ● | ● | ● | ● | ● |
 | `project_state` | ● | ● | ● | ● | ● | ● | ● |
+
+Matrix column headers are display aliases. Attachment rows bind to runtime
+persona ids; Morgan's runtime id is `writingPartner`, not `morgan`.
 
 Attachments are created by the initializer in the same transaction as the
 blocks (B4). A shared block without its attachment rows is a system error.
@@ -829,6 +874,14 @@ remain legacy input and follow the B6 adoption rule.
 - Enforcement (proposal blocking) reads the union of both sections.
 - Contradictions between sections are surfaced to the writer as a Morgan
   message/proposal; the system MUST NOT auto-resolve them.
+- Section writes MUST be race-safe: no writer may overwrite the opposite
+  section from stale data. Compare-and-swap with bounded retry, or equivalent
+  database-side locking, is required.
+- Both section headers are reserved exact physical lines. Structured-surface
+  content containing either line is rejected; Meeting-derived content removes
+  those physical lines before merge. Duplicate, partial, or out-of-order
+  canonical headers are malformed state and MUST fail loudly; malformed
+  canonical values MUST NOT be reclassified as sectionless legacy text.
 - `open_questions` uses the same pattern with `## Meeting` and `## Morgan`
   sections when Morgan synthesis lands (until then, meeting bank owns the
   whole body under the sentinel rules).
@@ -837,19 +890,33 @@ remain legacy input and follow the B6 adoption rule.
 
 `ensureProjectMemory(projectId)` — server-side, idempotent, atomic (single
 Postgres RPC): upsert the four per-project blocks with sentinels (existing
-rows untouched), then insert missing attachment rows for the full agent
-roster × all four blocks: seven agents × four blocks = 28 attachments.
+non-blank rows untouched; blank/whitespace-only values normalize to the
+sentinel because they represent broken writes), then insert missing attachment
+rows for the full agent roster × all four blocks: seven agents × four blocks =
+28 attachments.
 
 Invoked before every entry point that can mutate room state or enable an agent
-turn: room stream open; writer message POST; client event POST; Story Bible
-lock sync; Project Meeting start, answer, skip, wrap, pause, resume,
-bank-preview, bank, and export; and any future route that queues or directly
-runs an agent.
+turn: explicit memory-recovery probe; room stream open; writer message POST;
+client event POST; Story Bible lock sync; Project Meeting start, answer, skip,
+wrap, pause, resume, bank-preview, bank, and export; and any future route that
+queues or directly runs an agent.
 Read-only message/proposal/status routes and proposal resolution do not
 initialize memory because they neither enable a turn nor author shared memory.
 The SELECT-only fast path is permitted only when all four blocks and all 28
 attachments exist. Any missing block or attachment runs the idempotent repair.
 First contact initializes; later complete calls no-op.
+
+Every Meeting bank MUST compare-and-swap a monotonic project bank revision in
+the same transaction as its shared-block writes and session transition. Two
+distinct sessions computed from the same prior revision cannot both commit:
+the loser MUST re-read terminal Meeting records and recompute. Locking only the
+current session is insufficient because different sessions write the same
+`concept_seed` and `open_questions` projections.
+
+Route guards are the early gate, not the only gate. Both model runtimes MUST
+re-verify the full contract (four blocks, 28 attachments) immediately before
+prompt/model execution and MUST NOT run a turn when verification fails. This
+covers queued events, scheduler ticks, and future internal callers.
 
 ## B5. Failure behavior
 
@@ -861,12 +928,15 @@ the error inline; the room stays closed rather than open-and-amnesiac.
 ## B6. Existing-project backfill
 
 No migration backfill. First room contact after deploy runs the initializer:
-missing blocks get sentinels, existing blocks are preserved verbatim, missing
+missing blocks get sentinels, existing non-blank blocks are preserved verbatim,
+blank/whitespace-only values normalize to their sentinel, and missing
 attachments are created. Pre-contract `story_locks` values are treated as the
-`## Meeting locks` section when they contain `[SEED]` or `[EXTRAPOLATED]`
-markers; all other legacy values become `## Surface-declared locks`. The
-other section starts as `None declared.`. The next surface sync or Meeting
-bank rewrites only its own section without destroying the adopted values.
+`## Meeting locks` section when they contain `[SEED]`, `[EXTRAPOLATED]`, or
+`[INVENTED]` markers; all other legacy values become
+`## Surface-declared locks`. The other section starts as `None declared.`.
+The next surface sync or Meeting bank rewrites only its own section without
+destroying adopted values. Values containing malformed reserved canonical
+headers are errors, not legacy input.
 
 ## B7. Invariant and tests
 
@@ -878,5 +948,11 @@ Required tests: initializer idempotence (double-call); missing row vs
 initialized-empty sentinel behavior; attachment completeness after init;
 surface sync preserves meeting locks and vice versa (the clobber regression);
 agent context assembly includes all shared blocks after a bank with no manual
-DB setup; legacy `[SEED]`/`[EXTRAPOLATED]` locks survive first post-contract
-surface sync; entry-point failure returns 503 and no agent turn runs.
+DB setup; legacy `[SEED]`/`[EXTRAPOLATED]`/`[INVENTED]` locks survive first
+post-contract surface sync; applied classifications survive bank and export
+through the canonical snapshot; adopted-open and skipped/delegated questions
+survive later banks and exported sessions; pre-contract open questions remain
+recoverable after projection overflow; two different sessions banking
+concurrently preserve both rounds through bank-revision retry; malformed
+reserved lock headers fail without a write; entry-point failure returns 503
+and no agent turn runs.

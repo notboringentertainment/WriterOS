@@ -18,6 +18,10 @@ const { storeMock, broadcastMock, sendToolTurnMock } = vi.hoisted(() => ({
 }))
 vi.mock('../../../server/room/store', () => storeMock)
 vi.mock('../../../server/room/sseHub', () => ({ broadcast: broadcastMock }))
+const memoryMock = vi.hoisted(() => ({ ensureProjectMemory: vi.fn(async () => undefined) }))
+vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
+  ...(await importOriginal<object>()), ensureProjectMemory: memoryMock.ensureProjectMemory,
+}))
 
 vi.mock('../../../server/room/lockGate', () => ({
   checkProposalAgainstLocks: vi.fn().mockResolvedValue({ blocked: false }),
@@ -91,6 +95,7 @@ describe('runRoomTurn', () => {
     )
 
     await runRoomTurn({ projectId: 'p1', agentId: 'casey', event })
+    expect(memoryMock.ensureProjectMemory).toHaveBeenCalledWith('p1')
 
     // typing indicator, then the accepted message
     expect(broadcastMock).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'turn_started', agentId: 'casey' }))

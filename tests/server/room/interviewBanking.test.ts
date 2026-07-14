@@ -13,6 +13,7 @@ function session(answers: TranscriptEntry[] = []): InterviewSessionRow {
     audit: { locks: 'THIN', ending: 'THIN', open_questions: 'THIN', load_bearing_character: 'THIN' },
     cursor: { lane: null, question_id: null, budgets_spent: {} },
     answers,
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   };
@@ -69,7 +70,7 @@ describe('Project Meeting banking', () => {
     const preview = buildBankPreview({ session: session(), proposals: [], mutability: {} });
 
     expect(renderStoryLocksBlock(preview)).toBe('No locks — writer cedes broadly');
-    expect(renderOpenQuestionsBlock(preview)).toBe('Nothing delegated — writer holds all intent');
+    expect(renderOpenQuestionsBlock(preview)).toBe('Nothing delegated — writer holds all intent.');
   });
 
   it('preserves refused mappings as seed color in the concept seed append', () => {

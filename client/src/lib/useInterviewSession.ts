@@ -15,6 +15,7 @@ import {
   startInterview,
   wrapInterview,
   type InterviewBankPreview,
+  type InterviewBankFinalValues,
   type InterviewMutability,
   type InterviewQuestion,
   type InterviewSession,
@@ -31,6 +32,8 @@ export function emptyInterviewStatus(): InterviewStatus {
 export interface InterviewSessionHandle {
   status: InterviewStatus
   bankPreview: InterviewBankPreview | null
+  finalValues: InterviewBankFinalValues | null
+  previewPending: boolean
   exportMarkdown: string
   error: string | null
   clearError: () => void
@@ -49,6 +52,8 @@ export interface InterviewSessionHandle {
 export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const [status, setStatus] = useState<InterviewStatus>(emptyInterviewStatus)
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
+  const [finalValues, setFinalValues] = useState<InterviewBankFinalValues | null>(null)
+  const [previewPending, setPreviewPending] = useState(false)
   const [exportMarkdown, setExportMarkdown] = useState('')
   const [error, setError] = useState<string | null>(null)
   // Monotonic id for preview requests: rapid mutability toggles fire overlapping
@@ -59,6 +64,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     let cancelled = false
     setStatus(emptyInterviewStatus())
     setBankPreview(null)
+    setFinalValues(null)
+    setPreviewPending(false)
     setExportMarkdown('')
     setError(null)
     fetchInterviewStatus(projectId)
@@ -106,8 +113,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
 
   const answer = useCallback(async (input: { answerText: string; origin: InterviewAnswerOrigin; rejectMapping?: boolean }) => {
     const session = status.activeSession
-    const answerText = input.answerText.trim()
-    if (!session || !answerText) return false
+    const answerText = input.answerText
+    if (!session || !answerText.trim()) return false
     const rejectMapping = input.rejectMapping ?? false
     let result: Awaited<ReturnType<typeof answerInterviewQuestion>>
     try {
@@ -179,11 +186,23 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     const session = status.activeSession
     if (!session) return
     const seq = ++previewSeqRef.current
+    setPreviewPending(true)
+    setBankPreview(null)
+    setFinalValues(null)
     try {
-      const preview = await fetchInterviewBankPreview(projectId, session.id, mutability)
-      if (seq === previewSeqRef.current) setBankPreview(preview)
+      const result = await fetchInterviewBankPreview(projectId, session.id, mutability)
+      if (seq === previewSeqRef.current) {
+        setBankPreview(result.preview)
+        setFinalValues(result.finalValues)
+        setPreviewPending(false)
+      }
     } catch (err) {
-      if (seq === previewSeqRef.current) setError(err instanceof Error ? err.message : 'Bank preview failed')
+      if (seq === previewSeqRef.current) {
+        setBankPreview(null)
+        setFinalValues(null)
+        setPreviewPending(false)
+        setError(err instanceof Error ? err.message : 'Bank preview failed')
+      }
     }
   }, [projectId, status.activeSession])
 
@@ -196,6 +215,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       previewSeqRef.current++
       setStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
       setBankPreview(result.preview)
+      setFinalValues(null)
+      setPreviewPending(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bank failed')
     }
@@ -216,6 +237,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   return {
     status,
     bankPreview,
+    finalValues,
+    previewPending,
     exportMarkdown,
     error,
     clearError,

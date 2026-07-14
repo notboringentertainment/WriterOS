@@ -50,7 +50,43 @@ export function renderStoryLocksBlock(preview: BankPreview): string {
 }
 
 export function renderOpenQuestionsBlock(preview: BankPreview): string {
-  return preview.openQuestions.length ? preview.openQuestions.map((q) => `- ${q}`).join('\n') : 'Nothing delegated — writer holds all intent';
+  return preview.openQuestions.length ? preview.openQuestions.map((q) => `- ${q}`).join('\n') : 'Nothing delegated — writer holds all intent.';
+}
+
+export function parseOpenQuestionsBlock(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === 'Nothing delegated — writer holds all intent.' || trimmed === 'Nothing delegated — writer holds all intent') return [];
+  const units: string[] = [];
+  let current: string[] = [];
+  for (const line of trimmed.split(/\r?\n/)) {
+    if (line.startsWith('- ')) {
+      if (current.length) units.push(current.join('\n'));
+      current = [line.slice(2)];
+    } else if (current.length) current.push(line);
+    else current = [line];
+  }
+  if (current.length) units.push(current.join('\n'));
+  return units.filter((unit) => !/^… \(\+\d+ more — see Meeting record\)$/.test(unit));
+}
+
+export function renderOpenQuestionsBlockBounded(preview: BankPreview, cap = 2000): string {
+  const full = renderOpenQuestionsBlock(preview);
+  if (full.length <= cap) return full;
+  const preamble: string[] = [];
+  const units: string[][] = [];
+  for (const line of full.split('\n')) {
+    if (line.startsWith('- ')) units.push([line]);
+    else if (units.length === 0) preamble.push(line);
+    else units[units.length - 1].push(line);
+  }
+  const omitted = (n: number) => `- … (+${n} more — see Meeting record)`;
+  const kept: string[][] = [];
+  for (const unit of units) {
+    const candidate = [...preamble, ...kept.flat(), ...unit, omitted(units.length - kept.length)].join('\n');
+    if (candidate.length > cap) break;
+    kept.push(unit);
+  }
+  return [...preamble, ...kept.flat(), omitted(units.length - kept.length)].join('\n');
 }
 
 export function renderBankedConceptSeed(preview: BankPreview): string {
@@ -129,6 +165,13 @@ export function buildBankPreview(input: {
     if (mutability !== 'open') {
       datedAnswers.push(`${originTag(proposal.origin)} ${value}`);
     }
+  }
+
+  const delegatedLines = input.session.answers
+    .filter((a) => a.disposition === 'skipped_delegated')
+    .map((a) => `Delegated to the room: ${a.question_text ?? a.question_id}`);
+  for (const line of delegatedLines) {
+    if (!openQuestions.includes(line)) openQuestions.push(line);
   }
 
   const seedColor = input.session.answers

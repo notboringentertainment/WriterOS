@@ -12,6 +12,7 @@ function makeSession(answers: TranscriptEntry[] = []): InterviewSessionRow {
     audit: {},
     cursor: { lane: null, question_id: null, budgets_spent: {} },
     answers,
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }

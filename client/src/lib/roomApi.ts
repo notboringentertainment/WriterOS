@@ -48,6 +48,7 @@ export interface InterviewSession {
   audit: Record<string, 'SUFFICIENT' | 'THIN'>
   cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; paused_from?: string }
   answers: Array<{ question_id: string; lane: string; answer_text: string; origin: 'seed' | 'extrapolated' | null; disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'; at: string }>
+  bank_snapshot: { applied_classifications: Record<string, InterviewMutability>; open_questions: string[]; legacy_open_questions: string[] } | null
   created_at: string
   updated_at: string
 }
@@ -94,6 +95,12 @@ export interface InterviewBankPreview {
   taggable: InterviewTaggableAnswer[]
 }
 
+export interface InterviewBankFinalValues {
+  concept_seed: string
+  story_locks: string
+  open_questions: string
+}
+
 export type RoomStreamEvent =
   | { type: 'turn_started'; agentId: string; turnId: string }
   | { type: 'speak_delta'; agentId: string; turnId: string; content: string }
@@ -107,6 +114,32 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     throw new Error(`room api ${res.status}: ${text.slice(0, 200)}`)
   }
   return res.json() as Promise<T>
+}
+
+export function isRoomMemoryUnavailable(err: unknown): boolean {
+  return err instanceof Error && err.message.includes('room api 503') && err.message.includes('Room memory unavailable')
+}
+
+export type RoomMutationResult =
+  | { outcome: 'ok' }
+  | { outcome: 'memory_unavailable' }
+  | { outcome: 'failed'; status?: number; message?: string }
+
+async function classifyFailure(res: Response): Promise<RoomMutationResult> {
+  const text = await res.text().catch(() => '')
+  if (res.status === 503 && text.includes('Room memory unavailable')) return { outcome: 'memory_unavailable' }
+  let message: string | undefined
+  try { message = (JSON.parse(text) as { message?: string }).message } catch { message = text.slice(0, 160) || undefined }
+  return { outcome: 'failed', status: res.status, message }
+}
+
+export async function ensureRoomMemory(projectId: string): Promise<RoomMutationResult> {
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/memory/ensure`, { method: 'POST' })
+    return res.ok ? { outcome: 'ok' } : classifyFailure(res)
+  } catch {
+    return { outcome: 'failed', message: "Couldn't reach the room." }
+  }
 }
 
 export async function fetchRoomMessages(projectId: string, limit = 50): Promise<RoomMessage[]> {
@@ -141,14 +174,15 @@ export async function postRoomEvent(
   projectId: string,
   kind: 'doc_field_changed' | 'lock_changed' | 'session_opened',
   payload: Record<string, unknown>,
-): Promise<void> {
-  await fetch(`/api/room/${encodeURIComponent(projectId)}/events`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, payload }),
-  }).catch(() => {
-    // Room events are ambient enrichment — never let them break the save path.
-  })
+): Promise<RoomMutationResult> {
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/events`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, payload }),
+    })
+    return res.ok ? { outcome: 'ok' } : classifyFailure(res)
+  } catch {
+    return { outcome: 'failed' }
+  }
 }
 
 export async function resolveRoomProposal(
@@ -227,15 +261,14 @@ export async function fetchInterviewBankPreview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
-): Promise<InterviewBankPreview> {
+): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }> {
   // POST: the preview is parameterized by the writer's in-flight mutability choices.
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mutability }),
   })
-  const body = await jsonOrThrow<{ preview: InterviewBankPreview }>(res)
-  return body.preview
+  return jsonOrThrow<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }>(res)
 }
 
 export async function bankInterview(
@@ -256,7 +289,7 @@ export async function exportInterview(projectId: string, sessionId: string): Pro
   return jsonOrThrow(res)
 }
 
-export async function syncStoryLocksBlock(projectId: string, locksText: string): Promise<void> {
+export async function syncStoryLocksBlock(projectId: string, locksText: string): Promise<RoomMutationResult> {
   try {
     const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/blocks/story-locks`, {
       method: 'POST',
@@ -264,17 +297,21 @@ export async function syncStoryLocksBlock(projectId: string, locksText: string):
       body: JSON.stringify({ value: locksText }),
     })
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      console.error(`[roomApi] story-locks sync failed: ${res.status} ${text.slice(0, 160)}`)
+      const result = await classifyFailure(res)
+      console.error(`[roomApi] story-locks sync failed: ${res.status}`)
+      return result
     }
+    return { outcome: 'ok' }
   } catch (err) {
     console.error('[roomApi] story-locks sync failed:', err)
+    return { outcome: 'failed' }
   }
 }
 
 export function openRoomStream(
   projectId: string,
   onEvent: (event: RoomStreamEvent) => void,
+  onConnectionError?: () => void,
 ): () => void {
   if (typeof EventSource === 'undefined') return () => {} // non-browser env (jsdom tests)
   const source = new EventSource(`/api/room/${encodeURIComponent(projectId)}/stream`)
@@ -285,5 +322,6 @@ export function openRoomStream(
       // malformed frame — skip
     }
   }
+  source.onerror = () => onConnectionError?.()
   return () => source.close()
 }

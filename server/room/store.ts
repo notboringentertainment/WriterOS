@@ -95,7 +95,9 @@ export async function getPrivateBlocks(projectId: string, agentId: string): Prom
   return (res.data ?? []) as MemoryBlockRow[];
 }
 
-export async function getSharedBlockValue(projectId: string, label: string): Promise<string> {
+// B1 missing-vs-empty: null = row absent (a system error after initialization);
+// '' = row present with an empty value. Callers must handle null explicitly.
+export async function getSharedBlockValue(projectId: string, label: string): Promise<string | null> {
   const res = await getRoomDb()
     .from('memory_blocks')
     .select('value')
@@ -105,7 +107,48 @@ export async function getSharedBlockValue(projectId: string, label: string): Pro
     .limit(1);
   if (res.error) throw new Error(`[room.store] getSharedBlockValue: ${res.error.message}`);
   const row = (res.data ?? [])[0] as { value: string } | undefined;
-  return row?.value ?? '';
+  return row ? row.value : null;
+}
+
+// Read the row value and monotonic revision in ONE query. Meeting banking
+// reads the concept_seed snapshot before reading terminal sessions; its RPC
+// compares this revision so a concurrent bank cannot commit a stale projection.
+export async function getSharedBlockSnapshot(
+  projectId: string,
+  label: string,
+): Promise<{ value: string; revision: number } | null> {
+  const res = await getRoomDb()
+    .from('memory_blocks')
+    .select('value, revision')
+    .eq('project_id', projectId)
+    .is('agent_id', null)
+    .eq('label', label)
+    .limit(1);
+  if (res.error) throw new Error(`[room.store] getSharedBlockSnapshot: ${res.error.message}`);
+  const row = (res.data ?? [])[0] as { value: string; revision: number } | undefined;
+  return row ?? null;
+}
+
+// B3 race safety: the write only lands if the row still holds the value the
+// caller read (compare-and-swap). false = concurrent writer won; re-read and
+// re-merge. Never write a merged section value through plain writeBlock.
+export async function casUpdateSharedBlock(input: {
+  projectId: string;
+  label: string;
+  expected: string;
+  next: string;
+  updatedBy: string;
+}): Promise<boolean> {
+  const res = await getRoomDb()
+    .from('memory_blocks')
+    .update({ value: input.next, updated_by: input.updatedBy, updated_at: new Date().toISOString() })
+    .eq('project_id', input.projectId)
+    .is('agent_id', null)
+    .eq('label', input.label)
+    .eq('value', input.expected)
+    .select('id');
+  if (res.error) throw new Error(`[room.store] casUpdateSharedBlock: ${res.error.message}`);
+  return ((res.data ?? []) as Array<{ id: string }>).length > 0;
 }
 
 // Cap enforcement lives here (§4.1: enforced at write time, never a crash).
@@ -193,6 +236,11 @@ export async function claimQueuedEvents(limit = 10): Promise<RoomEventRow[]> {
     if (upd.error) throw new Error(`[room.store] claimQueuedEvents mark: ${upd.error.message}`);
   }
   return events;
+}
+
+export async function requeueRoomEvent(eventId: string, payload: Record<string, unknown>): Promise<void> {
+  const res = await getRoomDb().from('room_events').update({ payload, processed_at: null }).eq('id', eventId);
+  if (res.error) throw new Error(`[room.store] requeueRoomEvent: ${res.error.message}`);
 }
 
 // ---- proposals ----

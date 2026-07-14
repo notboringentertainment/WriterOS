@@ -10,6 +10,8 @@ const { apiMock } = vi.hoisted(() => ({
     fetchInterviewStatus: vi.fn(),
     fetchRoomMessages: vi.fn(),
     fetchRoomProposals: vi.fn(),
+    ensureRoomMemory: vi.fn(),
+    isRoomMemoryUnavailable: vi.fn(),
     openRoomStream: vi.fn(),
     pauseInterview: vi.fn(),
     postRoomEvent: vi.fn(),
@@ -37,6 +39,7 @@ function session(state: InterviewSession['state']): InterviewSession {
     audit: { locks: 'THIN' },
     cursor: { lane: state === 'interviewing' ? 'morgan' : null, question_id: state === 'interviewing' ? 'morgan-locks' : null, budgets_spent: {} },
     answers: [],
+    bank_snapshot: null,
     created_at: '2026-07-08T00:00:00Z',
     updated_at: '2026-07-08T00:00:00Z',
   }
@@ -77,8 +80,10 @@ beforeEach(() => {
   apiMock.fetchRoomProposals.mockResolvedValue([])
   apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
   apiMock.openRoomStream.mockReturnValue(() => {})
-  apiMock.postRoomEvent.mockResolvedValue(undefined)
-  apiMock.syncStoryLocksBlock.mockResolvedValue(undefined)
+  apiMock.postRoomEvent.mockResolvedValue({ outcome: 'ok' })
+  apiMock.syncStoryLocksBlock.mockResolvedValue({ outcome: 'ok' })
+  apiMock.ensureRoomMemory.mockResolvedValue({ outcome: 'ok' })
+  apiMock.isRoomMemoryUnavailable.mockReturnValue(false)
 })
 
 // The interview itself lives on the Project Meeting page (ProjectMeetingPage.test.tsx);

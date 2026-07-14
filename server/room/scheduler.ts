@@ -10,6 +10,7 @@ import { openProjectIds } from './sseHub';
 import * as store from './store';
 import { isRoomConfigured } from './supabaseClient';
 import { decideSpeakers } from './wakeRules';
+import { RoomMemoryError } from './memoryContract';
 
 const TICK_MS = 5_000;
 const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -36,19 +37,48 @@ async function processEvents(): Promise<void> {
   const events = await store.claimQueuedEvents();
   for (const event of events) {
     const speakers = decideSpeakers(event);
+    const retries = typeof event.payload.memoryRetries === 'number' ? event.payload.memoryRetries : 0;
+    const completed = new Set(Array.isArray(event.payload.memoryCompletedSpeakers)
+      ? event.payload.memoryCompletedSpeakers.filter((value): value is string => typeof value === 'string')
+      : []);
     for (const speaker of speakers.slice(0, 2)) {
+      const speakerKey = `${speaker.mode}:${speaker.agentId}`;
+      if (completed.has(speakerKey)) continue;
       try {
         if (speaker.mode === 'digest') {
           await runCaseyDigest({ projectId: event.project_id, event });
         } else {
           await runRoomTurn({ projectId: event.project_id, agentId: speaker.agentId, event });
         }
+        completed.add(speakerKey);
       } catch (error) {
         console.error(`[room.scheduler] turn failed (${speaker.agentId}, ${event.kind}):`, error);
+        if (error instanceof RoomMemoryError) {
+          if (retries < 3) {
+            await store.requeueRoomEvent(event.id, {
+              ...event.payload,
+              memoryRetries: retries + 1,
+              memoryCompletedSpeakers: [...completed],
+            });
+          } else {
+            // The event row and payload remain available for recovery; record
+            // terminal retry exhaustion explicitly instead of dropping it
+            // without an operational trace.
+            await store.insertLedger({
+              projectId: event.project_id,
+              agentId: speaker.agentId,
+              action: 'errored',
+              triggerEvent: event.id,
+            });
+          }
+          break;
+        }
       }
     }
   }
 }
+
+export const __processEventsForTests = processEvents;
 
 async function tick(): Promise<void> {
   if (ticking) return; // never overlap turns; slow turns just delay the next tick
