@@ -16,6 +16,25 @@ function freshProject(): string {
 
 let db: SupabaseClient;
 
+/**
+ * Insert a row and return the inserted data, throwing a clear error on failure.
+ * Without this, a setup insert that silently fails leaves `.data` null and the
+ * next line dereferences it as a TypeError instead of a database error.
+ */
+async function insertRow<T>(table: string, row: Record<string, unknown>): Promise<T> {
+  const res = await db.from(table).insert(row).select().single();
+  if (res.error) throw new Error(`integration setup insert into ${table} failed: ${res.error.message}`);
+  return res.data as T;
+}
+
+/**
+ * Insert a row without selecting (fire-and-forget), throwing on failure.
+ */
+async function insertOnly(table: string, row: Record<string, unknown> | Record<string, unknown>[]): Promise<void> {
+  const res = await db.from(table).insert(row);
+  if (res.error) throw new Error(`integration setup insert into ${table} failed: ${res.error.message}`);
+}
+
 describe.skipIf(!enabled)('shared memory contract — real database', () => {
   beforeAll(() => {
     db = createClient(url!, key!);
@@ -66,7 +85,7 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
 
   it('preserves existing non-blank content and repairs blank legacy rows', async () => {
     const p = freshProject();
-    await db.from('memory_blocks').insert([
+    await insertOnly('memory_blocks', [
       { project_id: p, agent_id: null, label: 'concept_seed', value: 'real writer content', char_cap: 4000 },
       { project_id: p, agent_id: null, label: 'story_locks', value: '   ', char_cap: 2000 },
     ]);
@@ -82,13 +101,7 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
   it('bank_meeting_memory: banks atomically, retries idempotently, rolls back on locks conflict', async () => {
     const p = freshProject();
     await ensure(p);
-    const session = await db
-      .from('interview_sessions')
-      .insert({ project_id: p, mode: 'full', state: 'readback', seed_text: 'integration seed' })
-      .select()
-      .single();
-    expect(session.error).toBeNull();
-    const sid = (session.data as { id: string }).id;
+    const sid = await insertRow<{ id: string }>('interview_sessions', { project_id: p, mode: 'full', state: 'readback', seed_text: 'integration seed' }).then((r) => r.id);
     const sentinel = SHARED_BLOCK_CONTRACT.find((b) => b.label === 'story_locks')!.sentinel;
     const locksNext = '## Surface-declared locks\nNone declared.\n\n## Meeting locks\n[SEED] integration lock';
 
@@ -135,13 +148,8 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
     const { __setRoomDbForTests } = await import('../../server/room/supabaseClient');
     __setRoomDbForTests(db);
     try {
-      const session = await db
-        .from('interview_sessions')
-        .insert({ project_id: p, mode: 'full', state: 'readback', seed_text: 'race seed' })
-        .select()
-        .single();
-      const sid = (session.data as { id: string }).id;
-      await db.from('proposals').insert({
+      const sid = (await insertRow<{ id: string }>('interview_sessions', { project_id: p, mode: 'full', state: 'readback', seed_text: 'race seed' })).id;
+      await insertOnly('proposals', {
         project_id: p, agent_id: 'writingPartner', surface: 'memory', field_path: 'story_locks',
         proposed_value: 'The ending is fixed.', rationale: 'itest', status: 'adopted',
         kind: 'interview_answer', session_id: sid, question_id: 'morgan-locks', origin: 'seed',
@@ -173,13 +181,8 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
     const { __setRoomDbForTests } = await import('../../server/room/supabaseClient');
     __setRoomDbForTests(db);
     try {
-      const session = await db
-        .from('interview_sessions')
-        .insert({ project_id: p, mode: 'full', state: 'readback', seed_text: 'production-path seed' })
-        .select()
-        .single();
-      const sid = (session.data as { id: string }).id;
-      await db.from('proposals').insert({
+      const sid = (await insertRow<{ id: string }>('interview_sessions', { project_id: p, mode: 'full', state: 'readback', seed_text: 'production-path seed' })).id;
+      await insertOnly('proposals', {
         project_id: p, agent_id: 'morgan', surface: 'memory', field_path: 'story_locks',
         proposed_value: 'The ending is fixed.', rationale: 'itest', status: 'adopted',
         kind: 'interview_answer', session_id: sid, question_id: 'morgan-locks', origin: 'seed',
@@ -207,17 +210,12 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
     const { __setRoomDbForTests } = await import('../../server/room/supabaseClient');
     __setRoomDbForTests(db);
     try {
-      const session = await db
-        .from('interview_sessions')
-        .insert({ project_id: p, mode: 'full', state: 'readback', seed_text: 'classification seed' })
-        .select().single();
-      const sid = (session.data as { id: string }).id;
-      const proposal = await db.from('proposals').insert({
+      const sid = (await insertRow<{ id: string }>('interview_sessions', { project_id: p, mode: 'full', state: 'readback', seed_text: 'classification seed' })).id;
+      const pid = (await insertRow<{ id: string }>('proposals', {
         project_id: p, agent_id: 'writingPartner', surface: 'memory', field_path: 'story_locks',
         proposed_value: 'The ending is fixed.', rationale: 'itest', status: 'adopted',
         kind: 'interview_answer', session_id: sid, question_id: 'morgan-locks', origin: 'seed',
-      }).select().single();
-      const pid = (proposal.data as { id: string }).id;
+      })).id;
 
       const { bankInterview, exportInterview } = await import('../../server/room/interview/runtime');
       await bankInterview({ sessionId: sid, projectId: p, mutability: { [pid]: 'leaning' } });
@@ -241,11 +239,10 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
     __setRoomDbForTests(db);
     try {
       const { bankInterview, exportInterview } = await import('../../server/room/interview/runtime');
-      const s1 = await db.from('interview_sessions').insert({
+      const s1id = (await insertRow<{ id: string }>('interview_sessions', {
         project_id: p, mode: 'full', state: 'readback', seed_text: 'round one seed', answers: [],
-      }).select().single();
-      const s1id = (s1.data as { id: string }).id;
-      await db.from('proposals').insert({
+      })).id;
+      await insertOnly('proposals', {
         project_id: p, agent_id: 'writingPartner', surface: 'memory', field_path: 'open_questions',
         proposed_value: 'Should the sister be trusted?', rationale: 'itest', status: 'adopted',
         kind: 'interview_answer', session_id: s1id, question_id: 'morgan-open', origin: 'seed',
@@ -253,10 +250,10 @@ describe.skipIf(!enabled)('shared memory contract — real database', () => {
       await bankInterview({ sessionId: s1id, projectId: p });
       await exportInterview({ sessionId: s1id, projectId: p });
 
-      const s2 = await db.from('interview_sessions').insert({
+      const s2id = (await insertRow<{ id: string }>('interview_sessions', {
         project_id: p, mode: 'full', state: 'readback', seed_text: 'round two seed', answers: [],
-      }).select().single();
-      await bankInterview({ sessionId: (s2.data as { id: string }).id, projectId: p });
+      })).id;
+      await bankInterview({ sessionId: s2id, projectId: p });
 
       const oq = await db.from('memory_blocks').select('value')
         .eq('project_id', p).is('agent_id', null).eq('label', 'open_questions').single();
