@@ -15,12 +15,14 @@ const { apiMock } = vi.hoisted(() => ({
     skipInterviewQuestion: vi.fn(),
     startInterview: vi.fn(),
     wrapInterview: vi.fn(),
+    createPitchPacketDraft: vi.fn(), savePitchPacketDraft: vi.fn(), approvePitchPacket: vi.fn(), exportPitchPacket: vi.fn(), fetchExportedPitchPacket: vi.fn(),
   },
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
 
 import { ProjectMeetingPage } from '../../client/src/components/ritual/ProjectMeetingPage'
 import type { InterviewSession } from '../../client/src/lib/roomApi'
+import { createEmptyDocuments } from '../../shared/documents'
 
 function session(state: InterviewSession['state']): InterviewSession {
   return {
@@ -60,7 +62,7 @@ function statusOf(state: InterviewSession['state'] | null, currentQuestion: type
 }
 
 function renderPage(onExit = vi.fn()) {
-  render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" onExit={onExit} />)
+  render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" documents={createEmptyDocuments()} onExit={onExit} />)
   return onExit
 }
 
@@ -208,13 +210,20 @@ describe('ProjectMeetingPage', () => {
     expect(screen.getByRole('radio', { name: 'Locked' })).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('banked stage exports to PitchStudio', async () => {
+  it('keeps the banked entry label and opens Pitch Packet review', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('banked'))
-    apiMock.exportInterview.mockResolvedValue({ session: session('exported'), markdown: '# Ace Handler — Seed' })
+    const field = <T,>(value: T) => ({ value, origin: 'document' as const, approved: false, sourceRef: 'test' })
+    const packet = {
+      packetVersion: 1, projectId: 'p1', exportedAt: '2026-07-14T00:00:00Z', directionRevision: 1,
+      title: field('Ace Handler'), logline: field('Logline'), format: field('Feature'), genre: field('Thriller'), tone: field('Tense'),
+      premise: field('Premise'), storyEngine: field('Engine'), coreCharacters: field([{ name: 'Ace', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]), locks: field([]), openQuestions: field([]),
+    }
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'draft', direction_revision: 1, created_at: 'now', exported_at: null }, proposalUnavailable: false })
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Export to PitchStudio' }))
-    expect(await screen.findByText('# Ace Handler — Seed')).toBeInTheDocument()
+    expect(apiMock.createPitchPacketDraft).toHaveBeenCalledWith('p1', 's1', expect.any(Object), { title: 'Ace Handler' })
+    expect(await screen.findByRole('heading', { name: 'Pitch Packet review' })).toBeInTheDocument()
   })
 
   it('shows standing recap controls, revision safety copy, and the exact direction diff', async () => {

@@ -4,16 +4,19 @@
 
 import React, { useEffect, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
+import type { ProjectDocuments } from '@shared/documents'
 import { useInterviewSession, type InterviewAnswerOrigin, type InterviewMutability } from '../../lib/useInterviewSession'
 import type { MeetingRevisionInput } from '../../lib/roomApi'
 import { RitualPage } from './RitualPage'
 import { RitualQuestionCard } from './RitualQuestionCard'
 import { RitualStage } from './RitualStage'
 import { MutabilityToggle } from './MutabilityToggle'
+import { PitchPacketReview } from './PitchPacketReview'
 
 export interface ProjectMeetingPageProps {
   projectId: string
   projectTitle?: string
+  documents: ProjectDocuments
   onExit: () => void
 }
 
@@ -22,7 +25,7 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectMeetingPageProps) {
+export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit }: ProjectMeetingPageProps) {
   const interview = useInterviewSession(projectId)
   const [seedDraft, setSeedDraft] = useState('')
   const [answerDraft, setAnswerDraft] = useState('')
@@ -313,23 +316,37 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
         </RitualStage>
       )}
 
-      {session?.state === 'banked' && (
+      {interview.pitchPacketRow && (
+        <RitualStage stageKey="pitch-packet-review">
+          <PitchPacketReview
+            row={interview.pitchPacketRow}
+            proposalUnavailable={interview.proposalUnavailable}
+            message={interview.packetMessage}
+            downloadError={interview.packetDownloadError}
+            onSave={interview.savePitchPacket}
+            onApprove={interview.approvePitchPacketReview}
+            onExport={interview.exportPitchPacketFiles}
+            onRedownload={interview.redownloadPitchPacket}
+          />
+        </RitualStage>
+      )}
+
+      {session?.state === 'banked' && !interview.pitchPacketRow && (
         <RitualStage stageKey="banked">
           <div style={styles.stack}>
             <p style={styles.prose}>This round is banked. Future rounds append; they do not edit this one.</p>
             <div style={styles.actionRow}>
-              <button type="button" style={styles.primaryButton} onClick={() => void interview.exportToPitchStudio()}>Export to PitchStudio</button>
+              <button type="button" style={styles.primaryButton} onClick={() => void interview.openPitchPacket(documents, projectTitle)}>Export to PitchStudio</button>
               <button type="button" style={styles.ghostButton} onClick={onExit}>Back to writing</button>
             </div>
           </div>
         </RitualStage>
       )}
 
-      {session?.state === 'exported' && (
+      {session?.state === 'exported' && !interview.pitchPacketRow && (
         <RitualStage stageKey="exported">
           <div style={styles.stack}>
             <p style={styles.prose}>Export prepared for PitchStudio.</p>
-            {interview.exportMarkdown && <pre style={styles.previewBox}>{interview.exportMarkdown}</pre>}
             <div style={styles.actionRow}>
               <button type="button" style={styles.primaryButton} onClick={onExit}>Back to writing</button>
             </div>

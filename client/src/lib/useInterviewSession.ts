@@ -2,16 +2,22 @@
 // ritual page and the room's status line share one implementation (§A3-A12).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ProjectDocuments } from '@shared/documents'
+import { pitchPacketFileNames, renderPitchPacketJson, renderPitchPacketMarkdown, type PitchPacket } from '@shared/pitchPacket'
 import {
+  approvePitchPacket,
   answerInterviewQuestion,
   bankInterview,
-  exportInterview,
+  createPitchPacketDraft,
+  exportPitchPacket,
+  fetchExportedPitchPacket,
   fetchInterviewBankPreview,
   fetchInterviewStatus,
   pauseInterview,
   redirectInterviewArea,
   resolveRoomProposal,
   resumeInterview,
+  savePitchPacketDraft,
   skipInterviewQuestion,
   startInterview,
   wrapInterview,
@@ -24,7 +30,9 @@ import {
   type MeetingDirectionDiff,
   type MeetingRecapItem,
   type MeetingRevisionInput,
+  type PitchPacketRow,
 } from './roomApi'
+import { downloadTextFile } from './downloadTextFile'
 
 export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
 export type { InterviewMutability }
@@ -49,7 +57,10 @@ export interface InterviewSessionHandle {
   directionRevision: number | null
   revisionOperations: MeetingRevisionInput[]
   previewPending: boolean
-  exportMarkdown: string
+  pitchPacketRow: PitchPacketRow | null
+  proposalUnavailable: boolean
+  packetMessage: string | null
+  packetDownloadError: string | null
   error: string | null
   clearError: () => void
   refresh: () => Promise<void>
@@ -63,7 +74,11 @@ export interface InterviewSessionHandle {
   redirect: (area: string, questionId: string) => Promise<void>
   previewBank: (mutability?: Record<string, InterviewMutability>, operations?: MeetingRevisionInput[]) => Promise<void>
   bank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
-  exportToPitchStudio: () => Promise<void>
+  openPitchPacket: (documents: ProjectDocuments, projectTitle?: string) => Promise<void>
+  savePitchPacket: (packet: PitchPacket) => Promise<void>
+  approvePitchPacketReview: (packet: PitchPacket) => Promise<void>
+  exportPitchPacketFiles: () => Promise<void>
+  redownloadPitchPacket: () => Promise<void>
 }
 
 export function useInterviewSession(projectId: string): InterviewSessionHandle {
@@ -74,7 +89,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const [directionRevision, setDirectionRevision] = useState<number | null>(null)
   const [revisionOperations, setRevisionOperations] = useState<MeetingRevisionInput[]>([])
   const [previewPending, setPreviewPending] = useState(false)
-  const [exportMarkdown, setExportMarkdown] = useState('')
+  const [pitchPacketRow, setPitchPacketRow] = useState<PitchPacketRow | null>(null)
+  const [proposalUnavailable, setProposalUnavailable] = useState(false)
+  const [packetMessage, setPacketMessage] = useState<string | null>(null)
+  const [packetDownloadError, setPacketDownloadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Monotonic id for preview requests: rapid mutability toggles fire overlapping
   // fetches, and only the latest response may write bankPreview.
@@ -89,7 +107,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     setDirectionRevision(null)
     setRevisionOperations([])
     setPreviewPending(false)
-    setExportMarkdown('')
+    setPitchPacketRow(null)
+    setProposalUnavailable(false)
+    setPacketMessage(null)
+    setPacketDownloadError(null)
     setError(null)
     fetchInterviewStatus(projectId)
       .then(next => {
@@ -282,17 +303,81 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     }
   }, [projectId, revisionOperations, status.activeSession])
 
-  const exportToPitchStudio = useCallback(async () => {
+  const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string) => {
     const session = status.activeSession
     if (!session) return
     try {
-      const result = await exportInterview(projectId, session.id)
-      setStatus(prev => ({ ...prev, activeSession: result.session }))
-      setExportMarkdown(result.markdown)
+      const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
+      setPitchPacketRow(result.row)
+      setProposalUnavailable(result.proposalUnavailable)
+      setPacketMessage(null)
+      setPacketDownloadError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
+      setError(err instanceof Error ? err.message : 'Pitch Packet draft failed')
     }
   }, [projectId, status.activeSession])
+
+  const savePitchPacket = useCallback(async (packet: PitchPacket) => {
+    if (!pitchPacketRow) return
+    try {
+      setPitchPacketRow(await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet))
+      setPacketMessage('Pitch Packet draft saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pitch Packet save failed')
+    }
+  }, [pitchPacketRow, projectId])
+
+  const approvePitchPacketReview = useCallback(async (packet: PitchPacket) => {
+    if (!pitchPacketRow) return
+    try {
+      const saved = await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet)
+      setPitchPacketRow(await approvePitchPacket(projectId, saved.session_id, saved.id))
+      setPacketMessage('Pitch Packet approved. It is ready to export.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pitch Packet approval failed')
+    }
+  }, [pitchPacketRow, projectId])
+
+  const downloadPacket = useCallback((row: PitchPacketRow) => {
+    const filenames = pitchPacketFileNames(row.packet)
+    downloadTextFile(filenames.markdown, renderPitchPacketMarkdown(row.packet), 'text/markdown')
+    downloadTextFile(filenames.json, renderPitchPacketJson(row.packet), 'application/json')
+  }, [])
+
+  const exportPitchPacketFiles = useCallback(async () => {
+    if (!pitchPacketRow) return
+    let exported: PitchPacketRow
+    try {
+      // The persisted export transaction completes before either browser download starts.
+      exported = await exportPitchPacket(projectId, pitchPacketRow.session_id, pitchPacketRow.id)
+      setPitchPacketRow(exported)
+      setPacketMessage(null)
+      setPacketDownloadError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pitch Packet export failed')
+      return
+    }
+    try {
+      downloadPacket(exported)
+      setPacketMessage('Pitch Packet exported. Two files downloaded: Markdown and JSON.')
+    } catch (err) {
+      setPacketDownloadError(err instanceof Error ? err.message : 'The packet was exported, but the files could not be downloaded.')
+    }
+  }, [downloadPacket, pitchPacketRow, projectId])
+
+  const redownloadPitchPacket = useCallback(async () => {
+    if (!pitchPacketRow) return
+    try {
+      const exported = await fetchExportedPitchPacket(projectId, pitchPacketRow.session_id)
+      if (!exported) throw new Error('No exported Pitch Packet was found.')
+      setPitchPacketRow(exported)
+      downloadPacket(exported)
+      setPacketDownloadError(null)
+      setPacketMessage('Pitch Packet downloaded again: Markdown and JSON.')
+    } catch (err) {
+      setPacketDownloadError(err instanceof Error ? err.message : 'Pitch Packet download failed')
+    }
+  }, [downloadPacket, pitchPacketRow, projectId])
 
   return {
     status,
@@ -302,7 +387,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     directionRevision,
     revisionOperations,
     previewPending,
-    exportMarkdown,
+    pitchPacketRow,
+    proposalUnavailable,
+    packetMessage,
+    packetDownloadError,
     error,
     clearError,
     refresh,
@@ -316,6 +404,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     redirect,
     previewBank,
     bank,
-    exportToPitchStudio,
+    openPitchPacket,
+    savePitchPacket,
+    approvePitchPacketReview,
+    exportPitchPacketFiles,
+    redownloadPitchPacket,
   }
 }

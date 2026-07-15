@@ -15,12 +15,17 @@ const { apiMock } = vi.hoisted(() => ({
     skipInterviewQuestion: vi.fn(),
     startInterview: vi.fn(),
     wrapInterview: vi.fn(),
+    createPitchPacketDraft: vi.fn(), savePitchPacketDraft: vi.fn(), approvePitchPacket: vi.fn(), exportPitchPacket: vi.fn(), fetchExportedPitchPacket: vi.fn(),
   },
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
+const { downloadMock } = vi.hoisted(() => ({ downloadMock: vi.fn() }))
+vi.mock('../../client/src/lib/downloadTextFile', () => ({ downloadTextFile: downloadMock }))
 
 import { useInterviewSession } from '../../client/src/lib/useInterviewSession'
 import type { InterviewSession } from '../../client/src/lib/roomApi'
+import { createEmptyDocuments } from '../../shared/documents'
+import type { PitchPacket } from '../../shared/pitchPacket'
 
 function session(state: InterviewSession['state']): InterviewSession {
   return {
@@ -53,6 +58,7 @@ const question = {
 beforeEach(() => {
   Object.values(apiMock).forEach(mock => mock.mockReset())
   apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null, recap: [] })
+  downloadMock.mockReset()
 })
 
 describe('useInterviewSession', () => {
@@ -241,5 +247,55 @@ describe('useInterviewSession', () => {
       await result.current.resume()
     })
     expect(result.current.status.activeSession?.state).toBe('interviewing')
+  })
+
+  it('creates a review and exports transactionally before downloading Markdown and JSON', async () => {
+    const approved = <T,>(value: T) => ({ value, origin: 'writer' as const, approved: true, sourceRef: 'writer:test' })
+    const packet: PitchPacket = { packetVersion: 1, projectId: 'p1', exportedAt: '2026-07-14T00:00:00Z', directionRevision: 2,
+      title: approved('Ace'), logline: approved('Logline'), format: approved('Feature'), genre: approved('Thriller'), tone: approved('Tense'), premise: approved('Premise'), storyEngine: approved('Engine'),
+      coreCharacters: approved([{ name: 'Ace', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]), locks: approved([]), openQuestions: approved([]) }
+    const draft = { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'draft', direction_revision: 2, created_at: 'now', exported_at: null }
+    const exported = { ...draft, status: 'exported', exported_at: '2026-07-14T01:00:00Z' }
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: draft, proposalUnavailable: false })
+    apiMock.exportPitchPacket.mockResolvedValue(exported)
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    const documents = createEmptyDocuments()
+    await act(async () => result.current.openPitchPacket(documents, 'Ace'))
+    expect(result.current.pitchPacketRow?.status).toBe('draft')
+    await act(async () => result.current.exportPitchPacketFiles())
+    expect(apiMock.exportPitchPacket.mock.invocationCallOrder[0]).toBeLessThan(downloadMock.mock.invocationCallOrder[0])
+    expect(downloadMock).toHaveBeenNthCalledWith(1, 'ace-pitch-packet-v1-r2.md', expect.stringContaining('## Premise'), 'text/markdown')
+    expect(downloadMock).toHaveBeenNthCalledWith(2, 'ace-pitch-packet-v1-r2.json', expect.stringContaining('"packetVersion": 1'), 'application/json')
+    expect(result.current.pitchPacketRow?.status).toBe('exported')
+    expect(result.current.packetMessage).toBe('Pitch Packet exported. Two files downloaded: Markdown and JSON.')
+  })
+
+  it('keeps exported state after a download failure and re-downloads the persisted packet', async () => {
+    const approved = <T,>(value: T) => ({ value, origin: 'writer' as const, approved: true, sourceRef: 'writer:test' })
+    const packet: PitchPacket = { packetVersion: 1, projectId: 'p1', exportedAt: '2026-07-14T00:00:00Z', directionRevision: 2,
+      title: approved('Ace'), logline: approved('Logline'), format: approved('Feature'), genre: approved('Thriller'), tone: approved('Tense'), premise: approved('Premise'), storyEngine: approved('Engine'),
+      coreCharacters: approved([{ name: 'Ace', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]), locks: approved([]), openQuestions: approved([]) }
+    const draft = { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'approved', direction_revision: 2, created_at: 'now', exported_at: null }
+    const exported = { ...draft, status: 'exported', exported_at: '2026-07-14T01:00:00Z' }
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: draft, proposalUnavailable: false })
+    apiMock.exportPitchPacket.mockResolvedValue(exported)
+    apiMock.fetchExportedPitchPacket.mockResolvedValue(exported)
+    downloadMock.mockImplementationOnce(() => { throw new Error('downloads blocked') })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Ace'))
+
+    await act(async () => result.current.exportPitchPacketFiles())
+    expect(result.current.pitchPacketRow?.status).toBe('exported')
+    expect(result.current.packetDownloadError).toBe('downloads blocked')
+
+    downloadMock.mockReset()
+    await act(async () => result.current.redownloadPitchPacket())
+    expect(apiMock.fetchExportedPitchPacket).toHaveBeenCalledWith('p1', 's1')
+    expect(downloadMock).toHaveBeenCalledTimes(2)
+    expect(result.current.packetDownloadError).toBeNull()
   })
 })

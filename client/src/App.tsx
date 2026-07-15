@@ -867,6 +867,7 @@ export default function App() {
         <ProjectMeetingPage
           projectId={project.activeProjectId}
           projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+          documents={project.state.documents}
           onExit={shellState.closeRitual}
         />
       )

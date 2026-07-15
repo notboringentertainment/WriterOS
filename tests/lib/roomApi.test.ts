@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bankInterview, ensureRoomMemory, fetchInterviewBankPreview, isRoomMemoryUnavailable, postRoomEvent, redirectInterviewArea, resolveRoomProposal, syncStoryLocksBlock } from '../../client/src/lib/roomApi'
+import { approvePitchPacket, bankInterview, createPitchPacketDraft, ensureRoomMemory, exportPitchPacket, fetchExportedPitchPacket, fetchInterviewBankPreview, isRoomMemoryUnavailable, postRoomEvent, redirectInterviewArea, resolveRoomProposal, savePitchPacketDraft, syncStoryLocksBlock } from '../../client/src/lib/roomApi'
+import { createEmptyDocuments } from '../../shared/documents'
 
 const fetchMock = vi.fn()
 
@@ -62,5 +63,25 @@ describe('Project Meeting revision transport', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ mutability: {}, operations })
     expect(fetchMock.mock.calls[2]).toEqual(expect.arrayContaining(['/api/room/project%20A/interview/session%201/redirect']))
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ area: 'ending', questionId: 'morgan-ending' })
+  })
+})
+
+describe('Pitch Packet transport', () => {
+  it('uses explicit draft, save, approve, export, and persisted re-download endpoints', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) })
+    const documents = createEmptyDocuments()
+    await createPitchPacketDraft('p1', 's1', documents, { title: 'Ace' })
+    await savePitchPacketDraft('p1', 's1', 'packet-1', { packetVersion: 1 } as never)
+    await approvePitchPacket('p1', 's1', 'packet-1')
+    await exportPitchPacket('p1', 's1', 'packet-1')
+    await fetchExportedPitchPacket('p1', 's1')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ documents, projectMeta: { title: 'Ace' } })
+    expect(fetchMock.mock.calls.map(call => [call[1]?.method ?? 'GET', call[0]])).toEqual([
+      ['POST', '/api/room/p1/interview/s1/pitch-packet/draft'],
+      ['PATCH', '/api/room/p1/interview/s1/pitch-packet/packet-1'],
+      ['POST', '/api/room/p1/interview/s1/pitch-packet/packet-1/approve'],
+      ['POST', '/api/room/p1/interview/s1/pitch-packet/packet-1/export'],
+      ['GET', '/api/room/p1/interview/s1/pitch-packet/exported'],
+    ])
   })
 })

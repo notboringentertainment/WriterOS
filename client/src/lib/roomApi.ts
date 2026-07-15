@@ -1,6 +1,9 @@
 // Writers' Room — client API + SSE stream. Thin fetch wrappers over
 // /api/room/*; all room persistence lives server-side in Supabase.
 
+import type { ProjectDocuments } from '@shared/documents'
+import type { PitchPacket } from '@shared/pitchPacket'
+
 export interface RoomMessage {
   id: string
   project_id: string
@@ -73,6 +76,18 @@ export interface InterviewStatus {
   recap: MeetingRecapItem[]
   directionDiff: MeetingDirectionDiff[]
   directionRevision: number
+}
+
+export interface PitchPacketRow {
+  id: string
+  project_id: string
+  session_id: string
+  packet: PitchPacket
+  packet_version: number
+  status: 'draft' | 'approved' | 'exported'
+  direction_revision: number
+  created_at: string
+  exported_at: string | null
 }
 
 export interface MeetingRecapItem {
@@ -323,6 +338,48 @@ export async function redirectInterviewArea(projectId: string, sessionId: string
 
 export async function exportInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession; markdown: string }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/export`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+function pitchPacketPath(projectId: string, sessionId: string): string {
+  return `/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/pitch-packet`
+}
+
+export async function createPitchPacketDraft(
+  projectId: string,
+  sessionId: string,
+  documents: ProjectDocuments,
+  projectMeta: { title?: string },
+): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean }> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents, projectMeta }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function savePitchPacketDraft(projectId: string, sessionId: string, packetId: string, packet: PitchPacket): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ packet }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function approvePitchPacket(projectId: string, sessionId: string, packetId: string): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}/approve`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function exportPitchPacket(projectId: string, sessionId: string, packetId: string): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}/export`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function fetchExportedPitchPacket(projectId: string, sessionId: string): Promise<PitchPacketRow | null> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/exported`)
   return jsonOrThrow(res)
 }
 
