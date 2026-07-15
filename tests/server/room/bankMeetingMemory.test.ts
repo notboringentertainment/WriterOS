@@ -30,6 +30,9 @@ const interviewStoreMock = vi.hoisted(() => ({
   listInterviewSessions: vi.fn(), listInterviewProposals: vi.fn(),
 }));
 vi.mock('../../../server/room/interview/store', () => interviewStoreMock);
+const decisionsStoreMock = vi.hoisted(() => ({ listMeetingDecisions: vi.fn() }));
+vi.mock('../../../server/room/interview/meetingDecisionsStore', () => decisionsStoreMock);
+const traceEvents: object[] = [];
 
 const SENTINEL_LOCKS = '## Surface-declared locks\nNone declared.\n\n## Meeting locks\nNone declared.';
 const SENTINEL_OPEN = 'Nothing delegated — writer holds all intent.';
@@ -39,11 +42,17 @@ beforeEach(() => {
   interviewStoreMock.getInterviewSession.mockResolvedValue(readbackSession);
   interviewStoreMock.listInterviewSessions.mockResolvedValue([readbackSession]);
   interviewStoreMock.listInterviewProposals.mockResolvedValue([adoptedLock]);
+  decisionsStoreMock.listMeetingDecisions.mockResolvedValue([]);
   storeMock.getSharedBlockValue.mockImplementation(async (_projectId, label) => label === 'story_locks' ? SENTINEL_LOCKS : SENTINEL_OPEN);
   storeMock.getSharedBlockSnapshot.mockResolvedValue({ value: 'sentinel', revision: 0 });
   rpcMock.mockResolvedValue({ data: 'banked', error: null });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  const { __setMeetingTraceSinkForTests } = await import('../../../server/room/interview/trace');
+  __setMeetingTraceSinkForTests(null);
+  traceEvents.length = 0;
+  vi.restoreAllMocks();
+});
 
 async function bank() {
   const { bankInterview } = await import('../../../server/room/interview/runtime');
@@ -54,14 +63,22 @@ function rpcArgs(index = 0): Record<string, string | number | object> {
   return rpcMock.mock.calls[index][1] as Record<string, string | number | object>;
 }
 
-describe('bankInterview via bank_meeting_memory', () => {
+describe('bankInterview via bank_meeting_round', () => {
   it('writes atomically through one RPC and preserves lock sections', async () => {
+    const { __setMeetingTraceSinkForTests } = await import('../../../server/room/interview/trace');
+    __setMeetingTraceSinkForTests((event) => traceEvents.push(event));
     await bank();
     expect(rpcMock).toHaveBeenCalledTimes(1);
-    expect(rpcMock.mock.calls[0][0]).toBe('bank_meeting_memory');
-    expect(rpcArgs()).toMatchObject({ p_bank_revision: 0, p_locks_expected: SENTINEL_LOCKS });
+    expect(rpcMock.mock.calls[0][0]).toBe('bank_meeting_round');
+    expect(rpcArgs()).toMatchObject({ p_bank_revision: 0, p_direction_revision: 0, p_locks_expected: SENTINEL_LOCKS });
+    expect(rpcArgs().p_decisions).toEqual(expect.arrayContaining([expect.objectContaining({ op: 'assert', area: 'locks' })]));
     expect(rpcArgs().p_locks_next).toContain('## Meeting locks\n[SEED] The ending is fixed.');
     expect(storeMock.writeBlock).not.toHaveBeenCalled();
+    expect(traceEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'meeting.direction.folded' }),
+      expect.objectContaining({ type: 'meeting.ledger.bank_started' }),
+      expect.objectContaining({ type: 'meeting.ledger.bank_committed' }),
+    ]));
   });
 
   it('retries conflicts with fresh reads and stops after three', async () => {
@@ -75,11 +92,19 @@ describe('bankInterview via bank_meeting_memory', () => {
     interviewStoreMock.getInterviewSession.mockResolvedValue(readbackSession);
     interviewStoreMock.listInterviewSessions.mockResolvedValue([readbackSession]);
     interviewStoreMock.listInterviewProposals.mockResolvedValue([adoptedLock]);
+    decisionsStoreMock.listMeetingDecisions.mockResolvedValue([]);
     storeMock.getSharedBlockValue.mockImplementation(async (_projectId, label) => label === 'story_locks' ? SENTINEL_LOCKS : SENTINEL_OPEN);
     storeMock.getSharedBlockSnapshot.mockResolvedValue({ value: 'old', revision: 0 });
     rpcMock.mockResolvedValue({ data: null, error: { message: 'locks_conflict' } });
     await expect(bank()).rejects.toThrow(/contention persisted/);
     expect(rpcMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries direction_conflict exactly three times with recomputed plans', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: 'direction_conflict' } });
+    await expect(bank()).rejects.toThrow(/contention persisted across 3 attempts/);
+    expect(rpcMock).toHaveBeenCalledTimes(3);
+    expect(decisionsStoreMock.listMeetingDecisions).toHaveBeenCalledTimes(3);
   });
 
   it('treats an already-banked session as idempotent success', async () => {
@@ -101,9 +126,10 @@ describe('bankInterview via bank_meeting_memory', () => {
 
   it('preview final values equal bank RPC values', async () => {
     const { previewBankFinal } = await import('../../../server/room/interview/runtime');
-    const { finalValues } = await previewBankFinal({ sessionId: 's1', projectId: 'p1' });
+    const { finalValues, pendingDecisions } = await previewBankFinal({ sessionId: 's1', projectId: 'p1' });
     await bank();
     const args = rpcArgs();
     expect(finalValues).toEqual({ concept_seed: args.p_concept_seed, story_locks: args.p_locks_next, open_questions: args.p_open_questions });
+    expect(args.p_decisions).toEqual(pendingDecisions);
   });
 });

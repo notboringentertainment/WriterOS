@@ -1,12 +1,13 @@
 import * as roomStore from '../store';
-import { mergeMeetingLocks } from '../lockSections';
+import { renderMeetingLocksFromDirection } from '../lockSections';
 import { getRoomDb } from '../supabaseClient';
 import * as interviewStore from './store';
 import * as auditContextRuntime from './auditContext';
 import { auditSeed, formatAuditMessage } from './audit';
-import { buildBankPreview, type BankPreview, type Mutability, parseOpenQuestionsBlock, renderOpenQuestionsBlockBounded } from './banking';
+import { buildBankPreview, buildPendingMeetingDecisions, type BankPreview, type DirectionDiffEntry, type MeetingRevisionInput, type Mutability, type PendingMeetingDecision, parseOpenQuestionsBlock, renderOpenQuestionsBlockBounded } from './banking';
 import { checkInterviewExport, renderPitchStudioSeedExport } from './exportCheck';
-import { DOMAIN_BY_TRIGGER, projectConceptSeed } from './conceptSeedProjection';
+import { DOMAIN_BY_TRIGGER, projectConceptSeedWithDirection } from './conceptSeedProjection';
+import { emitMeetingTrace } from './trace';
 import { getQuestionById, QUESTION_BANK, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
 import type { InterviewCursor, InterviewMode, InterviewSessionRow, MeetingBankSnapshot, MeetingRecapItem } from './types';
@@ -36,6 +37,8 @@ export interface InterviewAnswerResult {
 export interface InterviewBankResult {
   session: InterviewSessionRow;
   preview: BankPreview;
+  directionDiff?: DirectionDiffEntry[];
+  directionRevision?: number;
 }
 
 export interface InterviewExportResult {
@@ -350,77 +353,97 @@ export async function previewBank(input: { sessionId: string; projectId: string;
   return buildBankPreview({ session, proposals, mutability: input.mutability ?? {} });
 }
 
-function cumulativeOpenQuestions(
-  sessionsAsBanked: InterviewSessionRow[],
-  currentSessionId: string,
-  currentSnapshot: MeetingBankSnapshot,
-): string[] {
-  const terminal = sessionsAsBanked.filter((s) => s.state === 'banked' || s.state === 'exported');
-  const priorLines = terminal
-    .filter((s) => s.id !== currentSessionId)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .flatMap((s) => s.bank_snapshot?.open_questions ?? s.answers
-      .filter((a) => a.disposition === 'skipped_delegated')
-      .map((a) => `Delegated to the room: ${a.question_text ?? a.question_id}`));
-  const legacyLines = terminal.flatMap((s) => s.bank_snapshot?.legacy_open_questions ?? []);
-  const seen = new Set<string>();
-  return [...currentSnapshot.open_questions, ...priorLines, ...legacyLines]
-    .filter((line) => (seen.has(line) ? false : (seen.add(line), true)));
+export interface MeetingBankPlan {
+  preview: BankPreview;
+  directionDiff: DirectionDiffEntry[];
+  directionRevision: number;
+  pendingDecisions: PendingMeetingDecision[];
+  finalValues: { concept_seed: string; story_locks: string; open_questions: string };
+  bankSnapshot: MeetingBankSnapshot;
+  locksExpected: string;
+  bankRevision: number;
 }
 
-async function computeBankValues(session: InterviewSessionRow, preview: BankPreview): Promise<{
-  concept_seed: string;
-  story_locks: string;
-  open_questions: string;
-  currentLocks: string;
-  bankRevision: number;
-  bank_snapshot: MeetingBankSnapshot;
-}> {
+export async function computeBankPlan(input: {
+  session: InterviewSessionRow;
+  mutability?: Record<string, Mutability>;
+  operations?: readonly MeetingRevisionInput[];
+}): Promise<MeetingBankPlan> {
+  const session = input.session;
   const conceptSeedSnapshot = await roomStore.getSharedBlockSnapshot(session.project_id, 'concept_seed');
   if (conceptSeedSnapshot === null) throw new Error('contracted concept_seed block missing — room memory not initialized.');
-  const allSessions = await interviewStore.listInterviewSessions(session.project_id);
-  const [currentLocks, currentOpenQuestions] = await Promise.all([
+  const [allSessions, proposals, currentLocks, currentOpenQuestions] = await Promise.all([
+    interviewStore.listInterviewSessions(session.project_id),
+    interviewStore.listInterviewProposals(session.id, 'adopted'),
     roomStore.getSharedBlockValue(session.project_id, 'story_locks'),
     roomStore.getSharedBlockValue(session.project_id, 'open_questions'),
   ]);
   if (currentLocks === null || currentOpenQuestions === null) {
     throw new Error('contracted memory block missing — room memory not initialized.');
   }
-  const hasCanonicalSnapshot = allSessions.some(
-    (s) => (s.state === 'banked' || s.state === 'exported') && s.bank_snapshot !== null,
-  );
+  const existingDecisions = (await auditContextRuntime.buildAuditContext({
+    projectId: session.project_id,
+    sessions: allSessions,
+    storyLocks: currentLocks,
+    openQuestions: currentOpenQuestions,
+  })).activeDecisions;
+  const preview = buildBankPreview({ session, proposals, mutability: input.mutability ?? {} });
+  const direction = buildPendingMeetingDecisions({
+    session,
+    proposals,
+    mutability: input.mutability ?? {},
+    existingDecisions,
+    operations: input.operations ?? [],
+  });
+  emitMeetingTrace({ type: 'meeting.direction.folded', projectId: session.project_id, sessionId: session.id, activeCount: direction.activeDirection.length, pendingCount: direction.pendingDecisions.length });
   const bankSnapshot: MeetingBankSnapshot = {
     applied_classifications: Object.fromEntries(preview.taggable.map((item) => [item.proposalId, item.applied])),
     open_questions: [...preview.openQuestions],
-    legacy_open_questions: hasCanonicalSnapshot ? [] : parseOpenQuestionsBlock(currentOpenQuestions),
+    legacy_open_questions: existingDecisions.length > 0 ? [] : parseOpenQuestionsBlock(currentOpenQuestions),
   };
   const sessionsAsBanked = allSessions.map((s) => s.id === session.id
     ? { ...s, state: 'banked' as const, bank_snapshot: bankSnapshot }
     : s);
-  const projectedOpenQuestions = cumulativeOpenQuestions(sessionsAsBanked, session.id, bankSnapshot);
+  const delegated = session.answers
+    .filter((answer) => answer.disposition === 'skipped_delegated')
+    .map((answer) => `Delegated to the room: ${answer.question_text ?? answer.question_id}`);
+  const projectedOpenQuestions = direction.activeDirection.flatMap((row) =>
+    'statement' in row.content && row.content.mutability === 'open' ? [row.content.statement] : []);
+  const seen = new Set<string>();
+  const openQuestions = [...projectedOpenQuestions, ...delegated, ...bankSnapshot.legacy_open_questions]
+    .filter((line) => seen.has(line) ? false : (seen.add(line), true));
+  const finalValues = {
+    concept_seed: projectConceptSeedWithDirection(sessionsAsBanked, direction.activeDirection),
+    story_locks: renderMeetingLocksFromDirection(currentLocks, direction.activeDirection),
+    open_questions: renderOpenQuestionsBlockBounded({ ...preview, openQuestions }, 2000),
+  };
   return {
-    concept_seed: projectConceptSeed(sessionsAsBanked),
-    story_locks: mergeMeetingLocks(currentLocks, preview.locks),
-    open_questions: renderOpenQuestionsBlockBounded({ ...preview, openQuestions: projectedOpenQuestions }, 2000),
-    currentLocks,
+    preview,
+    directionDiff: direction.directionDiff,
+    directionRevision: conceptSeedSnapshot.revision,
+    pendingDecisions: direction.pendingDecisions,
+    finalValues,
+    locksExpected: currentLocks,
     bankRevision: conceptSeedSnapshot.revision,
-    bank_snapshot: bankSnapshot,
+    bankSnapshot,
   };
 }
 
-export async function previewBankFinal(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability> }): Promise<{
+export async function previewBankFinal(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability>; operations?: readonly MeetingRevisionInput[] }): Promise<{
   preview: BankPreview;
   finalValues: { concept_seed: string; story_locks: string; open_questions: string };
+  directionDiff: DirectionDiffEntry[];
+  directionRevision: number;
+  pendingDecisions: PendingMeetingDecision[];
 }> {
   const session = await interviewStore.getInterviewSession(input.sessionId);
   if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
   assertSessionProject(session.project_id, input.projectId);
-  const preview = await previewBank(input);
-  const { concept_seed, story_locks, open_questions } = await computeBankValues(session, preview);
-  return { preview, finalValues: { concept_seed, story_locks, open_questions } };
+  const plan = await computeBankPlan({ session, mutability: input.mutability, operations: input.operations });
+  return { preview: plan.preview, finalValues: plan.finalValues, directionDiff: plan.directionDiff, directionRevision: plan.directionRevision, pendingDecisions: plan.pendingDecisions };
 }
 
-export async function bankInterview(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability> }): Promise<InterviewBankResult> {
+export async function bankInterview(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability>; operations?: readonly MeetingRevisionInput[] }): Promise<InterviewBankResult> {
   const session = await interviewStore.getInterviewSession(input.sessionId);
   if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
   assertSessionProject(session.project_id, input.projectId);
@@ -429,21 +452,23 @@ export async function bankInterview(input: { sessionId: string; projectId: strin
     return { session, preview };
   }
   if (session.state !== 'readback') throw new Error('Only readback sessions can be banked.');
-  const preview = await previewBank(input);
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const values = await computeBankValues(session, preview);
-    if (values.story_locks.length > 2000) {
+    const plan = await computeBankPlan({ session, mutability: input.mutability, operations: input.operations });
+    if (plan.finalValues.story_locks.length > 2000) {
       throw new Error('Story locks block exceeds maximum length (2000 chars after merging Meeting locks). Consolidate locks at readback before banking.');
     }
-    const rpc = await getRoomDb().rpc('bank_meeting_memory', {
+    emitMeetingTrace({ type: 'meeting.ledger.bank_started', projectId: session.project_id, sessionId: session.id, attempt, pendingCount: plan.pendingDecisions.length });
+    const rpc = await getRoomDb().rpc('bank_meeting_round', {
       p_project_id: session.project_id,
       p_session_id: session.id,
-      p_bank_revision: values.bankRevision,
-      p_concept_seed: values.concept_seed,
-      p_locks_expected: values.currentLocks,
-      p_locks_next: values.story_locks,
-      p_open_questions: values.open_questions,
-      p_bank_snapshot: values.bank_snapshot,
+      p_bank_revision: plan.bankRevision,
+      p_direction_revision: plan.directionRevision,
+      p_concept_seed: plan.finalValues.concept_seed,
+      p_locks_expected: plan.locksExpected,
+      p_locks_next: plan.finalValues.story_locks,
+      p_open_questions: plan.finalValues.open_questions,
+      p_bank_snapshot: plan.bankSnapshot,
+      p_decisions: plan.pendingDecisions,
     });
     if (!rpc.error) {
       const refreshed = await interviewStore.getInterviewSession(session.id);
@@ -452,11 +477,14 @@ export async function bankInterview(input: { sessionId: string; projectId: strin
         const storedPreview = await previewBank({ ...input, mutability: refreshed.bank_snapshot?.applied_classifications ?? {} });
         return { session: refreshed, preview: storedPreview };
       }
-      return { session: refreshed, preview };
+      emitMeetingTrace({ type: 'meeting.ledger.bank_committed', projectId: session.project_id, sessionId: session.id, pendingCount: plan.pendingDecisions.length });
+      return { session: refreshed, preview: plan.preview, directionDiff: plan.directionDiff, directionRevision: plan.directionRevision };
     }
-    if (!rpc.error.message.includes('locks_conflict') && !rpc.error.message.includes('projection_conflict')) {
+    const conflict = ['locks_conflict', 'projection_conflict', 'direction_conflict'].find((name) => rpc.error?.message.includes(name));
+    if (!conflict) {
       throw new Error(`Bank failed: ${rpc.error.message}`);
     }
+    emitMeetingTrace({ type: 'meeting.ledger.bank_conflict', projectId: session.project_id, sessionId: session.id, attempt, conflict });
   }
   throw new Error('Bank failed: shared-memory contention persisted across 3 attempts.');
 }

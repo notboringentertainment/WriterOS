@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildBankPreview, renderBankedConceptSeed, renderOpenQuestionsBlock, renderStoryLocksBlock } from '../../../server/room/interview/banking';
-import type { InterviewSessionRow, TranscriptEntry } from '../../../server/room/interview/types';
+import { buildBankPreview, buildPendingMeetingDecisions, renderBankedConceptSeed, renderOpenQuestionsBlock, renderStoryLocksBlock } from '../../../server/room/interview/banking';
+import type { InterviewSessionRow, MeetingDecisionRow, TranscriptEntry } from '../../../server/room/interview/types';
 import type { InterviewProposalRow } from '../../../server/room/interview/types';
 
 function session(answers: TranscriptEntry[] = []): InterviewSessionRow {
@@ -56,6 +56,69 @@ const adoptedEnding: InterviewProposalRow = {
 };
 
 describe('Project Meeting banking', () => {
+  it('builds deterministic assertions, revision ops, redirects, and a complete direction diff', () => {
+    const prior: MeetingDecisionRow = {
+      id: '11111111-1111-4111-8111-111111111111', project_id: 'p1', session_id: 'old',
+      area: 'locks', field_path: 'story_locks', op: 'assert', targets: [],
+      content: { statement: 'Old lock.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' },
+      created_at: '2026-07-01T00:00:00Z',
+    };
+    const input = {
+      session: { ...session(), cursor: { lane: null, question_id: null, budgets_spent: {}, redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-08T00:10:00Z', answered_at: null }] } },
+      proposals: [adoptedOpen],
+      mutability: { 'p-open': 'open' as const },
+      existingDecisions: [prior],
+      operations: [{ op: 'revise' as const, targetId: prior.id, statement: 'New lock.' }],
+    };
+
+    const first = buildPendingMeetingDecisions(input);
+    const second = buildPendingMeetingDecisions(input);
+
+    expect(first).toEqual(second);
+    expect(first.pendingDecisions.map((entry) => entry.op)).toEqual(['assert', 'revise', 'redirect']);
+    expect(first.directionDiff).toEqual([
+      { area: 'open_questions', before: [], after: ['Who buys the restaurant if Mara fails?'], op: 'assert' },
+      { area: 'locks', before: ['Old lock.'], after: ['New lock.'], op: 'revise' },
+    ]);
+  });
+
+  it('keeps without a ledger entry and rejects revision targets synthesized only for legacy reads', () => {
+    const legacy: MeetingDecisionRow = {
+      id: 'legacy:old:p-lock', project_id: 'p1', session_id: 'old', area: 'locks', field_path: 'story_locks',
+      op: 'assert', targets: [], content: { statement: 'Legacy lock.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' },
+      created_at: '2026-07-01T00:00:00Z',
+    };
+    expect(buildPendingMeetingDecisions({ session: session(), proposals: [], mutability: {}, existingDecisions: [legacy], operations: [{ op: 'keep', targetId: legacy.id }] }).pendingDecisions).toEqual([]);
+    expect(() => buildPendingMeetingDecisions({ session: session(), proposals: [], mutability: {}, existingDecisions: [legacy], operations: [{ op: 'retract', targetId: legacy.id }] })).toThrow(/backfill/i);
+  });
+
+  it('banks seed-color and delegated transcript entries as active direction assertions', () => {
+    const withTranscript = session([
+      { question_id: 'q-color', lane: 'sam', answer_text: 'Keep the humor bone dry.', origin: 'seed', disposition: 'seed_color', at: '2026-07-08T00:20:00Z' },
+      { question_id: 'q-open', question_text: 'Who betrays Mara?', lane: 'morgan', answer_text: 'delegated', origin: null, disposition: 'skipped_delegated', at: '2026-07-08T00:21:00Z' },
+    ]);
+    const result = buildPendingMeetingDecisions({ session: withTranscript, proposals: [], mutability: {}, existingDecisions: [], operations: [] });
+    expect(result.pendingDecisions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ op: 'assert', area: 'question:q-color', content: expect.objectContaining({ statement: 'Keep the humor bone dry.', disposition: 'seed_color', mutability: 'leaning' }) }),
+      expect.objectContaining({ op: 'assert', area: 'question:q-open', content: expect.objectContaining({ statement: 'Delegated to the room: Who betrays Mara?', disposition: 'skipped_delegated', mutability: 'open' }) }),
+    ]));
+  });
+
+  it('builds retract and multi-target supersede entries without mutating prior decisions', () => {
+    const first: MeetingDecisionRow = {
+      id: '11111111-1111-4111-8111-111111111111', project_id: 'p1', session_id: 'old', area: 'locks', field_path: 'story_locks', op: 'assert', targets: [],
+      content: { statement: 'First.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' }, created_at: '2026-07-01T00:00:00Z',
+    };
+    const second: MeetingDecisionRow = { ...first, id: '22222222-2222-4222-8222-222222222222', area: 'ending', content: { statement: 'Second.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' } };
+    const originals = structuredClone([first, second]);
+    const retracted = buildPendingMeetingDecisions({ session: session(), proposals: [], mutability: {}, existingDecisions: [first], operations: [{ op: 'retract', targetId: first.id }] });
+    expect(retracted.pendingDecisions[0]).toMatchObject({ op: 'retract', targets: [first.id], content: {} });
+    const superseded = buildPendingMeetingDecisions({ session: session(), proposals: [], mutability: {}, existingDecisions: [first, second], operations: [{ op: 'supersede', targetIds: [first.id, second.id], area: 'ending', fieldPath: 'story_locks', statement: 'Combined.', mutability: 'locked' }] });
+    expect(superseded.pendingDecisions[0]).toMatchObject({ op: 'supersede', targets: [first.id, second.id], content: expect.objectContaining({ statement: 'Combined.' }) });
+    expect(superseded.activeDirection.map((row) => 'statement' in row.content ? row.content.statement : '')).toEqual(['Combined.']);
+    expect([first, second]).toEqual(originals);
+  });
+
   it('builds a visible preview before writing memory blocks', () => {
     const preview = buildBankPreview({ session: session(), proposals: [adoptedLock, adoptedOpen], mutability: { 'p-lock': 'locked', 'p-open': 'open' } });
 
