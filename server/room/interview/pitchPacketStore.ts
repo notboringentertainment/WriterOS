@@ -58,9 +58,9 @@ export async function approvePitchPacketRow(input: { projectId: string; sessionI
   return normalizeRow(result.data)
 }
 
-export async function exportPitchPacketRow(input: { projectId: string; sessionId: string; packetId: string; exportedAt: string }, db: SupabaseClient = getRoomDb()): Promise<PitchPacketRow> {
+export async function exportPitchPacketRow(input: { projectId: string; sessionId: string; packetId: string }, db: SupabaseClient = getRoomDb()): Promise<PitchPacketRow> {
   const result = await db.rpc('export_pitch_packet', {
-    p_project_id: input.projectId, p_session_id: input.sessionId, p_packet_id: input.packetId, p_exported_at: input.exportedAt,
+    p_project_id: input.projectId, p_session_id: input.sessionId, p_packet_id: input.packetId,
   })
   errorMessage(result.error, 'export packet')
   return normalizeRow(result.data)

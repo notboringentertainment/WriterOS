@@ -34,8 +34,10 @@ describe('pitchPacketStore', () => {
   it('exports through the single transaction RPC and returns its persisted row', async () => {
     const rpc = vi.fn(async () => ({ data: { id: 'packet-1', status: 'exported', packet }, error: null }))
     const db = { rpc } as unknown as SupabaseClient
-    const row = await exportPitchPacketRow({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1', exportedAt: '2026-07-14T01:00:00Z' }, db)
-    expect(rpc).toHaveBeenCalledWith('export_pitch_packet', { p_project_id: 'p1', p_session_id: 's1', p_packet_id: 'packet-1', p_exported_at: '2026-07-14T01:00:00Z' })
+    const row = await exportPitchPacketRow({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1' }, db)
+    expect(rpc).toHaveBeenCalledWith('export_pitch_packet', { p_project_id: 'p1', p_session_id: 's1', p_packet_id: 'packet-1' })
+    const rpcArgs = (rpc.mock.calls as unknown as Array<[string, Record<string, unknown>]>)[0][1]
+    expect(Object.keys(rpcArgs)).toEqual(['p_project_id', 'p_session_id', 'p_packet_id'])
     expect(row.status).toBe('exported')
   })
 })

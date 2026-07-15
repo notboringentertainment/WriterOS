@@ -85,6 +85,45 @@ memory.
 This proves the `doc_field_changed` path still works. The active room message
 test above remains the product-value test.
 
+## Project Meeting Revisions + Pitch Packet Smoke
+
+The additive `20260714000001_meeting_revisions_pitch_packets.sql` migration must
+already be applied to an authorized development Supabase. Do not apply it from
+this runbook, do not target production, and do not continue if the environment
+cannot be positively identified as development.
+
+1. Start and bank Round 1 with at least two decisions, including one lock.
+2. Start Round 2. Verify the standing recap shows Round 1 and that questions
+   covered by the active direction are not asked again.
+3. Revise one decision, retract one lock, choose **Ask me again** for one area,
+   and answer that redirected question.
+4. Open the readback. Compare **Exactly what this round changes** with the exact
+   `concept_seed`, `story_locks`, and `open_questions` block values. They must
+   describe the same active direction.
+5. Bank Round 2 and reload. Verify the Round 1 transcript remains unchanged,
+   while the active direction reflects the revision, retraction, and redirected
+   answer.
+6. Choose **Export to PitchStudio**. In **Pitch Packet review**, resolve one
+   source conflict, edit and approve a writer field, and approve one AI-proposed
+   field. Suggested values must remain visibly unapproved until that action.
+7. Choose **Export Pitch Packet**. Verify the export completes before two files
+   download, and inspect both `<title>-pitch-packet-v1-r<revision>.md` and the
+   matching `.json`. The Markdown must contain the reviewed sections; the JSON
+   must preserve field provenance and approvals.
+8. Choose **Download again** and verify both files are rendered from the
+   persisted exported packet without creating a new export.
+
+The real-database suite has a second, explicit authorization gate because it
+creates append-only ledger rows and immutable exported packets. Run it only on
+a disposable migrated dev database:
+
+```bash
+WRITEROS_MEETING_DB_INTEGRATION=1 npm run test:run -- tests/integration/meetingRevisions.integration.test.ts
+```
+
+Reset that disposable dev database after the run. Without the flag, the suite
+is skipped; that is the expected result before separate migration authorization.
+
 ## Troubleshooting
 
 - **Nothing happens:** restart the dev server; confirm `[room] scheduler started

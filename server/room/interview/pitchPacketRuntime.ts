@@ -82,7 +82,7 @@ export async function approvePitchPacket(input: { projectId: string; sessionId: 
   return packetStore.approvePitchPacketRow(input)
 }
 
-export async function exportPitchPacket(input: { projectId: string; sessionId: string; packetId: string; now?: Now }): Promise<packetStore.PitchPacketRow> {
+export async function exportPitchPacket(input: { projectId: string; sessionId: string; packetId: string }): Promise<packetStore.PitchPacketRow> {
   const [row, session, directionSnapshot] = await Promise.all([
     packetStore.getPitchPacket(input), interviewStore.getInterviewSession(input.sessionId), roomStore.getSharedBlockSnapshot(input.projectId, 'concept_seed'),
   ])
@@ -95,7 +95,7 @@ export async function exportPitchPacket(input: { projectId: string; sessionId: s
     throw new Error('Project direction changed after this Pitch Packet review. Start a fresh review before exporting.')
   }
   emitMeetingTrace({ type: 'meeting.packet.export_started', projectId: input.projectId, sessionId: input.sessionId, packetId: input.packetId })
-  const exported = await packetStore.exportPitchPacketRow({ ...input, exportedAt: (input.now ?? nowIso)() })
+  const exported = await packetStore.exportPitchPacketRow({ projectId: input.projectId, sessionId: input.sessionId, packetId: input.packetId })
   emitMeetingTrace({ type: 'meeting.packet.export_completed', projectId: input.projectId, sessionId: input.sessionId, packetId: input.packetId })
   return exported
 }

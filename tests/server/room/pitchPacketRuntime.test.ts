@@ -72,7 +72,7 @@ describe('pitchPacketRuntime', () => {
     packetStoreMock.getPitchPacket.mockResolvedValue({ ...draft.row, status: 'draft' })
     await expect(approvePitchPacket({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1' })).rejects.toThrow(/cannot be approved/i)
     packetStoreMock.getPitchPacket.mockResolvedValue({ id: 'packet-1', project_id: 'p1', session_id: 's1', status: 'approved', direction_revision: 4, packet: { directionRevision: 4 } })
-    await expect(exportPitchPacket({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1', now: () => '2026-07-14T13:00:00.000Z' })).rejects.toThrow(/direction changed/i)
+    await expect(exportPitchPacket({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1' })).rejects.toThrow(/direction changed/i)
     expect(packetStoreMock.exportPitchPacketRow).not.toHaveBeenCalled()
   })
 
@@ -99,7 +99,7 @@ describe('pitchPacketRuntime', () => {
     packetStoreMock.getPitchPacket.mockResolvedValue(row)
     packetStoreMock.exportPitchPacketRow.mockResolvedValue({ ...row, status: 'exported', exported_at: '2026-07-14T13:00:00.000Z' })
     const { exportPitchPacket } = await import('../../../server/room/interview/pitchPacketRuntime')
-    const exported = await exportPitchPacket({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1', now: () => '2026-07-14T13:00:00.000Z' })
+    const exported = await exportPitchPacket({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1' })
     expect(packetStoreMock.exportPitchPacketRow).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', sessionId: 's1', packetId: 'packet-1' }))
     expect(exported.status).toBe('exported')
     expect(traceEvents).toEqual(expect.arrayContaining([
