@@ -65,6 +65,27 @@ export interface TranscriptEntry {
 
 export type MeetingMutability = 'locked' | 'leaning' | 'open';
 
+export type MeetingDecisionOp = 'assert' | 'revise' | 'retract' | 'supersede' | 'redirect';
+
+export interface MeetingDecisionContent {
+  statement: string;
+  mutability: MeetingMutability;
+  originMarker: '[SEED]' | '[EXTRAPOLATED]' | '[INVENTED]';
+  disposition: AnswerDisposition;
+}
+
+export interface MeetingDecisionRow {
+  id: string;
+  project_id: string;
+  session_id: string;
+  area: string;
+  field_path: string;
+  op: MeetingDecisionOp;
+  content: MeetingDecisionContent | Record<string, never>;
+  targets: string[];
+  created_at: string;
+}
+
 export interface MeetingBankSnapshot {
   applied_classifications: Record<string, MeetingMutability>;
   open_questions: string[];
