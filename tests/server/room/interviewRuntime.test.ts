@@ -60,7 +60,13 @@ describe('interviewRuntime status direction', () => {
     vi.spyOn(interviewStore, 'listInterviewSessions').mockResolvedValue([bankedSession]);
     vi.spyOn(roomStore, 'getSharedBlockSnapshot').mockResolvedValue({ value: 'seed', revision: 7 });
     const { getInterviewStatus } = await import('../../../server/room/interview/runtime');
-    await expect(getInterviewStatus('p1')).resolves.toMatchObject({ directionRevision: 7, directionDiff: [], recap: [] });
+    await expect(getInterviewStatus('p1')).resolves.toMatchObject({
+      activeSession: null,
+      latestTerminalSession: bankedSession,
+      directionRevision: 7,
+      directionDiff: [],
+      recap: [],
+    });
   });
 });
 

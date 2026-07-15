@@ -15,6 +15,7 @@ import type { ProposalOrigin } from '../types';
 
 export interface InterviewStatus {
   activeSession: InterviewSessionRow | null;
+  latestTerminalSession: InterviewSessionRow | null;
   hasBankedSeed: boolean;
   actionLabel: 'Project Meeting' | 'New interview round';
   currentQuestion: QuestionBankRow | null;
@@ -166,6 +167,7 @@ function normalizeFieldPath(rawTarget: string, questionId: string): string {
 export async function getInterviewStatus(projectId: string): Promise<InterviewStatus> {
   const sessions = await interviewStore.listInterviewSessions(projectId);
   const activeSession = sessions.find((session) => isPreBanked(session.state)) ?? null;
+  const latestTerminalSession = sessions.find((session) => session.state === 'banked' || session.state === 'exported') ?? null;
   const bankedSeedExists = hasBankedSeed(sessions);
   const [context, directionSnapshot] = await Promise.all([
     activeSession && bankedSeedExists ? loadAuditContext(projectId, sessions) : Promise.resolve(null),
@@ -173,6 +175,7 @@ export async function getInterviewStatus(projectId: string): Promise<InterviewSt
   ]);
   return {
     activeSession,
+    latestTerminalSession,
     hasBankedSeed: bankedSeedExists,
     actionLabel: bankedSeedExists ? 'New interview round' : 'Project Meeting',
     currentQuestion: activeSession ? currentQuestionFor(activeSession) : null,

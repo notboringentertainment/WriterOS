@@ -36,7 +36,7 @@ export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit 
   const [revisionOpen, setRevisionOpen] = useState<Record<string, boolean>>({})
   const [retractNotices, setRetractNotices] = useState<Record<string, boolean>>({})
 
-  const session = interview.status.activeSession
+  const session = interview.status.activeSession ?? interview.status.latestTerminalSession ?? null
   const stage = session?.state ?? 'intake'
   const question = interview.status.currentQuestion
 
@@ -337,6 +337,7 @@ export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit 
             <p style={styles.prose}>This round is banked. Future rounds append; they do not edit this one.</p>
             <div style={styles.actionRow}>
               <button type="button" style={styles.primaryButton} onClick={() => void interview.openPitchPacket(documents, projectTitle)}>Export to PitchStudio</button>
+              <button type="button" style={styles.ghostButton} onClick={interview.prepareNewRound}>Start new interview round</button>
               <button type="button" style={styles.ghostButton} onClick={onExit}>Back to writing</button>
             </div>
           </div>
@@ -348,6 +349,7 @@ export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit 
           <div style={styles.stack}>
             <p style={styles.prose}>Export prepared for PitchStudio.</p>
             <div style={styles.actionRow}>
+              <button type="button" style={styles.ghostButton} onClick={interview.prepareNewRound}>Start new interview round</button>
               <button type="button" style={styles.primaryButton} onClick={onExit}>Back to writing</button>
             </div>
           </div>

@@ -226,6 +226,16 @@ describe('ProjectMeetingPage', () => {
     expect(await screen.findByRole('heading', { name: 'Pitch Packet review' })).toBeInTheDocument()
   })
 
+  it('lets a writer explicitly leave the latest banked round and start a new one', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('banked'))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start new interview round' }))
+
+    expect(await screen.findByLabelText('Project Meeting seed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Begin the meeting' })).toBeInTheDocument()
+  })
+
   it('shows standing recap controls, revision safety copy, and the exact direction diff', async () => {
     const recap = [{ decisionId: 'd1', sessionId: 'old', area: 'ending', fieldPath: 'story_locks', statement: 'Mara leaves town.', roundNumber: 1, questionId: 'morgan-ending' }]
     apiMock.fetchInterviewStatus.mockResolvedValue({ ...statusOf('readback'), recap })

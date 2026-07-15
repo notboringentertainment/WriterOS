@@ -69,6 +69,17 @@ describe('useInterviewSession', () => {
     expect(apiMock.fetchInterviewStatus).toHaveBeenCalledWith('p1')
   })
 
+  it('restores the persisted exported packet for re-download after reload', async () => {
+    const exported = { id: 'packet-1', project_id: 'p1', session_id: 's1', packet: {}, packet_version: 1, status: 'exported', direction_revision: 2, created_at: 'now', exported_at: '2026-07-14T01:00:00Z' }
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, latestTerminalSession: session('exported'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.fetchExportedPitchPacket.mockResolvedValue(exported)
+
+    const { result } = renderHook(() => useInterviewSession('p1'))
+
+    await waitFor(() => expect(result.current.pitchPacketRow?.status).toBe('exported'))
+    expect(apiMock.fetchExportedPitchPacket).toHaveBeenCalledWith('p1', 's1')
+  })
+
   it('start begins a session and surfaces the first question', async () => {
     apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
     const { result } = renderHook(() => useInterviewSession('p1'))
@@ -270,6 +281,20 @@ describe('useInterviewSession', () => {
     expect(downloadMock).toHaveBeenNthCalledWith(2, 'ace-pitch-packet-v1-r2.json', expect.stringContaining('"packetVersion": 1'), 'application/json')
     expect(result.current.pitchPacketRow?.status).toBe('exported')
     expect(result.current.packetMessage).toBe('Pitch Packet exported. Two files downloaded: Markdown and JSON.')
+  })
+
+  it('opens a Pitch Packet from the latest banked round restored after reload', async () => {
+    const banked = session('banked')
+    const packet = { id: 'packet-1', project_id: 'p1', session_id: banked.id, packet: {} as PitchPacket, packet_version: 1, status: 'draft', direction_revision: 2, created_at: 'now', exported_at: null }
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, latestTerminalSession: banked, hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: packet, proposalUnavailable: false })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.latestTerminalSession?.state).toBe('banked'))
+
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Ace'))
+
+    expect(apiMock.createPitchPacketDraft).toHaveBeenCalledWith('p1', banked.id, expect.anything(), { title: 'Ace' })
+    expect(result.current.pitchPacketRow?.id).toBe('packet-1')
   })
 
   it('keeps exported state after a download failure and re-downloads the persisted packet', async () => {

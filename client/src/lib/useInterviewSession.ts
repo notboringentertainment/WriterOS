@@ -64,6 +64,7 @@ export interface InterviewSessionHandle {
   error: string | null
   clearError: () => void
   refresh: () => Promise<void>
+  prepareNewRound: () => void
   start: (input: { mode: 'quick' | 'full'; seedText: string }) => Promise<boolean>
   answer: (input: { answerText: string; origin: InterviewAnswerOrigin; rejectMapping?: boolean }) => Promise<boolean>
   skip: () => Promise<void>
@@ -120,6 +121,12 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
           setRevisionOperations(defaultKeepOperations(normalized.recap))
           setDirectionDiff(normalized.directionDiff ?? [])
           setDirectionRevision(normalized.directionRevision ?? 0)
+          const terminal = normalized.latestTerminalSession
+          if (terminal?.state === 'exported') {
+            void fetchExportedPitchPacket(projectId, terminal.id)
+              .then(row => { if (!cancelled && row) setPitchPacketRow(row) })
+              .catch(() => { /* Export remains persisted; surface stays usable for a new round. */ })
+          }
         }
       })
       .catch(() => {
@@ -140,10 +147,29 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setRevisionOperations(defaultKeepOperations(normalized.recap))
       setDirectionDiff(normalized.directionDiff ?? [])
       setDirectionRevision(normalized.directionRevision ?? 0)
+      const terminal = normalized.latestTerminalSession
+      if (terminal?.state === 'exported') {
+        const row = await fetchExportedPitchPacket(projectId, terminal.id)
+        if (row) setPitchPacketRow(row)
+      }
     } catch {
       // Keep the last known status; the room stays usable without the interview API.
     }
   }, [projectId])
+
+  const prepareNewRound = useCallback(() => {
+    setStatus(prev => ({
+      ...prev,
+      activeSession: prev.activeSession?.state === 'banked' || prev.activeSession?.state === 'exported' ? null : prev.activeSession,
+      latestTerminalSession: null,
+      currentQuestion: null,
+    }))
+    setPitchPacketRow(null)
+    setProposalUnavailable(false)
+    setPacketMessage(null)
+    setPacketDownloadError(null)
+    setError(null)
+  }, [])
 
   const setSessionResult = useCallback((result: { session: InterviewSession; currentQuestion?: InterviewQuestion | null }) => {
     // An explicit null clears the question (e.g. the lane ran dry); only an ABSENT
@@ -304,7 +330,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   }, [projectId, revisionOperations, status.activeSession])
 
   const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string) => {
-    const session = status.activeSession
+    const session = status.activeSession ?? status.latestTerminalSession
     if (!session) return
     try {
       const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
@@ -315,7 +341,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Pitch Packet draft failed')
     }
-  }, [projectId, status.activeSession])
+  }, [projectId, status.activeSession, status.latestTerminalSession])
 
   const savePitchPacket = useCallback(async (packet: PitchPacket) => {
     if (!pitchPacketRow) return
@@ -394,6 +420,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     error,
     clearError,
     refresh,
+    prepareNewRound,
     start,
     answer,
     skip,
