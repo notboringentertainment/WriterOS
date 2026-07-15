@@ -45,8 +45,8 @@ export interface InterviewSession {
   mode: 'quick' | 'full'
   state: 'intake' | 'auditing' | 'interviewing' | 'readback' | 'banked' | 'exported' | 'paused'
   seed_text: string
-  audit: Record<string, 'SUFFICIENT' | 'THIN'>
-  cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; paused_from?: string }
+  audit: Record<string, 'SUFFICIENT' | 'SUFFICIENT_FROM_PRIOR' | 'THIN'>
+  cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; redirects?: Array<{ area: string; question_id: string; at: string; answered_at: string | null }>; paused_from?: string }
   answers: Array<{ question_id: string; lane: string; answer_text: string; origin: 'seed' | 'extrapolated' | null; disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'; at: string }>
   bank_snapshot: { applied_classifications: Record<string, InterviewMutability>; open_questions: string[]; legacy_open_questions: string[] } | null
   created_at: string
@@ -70,6 +70,32 @@ export interface InterviewStatus {
   hasBankedSeed: boolean
   actionLabel: 'Project Meeting' | 'New interview round'
   currentQuestion: InterviewQuestion | null
+  recap: MeetingRecapItem[]
+  directionDiff: MeetingDirectionDiff[]
+  directionRevision: number
+}
+
+export interface MeetingRecapItem {
+  decisionId: string
+  sessionId: string
+  area: string
+  fieldPath: string
+  statement: string
+  roundNumber: number
+  questionId: string | null
+}
+
+export type MeetingRevisionInput =
+  | { op: 'keep'; targetId: string }
+  | { op: 'revise'; targetId: string; statement: string; mutability?: InterviewMutability }
+  | { op: 'retract'; targetId: string }
+  | { op: 'supersede'; targetIds: string[]; area: string; fieldPath: string; statement: string; mutability: InterviewMutability }
+
+export interface MeetingDirectionDiff {
+  area: string
+  before: string[]
+  after: string[]
+  op: MeetingRevisionInput['op'] | 'assert'
 }
 
 export type InterviewMutability = 'locked' | 'leaning' | 'open'
@@ -215,7 +241,7 @@ export async function fetchInterviewStatus(projectId: string): Promise<Interview
 export async function startInterview(
   projectId: string,
   input: { mode: 'quick' | 'full'; seedText: string; speculative?: boolean },
-): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null }> {
+): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null; recap: MeetingRecapItem[]; directionDiff: MeetingDirectionDiff[]; directionRevision: number }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -261,25 +287,36 @@ export async function fetchInterviewBankPreview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
-): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }> {
+  operations: MeetingRevisionInput[] = [],
+): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues; directionDiff: MeetingDirectionDiff[]; directionRevision: number }> {
   // POST: the preview is parameterized by the writer's in-flight mutability choices.
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mutability }),
+    body: JSON.stringify({ mutability, operations }),
   })
-  return jsonOrThrow<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }>(res)
+  return jsonOrThrow(res)
 }
 
 export async function bankInterview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
+  operations: MeetingRevisionInput[] = [],
 ): Promise<{ session: InterviewSession; preview: InterviewBankPreview }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mutability }),
+    body: JSON.stringify({ mutability, operations }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function redirectInterviewArea(projectId: string, sessionId: string, area: string, questionId: string): Promise<{ session: InterviewSession; currentQuestion: InterviewQuestion | null }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/redirect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ area, questionId }),
   })
   return jsonOrThrow(res)
 }

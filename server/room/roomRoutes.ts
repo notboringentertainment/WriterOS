@@ -13,6 +13,7 @@ import { isRoomConfigured } from './supabaseClient';
 import { syncSurfaceLocks } from './surfaceLockSync';
 import { ensureProjectMemory } from './memoryContract';
 import type { ProposalOrigin, RoomEventKind } from './types';
+import type { MeetingRevisionInput } from './interview/banking';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
 const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
@@ -340,6 +341,24 @@ export function registerRoomRoutes(app: Express): void {
     }
   });
 
+  app.post('/api/room/:projectId/interview/:sessionId/redirect', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      const area = typeof req.body?.area === 'string' ? req.body.area.trim() : '';
+      const questionId = typeof req.body?.questionId === 'string' ? req.body.questionId.trim() : '';
+      if (!area || !questionId || area.length > 200 || questionId.length > 200) {
+        res.status(400).json({ message: 'Choose a valid earlier-round area to ask again.' });
+        return;
+      }
+      res.json(await interviewRuntime.redirectInterviewArea({
+        sessionId: String(req.params.sessionId), projectId: projectIdOf(req), area, questionId,
+      }));
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
   // Writer mutability decisions arrive from the client; keep only well-formed entries.
   function sanitizeMutability(raw: unknown): Record<string, 'locked' | 'leaning' | 'open'> {
     const result: Record<string, 'locked' | 'leaning' | 'open'> = {};
@@ -350,13 +369,35 @@ export function registerRoomRoutes(app: Express): void {
     return result;
   }
 
+  function sanitizeOperations(raw: unknown): MeetingRevisionInput[] {
+    if (!Array.isArray(raw)) return [];
+    const isText = (value: unknown, max = 20000): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+    const isMutability = (value: unknown): value is 'locked' | 'leaning' | 'open' => value === 'locked' || value === 'leaning' || value === 'open';
+    return raw.flatMap((entry): MeetingRevisionInput[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const value = entry as Record<string, unknown>;
+      if ((value.op === 'keep' || value.op === 'retract') && isText(value.targetId, 200)) {
+        return [{ op: value.op, targetId: value.targetId.trim() }];
+      }
+      if (value.op === 'revise' && isText(value.targetId, 200) && isText(value.statement)) {
+        return [{ op: 'revise', targetId: value.targetId.trim(), statement: value.statement.trim(), ...(isMutability(value.mutability) ? { mutability: value.mutability } : {}) }];
+      }
+      if (value.op === 'supersede' && Array.isArray(value.targetIds) && value.targetIds.length > 0
+        && value.targetIds.every((id) => isText(id, 200)) && isText(value.area, 200)
+        && isText(value.fieldPath, 500) && isText(value.statement) && isMutability(value.mutability)) {
+        return [{ op: 'supersede', targetIds: value.targetIds.map((id) => (id as string).trim()), area: value.area.trim(), fieldPath: value.fieldPath.trim(), statement: value.statement.trim(), mutability: value.mutability }];
+      }
+      return [];
+    });
+  }
+
   // POST because the preview is parameterized by the writer's in-flight mutability
   // choices (live re-preview while tagging in readback).
   app.post('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
     if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
+      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability), operations: sanitizeOperations(req.body?.operations) }));
     } catch (error) {
       handleInterviewError(res, error);
     }
@@ -366,7 +407,7 @@ export function registerRoomRoutes(app: Express): void {
     if (!requireRoom(res)) return;
     if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
+      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability), operations: sanitizeOperations(req.body?.operations) }));
     } catch (error) {
       handleInterviewError(res, error);
     }

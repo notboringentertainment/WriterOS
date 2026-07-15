@@ -9,6 +9,7 @@ import {
   fetchInterviewBankPreview,
   fetchInterviewStatus,
   pauseInterview,
+  redirectInterviewArea,
   resolveRoomProposal,
   resumeInterview,
   skipInterviewQuestion,
@@ -20,19 +21,33 @@ import {
   type InterviewQuestion,
   type InterviewSession,
   type InterviewStatus,
+  type MeetingDirectionDiff,
+  type MeetingRecapItem,
+  type MeetingRevisionInput,
 } from './roomApi'
 
 export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
 export type { InterviewMutability }
 
 export function emptyInterviewStatus(): InterviewStatus {
-  return { activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null }
+  return { activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null, recap: [], directionDiff: [], directionRevision: 0 }
+}
+
+function defaultKeepOperations(recap: readonly MeetingRecapItem[]): MeetingRevisionInput[] {
+  return recap.map(item => ({ op: 'keep', targetId: item.decisionId }))
+}
+
+function operationTargets(operation: MeetingRevisionInput): string[] {
+  return operation.op === 'supersede' ? operation.targetIds : [operation.targetId]
 }
 
 export interface InterviewSessionHandle {
   status: InterviewStatus
   bankPreview: InterviewBankPreview | null
   finalValues: InterviewBankFinalValues | null
+  directionDiff: MeetingDirectionDiff[]
+  directionRevision: number | null
+  revisionOperations: MeetingRevisionInput[]
   previewPending: boolean
   exportMarkdown: string
   error: string | null
@@ -44,7 +59,9 @@ export interface InterviewSessionHandle {
   pause: () => Promise<void>
   resume: () => Promise<void>
   wrap: () => Promise<void>
-  previewBank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
+  setRevisionOperation: (operation: MeetingRevisionInput) => MeetingRevisionInput[]
+  redirect: (area: string, questionId: string) => Promise<void>
+  previewBank: (mutability?: Record<string, InterviewMutability>, operations?: MeetingRevisionInput[]) => Promise<void>
   bank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
   exportToPitchStudio: () => Promise<void>
 }
@@ -53,6 +70,9 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const [status, setStatus] = useState<InterviewStatus>(emptyInterviewStatus)
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
   const [finalValues, setFinalValues] = useState<InterviewBankFinalValues | null>(null)
+  const [directionDiff, setDirectionDiff] = useState<MeetingDirectionDiff[]>([])
+  const [directionRevision, setDirectionRevision] = useState<number | null>(null)
+  const [revisionOperations, setRevisionOperations] = useState<MeetingRevisionInput[]>([])
   const [previewPending, setPreviewPending] = useState(false)
   const [exportMarkdown, setExportMarkdown] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -65,12 +85,21 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     setStatus(emptyInterviewStatus())
     setBankPreview(null)
     setFinalValues(null)
+    setDirectionDiff([])
+    setDirectionRevision(null)
+    setRevisionOperations([])
     setPreviewPending(false)
     setExportMarkdown('')
     setError(null)
     fetchInterviewStatus(projectId)
       .then(next => {
-        if (!cancelled) setStatus(next)
+        if (!cancelled) {
+          const normalized = { ...next, recap: next.recap ?? [] }
+          setStatus(normalized)
+          setRevisionOperations(defaultKeepOperations(normalized.recap))
+          setDirectionDiff(normalized.directionDiff ?? [])
+          setDirectionRevision(normalized.directionRevision ?? 0)
+        }
       })
       .catch(() => {
         // Project Meeting is an explicit enhancement; callers remain usable if unavailable.
@@ -84,7 +113,12 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await fetchInterviewStatus(projectId))
+      const next = await fetchInterviewStatus(projectId)
+      const normalized = { ...next, recap: next.recap ?? [] }
+      setStatus(normalized)
+      setRevisionOperations(defaultKeepOperations(normalized.recap))
+      setDirectionDiff(normalized.directionDiff ?? [])
+      setDirectionRevision(normalized.directionRevision ?? 0)
     } catch {
       // Keep the last known status; the room stays usable without the interview API.
     }
@@ -103,7 +137,11 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const start = useCallback(async (input: { mode: 'quick' | 'full'; seedText: string }) => {
     try {
       const result = await startInterview(projectId, input)
-      setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion }))
+      const recap = result.recap ?? []
+      setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion, recap }))
+      setRevisionOperations(defaultKeepOperations(recap))
+      setDirectionDiff(result.directionDiff ?? [])
+      setDirectionRevision(result.directionRevision ?? 0)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Project Meeting start failed')
@@ -182,7 +220,24 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     }
   }, [projectId, status.activeSession])
 
-  const previewBank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
+  const setRevisionOperation = useCallback((operation: MeetingRevisionInput) => {
+    const nextTargets = new Set(operationTargets(operation))
+    const next = [...revisionOperations.filter(existing => !operationTargets(existing).some(target => nextTargets.has(target))), operation]
+    setRevisionOperations(next)
+    return next
+  }, [revisionOperations])
+
+  const redirect = useCallback(async (area: string, questionId: string) => {
+    const session = status.activeSession
+    if (!session) return
+    try {
+      setSessionResult(await redirectInterviewArea(projectId, session.id, area, questionId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reopen that question')
+    }
+  }, [projectId, status.activeSession, setSessionResult])
+
+  const previewBank = useCallback(async (mutability: Record<string, InterviewMutability> = {}, operations: MeetingRevisionInput[] = revisionOperations) => {
     const session = status.activeSession
     if (!session) return
     const seq = ++previewSeqRef.current
@@ -190,37 +245,42 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     setBankPreview(null)
     setFinalValues(null)
     try {
-      const result = await fetchInterviewBankPreview(projectId, session.id, mutability)
+      const result = await fetchInterviewBankPreview(projectId, session.id, mutability, operations)
       if (seq === previewSeqRef.current) {
         setBankPreview(result.preview)
         setFinalValues(result.finalValues)
+        setDirectionDiff(result.directionDiff ?? [])
+        setDirectionRevision(result.directionRevision ?? null)
         setPreviewPending(false)
       }
     } catch (err) {
       if (seq === previewSeqRef.current) {
         setBankPreview(null)
         setFinalValues(null)
+        setDirectionDiff([])
+        setDirectionRevision(null)
         setPreviewPending(false)
         setError(err instanceof Error ? err.message : 'Bank preview failed')
       }
     }
-  }, [projectId, status.activeSession])
+  }, [projectId, revisionOperations, status.activeSession])
 
   const bank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
     const session = status.activeSession
     if (!session) return
     try {
-      const result = await bankInterview(projectId, session.id, mutability)
+      const result = await bankInterview(projectId, session.id, mutability, revisionOperations)
       // The banked preview is authoritative; invalidate any preview still in flight.
       previewSeqRef.current++
       setStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
       setBankPreview(result.preview)
       setFinalValues(null)
+      setDirectionDiff([])
       setPreviewPending(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bank failed')
     }
-  }, [projectId, status.activeSession])
+  }, [projectId, revisionOperations, status.activeSession])
 
   const exportToPitchStudio = useCallback(async () => {
     const session = status.activeSession
@@ -238,6 +298,9 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     status,
     bankPreview,
     finalValues,
+    directionDiff,
+    directionRevision,
+    revisionOperations,
     previewPending,
     exportMarkdown,
     error,
@@ -249,6 +312,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     pause,
     resume,
     wrap,
+    setRevisionOperation,
+    redirect,
     previewBank,
     bank,
     exportToPitchStudio,

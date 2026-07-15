@@ -19,6 +19,8 @@ export interface InterviewStatus {
   actionLabel: 'Project Meeting' | 'New interview round';
   currentQuestion: QuestionBankRow | null;
   recap: MeetingRecapItem[];
+  directionDiff: DirectionDiffEntry[];
+  directionRevision: number;
 }
 
 export interface InterviewStartResult {
@@ -26,6 +28,8 @@ export interface InterviewStartResult {
   auditMessage: string;
   currentQuestion: QuestionBankRow | null;
   recap: MeetingRecapItem[];
+  directionDiff: DirectionDiffEntry[];
+  directionRevision: number;
 }
 
 export interface InterviewAnswerResult {
@@ -162,13 +166,19 @@ function normalizeFieldPath(rawTarget: string, questionId: string): string {
 export async function getInterviewStatus(projectId: string): Promise<InterviewStatus> {
   const sessions = await interviewStore.listInterviewSessions(projectId);
   const activeSession = sessions.find((session) => isPreBanked(session.state)) ?? null;
-  const context = activeSession && hasBankedSeed(sessions) ? await loadAuditContext(projectId, sessions) : null;
+  const bankedSeedExists = hasBankedSeed(sessions);
+  const [context, directionSnapshot] = await Promise.all([
+    activeSession && bankedSeedExists ? loadAuditContext(projectId, sessions) : Promise.resolve(null),
+    bankedSeedExists ? roomStore.getSharedBlockSnapshot(projectId, 'concept_seed') : Promise.resolve(null),
+  ]);
   return {
     activeSession,
-    hasBankedSeed: hasBankedSeed(sessions),
-    actionLabel: hasBankedSeed(sessions) ? 'New interview round' : 'Project Meeting',
+    hasBankedSeed: bankedSeedExists,
+    actionLabel: bankedSeedExists ? 'New interview round' : 'Project Meeting',
     currentQuestion: activeSession ? currentQuestionFor(activeSession) : null,
     recap: context ? buildMeetingRecap(context, sessions) : [],
+    directionDiff: [],
+    directionRevision: directionSnapshot?.revision ?? 0,
   };
 }
 
@@ -189,9 +199,10 @@ export async function startInterview(input: {
   if (existingSessions.some((existing) => isPreBanked(existing.state))) {
     throw new Error(`A Project Meeting is already in progress for project ${input.projectId}.`);
   }
-  const context = hasBankedSeed(existingSessions)
-    ? await loadAuditContext(input.projectId, existingSessions)
-    : undefined;
+  const hasPriorDirection = hasBankedSeed(existingSessions);
+  const [context, directionSnapshot] = hasPriorDirection
+    ? await Promise.all([loadAuditContext(input.projectId, existingSessions), roomStore.getSharedBlockSnapshot(input.projectId, 'concept_seed')])
+    : [undefined, null];
   const recap = context ? buildMeetingRecap(context, existingSessions) : [];
 
   let session: InterviewSessionRow;
@@ -214,7 +225,7 @@ export async function startInterview(input: {
 
   await roomStore.insertMessage({ projectId: input.projectId, author: 'morgan', content: formatAuditMessage(audit.verdicts) });
 
-  return { session, auditMessage: formatAuditMessage(audit.verdicts), currentQuestion: currentQuestionFor(session), recap };
+  return { session, auditMessage: formatAuditMessage(audit.verdicts), currentQuestion: currentQuestionFor(session), recap, directionDiff: [], directionRevision: directionSnapshot?.revision ?? 0 };
 }
 
 export async function answerInterviewQuestion(input: {

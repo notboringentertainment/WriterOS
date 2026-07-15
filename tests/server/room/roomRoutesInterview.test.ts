@@ -12,6 +12,7 @@ const { runtimeMock } = vi.hoisted(() => ({
     wrapInterview: vi.fn(),
     pauseInterview: vi.fn(),
     resumeInterview: vi.fn(),
+    redirectInterviewArea: vi.fn(),
     previewBank: vi.fn(),
     previewBankFinal: vi.fn(),
     bankInterview: vi.fn(),
@@ -140,10 +141,33 @@ describe('Project Meeting routes', () => {
     runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: { seedText: 'seed' } })
 
     await post('/api/room/project-A/interview/s1/bank-preview', { mutability: { 'p-1': 'leaning', 'p-2': 'bogus', 'p-3': 42 } })
-    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' } })
+    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' }, operations: [] })
 
     await post('/api/room/project-A/interview/s1/bank', { mutability: { 'p-1': 'open', 'p-2': null } })
-    expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' } })
+    expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' }, operations: [] })
+  })
+
+  it('sanitizes revision operations for preview and bank and redirects an exact recap area', async () => {
+    runtimeMock.previewBankFinal.mockResolvedValueOnce({ preview: {}, finalValues: {}, directionDiff: [] })
+    runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: {} })
+    runtimeMock.redirectInterviewArea.mockResolvedValueOnce({ session: { id: 's1', state: 'interviewing' }, currentQuestion: { id: 'morgan-ending' } })
+    const operations = [
+      { op: 'keep', targetId: 'd1' },
+      { op: 'revise', targetId: 'd2', statement: 'A sharper ending.', mutability: 'locked' },
+      { op: 'retract', targetId: 'd3' },
+      { op: 'supersede', targetIds: ['d4', 'd5'], area: 'ending', fieldPath: 'story_locks', statement: 'One ending.', mutability: 'locked' },
+      { op: 'assert', targetId: 'bad' },
+    ]
+
+    await post('/api/room/project-A/interview/s1/bank-preview', { operations })
+    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith(expect.objectContaining({ operations: operations.slice(0, 4) }))
+    await post('/api/room/project-A/interview/s1/bank', { operations })
+    expect(runtimeMock.bankInterview).toHaveBeenCalledWith(expect.objectContaining({ operations: operations.slice(0, 4) }))
+
+    const redirect = await post('/api/room/project-A/interview/s1/redirect', { area: 'ending', questionId: 'morgan-ending' })
+    expect(redirect.status).toBe(200)
+    expect(runtimeMock.redirectInterviewArea).toHaveBeenCalledWith({ projectId: 'project-A', sessionId: 's1', area: 'ending', questionId: 'morgan-ending' })
+    expect(JSON.stringify(redirect.json)).not.toMatch(/ledger|fold|projection|assert/i)
   })
 
   it('rejects overly long seed, answer, and resolved values', async () => {

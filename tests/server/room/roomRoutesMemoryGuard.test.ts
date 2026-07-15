@@ -17,6 +17,7 @@ vi.mock('../../../server/room/sseHub', () => sseMock);
 const runtimeMock = vi.hoisted(() => ({
   getInterviewStatus: vi.fn(async () => ({ activeSession: null })), startInterview: vi.fn(async () => ({})),
   answerInterviewQuestion: vi.fn(async () => ({})), skipInterviewQuestion: vi.fn(async () => ({})),
+  redirectInterviewArea: vi.fn(async () => ({})),
   wrapInterview: vi.fn(async () => ({})), pauseInterview: vi.fn(async () => ({})), resumeInterview: vi.fn(async () => ({})),
   previewBankFinal: vi.fn(async () => ({ preview: {}, finalValues: {} })), bankInterview: vi.fn(async () => ({})), exportInterview: vi.fn(async () => ({})),
 }));
@@ -36,6 +37,7 @@ const guarded: Array<[string, object]> = [
   ['/memory/ensure', {}], ['/messages', { content: 'hi' }], ['/events', { kind: 'lock_changed' }],
   ['/blocks/story-locks', { value: '- lock' }], ['/interview/start', { mode: 'full', seedText: 'seed' }],
   ['/interview/s1/answer', { answerText: 'a' }], ['/interview/s1/skip', {}], ['/interview/s1/wrap', {}],
+  ['/interview/s1/redirect', { area: 'ending', questionId: 'morgan-ending' }],
   ['/interview/s1/pause', {}], ['/interview/s1/resume', {}], ['/interview/s1/bank-preview', {}],
   ['/interview/s1/bank', {}], ['/interview/s1/export', {}],
 ];

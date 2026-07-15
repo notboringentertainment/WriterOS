@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ensureRoomMemory, isRoomMemoryUnavailable, postRoomEvent, resolveRoomProposal, syncStoryLocksBlock } from '../../client/src/lib/roomApi'
+import { bankInterview, ensureRoomMemory, fetchInterviewBankPreview, isRoomMemoryUnavailable, postRoomEvent, redirectInterviewArea, resolveRoomProposal, syncStoryLocksBlock } from '../../client/src/lib/roomApi'
 
 const fetchMock = vi.fn()
 
@@ -47,5 +47,20 @@ describe('roomApi.resolveRoomProposal', () => {
         body: JSON.stringify({ status: 'adopted', resolved_value: 'writer edited value', origin: 'extrapolated' }),
       }),
     )
+  })
+})
+
+describe('Project Meeting revision transport', () => {
+  it('sends the same in-flight operations to preview and bank and supports immediate redirect', async () => {
+    const ok = { ok: true, json: async () => ({}) }
+    fetchMock.mockResolvedValue(ok)
+    const operations = [{ op: 'retract' as const, targetId: 'd1' }]
+    await fetchInterviewBankPreview('project A', 'session 1', {}, operations)
+    await bankInterview('project A', 'session 1', {}, operations)
+    await redirectInterviewArea('project A', 'session 1', 'ending', 'morgan-ending')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mutability: {}, operations })
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ mutability: {}, operations })
+    expect(fetchMock.mock.calls[2]).toEqual(expect.arrayContaining(['/api/room/project%20A/interview/session%201/redirect']))
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ area: 'ending', questionId: 'morgan-ending' })
   })
 })

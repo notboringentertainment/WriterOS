@@ -53,6 +53,17 @@ const caseyActiveSession: InterviewSessionRow = {
   cursor: { lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: {} },
 };
 
+describe('interviewRuntime status direction', () => {
+  it('reports the current direction revision even when no round is active', async () => {
+    const interviewStore = await import('../../../server/room/interview/store');
+    const roomStore = await import('../../../server/room/store');
+    vi.spyOn(interviewStore, 'listInterviewSessions').mockResolvedValue([bankedSession]);
+    vi.spyOn(roomStore, 'getSharedBlockSnapshot').mockResolvedValue({ value: 'seed', revision: 7 });
+    const { getInterviewStatus } = await import('../../../server/room/interview/runtime');
+    await expect(getInterviewStatus('p1')).resolves.toMatchObject({ directionRevision: 7, directionDiff: [], recap: [] });
+  });
+});
+
 describe('interviewRuntime.wrapInterview', () => {
   it('refuses to wrap a banked session back to readback', async () => {
     __setRoomDbForTests(fakeDb({ data: bankedSession, error: null }));
@@ -175,6 +186,7 @@ describe('interviewRuntime recap context', () => {
     vi.spyOn(interviewStore, 'createInterviewSession').mockResolvedValue(nextSession);
     vi.spyOn(interviewStore, 'updateInterviewSession').mockImplementation(async (_id, patch) => ({ ...nextSession, ...patch }));
     vi.spyOn(roomStore, 'getSharedBlockValue').mockResolvedValue('');
+    vi.spyOn(roomStore, 'getSharedBlockSnapshot').mockResolvedValue({ value: 'seed', revision: 4 });
     vi.spyOn(roomStore, 'insertMessage').mockResolvedValue(undefined as never);
     vi.spyOn(auditContext, 'buildAuditContext').mockResolvedValue({
       activeDecisions: [priorDecision],
@@ -196,6 +208,8 @@ describe('interviewRuntime recap context', () => {
       questionId: 'morgan-ending',
     })]);
     expect(result.currentQuestion?.id).not.toBe('morgan-ending');
+    expect(result.directionRevision).toBe(4);
+    expect(result.directionDiff).toEqual([]);
   });
 });
 
@@ -241,6 +255,7 @@ describe('interviewRuntime.single active session guard', () => {
     const auditContext = await import('../../../server/room/interview/auditContext');
     const roomStore = await import('../../../server/room/store');
     vi.spyOn(roomStore, 'getSharedBlockValue').mockResolvedValue('');
+    vi.spyOn(roomStore, 'getSharedBlockSnapshot').mockResolvedValue({ value: 'seed', revision: 2 });
     vi.spyOn(auditContext, 'buildAuditContext').mockResolvedValue({
       activeDecisions: [],
       priorAnswers: [],

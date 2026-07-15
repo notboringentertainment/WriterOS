@@ -11,6 +11,7 @@ const { apiMock } = vi.hoisted(() => ({
     pauseInterview: vi.fn(),
     resolveRoomProposal: vi.fn(),
     resumeInterview: vi.fn(),
+    redirectInterviewArea: vi.fn(),
     skipInterviewQuestion: vi.fn(),
     startInterview: vi.fn(),
     wrapInterview: vi.fn(),
@@ -51,7 +52,7 @@ const question = {
 
 beforeEach(() => {
   Object.values(apiMock).forEach(mock => mock.mockReset())
-  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null })
+  apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null, recap: [] })
 })
 
 describe('useInterviewSession', () => {
@@ -165,7 +166,7 @@ describe('useInterviewSession', () => {
     await act(async () => {
       await result.current.bank()
     })
-    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {})
+    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {}, [])
     expect(result.current.status.hasBankedSeed).toBe(true)
     expect(result.current.status.actionLabel).toBe('New interview round')
     expect(result.current.bankPreview?.conceptSeedAppend).toContain('### Locks')
@@ -181,12 +182,32 @@ describe('useInterviewSession', () => {
     await act(async () => {
       await result.current.previewBank({ 'p-1': 'leaning' })
     })
-    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' })
+    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }, [])
 
     await act(async () => {
       await result.current.bank({ 'p-1': 'leaning', 'p-2': 'open' })
     })
-    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning', 'p-2': 'open' })
+    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning', 'p-2': 'open' }, [])
+  })
+
+  it('defaults recap decisions to keep, carries revisions through preview/bank, and redirects immediately', async () => {
+    const recap = [{ decisionId: 'd1', sessionId: 'old', area: 'ending', fieldPath: 'story_locks', statement: 'Old ending.', roundNumber: 1, questionId: 'morgan-ending' }]
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('readback'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ preview: { conceptSeedAppend: '', taggable: [] }, finalValues: { concept_seed: '', story_locks: '', open_questions: '' }, directionDiff: [], directionRevision: 3 })
+    apiMock.bankInterview.mockResolvedValue({ session: session('banked'), preview: { conceptSeedAppend: '', taggable: [] } })
+    apiMock.redirectInterviewArea.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.recap).toEqual(recap))
+    expect(result.current.revisionOperations).toEqual([{ op: 'keep', targetId: 'd1' }])
+
+    act(() => result.current.setRevisionOperation({ op: 'revise', targetId: 'd1', statement: 'New ending.' }))
+    await act(async () => result.current.previewBank())
+    expect(apiMock.fetchInterviewBankPreview).toHaveBeenLastCalledWith('p1', 's1', {}, [{ op: 'revise', targetId: 'd1', statement: 'New ending.' }])
+    await act(async () => result.current.bank())
+    expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', {}, [{ op: 'revise', targetId: 'd1', statement: 'New ending.' }])
+
+    await act(async () => result.current.redirect('ending', 'morgan-ending'))
+    expect(apiMock.redirectInterviewArea).toHaveBeenCalledWith('p1', 's1', 'ending', 'morgan-ending')
   })
 
   it('surfaces action errors without crashing and clears them', async () => {
