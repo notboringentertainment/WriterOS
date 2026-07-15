@@ -81,6 +81,124 @@ describe('interviewRuntime.project ownership guard', () => {
   });
 });
 
+describe('interviewRuntime redirects', () => {
+  it('reconstructs unanswered redirects after remaining base questions', async () => {
+    const { reconstructInterviewQuestions } = await import('../../../server/room/interview/runtime');
+    const redirected: InterviewSessionRow = {
+      ...activeSession,
+      audit: { locks: 'THIN', ending: 'SUFFICIENT_FROM_PRIOR', open_questions: 'SUFFICIENT', load_bearing_character: 'SUFFICIENT' },
+      cursor: {
+        lane: 'morgan',
+        question_id: 'morgan-locks',
+        budgets_spent: {},
+        redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }],
+      },
+    };
+
+    expect(reconstructInterviewQuestions(redirected).map(question => question.id)).toEqual(['morgan-locks', 'morgan-ending']);
+    expect(reconstructInterviewQuestions({
+      ...redirected,
+      cursor: { ...redirected.cursor, redirects: [{ ...redirected.cursor.redirects![0], answered_at: '2026-07-14T00:01:00Z' }] },
+    }).map(question => question.id)).toEqual(['morgan-locks']);
+  });
+
+  it('dedupes an unanswered redirect for the same area', async () => {
+    const interviewStore = await import('../../../server/room/interview/store');
+    const existing: InterviewSessionRow = {
+      ...activeSession,
+      cursor: {
+        ...activeSession.cursor,
+        redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }],
+      },
+    };
+    vi.spyOn(interviewStore, 'getInterviewSession').mockResolvedValue(existing);
+    const update = vi.spyOn(interviewStore, 'updateInterviewSession');
+
+    const { redirectInterviewArea } = await import('../../../server/room/interview/runtime');
+    const result = await redirectInterviewArea({ projectId: 'p1', sessionId: 's1', area: 'ending', questionId: 'morgan-ending' });
+
+    expect(result.session).toBe(existing);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('stamps a redirect while writing its answer and next cursor once', async () => {
+    const interviewStore = await import('../../../server/room/interview/store');
+    const roomStore = await import('../../../server/room/store');
+    const redirected: InterviewSessionRow = {
+      ...activeSession,
+      audit: { locks: 'SUFFICIENT', ending: 'SUFFICIENT_FROM_PRIOR', open_questions: 'SUFFICIENT', load_bearing_character: 'SUFFICIENT' },
+      cursor: {
+        lane: 'morgan',
+        question_id: 'morgan-ending',
+        budgets_spent: {},
+        redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }],
+      },
+    };
+    vi.spyOn(interviewStore, 'getInterviewSession').mockResolvedValue(redirected);
+    vi.spyOn(roomStore, 'insertProposal').mockResolvedValue(undefined as never);
+    const write = vi.spyOn(interviewStore, 'appendInterviewAnswerAndUpdateCursor').mockImplementation(async (_id, _entry, patch) => ({ ...redirected, ...patch }));
+
+    const { answerInterviewQuestion } = await import('../../../server/room/interview/runtime');
+    const result = await answerInterviewQuestion({ projectId: 'p1', sessionId: 's1', answerText: 'She leaves.', origin: 'seed' });
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0][2].state).toBe('readback');
+    expect(write.mock.calls[0][2].cursor.redirects?.[0].answered_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(result.session.state).toBe('readback');
+  });
+});
+
+describe('interviewRuntime recap context', () => {
+  it('starts a later round with active recap and prior-coverage verdicts', async () => {
+    const interviewStore = await import('../../../server/room/interview/store');
+    const roomStore = await import('../../../server/room/store');
+    const auditContext = await import('../../../server/room/interview/auditContext');
+    const priorDecision = {
+      id: 'decision-1',
+      project_id: 'p1',
+      session_id: 's1',
+      area: 'ending',
+      field_path: 'story_locks',
+      op: 'assert' as const,
+      content: { statement: 'Mara chooses her sister.', mutability: 'locked' as const, originMarker: '[SEED]' as const, disposition: 'field_mapped' as const },
+      targets: [],
+      created_at: '2026-07-08T00:00:00Z',
+    };
+    const nextSession: InterviewSessionRow = {
+      ...activeSession,
+      id: 's2',
+      state: 'intake',
+      audit: {},
+      cursor: { lane: null, question_id: null, budgets_spent: {}, redirects: [] },
+    };
+    vi.spyOn(interviewStore, 'listInterviewSessions').mockResolvedValue([bankedSession]);
+    vi.spyOn(interviewStore, 'createInterviewSession').mockResolvedValue(nextSession);
+    vi.spyOn(interviewStore, 'updateInterviewSession').mockImplementation(async (_id, patch) => ({ ...nextSession, ...patch }));
+    vi.spyOn(roomStore, 'getSharedBlockValue').mockResolvedValue('');
+    vi.spyOn(roomStore, 'insertMessage').mockResolvedValue(undefined as never);
+    vi.spyOn(auditContext, 'buildAuditContext').mockResolvedValue({
+      activeDecisions: [priorDecision],
+      priorAnswers: [],
+      storyLocks: '',
+      openQuestions: '',
+      coveredAreas: new Set(['ending']),
+    });
+
+    const { startInterview } = await import('../../../server/room/interview/runtime');
+    const result = await startInterview({ projectId: 'p1', mode: 'full', seedText: 'A new round.' });
+
+    expect(result.session.audit.ending).toBe('SUFFICIENT_FROM_PRIOR');
+    expect(result.recap).toEqual([expect.objectContaining({
+      decisionId: 'decision-1',
+      area: 'ending',
+      statement: 'Mara chooses her sister.',
+      roundNumber: 1,
+      questionId: 'morgan-ending',
+    })]);
+    expect(result.currentQuestion?.id).not.toBe('morgan-ending');
+  });
+});
+
 // Sequenced fake: each query terminal (order/single/maybeSingle) consumes the
 // next queued result, so one test can script list-then-insert behavior.
 function sequencedDb(results: Array<{ data: unknown; error: { message: string } | null }>): SupabaseClient {
@@ -120,6 +238,16 @@ describe('interviewRuntime.single active session guard', () => {
       { data: activeSession, error: null },
       { data: activeSession, error: null },
     ]));
+    const auditContext = await import('../../../server/room/interview/auditContext');
+    const roomStore = await import('../../../server/room/store');
+    vi.spyOn(roomStore, 'getSharedBlockValue').mockResolvedValue('');
+    vi.spyOn(auditContext, 'buildAuditContext').mockResolvedValue({
+      activeDecisions: [],
+      priorAnswers: [],
+      storyLocks: '',
+      openQuestions: '',
+      coveredAreas: new Set(),
+    });
 
     const { startInterview } = await import('../../../server/room/interview/runtime');
     const result = await startInterview({ projectId: 'p1', mode: 'full', seedText: 'new round seed' });
@@ -184,7 +312,7 @@ describe('interviewRuntime.field_path normalization', () => {
     const roomStore = await import('../../../server/room/store');
     const interviewStore = await import('../../../server/room/interview/store');
     const insertSpy = vi.spyOn(roomStore, 'insertProposal').mockResolvedValue(undefined as never);
-    const appendSpy = vi.spyOn(interviewStore, 'appendInterviewAnswer').mockResolvedValue(activeSession);
+    const appendSpy = vi.spyOn(interviewStore, 'appendInterviewAnswerAndUpdateCursor').mockResolvedValue(activeSession);
 
     const { answerInterviewQuestion } = await import('../../../server/room/interview/runtime');
     await answerInterviewQuestion({ sessionId: 's1', projectId: 'p1', answerText: '  complex character detail  ' });
@@ -193,7 +321,7 @@ describe('interviewRuntime.field_path normalization', () => {
       question_text: expect.any(String),
       domain: 'character',
       answer_text: '  complex character detail  ',
-    }));
+    }), expect.objectContaining({ cursor: expect.any(Object) }));
 
     expect(insertSpy).toHaveBeenCalled();
     const fieldPath = insertSpy.mock.calls[0][0].fieldPath as string;

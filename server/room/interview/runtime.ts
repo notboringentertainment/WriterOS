@@ -2,13 +2,14 @@ import * as roomStore from '../store';
 import { mergeMeetingLocks } from '../lockSections';
 import { getRoomDb } from '../supabaseClient';
 import * as interviewStore from './store';
+import * as auditContextRuntime from './auditContext';
 import { auditSeed, formatAuditMessage } from './audit';
 import { buildBankPreview, type BankPreview, type Mutability, parseOpenQuestionsBlock, renderOpenQuestionsBlockBounded } from './banking';
 import { checkInterviewExport, renderPitchStudioSeedExport } from './exportCheck';
 import { DOMAIN_BY_TRIGGER, projectConceptSeed } from './conceptSeedProjection';
-import { getQuestionById, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
+import { getQuestionById, QUESTION_BANK, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
-import type { InterviewMode, InterviewSessionRow, MeetingBankSnapshot } from './types';
+import type { InterviewCursor, InterviewMode, InterviewSessionRow, MeetingBankSnapshot, MeetingRecapItem } from './types';
 import type { ProposalOrigin } from '../types';
 
 export interface InterviewStatus {
@@ -16,12 +17,14 @@ export interface InterviewStatus {
   hasBankedSeed: boolean;
   actionLabel: 'Project Meeting' | 'New interview round';
   currentQuestion: QuestionBankRow | null;
+  recap: MeetingRecapItem[];
 }
 
 export interface InterviewStartResult {
   session: InterviewSessionRow;
   auditMessage: string;
   currentQuestion: QuestionBankRow | null;
+  recap: MeetingRecapItem[];
 }
 
 export interface InterviewAnswerResult {
@@ -48,8 +51,84 @@ function hasBankedSeed(sessions: readonly InterviewSessionRow[]): boolean {
   return sessions.some((session) => session.state === 'banked' || session.state === 'exported');
 }
 
+function terminalSessions(sessions: readonly InterviewSessionRow[]): InterviewSessionRow[] {
+  return sessions
+    .filter((session) => session.state === 'banked' || session.state === 'exported')
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+}
+
+function questionIdForArea(area: string): string | null {
+  if (area.startsWith('question:')) return area.slice('question:'.length);
+  return QUESTION_BANK.find((question) => question.trigger === area && question.requirement !== 'optional')?.id ?? null;
+}
+
+export function buildMeetingRecap(
+  context: auditContextRuntime.InterviewAuditContext,
+  sessions: readonly InterviewSessionRow[],
+): MeetingRecapItem[] {
+  const rounds = new Map(terminalSessions(sessions).map((session, index) => [session.id, index + 1]));
+  return context.activeDecisions.flatMap((decision) => {
+    const statement = 'statement' in decision.content ? decision.content.statement : '';
+    if (!statement) return [];
+    return [{
+      decisionId: decision.id,
+      sessionId: decision.session_id,
+      area: decision.area,
+      fieldPath: decision.field_path,
+      statement,
+      roundNumber: rounds.get(decision.session_id) ?? 1,
+      questionId: questionIdForArea(decision.area),
+    }];
+  });
+}
+
+async function loadAuditContext(
+  projectId: string,
+  sessions: readonly InterviewSessionRow[],
+): Promise<auditContextRuntime.InterviewAuditContext> {
+  const [storyLocks, openQuestions] = await Promise.all([
+    roomStore.getSharedBlockValue(projectId, 'story_locks'),
+    roomStore.getSharedBlockValue(projectId, 'open_questions'),
+  ]);
+  return auditContextRuntime.buildAuditContext({
+    projectId,
+    sessions,
+    storyLocks: storyLocks ?? '',
+    openQuestions: openQuestions ?? '',
+  });
+}
+
 function currentQuestionFor(session: InterviewSessionRow): QuestionBankRow | null {
   return session.cursor.question_id ? getQuestionById(session.cursor.question_id) ?? null : null;
+}
+
+export function reconstructInterviewQuestions(session: InterviewSessionRow): QuestionBankRow[] {
+  const base = selectQuestionsForAudit({
+    audit: session.audit,
+    mode: session.mode,
+    speculative: session.audit.world_rules !== undefined,
+  });
+  const selected = [...base];
+  const selectedIds = new Set(selected.map((question) => question.id));
+  for (const redirect of session.cursor.redirects ?? []) {
+    if (redirect.answered_at !== null || selectedIds.has(redirect.question_id)) continue;
+    const question = getQuestionById(redirect.question_id);
+    if (!question) continue;
+    selected.push(question);
+    selectedIds.add(question.id);
+  }
+  return selected;
+}
+
+function stampAnsweredRedirect(cursor: InterviewCursor, questionId: string, answeredAt: string): InterviewCursor {
+  return {
+    ...cursor,
+    redirects: (cursor.redirects ?? []).map((redirect) => (
+      redirect.question_id === questionId && redirect.answered_at === null
+        ? { ...redirect, answered_at: answeredAt }
+        : redirect
+    )),
+  };
 }
 
 function assertSessionProject(sessionProjectId: string, routeProjectId: string): void {
@@ -80,11 +159,13 @@ function normalizeFieldPath(rawTarget: string, questionId: string): string {
 export async function getInterviewStatus(projectId: string): Promise<InterviewStatus> {
   const sessions = await interviewStore.listInterviewSessions(projectId);
   const activeSession = sessions.find((session) => isPreBanked(session.state)) ?? null;
+  const context = activeSession && hasBankedSeed(sessions) ? await loadAuditContext(projectId, sessions) : null;
   return {
     activeSession,
     hasBankedSeed: hasBankedSeed(sessions),
     actionLabel: hasBankedSeed(sessions) ? 'New interview round' : 'Project Meeting',
     currentQuestion: activeSession ? currentQuestionFor(activeSession) : null,
+    recap: context ? buildMeetingRecap(context, sessions) : [],
   };
 }
 
@@ -105,6 +186,10 @@ export async function startInterview(input: {
   if (existingSessions.some((existing) => isPreBanked(existing.state))) {
     throw new Error(`A Project Meeting is already in progress for project ${input.projectId}.`);
   }
+  const context = hasBankedSeed(existingSessions)
+    ? await loadAuditContext(input.projectId, existingSessions)
+    : undefined;
+  const recap = context ? buildMeetingRecap(context, existingSessions) : [];
 
   let session: InterviewSessionRow;
   try {
@@ -116,7 +201,7 @@ export async function startInterview(input: {
     }
     throw error;
   }
-  const audit = auditSeed(seedText, { speculative: Boolean(input.speculative) });
+  const audit = auditSeed(seedText, { speculative: Boolean(input.speculative), context });
   const questions = selectQuestionsForAudit({ audit: audit.verdicts, mode: input.mode, speculative: Boolean(input.speculative) });
   session = await interviewStore.updateInterviewSession(session.id, {
     state: questions.length ? 'interviewing' : 'readback',
@@ -126,7 +211,7 @@ export async function startInterview(input: {
 
   await roomStore.insertMessage({ projectId: input.projectId, author: 'morgan', content: formatAuditMessage(audit.verdicts) });
 
-  return { session, auditMessage: formatAuditMessage(audit.verdicts), currentQuestion: currentQuestionFor(session) };
+  return { session, auditMessage: formatAuditMessage(audit.verdicts), currentQuestion: currentQuestionFor(session), recap };
 }
 
 export async function answerInterviewQuestion(input: {
@@ -150,7 +235,7 @@ export async function answerInterviewQuestion(input: {
   validateTextLength('answerText', answerText);
   validateTextLength('resolvedValue', input.resolvedValue);
   const disposition = input.rejectMapping ? 'seed_color' : input.disposition ?? 'field_mapped';
-  await interviewStore.appendInterviewAnswer(session.id, {
+  const transcriptEntry = {
     question_id: question.id,
     question_text: question.question,
     domain: DOMAIN_BY_TRIGGER[question.trigger],
@@ -158,7 +243,7 @@ export async function answerInterviewQuestion(input: {
     answer_text: answerText,
     origin: disposition === 'skipped_delegated' ? null : input.origin ?? 'seed',
     disposition,
-  });
+  } as const;
 
   let proposal: InterviewAnswerResult['proposal'];
   if (disposition === 'field_mapped') {
@@ -176,10 +261,57 @@ export async function answerInterviewQuestion(input: {
     });
   }
 
-  const questions = selectQuestionsForAudit({ audit: session.audit, mode: session.mode, speculative: session.audit.world_rules !== undefined });
-  const nextPatch = advanceInterviewCursor(session, questions);
-  const nextSession = await interviewStore.updateInterviewSession(session.id, nextPatch);
+  const questions = reconstructInterviewQuestions(session);
+  const answeredAt = new Date().toISOString();
+  const sessionWithStampedRedirect = {
+    ...session,
+    cursor: stampAnsweredRedirect(session.cursor, question.id, answeredAt),
+  };
+  const nextPatch = advanceInterviewCursor(sessionWithStampedRedirect, questions);
+  const nextSession = await interviewStore.appendInterviewAnswerAndUpdateCursor(
+    session.id,
+    { ...transcriptEntry, at: answeredAt },
+    nextPatch,
+  );
   return { session: nextSession, proposal, currentQuestion: currentQuestionFor(nextSession) };
+}
+
+export async function redirectInterviewArea(input: {
+  sessionId: string;
+  projectId: string;
+  area: string;
+  questionId: string;
+}): Promise<InterviewAnswerResult> {
+  const session = await interviewStore.getInterviewSession(input.sessionId);
+  if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
+  assertSessionProject(session.project_id, input.projectId);
+  if (!isPreBanked(session.state)) throw new Error('Only active pre-banked interview sessions can redirect an area.');
+
+  const question = getQuestionById(input.questionId);
+  if (!question || (question.trigger !== input.area && `question:${question.id}` !== input.area)) {
+    throw new Error('Redirect area does not match the requested question.');
+  }
+  if ((session.cursor.redirects ?? []).some((redirect) => redirect.area === input.area && redirect.answered_at === null)) {
+    return { session, currentQuestion: currentQuestionFor(session) };
+  }
+
+  const redirects = [...(session.cursor.redirects ?? []), {
+    area: input.area,
+    question_id: question.id,
+    at: new Date().toISOString(),
+    answered_at: null,
+  }];
+  const hasCurrentQuestion = session.cursor.question_id !== null;
+  const updated = await interviewStore.updateInterviewSession(session.id, {
+    state: hasCurrentQuestion ? session.state : 'interviewing',
+    cursor: {
+      ...session.cursor,
+      lane: hasCurrentQuestion ? session.cursor.lane : question.lane,
+      question_id: hasCurrentQuestion ? session.cursor.question_id : question.id,
+      redirects,
+    },
+  });
+  return { session: updated, currentQuestion: currentQuestionFor(updated) };
 }
 
 export async function skipInterviewQuestion(input: { sessionId: string; projectId: string }): Promise<InterviewAnswerResult> {
@@ -193,7 +325,7 @@ export async function wrapInterview(input: { sessionId: string; projectId: strin
   if (session.state === 'banked' || session.state === 'exported') {
     throw new Error(`Cannot wrap interview session that is already ${session.state}.`);
   }
-  return interviewStore.updateInterviewSession(session.id, { state: 'readback', cursor: { lane: null, question_id: null, budgets_spent: session.cursor.budgets_spent } });
+  return interviewStore.updateInterviewSession(session.id, { state: 'readback', cursor: { lane: null, question_id: null, budgets_spent: session.cursor.budgets_spent, redirects: session.cursor.redirects ?? [] } });
 }
 
 export async function pauseInterview(input: { sessionId: string; projectId: string }): Promise<InterviewSessionRow> {

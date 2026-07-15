@@ -34,7 +34,8 @@ describe('Project Meeting state machine helpers', () => {
   });
 
   it('pauses from any pre-banked state and resumes the exact previous state and cursor', () => {
-    const active = session({ state: 'interviewing', cursor: { lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: { locks: 1 } } });
+    const redirects = [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }];
+    const active = session({ state: 'interviewing', cursor: { lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: { locks: 1 }, redirects } });
 
     const paused = pauseInterviewSessionState(active);
     expect(paused.state).toBe('paused');
@@ -42,7 +43,19 @@ describe('Project Meeting state machine helpers', () => {
 
     const resumed = resumeInterviewSessionState({ ...active, state: paused.state, cursor: paused.cursor });
     expect(resumed.state).toBe('interviewing');
-    expect(resumed.cursor).toEqual({ lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: { locks: 1 } });
+    expect(resumed.cursor).toEqual({ lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: { locks: 1 }, redirects });
+  });
+
+  it('preserves redirects while advancing and entering readback', () => {
+    const redirects = [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }];
+    const active = session({ cursor: { lane: 'morgan', question_id: 'morgan-locks', budgets_spent: {}, redirects } });
+    const questions = selectQuestionsForAudit({ audit: active.audit, mode: 'full', speculative: false });
+
+    const afterFirst = advanceInterviewCursor(active, questions);
+    const afterSecond = advanceInterviewCursor({ ...active, cursor: afterFirst.cursor }, questions);
+
+    expect(afterFirst.cursor.redirects).toEqual(redirects);
+    expect(afterSecond.cursor.redirects).toEqual(redirects);
   });
 
   it('refuses to pause banked or exported sessions', () => {

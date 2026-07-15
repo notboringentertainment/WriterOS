@@ -44,6 +44,37 @@ describe('Project Meeting audit engine', () => {
     expect(selectQuestionsForAudit({ audit: spec.verdicts, mode: 'full', speculative: true }).map(q => q.id)).toContain('zoe-world-rules');
   });
 
+  it('uses new-seed coverage before active-direction coverage', () => {
+    const audit = auditSeed('Ending: it ends with Mara choosing her sister.', {
+      speculative: false,
+      context: {
+        activeDecisions: [],
+        priorAnswers: [],
+        storyLocks: '',
+        openQuestions: '',
+        coveredAreas: new Set(['ending']),
+      },
+    });
+
+    expect(audit.verdicts.ending).toBe('SUFFICIENT');
+  });
+
+  it('marks active prior coverage as SUFFICIENT_FROM_PRIOR and suppresses its question', () => {
+    const audit = auditSeed('', {
+      speculative: false,
+      context: {
+        activeDecisions: [],
+        priorAnswers: [],
+        storyLocks: '',
+        openQuestions: '',
+        coveredAreas: new Set(['ending']),
+      },
+    });
+
+    expect(audit.verdicts.ending).toBe('SUFFICIENT_FROM_PRIOR');
+    expect(selectQuestionsForAudit({ audit: audit.verdicts, mode: 'full', speculative: false }).map(q => q.trigger)).not.toContain('ending');
+  });
+
   it('formats visible Morgan audit results instead of hiding the grade', () => {
     const message = formatAuditMessage({ locks: 'SUFFICIENT', ending: 'THIN', open_questions: 'THIN', load_bearing_character: 'SUFFICIENT' });
 

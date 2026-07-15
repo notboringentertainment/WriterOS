@@ -12,9 +12,23 @@ import type {
   AuditVerdicts,
   TranscriptEntry,
   InterviewProposalRow,
+  InterviewSessionPatch,
 } from './types';
 import { DEFAULT_INTERVIEW_CURSOR } from './types';
 import type { ProposalStatus } from '../types';
+
+export function normalizeInterviewCursor(cursor: Partial<InterviewCursor> | null | undefined): InterviewCursor {
+  return {
+    lane: cursor?.lane ?? null,
+    question_id: cursor?.question_id ?? null,
+    budgets_spent: cursor?.budgets_spent ?? {},
+    redirects: cursor?.redirects ?? [],
+  };
+}
+
+function normalizeInterviewSession(row: InterviewSessionRow): InterviewSessionRow {
+  return { ...row, cursor: normalizeInterviewCursor(row.cursor) };
+}
 
 function throwOnError<T>(result: { data: T | null; error: { message: string } | null }, label: string): T {
   if (result.error) throw new Error(`[interview.store] ${label}: ${result.error.message}`);
@@ -42,7 +56,7 @@ export async function createInterviewSession(input: {
     })
     .select()
     .single();
-  return throwOnError(res, 'createInterviewSession') as InterviewSessionRow;
+  return normalizeInterviewSession(throwOnError(res, 'createInterviewSession') as InterviewSessionRow);
 }
 
 export async function getInterviewSession(id: string): Promise<InterviewSessionRow | null> {
@@ -52,7 +66,7 @@ export async function getInterviewSession(id: string): Promise<InterviewSessionR
     .eq('id', id)
     .maybeSingle();
   if (res.error) throw new Error(`[interview.store] getInterviewSession: ${res.error.message}`);
-  return (res.data as InterviewSessionRow | null) ?? null;
+  return res.data ? normalizeInterviewSession(res.data as InterviewSessionRow) : null;
 }
 
 export async function listInterviewSessions(projectId: string): Promise<InterviewSessionRow[]> {
@@ -62,7 +76,7 @@ export async function listInterviewSessions(projectId: string): Promise<Intervie
     .eq('project_id', projectId)
     .order('created_at', { ascending: false });
   if (res.error) throw new Error(`[interview.store] listInterviewSessions: ${res.error.message}`);
-  return (res.data ?? []) as InterviewSessionRow[];
+  return ((res.data ?? []) as InterviewSessionRow[]).map(normalizeInterviewSession);
 }
 
 export async function updateInterviewSession(
@@ -86,7 +100,7 @@ export async function updateInterviewSession(
     .eq('id', id)
     .select()
     .single();
-  return throwOnError(res, 'updateInterviewSession') as InterviewSessionRow;
+  return normalizeInterviewSession(throwOnError(res, 'updateInterviewSession') as InterviewSessionRow);
 }
 
 // ---- transcript (answers) ----
@@ -112,7 +126,31 @@ export async function appendInterviewAnswer(
     .eq('id', sessionId)
     .select()
     .single();
-  return throwOnError(res, 'appendInterviewAnswer') as InterviewSessionRow;
+  return normalizeInterviewSession(throwOnError(res, 'appendInterviewAnswer') as InterviewSessionRow);
+}
+
+export async function appendInterviewAnswerAndUpdateCursor(
+  sessionId: string,
+  entry: Omit<TranscriptEntry, 'at'> & { at?: string },
+  patch: InterviewSessionPatch,
+): Promise<InterviewSessionRow> {
+  const session = await getInterviewSession(sessionId);
+  if (!session) {
+    throw new Error(`[interview.store] appendInterviewAnswerAndUpdateCursor: session ${sessionId} not found`);
+  }
+  const answers = [...session.answers, { ...entry, at: entry.at ?? new Date().toISOString() }];
+  const res = await getRoomDb()
+    .from('interview_sessions')
+    .update({
+      answers,
+      state: patch.state,
+      cursor: normalizeInterviewCursor(patch.cursor),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sessionId)
+    .select()
+    .single();
+  return normalizeInterviewSession(throwOnError(res, 'appendInterviewAnswerAndUpdateCursor') as InterviewSessionRow);
 }
 
 // ---- interview proposals ----
