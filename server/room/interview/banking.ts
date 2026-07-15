@@ -113,7 +113,7 @@ function questionIdForFieldPath(rawTarget: string, proposal: InterviewProposalRo
   return rawTarget.startsWith('interview_answer.') ? rawTarget.slice('interview_answer.'.length) : null;
 }
 
-function resolveCanonicalFieldPath(rawTarget: string, proposal: InterviewProposalRow): string {
+export function resolveCanonicalFieldPath(rawTarget: string, proposal: InterviewProposalRow): string {
   const questionId = questionIdForFieldPath(rawTarget, proposal);
   if (questionId && BANK_FIELD_BY_INTERVIEW_QUESTION[questionId]) {
     return BANK_FIELD_BY_INTERVIEW_QUESTION[questionId];
