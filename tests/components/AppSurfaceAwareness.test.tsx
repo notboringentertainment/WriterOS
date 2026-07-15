@@ -45,6 +45,8 @@ describe('App surface awareness — live request path', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
 
     const body = wpChatBody(fetchMock)
+    expect(body.projectId).toEqual(expect.any(String))
+    expect(body.projectId).not.toBe('')
     expect(body.personaId).toBe('writingPartner')
     expect(body.projectContext.surface.kind).toBe('intake')
     expect(body.projectContext.surface.surface).toBe('outline')

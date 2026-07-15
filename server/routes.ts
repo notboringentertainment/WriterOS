@@ -15,6 +15,8 @@ import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
+import * as roomStore from "./room/store";
+import { isRoomConfigured } from "./room/supabaseClient";
 
 const openaiService = new OpenAIService();
 
@@ -374,6 +376,7 @@ const voiceProfileDocumentSchema = z.object({
 });
 
 const wpChatSchema = z.object({
+  projectId: z.string().min(1),
   personaId: z.string(),
   message: z.string(),
   projectContext: projectContextSchema,
@@ -939,8 +942,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         immediateNeed: '',
       };
       const scriptContext = data.projectContext.script;
+      const sharedMemory = isRoomConfigured()
+        ? (await roomStore.getSharedBlocksForAgent(data.projectId, data.personaId))
+          .map(block => ({ label: block.label, value: block.value }))
+        : [];
 
       const storyMemory: StoryMemory = {
+        sharedMemory,
         project: {
           title: data.projectContext.title,
           genre: data.projectContext.genre,

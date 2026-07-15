@@ -71,6 +71,20 @@ function populatedStoryMemory(): StoryMemory {
 }
 
 describe('createContextSummary', () => {
+  it('renders canonical shared project memory for surface agents', () => {
+    const summary = createContextSummary(storyMemory({
+      sharedMemory: [
+        { label: 'concept_seed', value: 'Mara is a wildfire investigator searching for her missing sister.' },
+        { label: 'story_locks', value: 'The sister remains alive.' },
+      ],
+    } as Partial<StoryMemory>))
+
+    expect(summary).toContain('SHARED PROJECT MEMORY')
+    expect(summary).toContain('[concept_seed]\nMara is a wildfire investigator')
+    expect(summary).toContain('[story_locks]\nThe sister remains alive.')
+    expect(summary).not.toBe('No structured project details yet.')
+  })
+
   it('returns an empty-state summary when no structured details are filled', () => {
     expect(createContextSummary(storyMemory())).toBe('No structured project details yet.')
   })

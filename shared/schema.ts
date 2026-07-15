@@ -44,6 +44,10 @@ export interface ScriptScene {
 }
 
 export interface StoryMemory {
+  sharedMemory?: Array<{
+    label: string
+    value: string
+  }>
   project: {
     title?: string
     genre?: string

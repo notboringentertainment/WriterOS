@@ -71,6 +71,7 @@ function formatFdxImportError(error: unknown) {
 }
 
 async function postWPChat(body: {
+  projectId: string
   personaId: string
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
@@ -710,7 +711,7 @@ export default function App() {
         storyBibleSection: shellState.storyBibleSection,
         surface,
       })
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
     } catch (error) {
       if (isAbortError(error)) return
@@ -750,7 +751,7 @@ export default function App() {
         storyBibleSection: shellState.storyBibleSection,
         surface,
       })
-      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const response = await postWPChat({ projectId: project.activeProjectId!, personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
       project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
     } catch (error) {
