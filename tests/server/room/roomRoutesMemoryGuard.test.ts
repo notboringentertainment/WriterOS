@@ -20,8 +20,11 @@ const runtimeMock = vi.hoisted(() => ({
   redirectInterviewArea: vi.fn(async () => ({})),
   wrapInterview: vi.fn(async () => ({})), pauseInterview: vi.fn(async () => ({})), resumeInterview: vi.fn(async () => ({})),
   previewBankFinal: vi.fn(async () => ({ preview: {}, finalValues: {} })), bankInterview: vi.fn(async () => ({})), exportInterview: vi.fn(async () => ({})),
+  createPitchPacketDraft: vi.fn(async () => ({})), savePitchPacketDraft: vi.fn(async () => ({})), approvePitchPacket: vi.fn(async () => ({})),
+  exportPitchPacket: vi.fn(async () => ({})), getExportedPitchPacket: vi.fn(async () => ({})),
 }));
 vi.mock('../../../server/room/interview/runtime', () => runtimeMock);
+vi.mock('../../../server/room/interview/pitchPacketRuntime', () => runtimeMock);
 const memoryMock = vi.hoisted(() => ({ ensureProjectMemory: vi.fn(async () => undefined) }));
 vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({ ...(await importOriginal<object>()), ensureProjectMemory: memoryMock.ensureProjectMemory }));
 import { registerRoomRoutes } from '../../../server/room/roomRoutes';
@@ -40,6 +43,8 @@ const guarded: Array<[string, object]> = [
   ['/interview/s1/redirect', { area: 'ending', questionId: 'morgan-ending' }],
   ['/interview/s1/pause', {}], ['/interview/s1/resume', {}], ['/interview/s1/bank-preview', {}],
   ['/interview/s1/bank', {}], ['/interview/s1/export', {}],
+  ['/interview/s1/pitch-packet/draft', { documents: {}, projectMeta: {} }],
+  ['/interview/s1/pitch-packet/packet-1/approve', {}], ['/interview/s1/pitch-packet/packet-1/export', {}],
 ];
 
 describe('memory guard', () => {
@@ -61,5 +66,22 @@ describe('memory guard', () => {
     await fetch(`http://127.0.0.1:${port}/api/room/p1/interview`);
     await post('/proposals/x1/resolve', { status: 'rejected' });
     expect(memoryMock.ensureProjectMemory).not.toHaveBeenCalled();
+  });
+
+  it('guards exported packet re-download reads because they depend on room persistence', async () => {
+    const url = `http://127.0.0.1:${port}/api/room/p1/interview/s1/pitch-packet/exported`;
+    expect((await fetch(url)).status).not.toBe(503);
+    expect(memoryMock.ensureProjectMemory).toHaveBeenCalledWith('p1');
+    vi.clearAllMocks(); memoryMock.ensureProjectMemory.mockRejectedValueOnce(new Error('db down'));
+    expect((await fetch(url)).status).toBe(503);
+  });
+
+  it('guards Pitch Packet draft saves', async () => {
+    const url = `http://127.0.0.1:${port}/api/room/p1/interview/s1/pitch-packet/packet-1`;
+    const request = () => fetch(url, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ packet: {} }) });
+    expect((await request()).status).not.toBe(503);
+    expect(memoryMock.ensureProjectMemory).toHaveBeenCalledWith('p1');
+    vi.clearAllMocks(); memoryMock.ensureProjectMemory.mockRejectedValueOnce(new Error('db down'));
+    expect((await request()).status).toBe(503);
   });
 });

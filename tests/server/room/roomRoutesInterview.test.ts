@@ -17,9 +17,15 @@ const { runtimeMock } = vi.hoisted(() => ({
     previewBankFinal: vi.fn(),
     bankInterview: vi.fn(),
     exportInterview: vi.fn(),
+    createPitchPacketDraft: vi.fn(),
+    savePitchPacketDraft: vi.fn(),
+    approvePitchPacket: vi.fn(),
+    exportPitchPacket: vi.fn(),
+    getExportedPitchPacket: vi.fn(),
   },
 }))
 vi.mock('../../../server/room/interview/runtime', () => runtimeMock)
+vi.mock('../../../server/room/interview/pitchPacketRuntime', () => runtimeMock)
 vi.mock('../../../server/room/supabaseClient', () => ({ isRoomConfigured: () => true }))
 vi.mock('../../../server/room/scheduler', () => ({ startRoomScheduler: () => true }))
 vi.mock('../../../server/room/sseHub', () => ({ addSseClient: vi.fn(), broadcast: vi.fn() }))
@@ -46,10 +52,10 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-function post(path: string, body: unknown = {}): Promise<{ status: number; json: Record<string, unknown> }> {
+function post(path: string, body: unknown = {}, method = 'POST'): Promise<{ status: number; json: Record<string, unknown> }> {
   const payload = JSON.stringify(body)
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => {
+    const req = http.request({ hostname: '127.0.0.1', port, path, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', c => chunks.push(Buffer.from(c)))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString() || '{}') }))
@@ -179,5 +185,21 @@ describe('Project Meeting routes', () => {
     expect((await post('/api/room/project-A/interview/start', { mode: 'full', seedText: oversized })).status).toBe(413)
     expect((await post('/api/room/project-A/interview/s1/answer', { answerText: oversized })).status).toBe(413)
     expect((await post('/api/room/project-A/interview/s1/answer', { answerText: 'short', resolvedValue: oversized })).status).toBe(413)
+  })
+
+  it('supports the explicit Pitch Packet draft, save, approve, export, and re-download lifecycle', async () => {
+    const row = { id: 'packet-1', project_id: 'project-A', session_id: 's1', status: 'draft', packet: { packetVersion: 1 } }
+    runtimeMock.createPitchPacketDraft.mockResolvedValueOnce({ row, proposalUnavailable: false })
+    runtimeMock.savePitchPacketDraft.mockResolvedValueOnce(row)
+    runtimeMock.approvePitchPacket.mockResolvedValueOnce({ ...row, status: 'approved' })
+    runtimeMock.exportPitchPacket.mockResolvedValueOnce({ ...row, status: 'exported' })
+    runtimeMock.getExportedPitchPacket.mockResolvedValueOnce({ ...row, status: 'exported' })
+
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/draft', { documents: { synopsis: {} }, projectMeta: { title: 'Ace' } })).status).toBe(200)
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1', { packet: { packetVersion: 1 } }, 'PATCH')).status).toBe(200)
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1/approve')).json).toMatchObject({ status: 'approved' })
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1/export')).json).toMatchObject({ status: 'exported' })
+    expect((await get('/api/room/project-A/interview/s1/pitch-packet/exported')).json).toMatchObject({ status: 'exported' })
+    expect(runtimeMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-A', sessionId: 's1', projectMeta: { title: 'Ace' } }))
   })
 })

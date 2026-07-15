@@ -8,6 +8,7 @@ import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
 import * as interviewRuntime from './interview/runtime';
+import * as pitchPacketRuntime from './interview/pitchPacketRuntime';
 import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
 import { syncSurfaceLocks } from './surfaceLockSync';
@@ -53,6 +54,20 @@ function handleInterviewError(res: Response, error: unknown): void {
     return;
   }
   console.error('[room.routes] interview action failed:', error);
+  res.status(500).json({ message });
+}
+
+function handlePitchPacketError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : 'Pitch Packet action failed.';
+  if (error instanceof Error && error.name === 'ZodError') { res.status(400).json({ message: 'Pitch Packet data is invalid.' }); return; }
+  if (message.includes('not found')) { res.status(404).json({ message }); return; }
+  if (message.includes('cannot be approved') || message.includes('Only a draft') || message.includes('must be approved')) {
+    res.status(422).json({ message }); return;
+  }
+  if (message.includes('does not belong') || message.includes('identity does not match') || message.includes('direction changed') || message.includes('requires a banked')) {
+    res.status(409).json({ message }); return;
+  }
+  console.error('[room.routes] pitch packet action failed:', error);
   res.status(500).json({ message });
 }
 
@@ -421,6 +436,53 @@ export function registerRoomRoutes(app: Express): void {
     } catch (error) {
       handleInterviewError(res, error);
     }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/draft', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.createPitchPacketDraft({
+        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), documents: req.body?.documents,
+        projectMeta: { title: typeof req.body?.projectMeta?.title === 'string' ? req.body.projectMeta.title : undefined },
+      }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.patch('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.savePitchPacketDraft({
+        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId), packet: req.body?.packet,
+      }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId/approve', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.approvePitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId) }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId/export', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.exportPitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId) }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.get('/api/room/:projectId/interview/:sessionId/pitch-packet/exported', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      const row = await pitchPacketRuntime.getExportedPitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId) });
+      if (!row) { res.status(404).json({ message: 'No exported Pitch Packet exists for this Meeting round.' }); return; }
+      res.json(row);
+    } catch (error) { handlePitchPacketError(res, error); }
   });
 
   startRoomScheduler();
