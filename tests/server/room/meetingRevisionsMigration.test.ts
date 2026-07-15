@@ -8,6 +8,10 @@ const migrationPath = join(
   'supabase/migrations/20260714000001_meeting_revisions_pitch_packets.sql',
 );
 const migration = readFileSync(migrationPath, 'utf8');
+const exportTimestampFixPath = join(
+  process.cwd(),
+  'supabase/migrations/20260715000001_pitch_packet_export_timestamp.sql',
+);
 
 describe('Meeting revisions and Pitch Packet migration', () => {
   it('adds the append-only decision ledger and required indexes', () => {
@@ -56,6 +60,14 @@ describe('Meeting revisions and Pitch Packet migration', () => {
     expect(migration).toMatch(/update interview_sessions[\s\S]*set state = 'exported'/i);
     expect(migration).toContain('packet_not_approved');
     expect(migration).toContain('session_not_banked');
+  });
+
+  it('stores exportedAt as RFC3339 UTC in the forward export-function fix', () => {
+    const fix = readFileSync(exportTimestampFixPath, 'utf8');
+    expect(fix).toMatch(/create or replace function export_pitch_packet\s*\(/i);
+    expect(fix).toMatch(/to_char\s*\(v_exported_at at time zone 'UTC'/i);
+    expect(fix).toContain('YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
+    expect(fix).not.toMatch(/v_exported_at::text/i);
   });
 
   it('provides an explicit idempotent service-role backfill without read hooks', () => {
