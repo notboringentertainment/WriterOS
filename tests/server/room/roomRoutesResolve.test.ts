@@ -119,11 +119,11 @@ describe('POST /api/room/:projectId/messages', () => {
       characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
       surfaceAwareness: {
         kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'series',
-        questions: [{ id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' }],
+        questions: [{ id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'answered', answers: [{ value: 'Ray Gravely' }] }],
         selectionSource: 'first_unanswered',
-        answeredCount: 0, totalCount: 1,
-        nextQuestion: { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'unanswered' },
-        nextRecommendedAction: 'answer_next_question',
+        answeredCount: 1, totalCount: 1,
+        nextQuestion: { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'answered', answers: [{ value: 'Ray Gravely' }] },
+        nextRecommendedAction: 'all_answered',
       },
     })
 
@@ -136,7 +136,7 @@ describe('POST /api/room/:projectId/messages', () => {
           characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
           surfaceAwareness: expect.objectContaining({
             kind: 'intake', surface: 'outline', format: 'series',
-            nextQuestion: expect.objectContaining({ label: 'Who are we following?' }),
+            nextQuestion: expect.objectContaining({ label: 'Who are we following?', answers: [{ value: 'Ray Gravely' }] }),
           }),
         }),
       }),

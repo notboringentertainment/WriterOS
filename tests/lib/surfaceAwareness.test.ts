@@ -50,9 +50,23 @@ describe('buildSurfaceAwareness', () => {
     const sa = buildSurfaceAwareness('outline', state)
     if (sa.kind !== 'intake') throw new Error('expected intake')
     expect(sa.answeredCount).toBe(1)
-    expect(sa.questions.find(q => q.id === 'spine.protagonist')?.status).toBe('answered')
+    expect(sa.questions.find(q => q.id === 'spine.protagonist')).toMatchObject({
+      status: 'answered',
+      answers: [{ value: 'Mara' }],
+    })
     expect(sa.nextQuestion?.id).not.toBe('spine.protagonist')
     expect(sa.nextQuestion?.status).toBe('unanswered')
+  })
+
+  it('composite outline questions expose each current answer with its field label', () => {
+    let state = withOutline(featureState(), 'spine.externalGoal', 'Steal the ledger')
+    state = withOutline(state, 'spine.internalNeed', 'Trust his family')
+    const sa = buildSurfaceAwareness('outline', state)
+    if (sa.kind !== 'intake') throw new Error('expected intake')
+    expect(sa.questions.find(q => q.id === 'spine.wantNeed')?.answers).toEqual([
+      { label: 'What they want', value: 'Steal the ledger' },
+      { label: 'What they need', value: 'Trust his family' },
+    ])
   })
 
   it('composite card stays unanswered until both bindings are filled', () => {
@@ -89,34 +103,49 @@ describe('buildSurfaceAwareness', () => {
   })
 
   it('feature synopsis sends its live question deck', () => {
-    const sa = buildSurfaceAwareness('synopsis', featureState())
+    const state = featureState()
+    state.documents.synopsis.content.header.title = 'Grave Affairs'
+    const sa = buildSurfaceAwareness('synopsis', state)
     expect(sa.kind).toBe('intake')
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('synopsis')
     expect(sa.surfaceTitle).toBe('Synopsis')
     expect(sa.totalCount).toBe(FEATURE_SYNOPSIS_DECK.length)
-    expect(sa.nextQuestion?.label).toBe('What should appear as the title?')
+    expect(sa.questions[0]).toMatchObject({
+      label: 'What should appear as the title?',
+      answers: [{ value: 'Grave Affairs' }],
+    })
   })
 
   it('treatment sends its live question deck', () => {
-    const sa = buildSurfaceAwareness('treatment', featureState())
+    const state = featureState()
+    state.documents.treatment.content.logline = 'A family of grifters faces its final con.'
+    const sa = buildSurfaceAwareness('treatment', state)
     expect(sa.kind).toBe('intake')
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('treatment')
     expect(sa.surfaceTitle).toBe('Treatment')
     expect(sa.totalCount).toBe(TREATMENT_SURFACE_DECK.length)
-    expect(sa.nextQuestion?.label).toBe('What is the story in one sentence?')
+    expect(sa.questions[0]).toMatchObject({
+      label: 'What is the story in one sentence?',
+      answers: [{ value: 'A family of grifters faces its final con.' }],
+    })
   })
 
   it('story bible sends its live question deck', () => {
-    const sa = buildSurfaceAwareness('story-bible', featureState())
+    const state = featureState()
+    state.documents.storyBible.content.cover.title = 'Grave Affairs'
+    const sa = buildSurfaceAwareness('story-bible', state)
     expect(sa.kind).toBe('intake')
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('story-bible')
     expect(sa.surfaceTitle).toBe('Story Bible')
     expect(sa.totalCount).toBe(FEATURE_STORY_BIBLE_DECK.length)
-    expect(sa.answeredCount).toBe(0)
-    expect(sa.nextQuestion?.label).toBe('What should appear as the title?')
+    expect(sa.answeredCount).toBe(1)
+    expect(sa.questions[0]).toMatchObject({
+      label: 'What should appear as the title?',
+      answers: [{ value: 'Grave Affairs' }],
+    })
     expect(sa.questions.find(q => q.id === 'feature-status')?.status).toBe('unanswered')
   })
 

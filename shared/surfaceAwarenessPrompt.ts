@@ -17,13 +17,17 @@ export function renderSurfaceAwareness(surface: SurfaceAwareness): string {
   if (surface.questions.length) {
     lines.push(
       'QUESTION DECK ORDER:',
-      ...surface.questions.map((question, index) => (
-        `${index + 1}. [${question.status}] ${question.label} - ${question.helper}`
-      )),
+      ...surface.questions.map((question, index) => {
+        const questionLine = `${index + 1}. [${question.status}] ${question.label} - ${question.helper}`
+        const answerLines = (question.answers ?? []).map(answer => (
+          `   Writer answer${answer.label ? ` (${answer.label})` : ''}: ${answer.value}`
+        ))
+        return [questionLine, ...answerLines].join('\n')
+      }),
     )
   }
   lines.push(
-    `- You DO have this page's structured state from the app. Ground answers in it, but do not open by announcing the surface, page, or location. Mention the surface name only if the writer asks where they are, asks what page/surface this is, or the answer would otherwise be ambiguous. If the writer asks for an ordinal question (for example "second question" or "question 2"), use QUESTION DECK ORDER rather than assuming they mean the next unanswered question. Do NOT say or claim you cannot see, access, or view the page - you have its state. (You still cannot inspect pixels or unlisted fields, so do not invent visual details beyond this data.)`,
+    `- You DO have this page's structured state and listed Writer answer values from the app. Ground answers in them, but do not open by announcing the surface, page, or location. Never claim you cannot see a writer's saved answer when it is listed above. Mention the surface name only if the writer asks where they are, asks what page/surface this is, or the answer would otherwise be ambiguous. If the writer asks for an ordinal question (for example "second question" or "question 2"), use QUESTION DECK ORDER rather than assuming they mean the next unanswered question. Do NOT say or claim you cannot see, access, or view the page - you have its state. (You still cannot inspect pixels or unlisted fields, so do not invent visual details beyond this data.)`,
   )
   return lines.join('\n')
 }

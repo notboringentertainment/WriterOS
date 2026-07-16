@@ -59,12 +59,12 @@ const writerMessageEvent: RoomEventRow = {
     surfaceAwareness: {
       kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'series',
       questions: [
-        { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'unanswered' },
+        { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'answered', answers: [{ value: 'Ray Gravely' }] },
         { id: 'series.engine', label: 'What repeats?', helper: 'Define the episode engine.', status: 'unanswered' },
       ],
       selectionSource: 'first_unanswered',
-      answeredCount: 0, totalCount: 2,
-      nextQuestion: { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'unanswered' },
+      answeredCount: 1, totalCount: 2,
+      nextQuestion: { id: 'series.engine', label: 'What repeats?', helper: 'Define the episode engine.', status: 'unanswered' },
       nextRecommendedAction: 'answer_next_question',
     },
   },
@@ -163,7 +163,8 @@ describe('runRoomTurn', () => {
     expect(userMsg).toContain('Rosa [id: r1]')
     expect(userMsg).toContain('LIVE SURFACE QUESTION DECK')
     expect(userMsg).toContain('Current app surface: Outline (series).')
-    expect(userMsg).toContain('1. [unanswered] Who are we following?')
+    expect(userMsg).toContain('1. [answered] Who are we following?')
+    expect(userMsg).toContain('Writer answer: Ray Gravely')
     expect(userMsg).toContain('2. [unanswered] What repeats?')
     expect(userMsg).toContain('file propose_field_write')
   })

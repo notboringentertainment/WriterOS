@@ -11,11 +11,19 @@ export type SurfaceId = z.infer<typeof SurfaceIdSchema>
 export const SurfaceFormatSchema = z.enum(['feature', 'series'])
 export type SurfaceFormat = z.infer<typeof SurfaceFormatSchema>
 
+export const SurfaceAnswerSchema = z.object({
+  label: z.string().optional(),
+  value: z.string(),
+})
+export type SurfaceAnswer = z.infer<typeof SurfaceAnswerSchema>
+
 export const SurfaceQuestionSchema = z.object({
   id: z.string(),
   label: z.string(),
   helper: z.string(),
   status: z.enum(['unanswered', 'answered']),
+  // Optional keeps snapshots stored before answer visibility backward-compatible.
+  answers: z.array(SurfaceAnswerSchema).optional(),
 })
 export type SurfaceQuestion = z.infer<typeof SurfaceQuestionSchema>
 
