@@ -1,6 +1,7 @@
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
 import { buildRoomAwarenessBlock, PERSONAS } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
+import { renderSurfaceAwareness } from "@shared/surfaceAwarenessPrompt";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
@@ -488,37 +489,6 @@ function formatScriptFactLines(script: StoryMemory['script']): string[] {
   ].filter(filled);
 }
 
-// Renders the Surface Awareness Contract into a context block. Returns '' for absent /
-// 'none' surface so existing prompts stay byte-identical. The grounding instruction lives
-// here (conditional), never in the unconditional persona response rules.
-function renderSurfaceAwareness(surface: StoryMemory['surface']): string {
-  if (!surface || surface.kind !== 'intake') return '';
-  const lines = [
-    `SURFACE AWARENESS (live app state from WriterOS; use silently as grounding unless the writer asks where they are):`,
-    `- Current app surface: ${surface.surfaceTitle} (${surface.format}).`,
-    `- Progress: ${surface.answeredCount}/${surface.totalCount} questions answered.`,
-  ];
-  if (surface.nextQuestion) {
-    const q = surface.nextQuestion;
-    const label = surface.nextRecommendedAction === 'all_answered'
-      ? `- Every question is answered. The first question is "${q.label}" - ${q.helper}`
-      : `- Next unanswered question: "${q.label}" - ${q.helper}`;
-    lines.push(label);
-  }
-  if (surface.questions.length) {
-    lines.push(
-      'QUESTION DECK ORDER:',
-      ...surface.questions.map((question, index) => (
-        `${index + 1}. [${question.status}] ${question.label} - ${question.helper}`
-      )),
-    );
-  }
-  lines.push(
-    `- You DO have this page's structured state from the app. Ground answers in it, but do not open by announcing the surface, page, or location. Mention the surface name only if the writer asks where they are, asks what page/surface this is, or the answer would otherwise be ambiguous. If the writer asks for an ordinal question (for example "second question" or "question 2"), use QUESTION DECK ORDER rather than assuming they mean the next unanswered question. Do NOT say or claim you cannot see, access, or view the page - you have its state. (You still cannot inspect pixels or unlisted fields, so do not invent visual details beyond this data.)`,
-  );
-  return lines.join('\n');
-}
-
 // Renders WorkspaceLocation into a read-only prompt block via fixed provenance templates.
 // The model authors no part of the location claim; it only reads structured app state.
 function renderWorkspaceLocation(location: StoryMemory['location']): string {
@@ -652,7 +622,7 @@ export function createContextSummary(storyMemory: StoryMemory, personaId = 'writ
   // Surface awareness renders FIRST when present (the room the writer is standing in), and
   // carries its own grounding instruction so no unconditional prompt rule changes. Absent /
   // 'none' surface emits nothing, keeping existing prompts byte-identical.
-  const surfaceBlock = renderSurfaceAwareness(storyMemory.surface);
+  const surfaceBlock = storyMemory.surface ? renderSurfaceAwareness(storyMemory.surface) : '';
   const locationBlock = renderWorkspaceLocation(storyMemory.location);
   const leadingBlocks = [surfaceBlock, locationBlock].filter(Boolean);
   const allBlocks = leadingBlocks.length ? [...leadingBlocks, ...orderedBlocks] : orderedBlocks;

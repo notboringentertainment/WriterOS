@@ -5,6 +5,8 @@
 // carried by the API request itself).
 
 import { PERSONAS } from '../../shared/personas';
+import { SurfaceAwarenessSchema } from '../../shared/surfaceAwareness';
+import { renderSurfaceAwareness } from '../../shared/surfaceAwarenessPrompt';
 import type { MemoryBlockRow, RoomEventRow, RoomMessageRow } from './types';
 
 function renderBlocks(title: string, blocks: MemoryBlockRow[]): string {
@@ -109,11 +111,14 @@ export function renderTriggerEvent(event: RoomEventRow): string {
               }),
             ].join('\n')
           : 'VISIBLE STORY BIBLE CHARACTER CARDS: none. If the writer asks for character-field help, do not invent a field path; help them shape the answer in the channel and ask them to create/select a character card before filing a proposal.';
+      const surfaceResult = SurfaceAwarenessSchema.safeParse(event.payload.surfaceAwareness);
+      const surfaceContext = surfaceResult.success ? renderSurfaceAwareness(surfaceResult.data) : '';
       return [
         `TRIGGER: The writer just said (final message in the channel above): ${content}`,
+        surfaceContext ? `LIVE SURFACE QUESTION DECK:\n${surfaceContext}` : null,
         characterContext,
         'If the writer is asking for character psychology help, help actively. If an exact character id is visible and the value is ready, file propose_field_write before you speak. Otherwise speak one useful next step or one sharp question.',
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }
     case 'doc_field_changed': {
       const { surface, fieldPath, characterName, oldValue, newValue } = event.payload as Record<string, unknown>;

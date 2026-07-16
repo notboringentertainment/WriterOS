@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomChannel } from '../../client/src/components/room/RoomChannel';
 
-const props = { projectId: 'p1', characterNames: [], locksText: '', onAdoptProposal: () => true };
+const props = { projectId: 'p1', characterNames: [], surfaceAwareness: { kind: 'none' as const }, locksText: '', onAdoptProposal: () => true };
 
 function memoryResponse(status: number) {
   return vi.fn(async () => new Response(JSON.stringify({ message: 'Room memory unavailable.' }), { status }));

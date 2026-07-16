@@ -23,11 +23,13 @@ import {
 import { canApplyProposal } from '../../lib/roomProposals'
 import { useInterviewSession } from '../../lib/useInterviewSession'
 import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
+import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 
 export interface RoomChannelProps {
   projectId: string
   characterNames: string[]
   characterBriefs?: RoomCharacterBrief[]
+  surfaceAwareness: SurfaceAwareness
   locksText: string
   // Applies the proposal to the local document. Returns false when the field
   // path can't be applied (the proposal is left pending).
@@ -52,7 +54,7 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-export function RoomChannel({ projectId, characterNames, characterBriefs = [], locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
+export function RoomChannel({ projectId, characterNames, characterBriefs = [], surfaceAwareness, locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
@@ -176,7 +178,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], l
     if (!text) return
     setInputText('')
     try {
-      await sendRoomMessage(projectId, text, characterNames, characterBriefs)
+      await sendRoomMessage(projectId, text, characterNames, characterBriefs, surfaceAwareness)
       // The message itself arrives via the SSE broadcast.
     } catch (err) {
       if (isRoomMemoryUnavailable(err)) setMemoryDown(true)

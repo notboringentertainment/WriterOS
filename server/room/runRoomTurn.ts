@@ -17,9 +17,9 @@ import { newRecorder } from './types';
 import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
 
 // The room's honest reach contract: agents see blocks + channel + the trigger,
-// nothing else. Static because the room's reach IS static in Phase 1.
+// plus typed surface state deliberately attached to the writer's message.
 const ROOM_INVENTORY: ReachInventory = {
-  canSee: ['the shared memory blocks', 'your private memory blocks', 'the last 30 channel messages', 'the trigger event'],
+  canSee: ['the shared memory blocks', 'your private memory blocks', 'the last 30 channel messages', 'the trigger event', 'the active structured surface question deck supplied with a writer message'],
   cannotSee: ['the full documents', 'the writer\'s screen', 'other apps', 'the live web'],
   canDoNow: ['speak in the channel', 'file field proposals', 'update your private memory', 'pass'],
   cannotDoYet: ['message specific agents directly', 'edit documents', 'edit locks', 'research the web'],

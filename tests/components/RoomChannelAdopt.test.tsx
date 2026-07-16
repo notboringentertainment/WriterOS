@@ -69,6 +69,7 @@ function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
       projectId="p1"
       characterNames={['Rosa']}
       characterBriefs={[{ id: 'r1', name: 'Rosa', want: 'win the contest' }]}
+      surfaceAwareness={{ kind: 'none' }}
       locksText=""
       onAdoptProposal={onAdoptProposal}
     />,
@@ -90,6 +91,7 @@ describe('RoomChannel proposal adoption ordering', () => {
         'keep this thought',
         ['Rosa'],
         [{ id: 'r1', name: 'Rosa', want: 'win the contest' }],
+        { kind: 'none' },
       ),
     )
     expect(input).toHaveValue('keep this thought')

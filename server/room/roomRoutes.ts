@@ -4,6 +4,7 @@
 
 import type { Express, Request, Response } from 'express';
 import { PERSONAS } from '../../shared/personas';
+import { SurfaceAwarenessSchema } from '../../shared/surfaceAwareness';
 import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
@@ -138,13 +139,18 @@ export function registerRoomRoutes(app: Express): void {
               !!c && typeof c === 'object' && typeof (c as Record<string, unknown>).id === 'string',
           )
         : [];
+      const surfaceResult = SurfaceAwarenessSchema.safeParse(req.body?.surfaceAwareness);
+      if (!surfaceResult.success) {
+        res.status(400).json({ message: 'surfaceAwareness is required and must match current WriterOS surface state.' });
+        return;
+      }
 
       const message = await store.insertMessage({ projectId, author: 'writer', content });
       broadcast(projectId, { type: 'message', message });
       await store.insertEvent({
         projectId,
         kind: 'writer_message',
-        payload: { content, characterNames, characters, messageId: message.id },
+        payload: { content, characterNames, characters, surfaceAwareness: surfaceResult.data, messageId: message.id },
       });
       res.json({ message });
     } catch (error) {

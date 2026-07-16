@@ -56,6 +56,17 @@ const writerMessageEvent: RoomEventRow = {
     content: "Casey, help me figure out Rosa's want.",
     characterNames: ['Rosa'],
     characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+    surfaceAwareness: {
+      kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'series',
+      questions: [
+        { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'unanswered' },
+        { id: 'series.engine', label: 'What repeats?', helper: 'Define the episode engine.', status: 'unanswered' },
+      ],
+      selectionSource: 'first_unanswered',
+      answeredCount: 0, totalCount: 2,
+      nextQuestion: { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'unanswered' },
+      nextRecommendedAction: 'answer_next_question',
+    },
   },
   processed_at: null,
   created_at: new Date().toISOString(),
@@ -150,6 +161,10 @@ describe('runRoomTurn', () => {
     expect(userMsg).toContain("Casey, help me figure out Rosa's want.")
     expect(userMsg).toContain('VISIBLE STORY BIBLE CHARACTER CARDS')
     expect(userMsg).toContain('Rosa [id: r1]')
+    expect(userMsg).toContain('LIVE SURFACE QUESTION DECK')
+    expect(userMsg).toContain('Current app surface: Outline (series).')
+    expect(userMsg).toContain('1. [unanswered] Who are we following?')
+    expect(userMsg).toContain('2. [unanswered] What repeats?')
     expect(userMsg).toContain('file propose_field_write')
   })
 

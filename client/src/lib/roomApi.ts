@@ -3,6 +3,7 @@
 
 import type { ProjectDocuments } from '@shared/documents'
 import type { PitchPacket } from '@shared/pitchPacket'
+import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 
 export interface RoomMessage {
   id: string
@@ -202,11 +203,12 @@ export async function sendRoomMessage(
   content: string,
   characterNames: string[],
   characters: RoomCharacterBrief[] = [],
+  surfaceAwareness: SurfaceAwareness,
 ): Promise<RoomMessage> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, characterNames, characters }),
+    body: JSON.stringify({ content, characterNames, characters, surfaceAwareness }),
   })
   const body = await jsonOrThrow<{ message: RoomMessage }>(res)
   return body.message

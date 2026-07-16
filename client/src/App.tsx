@@ -950,6 +950,7 @@ export default function App() {
                       secret: c.secret,
                       arc: c.arc,
                     })),
+                    surfaceAwareness: buildSurfaceAwareness(shellState.activeTab, project.state),
                     locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
                     onAdoptProposal: handleAdoptRoomProposal,
                     onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
