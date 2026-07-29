@@ -147,6 +147,34 @@ Note that specialists are **not** obviously the more complex option. Their calls
 run in parallel and finish faster; sequential passes cannot overlap. "Simpler"
 must be measured, not assigned from the number of agents.
 
+### Scaffold or detect
+
+A second question is open, and it is larger than topology because it decides
+what the product is rather than how it is built.
+
+There are two ways to keep a story sound. **Constrain the structure up front**
+so a damaging choice is harder to make — a fixed beat template the writer fills.
+Or **let the writer decide freely and detect the damage after**, citing the
+passage. Competing tools ship the first: a fixed feature-length beat template and
+a separate episode format, sold as the differentiator on top of a general model.
+
+This document assumes the second. §1 requires it — a writer who decides cannot
+be handed a template that has already decided. But the assumption should be
+recorded as a choice rather than inherited silently, because the two bets fail
+differently:
+
+- A scaffold never has to judge anything, so it sidesteps the precision problem
+  in §5 entirely. It pays instead in fit: every template is someone else's spine,
+  and the constraint tightens as the work becomes more genuinely authored.
+- Detection preserves the writer's authority and imposes no shape, but it is
+  only as trustworthy as its precision — which is the blocking work below.
+
+The falsifying condition is a product one, not an experimental one: if writers
+reliably prefer a scaffold they can push against to findings they must evaluate,
+the assumption is wrong, and the precision work in §5 is being done in service of
+a surface people do not want. Nothing in the evaluation speaks to this. It needs
+writers, not runs.
+
 ### Do not stall on this
 
 Defer **only** the topology decision. Both architectures require the same
@@ -161,12 +189,48 @@ substrate, and it should be built now:
 
 None of that changes based on how many personas end up behind it.
 
+It also does not change based on §6's open question about non-consistency
+defects. Two claims about memory and canon should be kept apart, because only
+one of them is a dependency:
+
+- **Within a single supplied document, memory is not required.** An early choice
+  damaging a late scene is detectable from the document itself, provided the
+  whole document is in context. Whatever §6 concludes about that defect class,
+  it does not establish a memory prerequisite.
+- **Across documents and across sessions, memory is required.** Locked
+  decisions, character facts, and continuity state are what make a relation
+  checkable when the two ends are not both on the page — a canon fact set in an
+  earlier session, a bible entry contradicted by a new draft, a relation
+  spanning artifacts.
+
+Build it now for the second reason, which is a real product requirement
+independent of both open questions. Do not claim the first.
+
 ### The blocking work
 
 ~50% precision on real prose is what stands between this and shipping. The likely
 cause is specific rather than mysterious: a consistency checker asked to render
 judgment will manufacture judgments. Narrowing each call to a task it can
 actually perform should shrink it. That work comes before any topology decision.
+
+**The cost of a false positive is set by the rewrite it provokes, not by the
+category of the finding.** A false note the writer skips costs nothing. A false
+note the writer acts on costs a rewrite of sound work — and that rewrite is
+itself a new authorial decision with its own downstream consequences. Acted-upon
+false findings do not merely waste time; they can introduce the same class of
+defect the finding claimed to catch. That applies at any altitude: a persuasive
+false note on a single line can send a writer to rework a scene that was
+working.
+
+The variable is **rewrite radius** — how much sound material a finding puts at
+risk if the writer accepts it and is wrong. Structural findings should default
+to a higher evidence threshold because their likely radius is larger, not
+because structural and line-level are different in kind. Where a line-level
+finding carries a wide radius, it should inherit the higher threshold too.
+
+The operative conclusion is unchanged: a single global threshold tuned to
+aggregate F1 is wrong, because it prices every false positive identically when
+their costs differ by an order of magnitude.
 
 ## 6. What would falsify this
 
@@ -179,6 +243,40 @@ actually perform should shrink it. That work comes before any topology decision.
    line that does not land — that finds models detect them at usable precision
    would falsify §2's narrow claim directly. Nobody has built that evaluation. It
    is the experiment that would actually test the ceiling.
+
+### Specifying falsifier 3
+
+The reason nobody has built it is that "a scene with no pulse" is not
+specifiable in advance, and an unspecifiable defect cannot be planted or graded.
+There is a class that *is* specifiable and still sits outside consistency
+checking: **an early decision that is fully consistent with everything
+downstream and still wrong.** No contradiction appears on the page. The damage
+is that a later scene now has less to do.
+
+Three plantable shapes:
+
+- **Capability granted too early.** A character is given a skill, resource, or
+  ally in act one that drains a later obstacle of difficulty. Nothing
+  contradicts; the obstacle is simply no longer one.
+- **Question answered before it is asked.** Information is disclosed early that
+  leaves a later reveal with nothing to reveal. The reveal still parses. It just
+  lands flat.
+- **Want stated too plainly.** A motivation is made explicit at the start that
+  a later scene was built to expose. The later scene becomes redundant rather
+  than incoherent.
+
+Each is specifiable before the model sees the page, gradeable against a frozen
+key, and invisible to a checker looking only for contradiction — which is
+exactly what makes it the right test of §2's narrow claim.
+
+**This test must run on a long document.** The defect class is defined by
+distance: an early choice damaging a late scene. The corpora behind §2 were
+treatment-length summaries, which have no late scene. That limits how far the
+24-of-25 result can be extended — a consistency relation inside a three-page
+summary and one spanning ninety pages of prose may not be the same detection
+task. The long-document requirement in §5 is therefore not only the topology
+tiebreaker; it is the first condition under which this defect class exists at
+all.
 
 ## 7. Provenance of this document
 
