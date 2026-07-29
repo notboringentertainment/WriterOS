@@ -55,7 +55,7 @@ quote that was present and correct — arithmetic, not misattribution.
 
 | Measure | Result |
 |---|---|
-| Precision on a held-out treatment its author considers workable | **54.5% / 56.0% / 43.5%** |
+| Precision on a held-out author-written treatment | **54.5% / 56.0% / 43.5%** |
 
 Roughly half the findings on that treatment did not survive its author's
 grading.
@@ -101,9 +101,8 @@ that WriterOS should not help with them is misreading it.
   findings graded false. It does not discriminate.
 - **Note volume as evidence of value.** Eight findings is not eight problems.
 
-The Writer's Room PRD's "seven persistent agents who speak to each other and
-react to the writer's work without being summoned" is superseded on every clause
-after "persistent."
+The Writer's Room PRD's behavioral model is superseded. Its memory-block and
+shared-canon mechanics remain, as described below.
 
 ## 4. What this keeps
 
@@ -111,9 +110,9 @@ after "persistent."
   continuity state persisting across sessions.
 - **Typed proposals with writer approval.** Nothing mutates a document without an
   explicit yes.
-- **Trace and provenance.** Which specialist produced this, what was it asked,
-  what did it see. This is the **trust layer**, and plausibly a moat — nothing in
-  the common agent stack answers it.
+- **Trace and provenance.** Generic execution tracing is common. WriterOS
+  differentiates by binding each writer-facing claim to source passages, canon
+  state, specialist task, and writer acceptance. This is the **trust layer**.
 - **The native runtime.** Consolidation stays correct; no external agent service.
 - **Formatting and document transformations.** As deterministic flows, not
   agents. A function producing the same output every time is a tool; the agent
