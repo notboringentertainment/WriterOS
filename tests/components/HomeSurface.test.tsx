@@ -350,6 +350,68 @@ describe('HomeSurface', () => {
     expect(screen.queryByRole('button', { name: 'Duplicate The Salt Line' })).not.toBeInTheDocument()
   })
 
+  it('hides unsupported project actions for the server library', () => {
+    render(
+      <HomeSurface
+        activeProjectId="folder-project-1"
+        projects={projects}
+        folderProjects={[
+          {
+            id: 'folder-project-1',
+            packageName: 'Harbor Lights (abc123ef).writeros',
+            summary: {
+              id: 'folder-project-1',
+              title: 'Harbor Lights',
+              createdAt: 500,
+              updatedAt: 5000,
+              format: 'feature',
+              sceneCount: 8,
+            },
+            warnings: [],
+          },
+        ]}
+        storageStatus={{
+          source: 'server',
+          status: 'ready',
+          label: 'WriterOS Projects',
+          defaultFolderLabel: 'WriterOS Projects',
+          fileSystemAccessSupported: true,
+          folderPersistenceSupported: false,
+          capabilities: {
+            removeProject: false,
+            archiveProject: false,
+            restoreProject: false,
+            showProjectInFolder: false,
+            duplicateProject: false,
+          },
+          errorMessage: null,
+        }}
+        activeStorageKind="folder"
+        onOpenProject={vi.fn()}
+        onOpenFolderProject={vi.fn()}
+        onNewProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onArchiveProject={vi.fn()}
+        onRestoreProject={vi.fn()}
+        onShowProjectInFolder={vi.fn()}
+        onDuplicateProject={vi.fn()}
+        onChooseProjectFolder={vi.fn()}
+        onRefreshProjectFolder={vi.fn()}
+        onForgetProjectFolder={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Project library')).toBeInTheDocument()
+    expect(screen.getByText('Server-backed folder')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Change Folder' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Forget' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show Harbor Lights in Folder' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Duplicate Harbor Lights' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Archive Harbor Lights' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete Harbor Lights' })).not.toBeInTheDocument()
+  })
+
   it('routes project folder actions', () => {
     const onChooseProjectFolder = vi.fn()
     const onRefreshProjectFolder = vi.fn()

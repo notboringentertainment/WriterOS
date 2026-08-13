@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
-import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
+import { useWriterOSProjectLibrary } from './lib/useWriterOSProjectLibrary'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
 import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
@@ -104,7 +104,7 @@ async function postOpenSwarmWritingPartner(body: {
 export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
-  const projectFolder = useWriterOSProjectsFolder()
+  const projectFolder = useWriterOSProjectLibrary()
   const [wpLoading, setWpLoading] = useState(false)
   const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
@@ -882,11 +882,13 @@ export default function App() {
           folderProjects={projectFolder.projects}
           corruptFolderProjects={projectFolder.corruptProjects}
           storageStatus={{
+            source: projectFolder.source,
             status: projectFolder.status,
             label: projectFolder.label,
             defaultFolderLabel: projectFolder.defaultFolderLabel,
             fileSystemAccessSupported: projectFolder.fileSystemAccessSupported,
             folderPersistenceSupported: projectFolder.folderPersistenceSupported,
+            capabilities: projectFolder.capabilities,
             errorMessage: folderProjectError ?? projectFolder.errorMessage,
           }}
           activeStorageKind={activeProjectStorage.kind}

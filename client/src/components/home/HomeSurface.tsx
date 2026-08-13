@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../lib/projectLibrary'
+import type { ProjectStorageCapabilities } from '../../lib/projectStorage'
 import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type {
   WriterOSCorruptFolderProject,
@@ -67,11 +68,13 @@ type SortKey = 'updated' | 'title' | 'created'
 type HomeStorageStatusKind = WriterOSProjectsFolderStatus | 'browser-fallback'
 
 interface HomeProjectStorageStatus {
+  source?: 'server' | 'folder'
   status: HomeStorageStatusKind
   label: string | null
   defaultFolderLabel: string
   fileSystemAccessSupported: boolean
   folderPersistenceSupported: boolean
+  capabilities?: ProjectStorageCapabilities
   errorMessage: string | null
 }
 
@@ -152,13 +155,23 @@ export function HomeSurface({
     setView(next)
   }, [view])
   const fdxInputRef = useRef<HTMLInputElement>(null)
-  const storage = storageStatus ?? {
+  const storage = {
+    source: 'folder' as const,
     status: 'browser-fallback' as const,
     label: null,
     defaultFolderLabel: '',
     fileSystemAccessSupported: false,
     folderPersistenceSupported: false,
     errorMessage: null,
+    ...storageStatus,
+    capabilities: {
+      removeProject: true,
+      archiveProject: true,
+      restoreProject: true,
+      showProjectInFolder: true,
+      duplicateProject: true,
+      ...storageStatus?.capabilities,
+    },
   }
   const isFolderSelected = Boolean(storage.label) && storage.status !== 'disconnected' && storage.status !== 'unsupported'
   const showingFolderProjects = isFolderSelected && storage.status !== 'browser-fallback'
@@ -224,10 +237,11 @@ export function HomeSurface({
   const projectFolderAction = storage.status === 'permission-needed'
     ? onRefreshProjectFolder
     : onChooseProjectFolder
-  const canUseFolderActions = storage.fileSystemAccessSupported && projectFolderAction
-  const hasStatusActions = storage.fileSystemAccessSupported && (
+  const isServerLibrary = storage.source === 'server'
+  const canUseFolderActions = !isServerLibrary && storage.fileSystemAccessSupported && projectFolderAction
+  const hasStatusActions = (
     Boolean(storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed')
-    || Boolean(storage.label && onForgetProjectFolder)
+    || Boolean(!isServerLibrary && storage.label && onForgetProjectFolder)
     || (!showMigrationModal && canShowMigrationModal)
   )
   const projectCount = view === 'archive' ? archivedCount : activeCount
@@ -285,18 +299,17 @@ export function HomeSurface({
 
       <div style={styles.statusGrid} aria-label="Project library status">
         <div style={styles.statusBlock}>
-          <span style={styles.statusLabel}>Folder</span>
+          <span style={styles.statusLabel}>{isServerLibrary ? 'Project library' : 'Folder'}</span>
           <strong style={styles.statusValue}>{storage.label ?? 'Not connected'}</strong>
           <span style={styles.statusMeta}>{formatFolderStatusMeta(storage)}</span>
-          {storage.fileSystemAccessSupported ? (
-            hasStatusActions && (
+          {hasStatusActions && (
               <div style={styles.statusActions}>
                 {storage.label && onRefreshProjectFolder && storage.status !== 'permission-needed' && (
                   <button type="button" style={styles.statusButton} onClick={onRefreshProjectFolder}>
                     Refresh
                   </button>
                 )}
-                {storage.label && onForgetProjectFolder && (
+                {!isServerLibrary && storage.label && onForgetProjectFolder && (
                   <button type="button" style={styles.statusButton} onClick={onForgetProjectFolder}>
                     Forget
                   </button>
@@ -312,8 +325,8 @@ export function HomeSurface({
                   </button>
                 )}
               </div>
-            )
-          ) : (
+          )}
+          {!isServerLibrary && !storage.fileSystemAccessSupported && (
             <span style={styles.statusMeta}>Folder access is unavailable in this browser.</span>
           )}
         </div>
@@ -493,7 +506,7 @@ export function HomeSurface({
                     {isOpening ? 'Opening' : 'Open'}
                   </button>
                 )}
-                {!row.archived && row.storageKind === 'folder' && onShowProjectInFolder && (
+                {!row.archived && row.storageKind === 'folder' && storage.capabilities.showProjectInFolder && onShowProjectInFolder && (
                   <button
                     type="button"
                     style={styles.secondarySmallButton}
@@ -512,7 +525,7 @@ export function HomeSurface({
                     {showingProjectInFolderId === row.project.id ? 'Showing' : 'Show in Folder'}
                   </button>
                 )}
-                {!row.archived && row.storageKind === 'folder' && onDuplicateProject && (
+                {!row.archived && row.storageKind === 'folder' && storage.capabilities.duplicateProject && onDuplicateProject && (
                   <button
                     type="button"
                     style={styles.secondarySmallButton}
@@ -531,7 +544,7 @@ export function HomeSurface({
                     {duplicatingProjectId === row.project.id ? 'Duplicating' : 'Duplicate'}
                   </button>
                 )}
-                {row.archived && onRestoreProject && (
+                {row.archived && (row.storageKind === 'browser' || storage.capabilities.restoreProject) && onRestoreProject && (
                   <button
                     type="button"
                     style={styles.secondarySmallButton}
@@ -556,7 +569,7 @@ export function HomeSurface({
                     {restoringProjectId === row.project.id ? 'Restoring' : 'Restore'}
                   </button>
                 )}
-                {!row.archived && onArchiveProject && (
+                {!row.archived && (row.storageKind === 'browser' || storage.capabilities.archiveProject) && onArchiveProject && (
                   <button
                     type="button"
                     style={styles.secondarySmallButton}
@@ -581,7 +594,7 @@ export function HomeSurface({
                     {archivingProjectId === row.project.id ? 'Archiving' : 'Archive'}
                   </button>
                 )}
-                {onDeleteProject && (
+                {(row.storageKind === 'browser' || storage.capabilities.removeProject) && onDeleteProject && (
                   <button
                     type="button"
                     style={styles.destructiveSmallButton}
@@ -726,6 +739,7 @@ export function HomeSurface({
 }
 
 function formatFolderStatusMeta(storage: HomeProjectStorageStatus) {
+  if (storage.source === 'server' && storage.status === 'ready') return 'Server-backed folder'
   switch (storage.status) {
     case 'ready':
       return storage.folderPersistenceSupported
