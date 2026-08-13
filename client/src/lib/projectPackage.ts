@@ -107,6 +107,7 @@ export type ProjectPackageErrorCode =
   | 'invalid-title-page'
   | 'invalid-script-facts'
   | 'invalid-transcript'
+  | 'unsafe-path'
 
 export interface ProjectPackageReadError {
   code: ProjectPackageErrorCode
