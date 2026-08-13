@@ -17,6 +17,9 @@ import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
 import * as roomStore from "./room/store";
 import { isRoomConfigured } from "./room/supabaseClient";
+import { loadProjectLibraryConfig } from "./projectLibrary/config";
+import { createProjectLibraryStore } from "./projectLibrary/store";
+import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
 
 const openaiService = new OpenAIService();
 
@@ -869,6 +872,21 @@ function personaResponseBody(response: PersonaResponse) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  let projectLibraryConfig;
+  try {
+    projectLibraryConfig = await loadProjectLibraryConfig(process.env);
+  } catch (error) {
+    console.warn('Server project library disabled:', error instanceof Error ? error.message : 'invalid configuration');
+    projectLibraryConfig = await loadProjectLibraryConfig({
+      ...process.env,
+      WRITEROS_PROJECTS_ROOT: undefined,
+    });
+  }
+  const projectLibraryStore = projectLibraryConfig.enabled && projectLibraryConfig.rootPath
+    ? await createProjectLibraryStore(projectLibraryConfig.rootPath)
+    : null;
+  registerProjectLibraryRoutes(app, projectLibraryConfig, projectLibraryStore);
+
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
   registerRoomRoutes(app);
