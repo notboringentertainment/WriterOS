@@ -10,6 +10,7 @@ import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import type { ProjectLibraryConfig } from '../../server/projectLibrary/config'
 import { registerProjectLibraryRoutes } from '../../server/projectLibrary/routes'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../../server/projectLibrary/store'
+import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
 
 const servers: Server[] = []
 const temporaryRoots: string[] = []
@@ -44,7 +45,7 @@ function config(overrides: Partial<ProjectLibraryConfig> = {}): ProjectLibraryCo
 
 async function startApp(routeConfig: ProjectLibraryConfig, store: ProjectLibraryStore | null) {
   const app = express()
-  app.use(express.json({ limit: '10mb' }))
+  app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
   registerProjectLibraryRoutes(app, routeConfig, store)
   const server = http.createServer(app)
   servers.push(server)
@@ -151,6 +152,22 @@ describe('project library HTTP routes', () => {
     expect(wrongToken.status).toBe(401)
   })
 
+  it('accepts browser same-origin fetch metadata when GET omits Origin', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-routes-'))
+    temporaryRoots.push(root)
+    const port = await startApp(config({ rootPath: root }), await createProjectLibraryStore(root))
+
+    const response = await requestJson(port, '/api/project-library/projects', {
+      headers: {
+        Host: '127.0.0.1:5177',
+        'Sec-Fetch-Site': 'same-origin',
+        'X-WriterOS-Session': 'test-session-token',
+      },
+    })
+
+    expect(response.status).toBe(200)
+  })
+
   it('lists, creates, reads, and updates projects through authenticated requests', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'writeros-routes-'))
     temporaryRoots.push(root)
@@ -200,14 +217,37 @@ describe('project library HTTP routes', () => {
       headers: sameOriginHeaders,
       body: { project },
     })
+    const unsafeProject = { ...project, id: '../../../../tmp/victim' }
+    const unsafeId = await requestJson(port, '/api/project-library/projects/..%2F..%2F..%2F..%2Ftmp%2Fvictim', {
+      method: 'PUT',
+      headers: sameOriginHeaders,
+      body: { project: unsafeProject },
+    })
     const missing = await requestJson(port, '/api/project-library/projects/missing', {
       headers: sameOriginHeaders,
     })
 
     expect(malformed.status).toBe(400)
     expect(mismatch.status).toBe(400)
+    expect(unsafeId.status).toBe(400)
     expect(missing.status).toBe(404)
     expect(malformed.text + mismatch.text + missing.text).not.toContain(root)
+  })
+
+  it('accepts project saves larger than Express default body limit', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-routes-'))
+    temporaryRoots.push(root)
+    const port = await startApp(config({ rootPath: root }), await createProjectLibraryStore(root))
+    const project = makeProject()
+    ;(project.state as unknown as Record<string, unknown>).largePayload = 'x'.repeat(200_000)
+
+    const response = await requestJson(port, `/api/project-library/projects/${project.id}`, {
+      method: 'PUT',
+      headers: sameOriginHeaders,
+      body: { project },
+    })
+
+    expect(response.status).toBe(200)
   })
 
   it('rejects package-name collisions with conflict status', async () => {

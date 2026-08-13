@@ -14,6 +14,9 @@ function requestIsSameOrigin(req: Request, config: ProjectLibraryConfig): boolea
   const origin = req.get('Origin')
   if (origin && config.allowedOrigins.has(origin)) return true
 
+  // Chromium omits Origin on same-origin GET. Sec-Fetch-Site is browser-set,
+  // and Host must still match an allowed loopback origin. Config separately
+  // refuses server project storage when Express binds beyond loopback.
   const fetchSite = req.get('Sec-Fetch-Site')
   const host = req.get('Host')
   if (fetchSite !== 'same-origin' || !host) return false

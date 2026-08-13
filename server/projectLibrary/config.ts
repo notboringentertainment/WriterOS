@@ -18,6 +18,10 @@ function loopbackOrigins(port: string): ReadonlySet<string> {
   ])
 }
 
+function isLoopbackHost(host: string): boolean {
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]'
+}
+
 export async function loadProjectLibraryConfig(
   env: NodeJS.ProcessEnv,
 ): Promise<ProjectLibraryConfig> {
@@ -37,6 +41,10 @@ export async function loadProjectLibraryConfig(
 
   if (!path.isAbsolute(configuredRoot)) {
     throw new Error('WRITEROS_PROJECTS_ROOT must be an absolute directory path.')
+  }
+
+  if (!isLoopbackHost(env.HOST?.trim() || '127.0.0.1')) {
+    throw new Error('WRITEROS_PROJECTS_ROOT requires a loopback HOST.')
   }
 
   const rootStats = await lstat(configuredRoot)

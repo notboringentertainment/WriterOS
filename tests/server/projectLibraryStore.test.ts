@@ -99,6 +99,16 @@ describe('project library configuration', () => {
       'http://[::1]:5177',
     ])
   })
+
+  it('rejects server project storage on non-loopback hosts', async () => {
+    const root = await makeTemporaryDirectory()
+
+    await expect(loadProjectLibraryConfig({
+      WRITEROS_PROJECTS_ROOT: root,
+      HOST: '0.0.0.0',
+      PORT: '5177',
+    })).rejects.toThrow('WRITEROS_PROJECTS_ROOT requires a loopback HOST.')
+  })
 })
 
 describe('server project library store', () => {
@@ -208,5 +218,45 @@ describe('server project library store', () => {
 
     expect(await readFile(path.join(root, packageName, 'project.json'), 'utf8')).toBe(before)
     expect((await readdir(root)).filter(name => name.startsWith('.writeros-'))).toEqual([])
+  })
+
+  it('rejects project ids containing path separators before writing', async () => {
+    const root = await makeTemporaryDirectory()
+    const store = await createProjectLibraryStore(root)
+    const project = makeStoredProject('Unsafe', '../../../../tmp/victim')
+
+    await expect(store.writeProject(project)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'invalid-project',
+    })
+    expect(await readdir(root)).toEqual([])
+  })
+
+  it('keeps the committed package when backup cleanup fails after a title change', async () => {
+    const root = await makeTemporaryDirectory()
+    const project = makeStoredProject()
+    await writeSerializedPackage(root, 'The Salt Line (8f4e2c9a).writeros', project)
+    const realRm = rm
+    const store = await createProjectLibraryStore(root, {
+      fileOperations: {
+        rm: async (target, options) => {
+          if (path.basename(target).startsWith('.writeros-backup-')) {
+            throw Object.assign(new Error('simulated backup cleanup failure'), { code: 'EIO' })
+          }
+          await realRm(target, options)
+        },
+      },
+    })
+    const changed = makeStoredProject('Salt Line Revised')
+    changed.updatedAt += 5_000
+
+    const ref = await store.writeProject(changed)
+
+    expect(ref.packageName).toBe('Salt Line Revised (8f4e2c9a).writeros')
+    expect((await readdir(root)).filter(name => name.endsWith('.writeros'))).toEqual([
+      'Salt Line Revised (8f4e2c9a).writeros',
+    ])
+    const read = await store.readProject(project.id)
+    expect(read.ok && read.project.state.meta.title).toBe('Salt Line Revised')
   })
 })

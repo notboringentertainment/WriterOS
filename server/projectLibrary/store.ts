@@ -9,6 +9,7 @@ import {
   rm as removePath,
   writeFile,
 } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import {
   getWriterOSProjectPackageDirectoryName,
@@ -30,6 +31,7 @@ import type {
   ProjectStorageListEntry,
   ProjectStorageProjectRef,
 } from '../../client/src/lib/projectStorage'
+import { WRITEROS_PROJECT_ID_PATTERN } from '../../shared/projectLibraryApi'
 
 const PACKAGE_TEXT_PATHS = [
   WRITEROS_PROJECT_MANIFEST_PATH,
@@ -182,6 +184,21 @@ export async function createProjectLibraryStore(
   }
   const projectPaths = new Map<string, { packageName: string; packagePath: string }>()
 
+  async function safeRename(from: string, to: string): Promise<void> {
+    const resolvedFrom = path.resolve(from)
+    const resolvedTo = path.resolve(to)
+    if (!isContained(rootPath, resolvedFrom) || !isContained(rootPath, resolvedTo)) {
+      throw new ProjectLibraryStoreError('Project rename escapes the configured root.', 400, 'unsafe-path')
+    }
+    await assertSafeExistingPath(rootPath, resolvedFrom)
+    const destinationExists = await lstat(resolvedTo).then(() => true, error => {
+      if (isNotFoundError(error)) return false
+      throw error
+    })
+    if (destinationExists) await assertSafeExistingPath(rootPath, resolvedTo)
+    await fileOperations.rename(resolvedFrom, resolvedTo)
+  }
+
   async function scanProjects(): Promise<Array<ProjectStorageListEntry<ServerProjectRef>>> {
     projectPaths.clear()
     const entries: Array<ProjectStorageListEntry<ServerProjectRef>> = []
@@ -258,7 +275,7 @@ export async function createProjectLibraryStore(
       return readWriterOSProjectPackage(await readPackageFiles(rootPath, existing.packagePath))
     },
     async writeProject(project) {
-      if (project.id.trim().length === 0) {
+      if (!WRITEROS_PROJECT_ID_PATTERN.test(project.id)) {
         throw new ProjectLibraryStoreError('Cannot save a WriterOS project without a project id.', 400, 'invalid-project')
       }
 
@@ -281,37 +298,44 @@ export async function createProjectLibraryStore(
       const stagingPath = await mkdtemp(path.join(rootPath, '.writeros-stage-'))
       const originalPath = existing?.packagePath ?? null
       const backupPath = originalPath
-        ? path.join(rootPath, `.writeros-backup-${project.id}-${Date.now()}`)
+        ? path.join(rootPath, `.writeros-backup-${randomBytes(16).toString('hex')}`)
         : null
       let backupCreated = false
+      let committed = false
 
       try {
         await writeStagedPackage(stagingPath, serialized.files)
         await validateStagedPackage(rootPath, stagingPath)
 
         if (originalPath && backupPath) {
-          await fileOperations.rename(originalPath, backupPath)
+          await safeRename(originalPath, backupPath)
           backupCreated = true
         }
         try {
-          await fileOperations.rename(stagingPath, destinationPath)
+          await safeRename(stagingPath, destinationPath)
+          committed = true
         } catch (error) {
           if (backupCreated && originalPath && backupPath) {
-            await fileOperations.rename(backupPath, originalPath)
+            await safeRename(backupPath, originalPath)
             backupCreated = false
           }
           throw error
         }
 
         if (backupCreated && backupPath) {
-          await fileOperations.rm(backupPath, { recursive: true, force: true })
+          try {
+            await fileOperations.rm(backupPath, { recursive: true, force: true })
+          } catch {
+            // Swap already committed. Leave hidden backup for manual recovery;
+            // cleanup failure must not roll the old package back beside the new one.
+          }
           backupCreated = false
         }
       } finally {
         await fileOperations.rm(stagingPath, { recursive: true, force: true })
-        if (backupCreated && backupPath && originalPath) {
+        if (!committed && backupCreated && backupPath && originalPath) {
           const originalExists = await lstat(originalPath).then(() => true, () => false)
-          if (!originalExists) await fileOperations.rename(backupPath, originalPath)
+          if (!originalExists) await safeRename(backupPath, originalPath)
         }
       }
 
