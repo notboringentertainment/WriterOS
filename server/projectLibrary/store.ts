@@ -1,4 +1,5 @@
 import {
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -32,6 +33,7 @@ import type {
   ProjectStorageProjectRef,
 } from '../../client/src/lib/projectStorage'
 import { WRITEROS_PROJECT_ID_PATTERN } from '../../shared/projectLibraryApi'
+import { acquirePackageWriteLock } from './packageLock'
 
 const PACKAGE_TEXT_PATHS = [
   WRITEROS_PROJECT_MANIFEST_PATH,
@@ -50,6 +52,7 @@ export interface ServerProjectRef extends ProjectStorageProjectRef {
 export interface ProjectLibraryStore {
   label: string
   listProjects(): Promise<Array<ProjectStorageListEntry<ServerProjectRef>>>
+  resolveProjectPackagePath(projectId: string): Promise<string>
   readProject(projectId: string): Promise<ProjectPackageReadResult>
   writeProject(project: StoredProject): Promise<ServerProjectRef>
 }
@@ -162,6 +165,55 @@ async function writeStagedPackage(
   }))
 }
 
+async function copyExistingPackageTree(
+  rootPath: string,
+  sourcePath: string,
+  destinationPath: string,
+): Promise<void> {
+  const entries = await readdir(sourcePath)
+  for (const entry of entries) {
+    const source = path.join(sourcePath, entry)
+    const destination = path.join(destinationPath, entry)
+    const stats = await lstat(source)
+    if (stats.isSymbolicLink()) {
+      throw new ProjectLibraryStoreError('Symbolic links are not allowed in project packages.', 400, 'unsafe-path')
+    }
+    await assertSafeExistingPath(rootPath, source)
+    if (stats.isDirectory()) {
+      await mkdir(destination, { recursive: true })
+      await copyExistingPackageTree(rootPath, source, destination)
+    } else if (stats.isFile()) {
+      await copyFile(source, destination)
+    } else {
+      throw new ProjectLibraryStoreError('Project packages may only contain regular files and directories.', 400, 'unsafe-path')
+    }
+  }
+}
+
+async function preserveManifestSources(
+  existingPackagePath: string,
+  serializedFiles: Record<string, string>,
+): Promise<void> {
+  const existingManifest = JSON.parse(
+    await readFile(path.join(existingPackagePath, WRITEROS_PROJECT_MANIFEST_PATH), 'utf8'),
+  ) as Record<string, unknown>
+  const sources = existingManifest.sources
+  if (
+    !sources
+    || typeof sources !== 'object'
+    || Array.isArray(sources)
+    || Object.entries(sources).some(([key, value]) => key.length === 0 || typeof value !== 'string' || value.length === 0)
+  ) {
+    return
+  }
+
+  const serializedManifest = JSON.parse(
+    serializedFiles[WRITEROS_PROJECT_MANIFEST_PATH],
+  ) as Record<string, unknown>
+  serializedManifest.sources = sources
+  serializedFiles[WRITEROS_PROJECT_MANIFEST_PATH] = `${JSON.stringify(serializedManifest, null, 2)}\n`
+}
+
 async function validateStagedPackage(rootPath: string, stagingPath: string): Promise<void> {
   const result = readWriterOSProjectPackage(await readPackageFiles(rootPath, stagingPath))
   if (!result.ok) {
@@ -270,6 +322,10 @@ export async function createProjectLibraryStore(
   return {
     label: path.basename(rootPath),
     listProjects: scanProjects,
+    async resolveProjectPackagePath(projectId) {
+      const existing = await findProject(projectId)
+      return assertSafeExistingPath(rootPath, existing.packagePath)
+    },
     async readProject(projectId) {
       const existing = await findProject(projectId)
       return readWriterOSProjectPackage(await readPackageFiles(rootPath, existing.packagePath))
@@ -279,69 +335,78 @@ export async function createProjectLibraryStore(
         throw new ProjectLibraryStoreError('Cannot save a WriterOS project without a project id.', 400, 'invalid-project')
       }
 
-      await scanProjects()
-      const existing = projectPaths.get(project.id)
-      const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
-      const destinationPath = path.join(rootPath, packageName)
-      const destinationStats = await lstat(destinationPath).catch(error => {
-        if (isNotFoundError(error)) return null
-        throw error
-      })
-      if (destinationStats && (!existing || existing.packagePath !== destinationPath)) {
-        throw new ProjectLibraryStoreError('A WriterOS project package with this name already exists.', 409, 'name-collision')
-      }
-      if (destinationStats?.isSymbolicLink()) {
-        throw new ProjectLibraryStoreError('Symbolic links are not allowed in project packages.', 400, 'unsafe-path')
-      }
-
-      const serialized = serializeWriterOSProjectPackage(project)
-      const stagingPath = await mkdtemp(path.join(rootPath, '.writeros-stage-'))
-      const originalPath = existing?.packagePath ?? null
-      const backupPath = originalPath
-        ? path.join(rootPath, `.writeros-backup-${randomBytes(16).toString('hex')}`)
-        : null
-      let backupCreated = false
-      let committed = false
-
+      const packageWriteLock = await acquirePackageWriteLock({ workspaceRoot: rootPath, projectId: project.id })
       try {
-        await writeStagedPackage(stagingPath, serialized.files)
-        await validateStagedPackage(rootPath, stagingPath)
-
-        if (originalPath && backupPath) {
-          await safeRename(originalPath, backupPath)
-          backupCreated = true
+        await scanProjects()
+        const existing = projectPaths.get(project.id)
+        const packageName = getWriterOSProjectPackageDirectoryName(project.state.meta.title, project.id)
+        const destinationPath = path.join(rootPath, packageName)
+        const destinationStats = await lstat(destinationPath).catch(error => {
+          if (isNotFoundError(error)) return null
+          throw error
+        })
+        if (destinationStats && (!existing || existing.packagePath !== destinationPath)) {
+          throw new ProjectLibraryStoreError('A WriterOS project package with this name already exists.', 409, 'name-collision')
         }
+        if (destinationStats?.isSymbolicLink()) {
+          throw new ProjectLibraryStoreError('Symbolic links are not allowed in project packages.', 400, 'unsafe-path')
+        }
+
+        const serialized = serializeWriterOSProjectPackage(project)
+        const stagingPath = await mkdtemp(path.join(rootPath, '.writeros-stage-'))
+        const originalPath = existing?.packagePath ?? null
+        const backupPath = originalPath
+          ? path.join(rootPath, `.writeros-backup-${randomBytes(16).toString('hex')}`)
+          : null
+        let backupCreated = false
+        let committed = false
+
         try {
-          await safeRename(stagingPath, destinationPath)
-          committed = true
-        } catch (error) {
-          if (backupCreated && originalPath && backupPath) {
-            await safeRename(backupPath, originalPath)
+          if (originalPath) {
+            await copyExistingPackageTree(rootPath, originalPath, stagingPath)
+            await preserveManifestSources(originalPath, serialized.files)
+          }
+          await writeStagedPackage(stagingPath, serialized.files)
+          await validateStagedPackage(rootPath, stagingPath)
+
+          if (originalPath && backupPath) {
+            await safeRename(originalPath, backupPath)
+            backupCreated = true
+          }
+          try {
+            await safeRename(stagingPath, destinationPath)
+            committed = true
+          } catch (error) {
+            if (backupCreated && originalPath && backupPath) {
+              await safeRename(backupPath, originalPath)
+              backupCreated = false
+            }
+            throw error
+          }
+
+          if (backupCreated && backupPath) {
+            try {
+              await fileOperations.rm(backupPath, { recursive: true, force: true })
+            } catch {
+              // Swap already committed. Leave hidden backup for manual recovery;
+              // cleanup failure must not roll the old package back beside the new one.
+            }
             backupCreated = false
           }
-          throw error
-        }
-
-        if (backupCreated && backupPath) {
-          try {
-            await fileOperations.rm(backupPath, { recursive: true, force: true })
-          } catch {
-            // Swap already committed. Leave hidden backup for manual recovery;
-            // cleanup failure must not roll the old package back beside the new one.
+        } finally {
+          await fileOperations.rm(stagingPath, { recursive: true, force: true })
+          if (!committed && backupCreated && backupPath && originalPath) {
+            const originalExists = await lstat(originalPath).then(() => true, () => false)
+            if (!originalExists) await safeRename(backupPath, originalPath)
           }
-          backupCreated = false
         }
-      } finally {
-        await fileOperations.rm(stagingPath, { recursive: true, force: true })
-        if (!committed && backupCreated && backupPath && originalPath) {
-          const originalExists = await lstat(originalPath).then(() => true, () => false)
-          if (!originalExists) await safeRename(backupPath, originalPath)
-        }
-      }
 
-      projectPaths.delete(project.id)
-      projectPaths.set(project.id, { packageName, packagePath: destinationPath })
-      return serverRef(packageName, project)
+        projectPaths.delete(project.id)
+        projectPaths.set(project.id, { packageName, packagePath: destinationPath })
+        return serverRef(packageName, project)
+      } finally {
+        await packageWriteLock.release()
+      }
     },
   }
 }

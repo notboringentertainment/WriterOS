@@ -22,3 +22,6 @@ AGENTS.md
 
 # Local isolated feature worktrees
 .worktrees/
+
+# Supabase CLI local-link metadata
+supabase/.temp/

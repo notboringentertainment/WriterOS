@@ -9,6 +9,7 @@ import {
 } from '../../client/src/lib/projectPackage'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { loadProjectLibraryConfig } from '../../server/projectLibrary/config'
+import { acquirePackageWriteLock } from '../../server/projectLibrary/packageLock'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 
 const temporaryRoots: string[] = []
@@ -192,6 +193,102 @@ describe('server project library store', () => {
     expect(manifest).toMatchObject({ projectId: project.id, title: 'Salt Line Revised' })
     const read = await store.readProject(project.id)
     expect(read.ok && read.project.updatedAt).toBe(renamedProject.updatedAt)
+  })
+
+  it('preserves shared workflow folders, binary files, and source mappings on save', async () => {
+    const root = await makeTemporaryDirectory()
+    const project = makeStoredProject()
+    const packageName = 'The Salt Line (8f4e2c9a).writeros'
+    const packagePath = await writeSerializedPackage(root, packageName, project)
+    const manifestPath = path.join(packagePath, 'project.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.sources = { buzzChannelId: '4f4cb9b3-39a5-4ffc-9d09-b9397e3bbc10' }
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+
+    const preservedFiles: Array<[string, string | Buffer]> = [
+      ['memory/events.jsonl', '{"revision":1}\n'],
+      ['wayfinder/canon.json', '{"status":"approved"}\n'],
+      ['notes/research.md', '# Tide tables\n'],
+      ['assets/reference.txt', 'beach reference\n'],
+      ['workflow-cache/model.bin', Buffer.from([0x00, 0xff, 0x7f, 0x80, 0x01])],
+    ]
+    for (const [relativePath, contents] of preservedFiles) {
+      const destination = path.join(packagePath, relativePath)
+      await mkdir(path.dirname(destination), { recursive: true })
+      await writeFile(destination, contents)
+    }
+
+    const store = await createProjectLibraryStore(root)
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+    changed.state.script.rawHtml = '<p>Changed by WriterOS</p>'
+
+    await store.writeProject(changed)
+
+    for (const [relativePath, contents] of preservedFiles) {
+      const actual = await readFile(path.join(packagePath, relativePath))
+      expect(actual).toEqual(Buffer.isBuffer(contents) ? contents : Buffer.from(contents))
+    }
+    const savedManifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(savedManifest).toMatchObject({
+      schemaVersion: 1,
+      sources: { buzzChannelId: '4f4cb9b3-39a5-4ffc-9d09-b9397e3bbc10' },
+    })
+  })
+
+  it('serializes WriterOS saves with memory publication through the package lock', async () => {
+    const root = await makeTemporaryDirectory()
+    const project = makeStoredProject()
+    await writeSerializedPackage(root, 'The Salt Line (8f4e2c9a).writeros', project)
+    const store = await createProjectLibraryStore(root)
+    const packagePath = await store.resolveProjectPackagePath(project.id)
+    const publicationLock = await acquirePackageWriteLock({ workspaceRoot: root, projectId: project.id })
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+    changed.state.script.rawHtml = '<p>Concurrent WriterOS save</p>'
+    let saveSettled = false
+    const savePromise = store.writeProject(changed).finally(() => {
+      saveSettled = true
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 75))
+    const settledBeforePublication = saveSettled
+    const publishedPath = path.join(packagePath, 'memory', 'events.jsonl')
+    await mkdir(path.dirname(publishedPath), { recursive: true })
+    await writeFile(publishedPath, '{"revision":1,"kind":"published"}\n', 'utf8')
+    await publicationLock.release()
+    await savePromise
+
+    expect(settledBeforePublication).toBe(false)
+    expect(await readFile(publishedPath, 'utf8')).toBe('{"revision":1,"kind":"published"}\n')
+    const read = await store.readProject(project.id)
+    expect(read.ok && read.project.updatedAt).toBe(changed.updatedAt)
+  })
+
+  it('rejects a symlink anywhere inside the package tree before preserving it', async () => {
+    const root = await makeTemporaryDirectory()
+    const outside = await makeTemporaryDirectory('writeros-outside-')
+    const project = makeStoredProject()
+    const packageName = 'The Salt Line (8f4e2c9a).writeros'
+    const packagePath = await writeSerializedPackage(root, packageName, project)
+    const manifestPath = path.join(packagePath, 'project.json')
+    const manifestBefore = await readFile(manifestPath, 'utf8')
+    const outsideFile = path.join(outside, 'private.jsonl')
+    await writeFile(outsideFile, 'outside must remain untouched\n', 'utf8')
+    const linkPath = path.join(packagePath, 'memory', 'nested', 'events.jsonl')
+    await mkdir(path.dirname(linkPath), { recursive: true })
+    await symlink(outsideFile, linkPath)
+    const store = await createProjectLibraryStore(root)
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+
+    await expect(store.writeProject(changed)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'unsafe-path',
+    })
+
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
+    expect(await readFile(outsideFile, 'utf8')).toBe('outside must remain untouched\n')
   })
 
   it('leaves existing package unchanged when staged commit fails', async () => {
