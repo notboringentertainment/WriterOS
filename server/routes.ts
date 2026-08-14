@@ -21,6 +21,7 @@ import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
 import {
+  createNonProjectMemoryBodyParser,
   createProjectMemoryJsonParser,
   projectMemoryJsonErrorBoundary,
   registerProjectMemoryRoutes,
@@ -891,8 +892,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   registerProjectMemorySecurityBoundary(app, projectLibraryConfig);
   app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT));
-  app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }));
-  app.use(express.urlencoded({ extended: false }));
+  app.use(createNonProjectMemoryBodyParser(express.json({ limit: WRITEROS_JSON_BODY_LIMIT })));
+  app.use(createNonProjectMemoryBodyParser(express.urlencoded({ extended: false })));
   app.use(projectMemoryJsonErrorBoundary);
   const projectLibraryStore = projectLibraryConfig.enabled && projectLibraryConfig.rootPath
     ? await createProjectLibraryStore(projectLibraryConfig.rootPath)

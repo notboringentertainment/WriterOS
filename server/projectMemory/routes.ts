@@ -129,33 +129,68 @@ function routeError(res: Response, error: unknown) {
   })
 }
 
-function isProjectMemoryPath(requestPath: string): boolean {
-  return /^\/api\/project-memory\/[^/]*(?:\/|$)/.test(requestPath)
-    || /^\/api\/projects\/[^/]*\/memory(?:\/|$)/.test(requestPath)
+function projectMemoryRequestPath(req: Pick<Request, 'originalUrl' | 'path'>): string {
+  return (req.originalUrl || req.path).split('?')[0] ?? req.path
 }
 
-function encodedProjectIdForProjectMemoryPath(requestPath: string): string | undefined {
-  return requestPath.match(/^\/api\/project-memory\/([^/]*)(?:\/|$)/)?.[1]
-    ?? requestPath.match(/^\/api\/projects\/([^/]*)\/memory(?:\/|$)/)?.[1]
+type ProjectMemoryExpectedMethod = 'GET' | 'POST'
+
+type ProjectMemoryPathClassification = {
+  encodedProjectId: string
+  expectedMethod: ProjectMemoryExpectedMethod | undefined
 }
 
-function expectedMethodForProjectMemoryPath(requestPath: string): 'GET' | 'POST' | undefined {
-  const match = requestPath.match(
-    /^\/api\/project-memory\/[^/]+\/(snapshot|context|actions|analyze)\/?$/,
-  ) ?? requestPath.match(
-    /^\/api\/projects\/[^/]+\/memory\/(snapshot|context|actions|analyze)\/?$/,
-  )
-  if (!match) return undefined
-  return match[1] === 'snapshot' || match[1] === 'context' ? 'GET' : 'POST'
+function classifyProjectMemoryPath(requestPath: string): ProjectMemoryPathClassification | undefined {
+  const legacyPrefix = '/api/project-memory'
+  let encodedProjectId: string
+  let endpointPath: string
+
+  if (requestPath === legacyPrefix) {
+    encodedProjectId = ''
+    endpointPath = ''
+  } else if (requestPath.startsWith(`${legacyPrefix}/`)) {
+    const remainder = requestPath.slice(legacyPrefix.length + 1)
+    const projectIdEnd = remainder.indexOf('/')
+    encodedProjectId = projectIdEnd === -1 ? remainder : remainder.slice(0, projectIdEnd)
+    endpointPath = projectIdEnd === -1 ? '' : remainder.slice(projectIdEnd + 1)
+  } else {
+    const canonicalPrefix = '/api/projects/'
+    if (!requestPath.startsWith(canonicalPrefix)) return undefined
+    const remainder = requestPath.slice(canonicalPrefix.length)
+    const projectIdEnd = remainder.indexOf('/')
+    if (projectIdEnd === -1) return undefined
+    encodedProjectId = remainder.slice(0, projectIdEnd)
+    const afterProjectId = remainder.slice(projectIdEnd + 1)
+    if (afterProjectId === 'memory') {
+      endpointPath = ''
+    } else if (afterProjectId.startsWith('memory/')) {
+      endpointPath = afterProjectId.slice('memory/'.length)
+    } else {
+      return undefined
+    }
+  }
+
+  const endpoint = endpointPath.endsWith('/') ? endpointPath.slice(0, -1) : endpointPath
+  const expectedMethod = endpoint === 'snapshot' || endpoint === 'context'
+    ? 'GET'
+    : endpoint === 'actions' || endpoint === 'analyze'
+      ? 'POST'
+      : undefined
+  return { encodedProjectId, expectedMethod }
+}
+
+function hasRequestBody(req: Request): boolean {
+  const contentLength = Number(req.headers['content-length'])
+  return req.headers['transfer-encoding'] !== undefined
+    || (Number.isFinite(contentLength) && contentLength > 0)
 }
 
 function continueSupportedProjectMemoryRequest(
   req: Request,
   res: Response,
   next: NextFunction,
-  requestPath = req.path,
+  expectedMethod: ProjectMemoryExpectedMethod | undefined,
 ) {
-  const expectedMethod = expectedMethodForProjectMemoryPath(requestPath)
   if (expectedMethod === undefined) {
     return res.status(404).json({
       error: 'not-found',
@@ -180,14 +215,14 @@ export function registerProjectMemorySecurityBoundary(
   const requireSession = authenticated(config, 'Project memory')
   for (const mount of PROJECT_MEMORY_SECURITY_MOUNTS) {
     app.use(mount, (req, res, next) => {
-      const requestPath = req.originalUrl.split('?')[0] ?? req.path
-      if (!isProjectMemoryPath(requestPath)) return next()
+      const requestPath = projectMemoryRequestPath(req)
+      const classification = classifyProjectMemoryPath(requestPath)
+      if (!classification) return next()
       res.setHeader('Cache-Control', 'no-store')
       return requireSameOrigin(req, res, () => requireSession(req, res, () => {
-        const encodedProjectId = encodedProjectIdForProjectMemoryPath(requestPath) ?? ''
         let projectId: string
         try {
-          projectId = decodeURIComponent(encodedProjectId)
+          projectId = decodeURIComponent(classification.encodedProjectId)
         } catch {
           return res.status(400).json({
             error: 'invalid-project-id',
@@ -200,22 +235,33 @@ export function registerProjectMemorySecurityBoundary(
             message: 'Project memory requires a valid project id.',
           })
         }
-        return continueSupportedProjectMemoryRequest(req, res, next, requestPath)
+        return continueSupportedProjectMemoryRequest(req, res, next, classification.expectedMethod)
       }))
     })
   }
 }
 
+export function createNonProjectMemoryBodyParser(parser: RequestHandler): RequestHandler {
+  return (req, res, next) => classifyProjectMemoryPath(projectMemoryRequestPath(req))
+    ? next()
+    : parser(req, res, next)
+}
+
 export function createProjectMemoryJsonParser(limit: string | number): RequestHandler {
   const parser = express.json({ limit })
   return (req, res, next) => {
-    const requestPath = req.originalUrl.split('?')[0] ?? req.path
-    if (!isProjectMemoryPath(requestPath)) return next()
-    const contentLength = Number(req.headers['content-length'])
-    const hasBody = req.headers['transfer-encoding'] !== undefined
-      || (Number.isFinite(contentLength) && contentLength > 0)
+    const requestPath = projectMemoryRequestPath(req)
+    const classification = classifyProjectMemoryPath(requestPath)
+    if (!classification) return next()
+    const hasBody = hasRequestBody(req)
+    if (classification.expectedMethod === 'GET' && hasBody) {
+      return res.status(400).json({
+        error: 'unexpected-body',
+        message: 'Project memory read requests must not include a body.',
+      })
+    }
     if (
-      expectedMethodForProjectMemoryPath(requestPath) === 'POST'
+      classification.expectedMethod === 'POST'
       && hasBody
       && !req.is('application/json')
     ) {
@@ -239,7 +285,11 @@ export function projectMemoryJsonErrorBoundary(
   res: Response,
   next: NextFunction,
 ) {
-  if (!isProjectMemoryPath(req.path) || error === null || typeof error !== 'object') return next(error)
+  if (
+    !classifyProjectMemoryPath(projectMemoryRequestPath(req))
+    || error === null
+    || typeof error !== 'object'
+  ) return next(error)
   const type = 'type' in error && typeof error.type === 'string' ? error.type : undefined
   const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined
 
@@ -400,8 +450,10 @@ export function registerProjectMemoryRoutes(
   })
 
   app.use((req, res, next) => {
-    if (!isProjectMemoryPath(req.path)) return next()
-    const expectedMethod = expectedMethodForProjectMemoryPath(req.path)
+    const requestPath = projectMemoryRequestPath(req)
+    const classification = classifyProjectMemoryPath(requestPath)
+    if (!classification) return next()
+    const { expectedMethod } = classification
     if (expectedMethod !== undefined) {
       res.setHeader('Allow', expectedMethod)
       return res.status(405).json({

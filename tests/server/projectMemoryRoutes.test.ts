@@ -13,6 +13,7 @@ import type { ProjectLibraryConfig } from '../../server/projectLibrary/config'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../../server/projectLibrary/store'
 import { ProjectLibraryStoreError } from '../../server/projectLibrary/store'
 import {
+  createNonProjectMemoryBodyParser,
   createProjectMemoryJsonParser,
   projectMemoryJsonErrorBoundary,
   registerProjectMemoryRoutes,
@@ -44,15 +45,25 @@ async function startMemoryApp(
   store: ProjectLibraryStore,
   analyze?: (input: any) => Promise<unknown>,
   memoryStore: ProjectMemoryStore = projectMemoryStore,
+  globalParserCalls?: { json: number; urlencoded: number },
 ) {
   const app = express()
   registerProjectMemorySecurityBoundary(app, config)
   app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT))
-  app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
-  app.use(express.urlencoded({ extended: false }))
+  const globalJsonParser = express.json({ limit: WRITEROS_JSON_BODY_LIMIT })
+  const globalUrlencodedParser = express.urlencoded({ extended: false })
+  app.use(createNonProjectMemoryBodyParser((req, res, next) => {
+    if (globalParserCalls) globalParserCalls.json += 1
+    return globalJsonParser(req, res, next)
+  }))
+  app.use(createNonProjectMemoryBodyParser((req, res, next) => {
+    if (globalParserCalls) globalParserCalls.urlencoded += 1
+    return globalUrlencodedParser(req, res, next)
+  }))
   app.use(projectMemoryJsonErrorBoundary)
   const register = registerProjectMemoryRoutes as (...args: any[]) => void
   register(app, config, store, memoryStore, analyze)
+  app.post('/test-unrelated-form-parser', (req, res) => res.json({ body: req.body }))
   const server = http.createServer(app)
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -134,6 +145,7 @@ function requestRaw(
     method: string
     headers?: Record<string, string>
     body?: string | Buffer
+    omitContentLength?: boolean
   },
 ) {
   const body = typeof options.body === 'string' ? Buffer.from(options.body) : options.body
@@ -144,7 +156,9 @@ function requestRaw(
       path: requestPath,
       method: options.method,
       headers: {
-        ...(body === undefined ? {} : { 'Content-Length': String(body.byteLength) }),
+        ...(body === undefined || options.omitContentLength
+          ? {}
+          : { 'Content-Length': String(body.byteLength) }),
         ...options.headers,
       },
     }, response => {
@@ -572,6 +586,168 @@ describe('project memory HTTP routes', () => {
       message: 'Project memory request method is not allowed.',
     })
     expect(snapshot.status).toBe(200)
+  })
+
+  it('rejects every body-bearing memory GET before later global body parsers', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'bodyless-memory-read-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store)
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+    const canonical = `/api/projects/${project.id}/memory`
+    const legacy = `/api/project-memory/${project.id}`
+
+    const responses = await Promise.all([
+      requestRaw(port, `${canonical}/snapshot`, {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `secret=${'x'.repeat(200 * 1024)}`,
+      }),
+      requestRaw(port, `${canonical}/context`, {
+        method: 'GET',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Encoding': 'gzip',
+        },
+        body: Buffer.from('not-a-gzip-stream'),
+      }),
+      requestRaw(port, `${legacy}/snapshot`, {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `submittedPath=${'x'.repeat(200 * 1024)}`,
+      }),
+      requestRaw(port, `${legacy}/context`, {
+        method: 'GET',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Encoding': 'deflate',
+        },
+        body: Buffer.from('not-a-deflate-stream'),
+      }),
+      requestRaw(port, `${canonical}/snapshot`, {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submittedPath: '/Users/writer/Secret.writeros' }),
+      }),
+      requestRaw(port, `${legacy}/context`, {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'text/plain' },
+        body: '/Users/writer/Secret.writeros',
+      }),
+      requestRaw(port, `${legacy}/snapshot`, {
+        method: 'GET',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Transfer-Encoding': 'chunked',
+        },
+        body: 'secret=chunked',
+        omitContentLength: true,
+      }),
+    ])
+
+    for (const response of responses) {
+      expect(response.status).toBe(400)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'unexpected-body',
+        message: 'Project memory read requests must not include a body.',
+      })
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('/Users/writer')
+      expect(response.text).not.toContain('Error')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+
+    for (const requestPath of [
+      `${canonical}/snapshot`,
+      `${canonical}/context`,
+      `${legacy}/snapshot`,
+      `${legacy}/context`,
+    ]) {
+      const response = await requestRaw(port, requestPath, {
+        method: 'GET',
+        headers: authorized,
+      })
+      expect(response.status).toBe(200)
+    }
+  })
+
+  it('skips every later global body parser for the complete memory prefixes only', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'prefix-owned-parser-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const globalParserCalls = { json: 0, urlencoded: 0 }
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store, undefined, projectMemoryStore, globalParserCalls)
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+
+    const memoryResponses = await Promise.all([
+      requestRaw(port, `/api/projects/${project.id}/memory/snapshot`, {
+        method: 'GET',
+        headers: authorized,
+      }),
+      requestRaw(port, `/api/project-memory/${project.id}/context`, {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'text/plain' },
+        body: 'must-not-reach-global-parser',
+      }),
+      requestRaw(port, `/api/projects/${project.id}/memory/analyze`, {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ surface: 'synopsis', content: 'Changed.' }),
+      }),
+      requestRaw(port, `/api/project-memory/${project.id}/actions`, {
+        method: 'PATCH',
+        headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'action=reject',
+      }),
+    ])
+
+    expect(memoryResponses.map(response => response.status)).toEqual([200, 400, 503, 405])
+    expect(globalParserCalls).toEqual({ json: 0, urlencoded: 0 })
+
+    const unrelated = await requestRaw(port, '/test-unrelated-form-parser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'title=Unrelated+Route',
+    })
+    expect(unrelated.status).toBe(200)
+    expect(JSON.parse(unrelated.text)).toEqual({ body: { title: 'Unrelated Route' } })
+    expect(globalParserCalls).toEqual({ json: 1, urlencoded: 1 })
   })
 
   it('returns safe JSON for malformed supported compressed bodies', async () => {
