@@ -1,4 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type RequestHandler, type Response } from 'express'
+import { parse as parseUrl } from 'node:url'
 import { z } from 'zod'
 import type { ProjectLibraryConfig } from '../projectLibrary/config'
 import { ProjectLibraryStoreError, type ProjectLibraryStore } from '../projectLibrary/store'
@@ -129,8 +130,13 @@ function routeError(res: Response, error: unknown) {
   })
 }
 
-function projectMemoryRequestPath(req: Pick<Request, 'originalUrl' | 'path'>): string {
-  return (req.originalUrl || req.path).split('?')[0] ?? req.path
+function projectMemoryRequestPath(req: Pick<Request, 'originalUrl' | 'url'>): string | undefined {
+  const requestTarget = typeof req.originalUrl === 'string' ? req.originalUrl : req.url
+  try {
+    return parseUrl(requestTarget).pathname ?? undefined
+  } catch {
+    return undefined
+  }
 }
 
 type ProjectMemoryExpectedMethod = 'GET' | 'POST'
@@ -140,37 +146,33 @@ type ProjectMemoryPathClassification = {
   expectedMethod: ProjectMemoryExpectedMethod | undefined
 }
 
-function classifyProjectMemoryPath(requestPath: string): ProjectMemoryPathClassification | undefined {
-  const legacyPrefix = '/api/project-memory'
-  let encodedProjectId: string
-  let endpointPath: string
+function classifyProjectMemoryPath(
+  requestPath: string | undefined,
+): ProjectMemoryPathClassification | undefined {
+  if (!requestPath?.startsWith('/')) return undefined
+  const segments = requestPath.split('/')
+  if (segments[0] !== '' || segments[1]?.toLowerCase() !== 'api') return undefined
 
-  if (requestPath === legacyPrefix) {
-    encodedProjectId = ''
-    endpointPath = ''
-  } else if (requestPath.startsWith(`${legacyPrefix}/`)) {
-    const remainder = requestPath.slice(legacyPrefix.length + 1)
-    const projectIdEnd = remainder.indexOf('/')
-    encodedProjectId = projectIdEnd === -1 ? remainder : remainder.slice(0, projectIdEnd)
-    endpointPath = projectIdEnd === -1 ? '' : remainder.slice(projectIdEnd + 1)
+  let encodedProjectId: string
+  let endpointSegments: string[]
+  if (segments[2]?.toLowerCase() === 'project-memory') {
+    encodedProjectId = segments[3] ?? ''
+    endpointSegments = segments.slice(4)
+  } else if (
+    segments[2]?.toLowerCase() === 'projects'
+    && segments[4]?.toLowerCase() === 'memory'
+  ) {
+    encodedProjectId = segments[3] ?? ''
+    endpointSegments = segments.slice(5)
   } else {
-    const canonicalPrefix = '/api/projects/'
-    if (!requestPath.startsWith(canonicalPrefix)) return undefined
-    const remainder = requestPath.slice(canonicalPrefix.length)
-    const projectIdEnd = remainder.indexOf('/')
-    if (projectIdEnd === -1) return undefined
-    encodedProjectId = remainder.slice(0, projectIdEnd)
-    const afterProjectId = remainder.slice(projectIdEnd + 1)
-    if (afterProjectId === 'memory') {
-      endpointPath = ''
-    } else if (afterProjectId.startsWith('memory/')) {
-      endpointPath = afterProjectId.slice('memory/'.length)
-    } else {
-      return undefined
-    }
+    return undefined
   }
 
-  const endpoint = endpointPath.endsWith('/') ? endpointPath.slice(0, -1) : endpointPath
+  const endpoint = endpointSegments.length === 1
+    ? endpointSegments[0]?.toLowerCase()
+    : endpointSegments.length === 2 && endpointSegments[1] === ''
+      ? endpointSegments[0]?.toLowerCase()
+      : undefined
   const expectedMethod = endpoint === 'snapshot' || endpoint === 'context'
     ? 'GET'
     : endpoint === 'actions' || endpoint === 'analyze'
