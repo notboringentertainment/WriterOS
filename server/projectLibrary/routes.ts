@@ -1,52 +1,14 @@
-import { timingSafeEqual } from 'node:crypto'
-import type { Express, NextFunction, Request, Response } from 'express'
+import type { Express, Response } from 'express'
 import { z } from 'zod'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { SaveProjectRequestSchema } from '../../shared/projectLibraryApi'
 import type { ProjectLibraryConfig } from './config'
+import { authenticated, sameOrigin } from './security'
 import {
   ProjectLibraryStoreError,
   type ProjectLibraryStore,
 } from './store'
-
-function requestIsSameOrigin(req: Request, config: ProjectLibraryConfig): boolean {
-  const origin = req.get('Origin')
-  if (origin && config.allowedOrigins.has(origin)) return true
-
-  // Chromium omits Origin on same-origin GET. Sec-Fetch-Site is browser-set,
-  // and Host must still match an allowed loopback origin. Config separately
-  // refuses server project storage when Express binds beyond loopback.
-  const fetchSite = req.get('Sec-Fetch-Site')
-  const host = req.get('Host')
-  if (fetchSite !== 'same-origin' || !host) return false
-  return [...config.allowedOrigins].some(allowedOrigin => new URL(allowedOrigin).host === host)
-}
-
-function tokenMatches(expected: string, supplied: string | undefined): boolean {
-  if (!supplied) return false
-  const expectedBytes = Buffer.from(expected)
-  const suppliedBytes = Buffer.from(supplied)
-  return expectedBytes.length === suppliedBytes.length && timingSafeEqual(expectedBytes, suppliedBytes)
-}
-
-function sameOrigin(config: ProjectLibraryConfig) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!requestIsSameOrigin(req, config)) {
-      return res.status(403).json({ error: 'forbidden', message: 'Project library request origin is not allowed.' })
-    }
-    next()
-  }
-}
-
-function authenticated(config: ProjectLibraryConfig) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!tokenMatches(config.sessionToken, req.get('X-WriterOS-Session'))) {
-      return res.status(401).json({ error: 'unauthorized', message: 'Project library session is invalid.' })
-    }
-    next()
-  }
-}
 
 function dataStore(config: ProjectLibraryConfig, store: ProjectLibraryStore | null): ProjectLibraryStore {
   if (!config.enabled || !store) {

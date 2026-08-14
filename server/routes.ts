@@ -20,6 +20,7 @@ import { isRoomConfigured } from "./room/supabaseClient";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
+import { registerProjectMemoryRoutes } from "./projectMemory/routes";
 
 const openaiService = new OpenAIService();
 
@@ -886,6 +887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ? await createProjectLibraryStore(projectLibraryConfig.rootPath)
     : null;
   registerProjectLibraryRoutes(app, projectLibraryConfig, projectLibraryStore);
+  registerProjectMemoryRoutes(app, projectLibraryConfig, projectLibraryStore);
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
