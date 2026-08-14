@@ -62,6 +62,7 @@ export interface ProjectLibraryFileOperations {
   rename(from: string, to: string): Promise<void>
   rm(target: string, options: { recursive: true; force: true }): Promise<void>
   beforePreservedFileOpen?(sourcePath: string): Promise<void>
+  afterPackageSnapshot?(originalPath: string, snapshotPath: string): Promise<void>
 }
 
 export interface ProjectLibraryStoreOptions {
@@ -132,8 +133,10 @@ function unsafePackagePath(): ProjectLibraryStoreError {
 async function readSafeRegularFile(
   rootPath: string,
   candidatePath: string,
+  beforeOpen?: (sourcePath: string) => Promise<void>,
 ): Promise<Buffer> {
   await assertSafeExistingPath(rootPath, candidatePath)
+  await beforeOpen?.(candidatePath)
   let handle
   try {
     handle = await open(candidatePath, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -252,8 +255,11 @@ async function copyExistingPackageTree(
       await mkdir(destination, { recursive: true })
       await copyExistingPackageTree(rootPath, source, destination, fileOperations)
     } else if (stats.isFile()) {
-      await fileOperations.beforePreservedFileOpen?.(source)
-      const contents = await readSafeRegularFile(rootPath, source)
+      const contents = await readSafeRegularFile(
+        rootPath,
+        source,
+        fileOperations.beforePreservedFileOpen,
+      )
       await writeFile(destination, contents)
     } else {
       throw new ProjectLibraryStoreError('Project packages may only contain regular files and directories.', 400, 'unsafe-path')
@@ -305,6 +311,7 @@ export async function createProjectLibraryStore(
     rename: options.fileOperations?.rename ?? renamePath,
     rm: options.fileOperations?.rm ?? removePath,
     beforePreservedFileOpen: options.fileOperations?.beforePreservedFileOpen,
+    afterPackageSnapshot: options.fileOperations?.afterPackageSnapshot,
   }
   const projectPaths = new Map<string, { packageName: string; packagePath: string }>()
 
@@ -439,17 +446,19 @@ export async function createProjectLibraryStore(
         let committed = false
 
         try {
-          if (originalPath) {
-            await copyExistingPackageTree(rootPath, originalPath, stagingPath, fileOperations)
+          if (originalPath && backupPath) {
+            // Once the package lock is held, move the live package to a random
+            // sibling snapshot. Cooperating package writers cannot mutate this
+            // source tree while WriterOS copies it into staging.
+            await safeRename(originalPath, backupPath)
+            backupCreated = true
+            await fileOperations.afterPackageSnapshot?.(originalPath, backupPath)
+            await copyExistingPackageTree(rootPath, backupPath, stagingPath, fileOperations)
             await preserveManifestSources(stagingPath, serialized.files)
           }
           await writeStagedPackage(stagingPath, serialized.files)
           await validateStagedPackage(rootPath, stagingPath)
 
-          if (originalPath && backupPath) {
-            await safeRename(originalPath, backupPath)
-            backupCreated = true
-          }
           try {
             await safeRename(stagingPath, destinationPath)
             committed = true

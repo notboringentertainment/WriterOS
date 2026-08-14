@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { appendFile, lstat, open } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open, type FileHandle } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import path from 'node:path'
 
@@ -7,6 +8,8 @@ const DEFAULT_TIMEOUT_MS = 5_000
 const STALE_LOCK_AGE_MS = 15 * 60 * 1_000
 const MIN_RETRY_DELAY_MS = 25
 const MAX_RETRY_DELAY_MS = 250
+const LOCK_FRAME_PREFIX = 'WOSLOCK1 '
+const LOCK_FRAME_SUFFIX = ' END'
 
 interface PackageLockClaim {
   kind: 'claim'
@@ -29,9 +32,8 @@ export interface PackageWriteLock {
 }
 
 export interface PackageWriteLockTestHooks {
-  /** @internal Exercises the removed pathname-check/delete race in regression tests. */
-  afterLockRead?(lockPath: string): Promise<void>
   beforeRelease?(): Promise<void>
+  beforeJournalOpen?(lockPath: string): Promise<void>
 }
 
 function isNodeError(error: unknown, code: string): boolean {
@@ -121,22 +123,115 @@ async function ensureLockJournal(lockPath: string): Promise<void> {
   if (!stats.isFile() || stats.isSymbolicLink()) throw corruptLockError()
 }
 
-async function appendLockRecord(lockPath: string, record: PackageLockRecord): Promise<void> {
-  await appendFile(lockPath, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'a' })
+async function openLockJournal(
+  lockPath: string,
+  flags: number,
+  testHooks?: PackageWriteLockTestHooks,
+): Promise<FileHandle> {
+  const before = await lstat(lockPath)
+  if (!before.isFile() || before.isSymbolicLink()) throw corruptLockError()
+  await testHooks?.beforeJournalOpen?.(lockPath)
+
+  let handle: FileHandle
+  try {
+    handle = await open(lockPath, flags | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isNodeError(error, 'ELOOP') || isNodeError(error, 'EMLINK')) throw corruptLockError()
+    throw error
+  }
+
+  try {
+    const opened = await handle.stat()
+    const current = await lstat(lockPath)
+    if (
+      !opened.isFile()
+      || current.isSymbolicLink()
+      || opened.dev !== before.dev
+      || opened.ino !== before.ino
+      || current.dev !== opened.dev
+      || current.ino !== opened.ino
+    ) {
+      throw corruptLockError()
+    }
+    return handle
+  } catch (error) {
+    await handle.close()
+    throw error
+  }
 }
 
-async function readActiveClaims(lockPath: string): Promise<PackageLockClaim[]> {
-  const handle = await open(lockPath, 'r')
+function frameLockRecord(record: PackageLockRecord): Buffer {
+  const encoded = Buffer.from(JSON.stringify(record), 'utf8').toString('base64url')
+  return Buffer.from(`\n${LOCK_FRAME_PREFIX}${encoded}${LOCK_FRAME_SUFFIX}\n`, 'utf8')
+}
+
+function parseFramedLockRecord(line: string): PackageLockRecord | null {
+  if (!line.startsWith(LOCK_FRAME_PREFIX) || !line.endsWith(LOCK_FRAME_SUFFIX)) return null
+  const encoded = line.slice(LOCK_FRAME_PREFIX.length, -LOCK_FRAME_SUFFIX.length)
+  const decoded = Buffer.from(encoded, 'base64url')
+  if (decoded.toString('base64url') !== encoded) return null
+  return parseLockRecord(decoded.toString('utf8'))
+}
+
+async function appendLockRecord(
+  lockPath: string,
+  record: PackageLockRecord,
+  testHooks?: PackageWriteLockTestHooks,
+): Promise<void> {
+  const handle = await openLockJournal(
+    lockPath,
+    constants.O_WRONLY | constants.O_APPEND,
+    testHooks,
+  )
   try {
-    const stats = await handle.stat()
-    if (!stats.isFile()) throw corruptLockError()
+    const frame = frameLockRecord(record)
+    const { bytesWritten } = await handle.write(frame, 0, frame.length)
+    if (bytesWritten !== frame.length) {
+      throw Object.assign(new Error('WriterOS project package lock record was only partially written.'), {
+        code: 'lock-write-incomplete',
+      })
+    }
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+}
+
+function parseJournalRecords(raw: string): PackageLockRecord[] {
+  const records: PackageLockRecord[] = []
+  for (const line of raw.split('\n').filter(Boolean)) {
+    if (line.startsWith(LOCK_FRAME_PREFIX)) {
+      // A write can crash anywhere before its suffix. The next append begins
+      // with a newline, isolating those bytes from the next complete frame.
+      if (!line.endsWith(LOCK_FRAME_SUFFIX)) continue
+      const framed = parseFramedLockRecord(line)
+      if (!framed) throw corruptLockError()
+      records.push(framed)
+      continue
+    }
+
+    const legacy = parseLockRecord(line)
+    if (legacy) {
+      records.push(legacy)
+      continue
+    }
+
+    throw corruptLockError()
+  }
+  return records
+}
+
+async function readActiveClaims(
+  lockPath: string,
+  testHooks?: PackageWriteLockTestHooks,
+): Promise<PackageLockClaim[]> {
+  const handle = await openLockJournal(lockPath, constants.O_RDONLY, testHooks)
+  try {
     const raw = await handle.readFile('utf8')
     if (raw.length === 0) return []
 
     const active = new Map<string, PackageLockClaim>()
-    for (const line of raw.split('\n').filter(Boolean)) {
-      const record = parseLockRecord(line)
-      if (!record) throw corruptLockError()
+    for (const record of parseJournalRecords(raw)) {
       if (record.kind === 'claim') {
         if (!active.has(record.token)) active.set(record.token, record)
       } else {
@@ -169,21 +264,21 @@ export async function acquirePackageWriteLock(input: {
   }
 
   await ensureLockJournal(lockPath)
-  await appendLockRecord(lockPath, claim)
+  await appendLockRecord(lockPath, claim, input.testHooks)
 
   while (true) {
-    const activeClaims = await readActiveClaims(lockPath)
+    const activeClaims = await readActiveClaims(lockPath, input.testHooks)
     for (const activeClaim of activeClaims) {
       if (activeClaim.token !== claim.token && claimCanBeRecovered(activeClaim)) {
         await appendLockRecord(lockPath, {
           kind: 'recover',
           token: activeClaim.token,
           createdAt: new Date().toISOString(),
-        })
+        }, input.testHooks)
       }
     }
 
-    const currentOwner = (await readActiveClaims(lockPath))[0]
+    const currentOwner = (await readActiveClaims(lockPath, input.testHooks))[0]
     if (currentOwner?.token === claim.token) {
       let released = false
       return {
@@ -194,7 +289,7 @@ export async function acquirePackageWriteLock(input: {
             kind: 'release',
             token: claim.token,
             createdAt: new Date().toISOString(),
-          })
+          }, input.testHooks)
           released = true
         },
       }
@@ -206,7 +301,7 @@ export async function acquirePackageWriteLock(input: {
         kind: 'release',
         token: claim.token,
         createdAt: new Date().toISOString(),
-      })
+      }, input.testHooks)
       throw timeoutError()
     }
     await wait(Math.min(retryDelayMs, remainingMs))

@@ -119,24 +119,33 @@ describe('project library configuration', () => {
 })
 
 describe('project package write lock', () => {
-  it('does not let an expired owner release a successor lock', async () => {
+  it('keeps a successor waiting while release is in progress', async () => {
     const root = await makeTemporaryDirectory()
     const projectId = makeStoredProject().id
-    let successorPromise: ReturnType<typeof acquirePackageWriteLock> | null = null
+    let releaseEntered!: () => void
+    const atRelease = new Promise<void>(resolve => {
+      releaseEntered = resolve
+    })
+    let allowRelease!: () => void
+    const mayRelease = new Promise<void>(resolve => {
+      allowRelease = resolve
+    })
     const first = await acquirePackageWriteLock({
       workspaceRoot: root,
       projectId,
       testHooks: {
-        afterLockRead: async lockPath => {
-          await rename(lockPath, `${lockPath}.displaced`)
-          successorPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
-          await successorPromise
+        beforeRelease: async () => {
+          releaseEntered()
+          await mayRelease
         },
       },
     })
 
-    await first.release()
-    successorPromise ??= acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
+    const release = first.release()
+    await atRelease
+    const successorPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
+    allowRelease()
+    await release
     const successor = await successorPromise
     const thirdResult = await acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 60 })
       .then(lock => {
@@ -148,7 +157,7 @@ describe('project package write lock', () => {
     expect(thirdResult.outcome).toBe('lock-timeout')
   })
 
-  it('does not let stale recovery displace a successor lock', async () => {
+  it('elects only one contender after recovering a stale claim', async () => {
     const root = await makeTemporaryDirectory()
     const projectId = makeStoredProject().id
     const lockPath = packageLockPath(root, projectId)
@@ -159,20 +168,9 @@ describe('project package write lock', () => {
       pid: 2_147_483_647,
       createdAt: new Date(Date.now() - 60_000).toISOString(),
     })}\n`, 'utf8')
-    let successorPromise: ReturnType<typeof acquirePackageWriteLock> | null = null
-    const contender = await acquirePackageWriteLock({
-      workspaceRoot: root,
-      projectId,
-      timeoutMs: 500,
-      testHooks: {
-        afterLockRead: async currentLockPath => {
-          await rename(currentLockPath, `${currentLockPath}.displaced`)
-          successorPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
-          await successorPromise
-        },
-      },
-    })
-    successorPromise ??= acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 60 })
+    const contenderPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
+    const successorPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 60 })
+    const contender = await contenderPromise
     const successorResult = await successorPromise.then(lock => ({
       outcome: 'acquired',
       lock,
@@ -184,6 +182,57 @@ describe('project package write lock', () => {
     await successorResult.lock?.release()
     await contender.release()
     expect(successorResult.outcome).toBe('lock-timeout')
+  })
+
+  it('rejects a lock journal replaced by a symlink before append', async () => {
+    const root = await makeTemporaryDirectory()
+    const outside = await makeTemporaryDirectory('writeros-outside-lock-')
+    const projectId = makeStoredProject().id
+    const unrelatedPath = path.join(outside, 'unrelated.txt')
+    await writeFile(unrelatedPath, 'must remain unchanged\n', 'utf8')
+    let swapped = false
+
+    const result = await acquirePackageWriteLock({
+      workspaceRoot: root,
+      projectId,
+      timeoutMs: 100,
+      testHooks: {
+        beforeJournalOpen: async lockPath => {
+          if (swapped) return
+          swapped = true
+          await rename(lockPath, `${lockPath}.displaced`)
+          await symlink(unrelatedPath, lockPath)
+        },
+      },
+    }).then(async lock => {
+      await lock.release()
+      return 'acquired'
+    }, error => String((error as { code?: string }).code))
+
+    expect(result).toBe('lock-corrupt')
+    expect(await readFile(unrelatedPath, 'utf8')).toBe('must remain unchanged\n')
+  })
+
+  it('recovers an incomplete crash tail before the next complete record', async () => {
+    const root = await makeTemporaryDirectory()
+    const projectId = makeStoredProject().id
+    const first = await acquirePackageWriteLock({ workspaceRoot: root, projectId })
+    await first.release()
+    await writeFile(packageLockPath(root, projectId), 'WOSLOCK1 incomplete-tail', { flag: 'a' })
+
+    const successor = await acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 100 })
+    await successor.release()
+  })
+
+  it('rejects a malformed complete framed journal record', async () => {
+    const root = await makeTemporaryDirectory()
+    const projectId = makeStoredProject().id
+    const first = await acquirePackageWriteLock({ workspaceRoot: root, projectId })
+    await first.release()
+    await writeFile(packageLockPath(root, projectId), '\nWOSLOCK1 not-valid-base64! END\n', { flag: 'a' })
+
+    await expect(acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 100 }))
+      .rejects.toMatchObject({ code: 'lock-corrupt' })
   })
 
   it('retries release after a transient filesystem failure', async () => {
@@ -456,7 +505,7 @@ describe('server project library store', () => {
     const store = await createProjectLibraryStore(root, {
       fileOperations: {
         beforePreservedFileOpen: async candidatePath => {
-          if (!candidatePath.endsWith(path.join(packageName, 'memory', 'events.jsonl'))) return
+          if (!candidatePath.endsWith(path.join('memory', 'events.jsonl'))) return
           await rm(candidatePath)
           await symlink(outsideFile, candidatePath)
         },
@@ -471,6 +520,40 @@ describe('server project library store', () => {
     })
 
     expect(await readFile(outsideFile, 'utf8')).toBe('outside must never be copied\n')
+  })
+
+  it('copies from a lock-owned snapshot when a live ancestor is swapped during save', async () => {
+    const root = await makeTemporaryDirectory()
+    const outside = await makeTemporaryDirectory('writeros-outside-ancestor-')
+    const project = makeStoredProject()
+    const packageName = 'The Salt Line (8f4e2c9a).writeros'
+    const packagePath = await writeSerializedPackage(root, packageName, project)
+    const memoryPath = path.join(packagePath, 'memory')
+    const sourcePath = path.join(memoryPath, 'events.jsonl')
+    await mkdir(memoryPath)
+    await writeFile(sourcePath, 'safe package bytes\n', 'utf8')
+    await writeFile(path.join(outside, 'events.jsonl'), 'outside bytes must not be copied\n', 'utf8')
+    let ancestorSwapAttempted = false
+    const store = await createProjectLibraryStore(root, {
+      fileOperations: {
+        afterPackageSnapshot: async originalPath => {
+          ancestorSwapAttempted = true
+          await mkdir(originalPath)
+          await symlink(outside, path.join(originalPath, 'memory'))
+          await rm(originalPath, { recursive: true, force: true })
+        },
+      },
+    })
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+
+    await store.writeProject(changed)
+
+    expect(ancestorSwapAttempted).toBe(true)
+    expect(await readFile(path.join(packagePath, 'memory', 'events.jsonl'), 'utf8'))
+      .toBe('safe package bytes\n')
+    expect(await readFile(path.join(outside, 'events.jsonl'), 'utf8'))
+      .toBe('outside bytes must not be copied\n')
   })
 
   it('leaves existing package unchanged when staged commit fails', async () => {
