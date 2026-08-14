@@ -12,10 +12,12 @@ project's working knowledge available to WriterOS and approved external workflow
 pretending that every draft statement is canon or that an agent may make creative authority
 decisions for the writer.
 
-The shared project home is the project's local `.writeros` package. Unified Project Memory
-lives inside that package, remains file-backed and portable with it, and is append-only for
-its historical records. It is not a cloud service, a global writer profile, or a replacement
-for authored writing surfaces.
+The shared project home is the project's live local `.writeros` package under the absolute
+`WRITEROS_PROJECTS_ROOT`. Unified Project Memory lives inside that package, remains
+file-backed and portable with it, and is append-only for its historical records.
+`project.json.projectId` is the project's opaque, stable identity; names and package paths do
+not substitute for it. The memory system is not a cloud service, a global writer profile, or
+a replacement for authored writing surfaces.
 
 Project and product titles are record data only. In particular, **Bloodless** must never
 become a workflow type, adapter name, schema value, or directory convention.
@@ -41,7 +43,8 @@ sole canonical copy of a record.
 
 Writer authority is explicit. A proposed canon item becomes active only when it has passed
 the required authority gate and the writer approves it through the applicable human-in-the-
-loop action.
+loop action. Conflicting approved changes remain proposals until an explicit supersession
+resolves their relationship; approval alone does not select a winner.
 
 - Wayfinder canon requires **both** `type: grill` or `type: sketch` **and** `mode: hitl`.
   An AFK grill or sketch is development material, not Wayfinder canon.
@@ -65,9 +68,12 @@ needed for Ben to decide, and only changes active canon after the authorized res
 
 ## 5. Sources, imports, and privacy
 
-Source material is preserved as evidence with enough metadata to identify where it came
-from and how it entered the project. Importers must retain source text/metadata and produce
-warnings for ambiguous or unmapped material rather than silently discarding it.
+Source material is represented by structured records with bounded excerpts or references,
+hashes, timestamps, opaque source locators, and provenance sufficient to identify where it
+came from and how it entered the project. Excerpts must stay within the implementation
+plan's validation limits; raw source transcripts remain in their source workflow rather than
+being copied into project memory. Importers must produce warnings for ambiguous or unmapped
+material rather than silently discarding it.
 
 - Legacy `atoms` import is read-only. It may create local memory records, but it never
   modifies the legacy source.
@@ -88,6 +94,8 @@ writer's explicit action and the permissions of the receiving integration.
 Retrieval is evidence-aware. A result must carry enough identity and provenance for the
 writer or agent to distinguish active canon, a document fact, a proposal, a conflict, and
 source evidence. Retrieval ranks for relevance, but ranking is not an authority decision.
+Safety-flagged content remains reviewable by the writer, but is excluded from all agent
+context.
 
 WriterOS reports should make the project's current state legible: active canon, unresolved
 conflicts, supporting and contradictory evidence, recent changes, open questions, import
