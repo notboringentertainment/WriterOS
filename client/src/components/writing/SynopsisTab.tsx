@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
 import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
@@ -10,6 +10,7 @@ import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditVie
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
 import type { MemoryReceipt } from '@shared/schema'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 export interface SynopsisTabProps {
   projectId?: string
@@ -43,14 +44,17 @@ export function SynopsisTab({
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
+  const beginComposeRequest = useProjectRequestGeneration(projectId)
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
+    const requestIsCurrent = beginComposeRequest()
     isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
       const result = await requestSynopsisCompose({ projectId, content: document.content, format: activeFormat, identity })
+      if (!requestIsCurrent()) return
       setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
@@ -58,12 +62,22 @@ export function SynopsisTab({
         setComposeError('WriterOS could not compose this document right now.')
       }
     } catch {
+      if (!requestIsCurrent()) return
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
-      isComposingRef.current = false
-      setIsComposing(false)
+      if (requestIsCurrent()) {
+        isComposingRef.current = false
+        setIsComposing(false)
+      }
     }
-  }, [projectId, document.content, activeFormat, identity, onComposed])
+  }, [beginComposeRequest, projectId, document.content, activeFormat, identity, onComposed])
+
+  useEffect(() => {
+    isComposingRef.current = false
+    setIsComposing(false)
+    setComposeError(null)
+    setMemoryReceipt(undefined)
+  }, [projectId])
 
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return

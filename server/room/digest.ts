@@ -13,6 +13,7 @@ import { RoomMemoryError, ensureProjectMemory } from './memoryContract';
 import {
   ProjectMemoryAgentUnavailableError,
   buildAgentMemoryContext,
+  capAgentMemoryText,
   finalizeAgentMemoryText,
   type ProjectMemoryProvider,
 } from '../projectMemory/agentContext';
@@ -86,24 +87,24 @@ export async function runCaseyDigest(input: {
     const parsed = JSON.parse(match[0]) as { lane_notes?: unknown; writer_rapport?: unknown; flag?: unknown };
 
     if (typeof parsed.lane_notes === 'string' && parsed.lane_notes.trim()) {
-      const finalizedLaneNotes = finalizeAgentMemoryText(parsed.lane_notes, projectMemory);
+      const finalizedLaneNotes = finalizeAgentMemoryText(capAgentMemoryText(parsed.lane_notes, LANE_NOTES_CAP), projectMemory);
       await store.writeBlock({
         projectId,
         agentId: CASEY_ID,
         label: 'lane_notes',
-        value: finalizedLaneNotes.text.slice(0, LANE_NOTES_CAP),
+        value: finalizedLaneNotes.text,
         memoryReceipt: finalizedLaneNotes.receipt,
         updatedBy: 'digest',
         charCap: LANE_NOTES_CAP,
       });
     }
     if (typeof parsed.writer_rapport === 'string' && parsed.writer_rapport.trim()) {
-      const finalizedRapport = finalizeAgentMemoryText(parsed.writer_rapport, projectMemory);
+      const finalizedRapport = finalizeAgentMemoryText(capAgentMemoryText(parsed.writer_rapport, WRITER_RAPPORT_CAP), projectMemory);
       await store.writeBlock({
         projectId,
         agentId: CASEY_ID,
         label: 'writer_rapport',
-        value: finalizedRapport.text.slice(0, WRITER_RAPPORT_CAP),
+        value: finalizedRapport.text,
         memoryReceipt: finalizedRapport.receipt,
         updatedBy: 'digest',
         charCap: WRITER_RAPPORT_CAP,

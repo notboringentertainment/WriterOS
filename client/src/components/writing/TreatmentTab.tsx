@@ -23,6 +23,7 @@ import {
 } from '../../lib/treatmentDeck'
 import type { MemoryReceipt } from '@shared/schema'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 interface TreatmentTabProps {
   projectId?: string
@@ -111,14 +112,17 @@ export function TreatmentTab({
   const [memoryReceipt, setMemoryReceipt] = React.useState<MemoryReceipt | undefined>()
   // The double-submit guard lives here in the tab handler, not in the compose client.
   const isComposingRef = React.useRef(false)
+  const beginComposeRequest = useProjectRequestGeneration(projectId)
 
   const handleCompose = React.useCallback(async () => {
     if (isComposingRef.current) return
+    const requestIsCurrent = beginComposeRequest()
     isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
       const result = await requestTreatmentCompose({ projectId, content, format: activeFormat, identity })
+      if (!requestIsCurrent()) return
       setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
@@ -126,12 +130,22 @@ export function TreatmentTab({
         setComposeError('WriterOS could not compose this document right now.')
       }
     } catch {
+      if (!requestIsCurrent()) return
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
-      isComposingRef.current = false
-      setIsComposing(false)
+      if (requestIsCurrent()) {
+        isComposingRef.current = false
+        setIsComposing(false)
+      }
     }
-  }, [projectId, content, activeFormat, identity, onComposed])
+  }, [beginComposeRequest, projectId, content, activeFormat, identity, onComposed])
+
+  React.useEffect(() => {
+    isComposingRef.current = false
+    setIsComposing(false)
+    setComposeError(null)
+    setMemoryReceipt(undefined)
+  }, [projectId])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {

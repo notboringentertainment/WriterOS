@@ -81,7 +81,8 @@ describe('useInterviewSession', () => {
   })
 
   it('start begins a session and surfaces the first question', async () => {
-    apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
+    const memoryReceipt = { revision: 0, status: 'disabled', citations: [], conflictIds: [] }
+    apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question, memoryReceipt })
     const { result } = renderHook(() => useInterviewSession('p1'))
     await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalled())
 
@@ -92,6 +93,7 @@ describe('useInterviewSession', () => {
     expect(ok).toBe(true)
     expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'A grieving chef returns home.' })
     expect(result.current.status.currentQuestion?.id).toBe('morgan-locks')
+    expect(result.current.memoryReceipt).toEqual(memoryReceipt)
   })
 
   it('answer adopts the confirmed proposal server-first', async () => {
@@ -295,6 +297,20 @@ describe('useInterviewSession', () => {
 
     expect(apiMock.createPitchPacketDraft).toHaveBeenCalledWith('p1', banked.id, expect.anything(), { title: 'Ace' })
     expect(result.current.pitchPacketRow?.id).toBe('packet-1')
+  })
+
+  it('retains the exact Pitch Packet response receipt even when the row omits its optional copy', async () => {
+    const banked = session('banked')
+    const packet = { id: 'packet-1', project_id: 'p1', session_id: banked.id, packet: {} as PitchPacket, packet_version: 1, status: 'draft', direction_revision: 2, created_at: 'now', exported_at: null }
+    const memoryReceipt = { revision: 77, status: 'available', citations: [], conflictIds: ['conflict-77'] }
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: banked, hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: packet, proposalUnavailable: false, memoryReceipt })
+    const { result } = renderHook(() => useInterviewSession('p1'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Ace'))
+
+    expect(result.current.pitchPacketMemoryReceipt).toEqual(memoryReceipt)
   })
 
   it('keeps exported state after a download failure and re-downloads the persisted packet', async () => {

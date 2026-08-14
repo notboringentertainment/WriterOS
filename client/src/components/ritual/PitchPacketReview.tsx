@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { validatePitchPacketForApproval, type PitchPacket, type PitchPacketField, type PitchPacketOrigin } from '@shared/pitchPacket'
 import type { PitchPacketRow } from '../../lib/roomApi'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 interface PitchPacketReviewProps {
   row: PitchPacketRow
@@ -52,6 +53,7 @@ export function PitchPacketReview({ row, proposalUnavailable, message, downloadE
     <section aria-label="Pitch Packet review" style={styles.review}>
       <h2 style={styles.title}>Pitch Packet review</h2>
       <p style={styles.guidance}>Approve every required field to export.</p>
+      <MemoryReceiptDisclosure receipt={row.memory_receipt} />
       {proposalUnavailable && <p style={styles.warning}>Suggestions are unavailable right now. You can still write and approve every field yourself.</p>}
       {message && <p style={styles.success}>{message}</p>}
       {downloadError && <p style={styles.warning}>The Pitch Packet is exported, but download failed: {downloadError}</p>}

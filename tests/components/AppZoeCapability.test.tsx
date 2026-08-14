@@ -5,6 +5,12 @@ import App from '../../client/src/App'
 import { VOICE_PROFILE_STORAGE_KEY, type VoiceProfileDocument } from '@shared/voiceProfile'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => { resolve = next })
+  return { promise, resolve }
+}
+
 function makeProfile(): VoiceProfileDocument {
   return {
     version: 1,
@@ -195,5 +201,57 @@ describe('App Zoe persona capability routing', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/persona-capability/run')).toBe(true))
     const call = fetchMock.mock.calls.find(([url]) => url === '/api/persona-capability/run')
     expect(JSON.parse(String(call?.[1]?.body)).projectId).toBe(stored.id)
+  })
+
+  it('ignores a deferred Zoe capability response after switching from folder project A to B', async () => {
+    const stateA = defaultProjectState(); stateA.meta.title = 'Zoe Project A'
+    const stateB = defaultProjectState(); stateB.meta.title = 'Zoe Project B'
+    const storedA = { id: 'zoe-project-a', createdAt: 1, updatedAt: 2, state: stateA }
+    const storedB = { id: 'zoe-project-b', createdAt: 3, updatedAt: 4, state: stateB }
+    const refs = [storedA, storedB].map(stored => ({
+      kind: 'server', id: stored.id, packageName: `${stored.state.meta.title}.writeros`,
+      summary: { id: stored.id, title: stored.state.meta.title, createdAt: stored.createdAt, updatedAt: stored.updatedAt },
+    }))
+    const pending = deferred<Record<string, unknown>>()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/project-library/bootstrap') return { ok: true, status: 200, json: async () => ({ enabled: true, label: 'WriterOS Projects', sessionToken: 'session' }) }
+      if (url === '/api/project-library/projects') return { ok: true, status: 200, json: async () => ({ entries: refs.map(ref => ({ status: 'ready', ref, warnings: [] })) }) }
+      if (url === `/api/project-library/projects/${storedA.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedA), warnings: [] } }) }
+      if (url === `/api/project-library/projects/${storedB.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedB), warnings: [] } }) }
+      if (url === '/api/persona-capability/run') return { ok: true, status: 200, json: async () => pending.promise }
+      if (init?.method === 'PUT') return { ok: true, status: 200, json: async () => ({ ok: true }) }
+      return { ok: true, status: 200, json: async () => ({}) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Zoe Project A' }))
+    await screen.findByLabelText('Project title: Zoe Project A')
+    fireEvent.click(screen.getByTitle('Morgan'))
+    fireEvent.change(screen.getByPlaceholderText('Message Morgan…'), { target: { value: '@Zoe research a deferred archive question' } })
+    fireEvent.keyDown(screen.getByPlaceholderText('Message Morgan…'), { key: 'Enter' })
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/persona-capability/run')).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Zoe Project B' }))
+    await screen.findByLabelText('Project title: Zoe Project B')
+    pending.resolve({
+      status: 'ok', finalMessage: 'STALE ZOE RESPONSE FROM PROJECT A',
+      receipt: {
+        schemaVersion: 1, taskKind: 'research_world_context', personaId: 'zoe',
+        startedAt: '2026-08-14T12:00:00.000Z', completedAt: '2026-08-14T12:00:01.000Z', durationMs: 1000,
+        status: 'ok', contextChips: [], voiceProfile: { included: false, slice: 'none' }, missingSurfaces: [], sources: [],
+        memory: { revision: 92, status: 'available', citations: [], conflictIds: [] },
+      },
+    })
+
+    await waitFor(() => expect(screen.getByPlaceholderText('Message Morgan…')).toBeEnabled())
+    expect(screen.queryByText('STALE ZOE RESPONSE FROM PROJECT A')).not.toBeInTheDocument()
+    expect(screen.queryByText(/connection error/i)).not.toBeInTheDocument()
+    const persistedB = fetchMock.mock.calls
+      .filter(([url, init]) => String(url).includes(`/projects/${storedB.id}`) && init?.method === 'PUT')
+      .map(([, init]) => String(init?.body))
+    expect(persistedB.join('\n')).not.toContain('STALE ZOE RESPONSE FROM PROJECT A')
   })
 })

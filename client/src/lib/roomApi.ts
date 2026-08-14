@@ -263,7 +263,7 @@ export async function fetchInterviewStatus(projectId: string): Promise<Interview
 export async function startInterview(
   projectId: string,
   input: { mode: 'quick' | 'full'; seedText: string; speculative?: boolean },
-): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null; recap: MeetingRecapItem[]; directionDiff: MeetingDirectionDiff[]; directionRevision: number }> {
+): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null; recap: MeetingRecapItem[]; directionDiff: MeetingDirectionDiff[]; directionRevision: number; memoryReceipt: MemoryReceipt }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

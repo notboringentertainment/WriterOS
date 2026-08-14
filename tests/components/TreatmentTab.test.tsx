@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useState } from 'react'
 import { TreatmentTab } from '../../client/src/components/writing/TreatmentTab'
 import {
@@ -12,6 +12,12 @@ import { syntheticTreatment } from '../fixtures/treatment/syntheticTreatment'
 import { computeTreatmentSourceHash } from '../../shared/compose/treatmentSourceHash'
 import { getTreatmentRecipe } from '../../shared/compose/treatmentRecipe'
 import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION, type ComposedDocument } from '../../shared/compose/types'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => { resolve = next })
+  return { promise, resolve }
+}
 
 function makeDocument(
   override: Partial<TreatmentDocumentContent> = {},
@@ -367,19 +373,19 @@ describe('TreatmentTab — Document view composition', () => {
     }
   }
 
-  function DocumentHarness() {
+  function DocumentHarness({ projectId = 'folder-treatment-1', onComposedSpy }: { projectId?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
     const [doc, setDoc] = useState<AuthoredDocumentState<TreatmentDocumentContent>>(() => ({
       ...makeDocument(syntheticTreatment, { activeView: 'document' }),
     }))
     return (
       <TreatmentTab
-        projectId="folder-treatment-1"
+        projectId={projectId}
         document={doc}
         projectFormat="feature"
         identity={identity}
         onContentChange={vi.fn()}
         onViewPreferencesPatch={(patch) => setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))}
-        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onComposed={(composed) => { onComposedSpy?.(composed); setDoc((d) => ({ ...d, composed })) }}
         onClear={vi.fn()}
       />
     )
@@ -410,10 +416,36 @@ describe('TreatmentTab — Document view composition', () => {
       }),
     }))
 
-    render(<DocumentHarness />)
+    const { rerender } = render(<DocumentHarness projectId="folder-treatment-1" />)
     fireEvent.click(screen.getByRole('button', { name: /compose this treatment/i }))
 
     expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
+    rerender(<DocumentHarness projectId="folder-treatment-2" />)
+    expect(screen.queryByText(/project memory disabled/i)).not.toBeInTheDocument()
+  })
+
+  it('ignores project A completion after project B starts and applies only B composition', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const projectId = JSON.parse(String(init?.body)).projectId
+      return { ok: true, json: async () => projectId === 'treatment-A' ? pendingA.promise : pendingB.promise }
+    }))
+    const onComposed = vi.fn()
+    const { rerender } = render(<DocumentHarness projectId="treatment-A" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this treatment/i }))
+
+    rerender(<DocumentHarness projectId="treatment-B" onComposedSpy={onComposed} />)
+    const composeB = screen.getByRole('button', { name: /compose this treatment/i })
+    expect(composeB).toBeEnabled()
+    fireEvent.click(composeB)
+    await act(async () => pendingA.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 121, status: 'available', citations: [], conflictIds: [] } }))
+    expect(onComposed).not.toHaveBeenCalled()
+    expect(screen.queryByText(/project memory revision 121/i)).not.toBeInTheDocument()
+
+    await act(async () => pendingB.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 122, status: 'available', citations: [], conflictIds: [] } }))
+    await waitFor(() => expect(onComposed).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/project memory revision 122/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is in flight', async () => {

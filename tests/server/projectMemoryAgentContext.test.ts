@@ -147,8 +147,67 @@ describe('project memory agent context boundary', () => {
     }])
   })
 
+  it('uses Unicode-aware identifier boundaries and leaves embedded citation-shaped text untouched', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const bare = visibleCitation.slice(1, -1)
+    const input = `_${bare}_ · \u0301${bare} · ${bare}\u0301 · word${bare}word`
+
+    expect(finalizeAgentMemoryText(input, prepared).text).toBe(input)
+    expect(finalizeAgentMemoryText(input, prepared).receipt.citations).toEqual([])
+  })
+
+  it('normalizes fullwidth citation candidates and Unicode dash variants without normalizing ordinary text', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const bare = visibleCitation.slice(1, -1)
+    const fullwidth = [...bare].map(char => {
+      if (char === '-') return '－'
+      const code = char.codePointAt(0) as number
+      return char >= '!' && char <= '~' ? String.fromCodePoint(code + 0xfee0) : char
+    }).join('')
+    const unicodeDashes = ['‐', '‑', '‒', '–', '—', '―', '−', '﹘', '﹣']
+    const dashCandidates = unicodeDashes.map(dash => bare.replaceAll('-', dash)).join(', ')
+    const ordinary = 'Ｆｕｌｌｗｉｄｔｈ prose stays exactly as written.'
+
+    const finalized = finalizeAgentMemoryText(
+      `${ordinary} ［ ${fullwidth} ］; ${dashCandidates}; invented ［Ｍ－ＦＦＦＦ－００６６］.`,
+      prepared,
+    )
+
+    expect(finalized.text).toBe(
+      `${ordinary} ${visibleCitation}; ${unicodeDashes.map(() => visibleCitation).join(', ')}; invented .`,
+    )
+    expect(finalized.receipt.citations).toEqual([{
+      id: visibleCitation,
+      workflow: 'writeros',
+      sourceUri: 'writeros://documents/story-bible#harbor',
+    }])
+  })
+
+  it('bounds citation scanning on long hostile candidates without changing non-citation content', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const input = `${'plain '.repeat(30_000)}_Ｍ－${'Ｆ'.repeat(20_000)}_`
+
+    expect(finalizeAgentMemoryText(input, prepared)).toEqual({
+      text: input,
+      receipt: { revision: 17, status: 'available', citations: [], conflictIds: ['conflict-visible'] },
+    })
+  }, 1_000)
+
   it.each([
     '/Users/writer/Private/ending.md',
+    '   /Users/writer/Private/ending.md',
     '~/secret/ending.md',
     'C:\\Users\\writer\\ending.md',
     '\\\\server\\share\\ending.md',
@@ -156,6 +215,16 @@ describe('project memory agent context boundary', () => {
     'private/project/memory.jsonl',
     '.writeros/memory/ledger.jsonl',
     'draft.md\n/private/forged',
+    '%2FUsers%2Fwriter%2FPrivate%2Fending.md',
+    '%252Fprivate%252Fvar%252Fending.md',
+    'C%3A%5CUsers%5Cwriter%5Cending.md',
+    '%5C%5Cserver%5Cshare%5Cending.md',
+    '%7E%2Fsecret%2Fending.md',
+    '%2Ewriteros%2Fmemory%2Fledger.jsonl',
+    'private%2Fproject%2Fmemory.jsonl',
+    'file%253A%252F%252F%252Fprivate%252Fvar%252Fending.md',
+    '%20%20%2Fprivate%2Fvar%2Fending.md',
+    '%E0%A4%A/private/invalid-escape.md',
   ])('redacts unsafe source URI %s consistently from prompt and receipt', async unsafeSourceUri => {
     const context = memoryContext()
     context.activeCanon[0] = {
@@ -176,11 +245,17 @@ describe('project memory agent context boundary', () => {
     expect(finalized.receipt.citations[0].sourceUri).not.toContain('ending')
   })
 
-  it('preserves safe workflow-relative and opaque source URIs', async () => {
+  it.each([
+    'https://example.test/story/harbor?view=memory#lock',
+    'writeros://documents/story-bible#harbor',
+    'story-wayfinder:atoms/atoms.jsonl#atom=decision-1',
+    'drafts/chapter%202.md#scene-4',
+    'opaque:section-1',
+  ])('preserves safe workflow-relative and opaque source URI %s without decoding it', async safeSourceUri => {
     const context = memoryContext()
     context.activeCanon[0] = {
       ...context.activeCanon[0],
-      source: { ...context.activeCanon[0].source, sourceUri: 'story-wayfinder:atoms/atoms.jsonl#atom=decision-1' },
+      source: { ...context.activeCanon[0].source, sourceUri: safeSourceUri },
     }
     context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
     const prepared = await buildAgentMemoryContext(
@@ -188,7 +263,7 @@ describe('project memory agent context boundary', () => {
     )
 
     expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
-      .toBe('story-wayfinder:atoms/atoms.jsonl#atom=decision-1')
+      .toBe(safeSourceUri)
   })
 
   it('preserves browser-only behavior as disabled without calling a provider', async () => {

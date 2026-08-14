@@ -5,6 +5,12 @@ import App from '../../client/src/App'
 import { VOICE_PROFILE_STORAGE_KEY, type VoiceProfileDocument } from '@shared/voiceProfile'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => { resolve = next })
+  return { promise, resolve }
+}
+
 function makeProfile(): VoiceProfileDocument {
   return {
     version: 1,
@@ -176,5 +182,51 @@ describe('App OpenSwarm handoff', () => {
 
     expect(await screen.findByText(/OpenSwarm is reachable/i)).toBeInTheDocument()
     expect(screen.getByText(/project memory revision 73/i)).toBeInTheDocument()
+  })
+
+  it('ignores a deferred OpenSwarm response after switching from folder project A to B', async () => {
+    const stateA = defaultProjectState(); stateA.meta.title = 'Swarm Project A'
+    const stateB = defaultProjectState(); stateB.meta.title = 'Swarm Project B'
+    const storedA = { id: 'swarm-project-a', createdAt: 1, updatedAt: 2, state: stateA }
+    const storedB = { id: 'swarm-project-b', createdAt: 3, updatedAt: 4, state: stateB }
+    const refs = [storedA, storedB].map(stored => ({
+      kind: 'server', id: stored.id, packageName: `${stored.state.meta.title}.writeros`,
+      summary: { id: stored.id, title: stored.state.meta.title, createdAt: stored.createdAt, updatedAt: stored.updatedAt },
+    }))
+    const pending = deferred<Record<string, unknown>>()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/project-library/bootstrap') return { ok: true, status: 200, json: async () => ({ enabled: true, label: 'WriterOS Projects', sessionToken: 'session' }) }
+      if (url === '/api/project-library/projects') return { ok: true, status: 200, json: async () => ({ entries: refs.map(ref => ({ status: 'ready', ref, warnings: [] })) }) }
+      if (url === `/api/project-library/projects/${storedA.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedA), warnings: [] } }) }
+      if (url === `/api/project-library/projects/${storedB.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedB), warnings: [] } }) }
+      if (url === '/api/openswarm/writing-partner') return { ok: true, status: 200, json: async () => pending.promise }
+      if (init?.method === 'PUT') return { ok: true, status: 200, json: async () => ({ ok: true }) }
+      return { ok: true, status: 200, json: async () => ({}) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Swarm Project A' }))
+    await screen.findByLabelText('Project title: Swarm Project A')
+    fireEvent.click(screen.getByTitle('Morgan'))
+    fireEvent.change(screen.getByPlaceholderText('Message Morgan…'), { target: { value: '/swarm deferred answer' } })
+    fireEvent.keyDown(screen.getByPlaceholderText('Message Morgan…'), { key: 'Enter' })
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/openswarm/writing-partner')).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Swarm Project B' }))
+    await screen.findByLabelText('Project title: Swarm Project B')
+    pending.resolve({
+      message: 'STALE SWARM RESPONSE FROM PROJECT A',
+      memoryReceipt: { revision: 91, status: 'available', citations: [], conflictIds: [] },
+    })
+
+    await waitFor(() => expect(screen.getByPlaceholderText('Message Morgan…')).toBeEnabled())
+    expect(screen.queryByText('STALE SWARM RESPONSE FROM PROJECT A')).not.toBeInTheDocument()
+    const persistedB = fetchMock.mock.calls
+      .filter(([url, init]) => String(url).includes(`/projects/${storedB.id}`) && init?.method === 'PUT')
+      .map(([, init]) => String(init?.body))
+    expect(persistedB.join('\n')).not.toContain('STALE SWARM RESPONSE FROM PROJECT A')
   })
 })

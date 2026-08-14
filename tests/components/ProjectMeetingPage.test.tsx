@@ -91,7 +91,10 @@ describe('ProjectMeetingPage', () => {
   })
 
   it('starts the interview from the seed and shows the first question', async () => {
-    apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
+    apiMock.startInterview.mockResolvedValue({
+      session: session('interviewing'), currentQuestion: question,
+      memoryReceipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+    })
     renderPage()
 
     fireEvent.change(await screen.findByLabelText('Project Meeting seed'), { target: { value: 'A grieving chef returns home.' } })
@@ -100,6 +103,7 @@ describe('ProjectMeetingPage', () => {
     expect(await screen.findByText('What must stay true no matter what?')).toBeInTheDocument()
     expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'A grieving chef returns home.' })
     expect(screen.getByLabelText('Project Meeting answer')).toBeInTheDocument()
+    expect(screen.getByText(/project memory disabled/i)).toBeInTheDocument()
   })
 
   it('answers with the selected origin and adopts the mapping', async () => {
@@ -218,12 +222,22 @@ describe('ProjectMeetingPage', () => {
       title: field('Ace Handler'), logline: field('Logline'), format: field('Feature'), genre: field('Thriller'), tone: field('Tense'),
       premise: field('Premise'), storyEngine: field('Engine'), coreCharacters: field([{ name: 'Ace', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]), locks: field([]), openQuestions: field([]),
     }
-    apiMock.createPitchPacketDraft.mockResolvedValue({ row: { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'draft', direction_revision: 1, created_at: 'now', exported_at: null }, proposalUnavailable: false })
+    const row = { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'draft', direction_revision: 1, created_at: 'now', exported_at: null }
+    apiMock.createPitchPacketDraft.mockResolvedValue({
+      row,
+      proposalUnavailable: false,
+      memoryReceipt: { revision: 89, status: 'available', citations: [], conflictIds: [] },
+    })
+    apiMock.savePitchPacketDraft.mockResolvedValue(row)
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Export to PitchStudio' }))
     expect(apiMock.createPitchPacketDraft).toHaveBeenCalledWith('p1', 's1', expect.any(Object), { title: 'Ace Handler' })
     expect(await screen.findByRole('heading', { name: 'Pitch Packet review' })).toBeInTheDocument()
+    expect(screen.getByText(/project memory revision 89/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(apiMock.savePitchPacketDraft).toHaveBeenCalled())
+    expect(screen.getByText(/project memory revision 89/i)).toBeInTheDocument()
   })
 
   it('lets a writer explicitly leave the latest banked round and start a new one', async () => {

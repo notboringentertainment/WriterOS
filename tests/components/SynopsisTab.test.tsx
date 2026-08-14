@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useState } from 'react'
 import { SynopsisTab } from '../../client/src/components/writing/SynopsisTab'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
@@ -8,6 +8,12 @@ import { syntheticSynopsisFeature } from '../fixtures/synopsis/syntheticSynopsis
 import { computeSynopsisSourceHash } from '../../shared/compose/synopsisSourceHash'
 import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
 import type { ComposedDocument } from '../../shared/compose/types'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => { resolve = next })
+  return { promise, resolve }
+}
 
 function makeDocument(
   override: Partial<SynopsisDocumentContent> = {},
@@ -345,7 +351,7 @@ describe('SynopsisTab — Document View composer', () => {
     fidelity: { status: 'clean', warnings: [] },
   })
 
-  function DocumentHarness() {
+  function DocumentHarness({ projectId = 'folder-synopsis-1', onComposedSpy }: { projectId?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
     const [doc, setDoc] = useState<AuthoredDocumentState<SynopsisDocumentContent>>({
       ...makeDocument(),
       content: syntheticSynopsisFeature,
@@ -354,13 +360,13 @@ describe('SynopsisTab — Document View composer', () => {
     })
     return (
       <SynopsisTab
-        projectId="folder-synopsis-1"
+        projectId={projectId}
         document={doc}
         projectFormat="feature"
         identity={identity}
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={(patch) => setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))}
-        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onComposed={(composed) => { onComposedSpy?.(composed); setDoc((d) => ({ ...d, composed })) }}
         onClear={vi.fn()}
       />
     )
@@ -391,10 +397,36 @@ describe('SynopsisTab — Document View composer', () => {
       }),
     }))
 
-    render(<DocumentHarness />)
+    const { rerender } = render(<DocumentHarness projectId="folder-synopsis-1" />)
     fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
 
     expect(await screen.findByText(/project memory revision 52/i)).toBeInTheDocument()
+    rerender(<DocumentHarness projectId="folder-synopsis-2" />)
+    expect(screen.queryByText(/project memory revision 52/i)).not.toBeInTheDocument()
+  })
+
+  it('ignores project A completion after project B starts and applies only B composition', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const projectId = JSON.parse(String(init?.body)).projectId
+      return { ok: true, json: async () => projectId === 'synopsis-A' ? pendingA.promise : pendingB.promise }
+    }))
+    const onComposed = vi.fn()
+    const { rerender } = render(<DocumentHarness projectId="synopsis-A" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    rerender(<DocumentHarness projectId="synopsis-B" onComposedSpy={onComposed} />)
+    const composeB = screen.getByRole('button', { name: /compose this synopsis/i })
+    expect(composeB).toBeEnabled()
+    fireEvent.click(composeB)
+    await act(async () => pendingA.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 111, status: 'available', citations: [], conflictIds: [] } }))
+    expect(onComposed).not.toHaveBeenCalled()
+    expect(screen.queryByText(/project memory revision 111/i)).not.toBeInTheDocument()
+
+    await act(async () => pendingB.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 112, status: 'available', citations: [], conflictIds: [] } }))
+    await waitFor(() => expect(onComposed).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/project memory revision 112/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is in flight', async () => {

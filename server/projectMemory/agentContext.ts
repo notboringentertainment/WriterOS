@@ -41,7 +41,23 @@ const DISABLED_RECEIPT: MemoryReceipt = {
   conflictIds: [],
 }
 
-const MEMORY_CITATION_PATTERN = /(?<![\p{L}\p{N}-])(?:\[\s*(M-[0-9A-F]{4}-[0-9A-F]+)\s*\]|\(\s*(M-[0-9A-F]{4}-[0-9A-F]+)\s*\)|(M-[0-9A-F]{4}-[0-9A-F]+))(?![\p{L}\p{N}-])/giu
+const CITATION_DASHES = '\\-\\u2010\\u2011\\u2012\\u2013\\u2014\\u2015\\u2212\\uFE58\\uFE63\\uFF0D'
+const CITATION_HEX = '0-9A-Fa-f０-９Ａ-Ｆａ-ｆ'
+// A record id is capped at 500 UTF-16 code units, so its encoded citation tail
+// is at most 2,000 hex characters. Bounding the candidate prevents adversarial
+// model text from creating an unbounded regex scan.
+const CITATION_CORE = `[MmＭｍ][${CITATION_DASHES}][${CITATION_HEX}]{4}[${CITATION_DASHES}][${CITATION_HEX}]{1,2000}`
+const CITATION_BOUNDARY = `\\p{L}\\p{N}\\p{M}\\p{Pc}${CITATION_DASHES}`
+const MEMORY_CITATION_PATTERN = new RegExp(
+  `(?<![${CITATION_BOUNDARY}])(?:[\\[［]\\s*(${CITATION_CORE})\\s*[\\]］]|[\\(（]\\s*(${CITATION_CORE})\\s*[\\)）]|(${CITATION_CORE}))(?![${CITATION_BOUNDARY}])`,
+  'giu',
+)
+const CITATION_DASH_PATTERN = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/gu
+
+function canonicalCitationId(candidate: string): string {
+  const normalized = candidate.normalize('NFKC').replace(CITATION_DASH_PATTERN, '-').toUpperCase()
+  return `[${normalized}]`
+}
 
 const MEMORY_AUTHORITY_RULES = `PROJECT MEMORY AUTHORITY RULES:
 - Active canon is binding context. Never silently contradict or replace it.
@@ -59,17 +75,38 @@ function disabledContext(): AgentMemoryContext {
   }
 }
 
-function safeSourceUri(sourceUri: string): string {
-  const normalized = sourceUri.normalize('NFKC')
+function unsafeSourceUriView(value: string): boolean {
+  const normalized = value.trim().normalize('NFKC')
   const pathPart = normalized.split(/[?#]/, 1)[0]
-  const unsafe = /[\u0000-\u001F\u007F]/u.test(normalized)
+  return /[\u0000-\u001F\u007F]/u.test(normalized)
     || /^(?:\/|~|\\|file:)/iu.test(normalized)
     || /^[A-Z]:[\\/]/iu.test(normalized)
-    || /^(?:\.\/)*(?:private|\.writeros)(?:\/|$)/iu.test(pathPart)
+    || /^(?:\.\/)*(?:private|\.writeros)(?:[\\/]|$)/iu.test(pathPart)
     || normalized.includes('\\')
     || pathPart.split('/').includes('..')
-  if (!unsafe) return normalized
-  const digest = createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 24)
+}
+
+function sourceUriIsUnsafe(sourceUri: string): boolean {
+  let classification = sourceUri.trim().normalize('NFKC')
+  for (let round = 0; round < 4; round += 1) {
+    if (unsafeSourceUriView(classification)) return true
+    if (!classification.includes('%')) return false
+    try {
+      const decoded = decodeURIComponent(classification)
+      if (decoded === classification) return false
+      classification = decoded.trim().normalize('NFKC')
+    } catch {
+      // A malformed escape cannot be classified reliably, so keep it out of
+      // the model and receipt instead of leaking a disguised local locator.
+      return true
+    }
+  }
+  return unsafeSourceUriView(classification)
+}
+
+function safeSourceUri(sourceUri: string): string {
+  if (!sourceUriIsUnsafe(sourceUri)) return sourceUri
+  const digest = createHash('sha256').update(sourceUri, 'utf8').digest('hex').slice(0, 24)
   return `redacted-source:${digest}`
 }
 
@@ -188,7 +225,7 @@ export function finalizeAgentMemoryText(
 
   const citedIds = new Set<string>()
   const filtered = text.replace(MEMORY_CITATION_PATTERN, (_citation, bracketed, parenthesized, bare) => {
-    const normalized = `[${String(bracketed ?? parenthesized ?? bare).toUpperCase()}]`
+    const normalized = canonicalCitationId(String(bracketed ?? parenthesized ?? bare))
     if (!context.allowedCitations.has(normalized)) return ''
     citedIds.add(normalized)
     return normalized
@@ -203,6 +240,23 @@ export function finalizeAgentMemoryText(
     text: filtered,
     receipt: { ...context.receipt, citations },
   }
+}
+
+/**
+ * Bound raw model text without leaving half of a memory citation at the end.
+ * The complete raw value is inspected only to find citations that straddle the
+ * boundary; final citation authorization still happens after this function.
+ */
+export function capAgentMemoryText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  let end = maxLength
+  for (const match of text.matchAll(MEMORY_CITATION_PATTERN)) {
+    const start = match.index
+    if (start < maxLength && start + match[0].length > maxLength) {
+      end = Math.min(end, start)
+    }
+  }
+  return text.slice(0, end)
 }
 
 export function finalizeAgentMemoryReceipt(

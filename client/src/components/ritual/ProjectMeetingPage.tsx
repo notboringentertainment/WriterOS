@@ -12,6 +12,7 @@ import { RitualQuestionCard } from './RitualQuestionCard'
 import { RitualStage } from './RitualStage'
 import { MutabilityToggle } from './MutabilityToggle'
 import { PitchPacketReview } from './PitchPacketReview'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 export interface ProjectMeetingPageProps {
   projectId: string
@@ -94,6 +95,7 @@ export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit 
       onExit={onExit}
     >
       {error && <p style={styles.error}>{error}</p>}
+      <MemoryReceiptDisclosure receipt={interview.memoryReceipt} />
 
       {session && interview.status.recap.length > 0 && session.state !== 'banked' && session.state !== 'exported' && (
         <section style={styles.recapSection} aria-label="Earlier round direction">
@@ -319,7 +321,9 @@ export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit 
       {interview.pitchPacketRow && (
         <RitualStage stageKey="pitch-packet-review">
           <PitchPacketReview
-            row={interview.pitchPacketRow}
+            row={interview.pitchPacketMemoryReceipt
+              ? { ...interview.pitchPacketRow, memory_receipt: interview.pitchPacketMemoryReceipt }
+              : interview.pitchPacketRow}
             proposalUnavailable={interview.proposalUnavailable}
             message={interview.packetMessage}
             downloadError={interview.packetDownloadError}

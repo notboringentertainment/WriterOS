@@ -171,6 +171,16 @@ export default function App() {
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
+  const activeAgentProjectKey = activeFolderProjectId
+    ? `folder:${activeFolderProjectId}`
+    : `browser:${project.activeProjectId ?? ''}`
+  const activeAgentProjectKeyRef = useRef(activeAgentProjectKey)
+  const wpRequestGenerationRef = useRef(0)
+  activeAgentProjectKeyRef.current = activeAgentProjectKey
+  useEffect(() => {
+    wpRequestGenerationRef.current += 1
+    setWpLoading(false)
+  }, [activeAgentProjectKey])
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
     rawHtml: project.state.script.rawHtml,
     scenes: project.state.script.scenes,
@@ -646,6 +656,12 @@ export default function App() {
 
   const handleWPSend = useCallback(async (text: string) => {
     const openSwarmMessage = parseOpenSwarmCommand(text)
+    const requestProjectKey = activeAgentProjectKey
+    const requestGeneration = ++wpRequestGenerationRef.current
+    const requestIsCurrent = () => (
+      wpRequestGenerationRef.current === requestGeneration
+      && activeAgentProjectKeyRef.current === requestProjectKey
+    )
 
     if (openSwarmMessage) {
       project.addMessage('writingPartner', makeMessage('user', text, 'Writer'))
@@ -654,8 +670,10 @@ export default function App() {
         const projectContext = buildFreshProjectContext(openSwarmMessage)
         const voiceProfile = loadCompletedVoiceProfile()
         const response = await postOpenSwarmWritingPartner({ projectId: activeFolderProjectId ?? undefined, message: openSwarmMessage, projectContext, voiceProfile })
+        if (!requestIsCurrent()) return
         project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)', { memoryReceipt: response.memoryReceipt }))
       } catch {
+        if (!requestIsCurrent()) return
         project.addMessage(
           'writingPartner',
           makeMessage(
@@ -665,7 +683,7 @@ export default function App() {
           )
         )
       } finally {
-        setWpLoading(false)
+        if (requestIsCurrent()) setWpLoading(false)
       }
       return
     }
@@ -699,6 +717,7 @@ export default function App() {
           sourceSurface: 'writingPartner',
           clientRequestId: crypto.randomUUID(),
         })
+        if (!requestIsCurrent()) return
 
         if (response.status !== 'cancelled' && response.finalMessage.trim()) {
           project.addMessage(
@@ -722,14 +741,15 @@ export default function App() {
         surface,
       })
       const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      if (!requestIsCurrent()) return
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
     } catch (error) {
-      if (isAbortError(error)) return
+      if (isAbortError(error) || !requestIsCurrent()) return
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Morgan'))
     } finally {
-      setWpLoading(false)
+      if (requestIsCurrent()) setWpLoading(false)
     }
-  }, [activeFolderProjectId, buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
+  }, [activeAgentProjectKey, activeFolderProjectId, buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
   // Room proposal adoption (D7): applies the field via the same document path
   // the writer uses. Deliberately NOT routed through onContentPatch — adopted

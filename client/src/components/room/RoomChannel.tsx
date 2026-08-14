@@ -24,6 +24,7 @@ import { canApplyProposal } from '../../lib/roomProposals'
 import { useInterviewSession } from '../../lib/useInterviewSession'
 import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 export interface RoomChannelProps {
   projectId: string
@@ -254,6 +255,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
               {msg.kind !== 'say' && <span style={styles.kindTag}> {msg.kind === 'system' ? '·' : '· proposal'}</span>}
             </span>
             <div style={msg.kind === 'say' ? styles.body : styles.bodyMeta}>{msg.content}</div>
+            <MemoryReceiptDisclosure receipt={msg.memory_receipt ?? undefined} />
           </div>
         ))}
 
@@ -283,6 +285,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
               </div>
               <div style={styles.proposalValue}>{proposal.proposed_value}</div>
               <div style={styles.proposalRationale}>{proposal.rationale}</div>
+              <MemoryReceiptDisclosure receipt={proposal.memory_receipt ?? undefined} />
               <div style={styles.proposalActions}>
                 <button
                   type="button"

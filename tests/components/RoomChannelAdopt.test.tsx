@@ -77,6 +77,23 @@ function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
 }
 
 describe('RoomChannel proposal adoption ordering', () => {
+  it('shows unified memory status on room messages and proposal cards', async () => {
+    apiMock.fetchRoomMessages.mockResolvedValueOnce([{
+      id: 'message-memory', project_id: 'p1', author: 'casey', kind: 'say', content: 'Memory-aware note.',
+      reply_to: null, created_at: 'now',
+      memory_receipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+    }])
+    apiMock.fetchRoomProposals.mockResolvedValueOnce([{
+      ...pendingProposal,
+      memory_receipt: { revision: 64, status: 'available', citations: [], conflictIds: [] },
+    }])
+
+    renderChannel(vi.fn())
+
+    expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
+    expect(screen.getByText(/project memory revision 64/i)).toBeInTheDocument()
+  })
+
   it('restores the writer draft when send fails', async () => {
     apiMock.sendRoomMessage.mockRejectedValueOnce(new Error('network down'))
     renderChannel(vi.fn())

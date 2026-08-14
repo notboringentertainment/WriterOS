@@ -1,0 +1,93 @@
+# Task 7 Report — Ground every WriterOS agent in project memory
+
+## Status
+
+Complete. WriterOS now builds unified project memory once at a server-owned `ProjectMemoryProvider` boundary, passes that exact immutable context through every story-content agent path, validates returned memory citations, and returns deterministic receipts tied to the revision the model actually received.
+
+## Scope delivered
+
+- Added one shared agent-context boundary for folder resolution, snapshot retrieval, authority rendering, safe unavailable/disabled classification, returned-citation filtering, and exact receipts.
+- Added migration-compatible `projectId` fields to generic chat, OpenSwarm, persona-capability, synopsis, and every compose variant.
+- Grounded native chat, WP chat, Morgan and her specialists, OpenSwarm Writing Partner, persona-capability research and synthesis, compose, synopsis assistance, Writers' Room specialist turns and Casey digest work, the scheduler, and Project Meeting start.
+- Kept voice-profile synthesis explicitly outside project memory and covered the exclusion.
+- Removed WP chat's direct Supabase shared-block lookup while preserving its existing `StoryMemory -> generatePersonaResponse` shape.
+- Persisted agent-message receipts in Writers' Room rows via the additive `memory_receipt` JSONB migration.
+- Preserved byte-identical prompt behavior when memory is disabled. Missing `projectId`, a server with no folder library, and an unlinked/browser-only project disclose `status: disabled`; linked corrupt, unreadable, swapped, or oversized memory fails closed with a safe repair response before any model or upstream request.
+
+## Authority and safety contract
+
+- Active canon is rendered as binding and cannot be silently contradicted or replaced.
+- Document facts are current-document evidence, not canon mutations; development records are advisory.
+- Every supplied unresolved, non-spoiler conflict is named in the prompt and exact receipt.
+- Memory is structurally fenced as untrusted data, and all record/source/conflict text is escaped before interpolation.
+- Only citation IDs present in the exact non-spoiler context are allowed. Invented and hidden IDs are removed recursively from returned text and structured results.
+- The provider resolves and reads once per context build. Responses are finalized from that same object, so project swaps and revision changes cannot cause receipt drift.
+- Request schemas discard client-provided memory prompts, blocks, and receipts; those values never become authority.
+
+## RED / GREEN evidence
+
+The work proceeded in isolated behavior cycles:
+
+- Provider boundary RED: the new module and contract did not exist. GREEN added one-read folder retrieval, exact project identity checking, disabled versus unavailable states, fenced authority rendering, spoiler-safe visible citations/conflicts, and deterministic finalization.
+- Native HTTP RED: chat returned no receipt and passed no server memory to the model. GREEN grounded chat with one exact context and filtered invented citations.
+- HTTP parity RED: WP chat, OpenSwarm, persona capability, compose, and synopsis had no unified provider path. GREEN covered prompt injection, receipts, optional-project migration behavior, and fail-closed pre-model handling for all six story-content endpoints.
+- Voice/WP compatibility RED: WP chat still queried Supabase shared blocks and the memory exclusion was not asserted. GREEN removed that dependency, retained the existing persona call path, and proved voice-profile synthesis never consults the provider.
+- Room turn RED: specialist prompts and stored messages had no unified context/receipt. GREEN injects the provider into the room prompt, validates returned citations, and stores the exact receipt.
+- Scheduler/digest RED: scheduled specialist and Casey paths did not carry the provider or retry corrupt unified memory. GREEN threads the provider through both modes, preserves completed-speaker progress, and requeues memory-unavailable work without calling the model.
+- Project Meeting RED: interview start neither preflighted folder memory nor returned/stored a receipt. GREEN retrieves before session mutation, attaches the exact receipt to Morgan's audit message and response, and converts unavailable memory to the safe room 503 contract.
+- Security/compatibility GREEN coverage explicitly proves an unlinked project is disabled, hostile source text cannot close the data fence, client memory fields are ignored, hidden citations/conflicts remain absent, revision-swap failures do not drift, and every corrupt HTTP path avoids model/upstream calls.
+
+## Final verification
+
+- Agent-context boundary: **1 file, 28 tests passed**.
+- Review-round affected HTTP, capability, compose, UI, and Writers' Room suites: **23 files, 221 tests passed**.
+- TypeScript validation (`npm run check`): **passed**.
+- Whitespace validation (`git diff --check`): **passed**.
+- Full suite (`npm run test:run`): **209 files passed, 2 skipped; 2,155 tests passed, 10 skipped**.
+- Production build (`npm run build`): **passed**. The existing Vite large-chunk advisory remains informational.
+
+## Review round 1 fixes
+
+- RED proved the real App and compose component paths omitted stable folder-backed project identity; GREEN threads the active folder project ID through OpenSwarm, Zoe capability, outline, synopsis, and treatment requests while browser-only requests remain disabled and visibly disclose that status.
+- RED proved Pitch Packet's alternate proposal model path bypassed unified memory; GREEN builds context once before room reads/model execution, fences it in the proposal prompt, filters proposal citations, safely rejects corrupt memory without a model call, and persists/returns the exact receipt.
+- RED proved `remember` and `propose_field_write` could persist invented citations and lacked receipts; GREEN shared-finalizes model-authored values/rationales/pass reasons and attaches the exact receipt to private blocks, proposals, and proposal-reference messages. Casey's digest blocks now do the same.
+- RED proved canon limits counted claims but not citation IDs, sources, conflicts, serialization, or rendered overhead; GREEN measures the complete canon-only JSON and literal Markdown representations and rejects oversized mandatory canon all-or-error.
+- RED expanded citation syntax coverage across bracket whitespace, parentheses, bare IDs, and case variants. GREEN canonicalizes allowed labels, removes invented labels, and deduplicates receipt entries without changing ordinary non-citation text.
+- RED exposed absolute, home, drive, UNC, control-character, private, and internal `.writeros` source paths in prompts/receipts. GREEN replaces them at the provider boundary with deterministic opaque `redacted-source` references while preserving safe workflow-relative and opaque URIs.
+- RED proved post-context OpenSwarm and compose soft failures dropped the already-built receipt. GREEN returns the same receipt on safe failure bodies, and clients retain/display it.
+
+## Self-review and concerns
+
+- Error responses contain only stable safe messages; filesystem errors, package paths, and hidden source material are not returned.
+- Project Meeting's initial audit is deterministic rather than model-generated. It still preflights the exact unified revision before mutation and records that revision on Morgan's audit message, which provides parity without inventing a redundant model call.
+- Capability receipt parsing remains backward-compatible with pre-Task-7 stored receipts, while every new runtime response includes the memory receipt.
+- The room migration is additive and nullable so existing writer/system messages and deployed rows remain valid.
+- No voice-profile prompt or response contract was changed.
+
+## Review round 2 fixes
+
+- RED proved deferred OpenSwarm, Zoe, outline, synopsis, and treatment responses could land after a project swap. GREEN captures project identity plus a monotonic request generation, ignores every stale success/error/finally path, permits the new project's request immediately, and clears old output/receipt status on project change.
+- RED proved room messages/proposals and Project Meeting/Pitch Packet flows retained no visible memory status. GREEN renders the shared disclosure for native rows, retains interview-start and Pitch Packet receipts in client state, and keeps the exact Pitch Packet receipt visible through later draft saves.
+- RED proved Casey digest finalized the full model string and only then sliced persisted text, producing a receipt for citations that were never stored and leaving straddling citation fragments. GREEN caps raw text first, removes any complete citation crossing the boundary, then runs the shared finalizer on the exact persisted value.
+- RED proved citation-shaped strings embedded in Unicode identifiers were rewritten and visually equivalent fullwidth/dash variants were missed. GREEN uses Unicode letter/number/mark/connector boundaries, candidate-local NFKC and dash normalization, canonical allowed labels, receipt deduplication, and a bounded 2,000-hex candidate scan without changing ordinary fullwidth prose.
+- RED proved whitespace and percent encoding could hide local/private source locators. GREEN classifies a trimmed NFKC view through bounded repeated decoding, safely rejects malformed escapes, redacts encoded POSIX/home/drive/UNC/private/`.writeros`/`file:` locators, and preserves the original safe https, WriterOS, Story Wayfinder, relative, and opaque URI text.
+
+### Review round 2 RED / GREEN evidence
+
+- Cross-project App and compose cycles: **5 files, 71 tests passed** after the original stale-completion failures.
+- Receipt UI/client-state cycle: **4 files, 39 tests passed** after six original failures; self-review added a failing save-retention probe before the final fix.
+- Digest cap cycle: the new crossing/beyond-cap probe failed with a partial citation and incorrect receipt, then **6 digest tests passed**.
+- Citation and URI boundary cycles: the new Unicode tests failed in two cases and the encoded URI table failed in eleven cases, then **46 agent-context tests passed**.
+- Combined affected regression gate: **11 files, 162 tests passed**.
+- Expanded related route/room/UI gate: **58 files, 482 tests passed**.
+- TypeScript validation (`npm run check`): **passed**.
+- Whitespace validation (`git diff --check`): **passed**.
+- Full suite (`npm run test:run`): **209 files passed, 2 skipped; 2,182 tests passed, 10 skipped**.
+- Production build (`npm run build`): **passed** with the existing informational large-chunk advisory.
+
+### Review round 2 self-review
+
+- The request-generation check guards success, error, persistence callback, and loading cleanup; project identity is updated synchronously during render so an old completion cannot win the gap before effects run.
+- Citation normalization is local to matched candidates. Source URI decoding is classification-only; safe values are returned byte-for-byte and unsafe hashes are derived without exposing the locator.
+- Pitch Packet's top-level generation receipt remains authoritative for that generated draft and stays displayed even if a later save response omits its optional row copy.
+- No voice-profile path, browser-only missing-project behavior, model prompt authority, or unrelated endpoint semantics changed in this round.

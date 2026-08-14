@@ -106,6 +106,48 @@ describe('runCaseyDigest', () => {
     )
   })
 
+  it('caps raw digest fields before citation finalization and never persists a citation crossing the cap', async () => {
+    const citation = '[M-64E3-00760069007300690062006C0065]'
+    const source = {
+      workflow: 'writeros' as const, sourceId: 'document:story-bible',
+      sourceUri: 'writeros://documents/story-bible#harbor', sourceHash: 'sha256:source',
+      capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' as const,
+    }
+    const record = {
+      id: 'visible', projectId: 'p1', kind: 'canon' as const, status: 'active' as const,
+      claim: 'The harbor closes at midnight.', tags: [], entities: [], source,
+      evidence: [], safety: 'clear' as const, spoiler: false, supersedes: [],
+      createdAt: '2026-08-14T12:00:00.000Z', updatedAt: '2026-08-14T12:00:00.000Z',
+    }
+    const memoryProvider = { context: vi.fn().mockResolvedValue({
+      projectId: 'p1', revision: 31, activeCanon: [record], relevant: [], conflicts: [],
+      spoilerConflictIds: [], citationMap: { [citation]: source },
+    }) }
+    storeMock.getPrivateBlocks.mockResolvedValue([])
+    storeMock.listRecentMessages.mockResolvedValue([])
+    storeMock.writeBlock.mockResolvedValue({ ok: true, nearCap: false })
+    sendStreamingMessageMock.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({
+        // This citation begins before the cap but is cut in half by it.
+        lane_notes: `${'l'.repeat(3396)} ${citation}`,
+        // This valid citation is wholly beyond the cap.
+        writer_rapport: `${'r'.repeat(1200)} ${citation}`,
+        flag: null,
+      }) }],
+    })
+
+    await runCaseyDigest({ projectId: 'p1', event, memoryProvider })
+
+    expect(storeMock.writeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'lane_notes', value: `${'l'.repeat(3396)} `,
+      memoryReceipt: expect.objectContaining({ revision: 31, citations: [] }),
+    }))
+    expect(storeMock.writeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'writer_rapport', value: 'r'.repeat(1200),
+      memoryReceipt: expect.objectContaining({ revision: 31, citations: [] }),
+    }))
+  })
+
   it('ledgers errored when context reads fail before model call', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     storeMock.getPrivateBlocks.mockRejectedValueOnce(new Error('db down'))

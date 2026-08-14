@@ -38,6 +38,16 @@ describe('PitchPacketReview', () => {
     expect(screen.getByLabelText('storyEngine value')).toBeEnabled()
   })
 
+  it('discloses the exact Pitch Packet project-memory receipt', () => {
+    const receiptRow = {
+      ...row(),
+      memory_receipt: { revision: 88, status: 'available' as const, citations: [], conflictIds: [] },
+    }
+    render(<PitchPacketReview row={receiptRow} proposalUnavailable={false} onSave={vi.fn()} onApprove={vi.fn()} onExport={vi.fn()} onRedownload={vi.fn()} />)
+
+    expect(screen.getByText(/project memory revision 88/i)).toBeInTheDocument()
+  })
+
   it('resolves a source conflict and saves the writer-reviewed draft', async () => {
     const conflicted = row()
     conflicted.packet.tone = {

@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ProjectDocuments } from '@shared/documents'
+import type { MemoryReceipt } from '@shared/schema'
 import { pitchPacketFileNames, renderPitchPacketJson, renderPitchPacketMarkdown, type PitchPacket } from '@shared/pitchPacket'
 import {
   approvePitchPacket,
@@ -58,6 +59,8 @@ export interface InterviewSessionHandle {
   revisionOperations: MeetingRevisionInput[]
   previewPending: boolean
   pitchPacketRow: PitchPacketRow | null
+  memoryReceipt: MemoryReceipt | undefined
+  pitchPacketMemoryReceipt: MemoryReceipt | undefined
   proposalUnavailable: boolean
   packetMessage: string | null
   packetDownloadError: string | null
@@ -91,6 +94,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const [revisionOperations, setRevisionOperations] = useState<MeetingRevisionInput[]>([])
   const [previewPending, setPreviewPending] = useState(false)
   const [pitchPacketRow, setPitchPacketRow] = useState<PitchPacketRow | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt>()
+  const [pitchPacketMemoryReceipt, setPitchPacketMemoryReceipt] = useState<MemoryReceipt>()
   const [proposalUnavailable, setProposalUnavailable] = useState(false)
   const [packetMessage, setPacketMessage] = useState<string | null>(null)
   const [packetDownloadError, setPacketDownloadError] = useState<string | null>(null)
@@ -109,6 +114,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     setRevisionOperations([])
     setPreviewPending(false)
     setPitchPacketRow(null)
+    setMemoryReceipt(undefined)
+    setPitchPacketMemoryReceipt(undefined)
     setProposalUnavailable(false)
     setPacketMessage(null)
     setPacketDownloadError(null)
@@ -165,6 +172,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       currentQuestion: null,
     }))
     setPitchPacketRow(null)
+    setMemoryReceipt(undefined)
+    setPitchPacketMemoryReceipt(undefined)
     setProposalUnavailable(false)
     setPacketMessage(null)
     setPacketDownloadError(null)
@@ -189,6 +198,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setRevisionOperations(defaultKeepOperations(recap))
       setDirectionDiff(result.directionDiff ?? [])
       setDirectionRevision(result.directionRevision ?? 0)
+      setMemoryReceipt(result.memoryReceipt)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Project Meeting start failed')
@@ -334,7 +344,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     if (!session) return
     try {
       const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
-      setPitchPacketRow(result.row)
+      setPitchPacketMemoryReceipt(result.memoryReceipt)
+      setPitchPacketRow(result.memoryReceipt && !result.row.memory_receipt
+        ? { ...result.row, memory_receipt: result.memoryReceipt }
+        : result.row)
       setProposalUnavailable(result.proposalUnavailable)
       setPacketMessage(null)
       setPacketDownloadError(null)
@@ -414,6 +427,8 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     revisionOperations,
     previewPending,
     pitchPacketRow,
+    memoryReceipt,
+    pitchPacketMemoryReceipt,
     proposalUnavailable,
     packetMessage,
     packetDownloadError,
