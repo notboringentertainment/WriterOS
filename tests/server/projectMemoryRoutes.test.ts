@@ -1,7 +1,7 @@
 import express from 'express'
 import http, { type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,8 +11,12 @@ import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
 import type { ProjectLibraryConfig } from '../../server/projectLibrary/config'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../../server/projectLibrary/store'
 import { ProjectLibraryStoreError } from '../../server/projectLibrary/store'
-import { registerProjectMemoryRoutes } from '../../server/projectMemory/routes'
-import { projectMemoryStore } from '../../server/projectMemory/store'
+import {
+  projectMemoryJsonErrorBoundary,
+  registerProjectMemoryRoutes,
+  registerProjectMemorySecurityBoundary,
+} from '../../server/projectMemory/routes'
+import { projectMemoryStore, type ProjectMemoryStore } from '../../server/projectMemory/store'
 
 const servers: Server[] = []
 const temporaryRoots: string[] = []
@@ -37,11 +41,14 @@ async function startMemoryApp(
   config: ProjectLibraryConfig,
   store: ProjectLibraryStore,
   analyze?: (input: any) => Promise<unknown>,
+  memoryStore: ProjectMemoryStore = projectMemoryStore,
 ) {
   const app = express()
+  registerProjectMemorySecurityBoundary(app, config)
   app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
+  app.use(projectMemoryJsonErrorBoundary)
   const register = registerProjectMemoryRoutes as (...args: any[]) => void
-  register(app, config, store, projectMemoryStore, analyze)
+  register(app, config, store, memoryStore, analyze)
   const server = http.createServer(app)
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -116,7 +123,128 @@ function postJson(
   })
 }
 
+function requestRaw(
+  port: number,
+  requestPath: string,
+  options: {
+    method: string
+    headers?: Record<string, string>
+    body?: string
+  },
+) {
+  return new Promise<{ status: number; text: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: requestPath,
+      method: options.method,
+      headers: {
+        ...(options.body === undefined ? {} : { 'Content-Length': String(Buffer.byteLength(options.body)) }),
+        ...options.headers,
+      },
+    }, response => {
+      const chunks: Buffer[] = []
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)))
+      response.on('end', () => resolve({
+        status: response.statusCode ?? 0,
+        text: Buffer.concat(chunks).toString('utf8'),
+        headers: response.headers,
+      }))
+    })
+    request.on('error', reject)
+    if (options.body !== undefined) request.write(options.body)
+    request.end()
+  })
+}
+
 describe('project memory HTTP routes', () => {
+  it('authenticates the entire project memory prefix before parsing any request body', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const routeConfig: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const port = await startMemoryApp(routeConfig, store)
+    const prefix = '/api/projects/opaque-project/memory'
+    const malformed = '{"claim":'
+
+    const unauthenticatedMalformed = await requestRaw(port, `${prefix}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const authenticatedMalformed = await requestRaw(port, `${prefix}/actions`, {
+      method: 'POST',
+      headers: {
+        Origin: 'http://127.0.0.1:5177',
+        'X-WriterOS-Session': 'route-session',
+        'Content-Type': 'application/json',
+      },
+      body: malformed,
+    })
+    const unsupportedAlternateType = await requestRaw(port, `${prefix}/unknown`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'text/plain' },
+      body: '/Users/writer/Secret.writeros',
+    })
+    const malformedEncodedId = await requestRaw(port, '/api/projects/%ZZ/memory/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const authenticatedMalformedEncodedId = await requestRaw(
+      port,
+      '/api/projects/%ZZ/memory/snapshot',
+      {
+        method: 'GET',
+        headers: {
+          Origin: 'http://127.0.0.1:5177',
+          'X-WriterOS-Session': 'route-session',
+        },
+      },
+    )
+    const foreignPreflight = await requestRaw(port, prefix, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://evil.example',
+        'X-WriterOS-Session': 'route-session',
+      },
+    })
+
+    expect(unauthenticatedMalformed.status).toBe(403)
+    expect(authenticatedMalformed.status).toBe(400)
+    expect(JSON.parse(authenticatedMalformed.text)).toEqual({
+      error: 'invalid-json',
+      message: 'Project memory request body is invalid JSON.',
+    })
+    expect(unsupportedAlternateType.status).toBe(403)
+    expect(malformedEncodedId.status).toBe(403)
+    expect(authenticatedMalformedEncodedId.status).toBe(400)
+    expect(JSON.parse(authenticatedMalformedEncodedId.text)).toEqual({
+      error: 'invalid-project-id',
+      message: 'Project memory requires a valid project id.',
+    })
+    expect(foreignPreflight.status).toBe(403)
+    for (const response of [
+      unauthenticatedMalformed,
+      authenticatedMalformed,
+      unsupportedAlternateType,
+      malformedEncodedId,
+      authenticatedMalformedEncodedId,
+      foreignPreflight,
+    ]) {
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain('/Users/writer')
+      expect(response.text).not.toContain('SyntaxError')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+  })
+
   it('rejects missing origin, wrong origin, and missing session token before project lookup', async () => {
     const port = await startApp()
 
@@ -286,6 +414,84 @@ describe('project memory HTTP routes', () => {
     expect(response.text).not.toContain(projectPath)
   })
 
+  it('binds the URL project identity inside the action lock before mutating memory', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const expectedProject = {
+      id: 'expected-action-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    const substitutedProject = {
+      ...expectedProject,
+      id: 'substituted-action-project',
+    }
+    await store.writeProject(expectedProject)
+    await store.writeProject(substitutedProject)
+    const expectedPath = await store.resolveProjectPackagePath(expectedProject.id)
+    const substitutedPath = await store.resolveProjectPackagePath(substitutedProject.id)
+    const backupPath = `${expectedPath}.before-swap`
+    const candidate = await projectMemoryStore.publish(substitutedPath, {
+      projectId: substitutedProject.id,
+      dedupeKey: 'substituted-candidate',
+      kind: 'canon',
+      requestedStatus: 'candidate',
+      claim: 'This substituted project must remain untouched.',
+      source: {
+        workflow: 'writeros',
+        sourceId: 'substituted-source',
+        sourceUri: 'writeros://substituted/source',
+        sourceHash: 'substituted-hash',
+        capturedAt: '2026-08-02T12:00:00.000Z',
+        approval: 'explicit',
+      },
+    })
+    let swapped = false
+    const swappingStore: ProjectMemoryStore = {
+      ...projectMemoryStore,
+      async applyAction(projectPath, action, expectedProjectId) {
+        await rename(projectPath, backupPath)
+        await rename(substitutedPath, projectPath)
+        swapped = true
+        return projectMemoryStore.applyAction(projectPath, action, expectedProjectId)
+      },
+    }
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store, undefined, swappingStore)
+
+    const response = await postJson(
+      port,
+      `/api/projects/${expectedProject.id}/memory/actions`,
+      { type: 'reject', recordId: candidate.record.id, expectedRevision: 1 },
+      { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' },
+    )
+
+    expect(swapped).toBe(true)
+    expect(response.status).toBe(400)
+    expect(response.json).toEqual({
+      error: 'project-mismatch',
+      message: 'Project memory request is invalid.',
+    })
+    expect(await projectMemoryStore.readSnapshot(expectedPath)).toMatchObject({
+      projectId: substitutedProject.id,
+      revision: 1,
+      records: [{ id: candidate.record.id, status: 'candidate' }],
+    })
+    expect(await projectMemoryStore.readSnapshot(backupPath)).toMatchObject({
+      projectId: expectedProject.id,
+      revision: 0,
+      records: [],
+    })
+    expect(response.text).not.toContain(root)
+  })
+
   it('returns 409 for an action with a stale expected revision and leaves memory unchanged', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
     temporaryRoots.push(root)
@@ -360,7 +566,10 @@ describe('project memory HTTP routes', () => {
     const response = await postJson(
       port,
       `/api/project-memory/${project.id}/analyze`,
-      { claim: 'This must not become canon merely because it was analyzed.' },
+      {
+        surface: 'synopsis',
+        content: 'This must not become canon merely because it was analyzed.',
+      },
       { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' },
     )
 
@@ -373,6 +582,42 @@ describe('project memory HTTP routes', () => {
       revision: 0,
       records: [],
     })
+  })
+
+  it('rejects an invalid analyzer result instead of reporting analysis success', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'invalid-analysis-result-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store, async () => undefined)
+
+    const response = await postJson(
+      port,
+      `/api/projects/${project.id}/memory/analyze`,
+      { surface: 'synopsis', content: 'Changed synopsis.' },
+      { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' },
+    )
+
+    expect(response.status).toBe(502)
+    expect(response.json).toEqual({
+      error: 'analysis-invalid',
+      message: 'Project memory analysis returned an invalid result.',
+    })
+    expect(response.text).not.toContain(root)
+    expect((await projectMemoryStore.readSnapshot(projectPath))).toMatchObject({ revision: 0, records: [] })
   })
 
   it('returns configured analysis proposals without silently publishing them', async () => {
@@ -476,7 +721,7 @@ describe('project memory browser API adapter', () => {
 
     expect(snapshot).toMatchObject({ projectId: 'browser-project', revision: 0 })
     expect(requests).toEqual([{
-      input: '/api/project-memory/browser-project/snapshot',
+      input: '/api/projects/browser-project/memory/snapshot',
       init: {
         credentials: 'same-origin',
         headers: {
@@ -515,7 +760,7 @@ describe('project memory browser API adapter', () => {
 
     expect(context).toMatchObject({ projectId: 'browser-project', revision: 2 })
     expect(requests[0]?.input).toBe(
-      '/api/project-memory/browser-project/context?query=pilot+ending&surface=synopsis&currentEntities=Mara&currentEntities=The+Light',
+      '/api/projects/browser-project/memory/context?query=pilot+ending&surface=synopsis&currentEntities=Mara&currentEntities=The+Light',
     )
     expect(requests[0]?.init).toMatchObject({
       credentials: 'same-origin',
@@ -546,7 +791,7 @@ describe('project memory browser API adapter', () => {
 
     expect(snapshot).toMatchObject({ projectId: 'browser-project', revision: 3 })
     expect(requests).toEqual([{
-      input: '/api/project-memory/browser-project/actions',
+      input: '/api/projects/browser-project/memory/actions',
       init: {
         method: 'POST',
         credentials: 'same-origin',
@@ -566,7 +811,7 @@ describe('project memory browser API adapter', () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
     const fetchProjectMemory = async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({ input, init })
-      return new Response(JSON.stringify({ analysis: { records: [] } }), {
+      return new Response(JSON.stringify({ analysis: { records: [] }, revision: 0 }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
@@ -578,13 +823,35 @@ describe('project memory browser API adapter', () => {
 
     expect(analysis).toEqual({ records: [] })
     expect(requests[0]).toMatchObject({
-      input: '/api/project-memory/browser-project/analyze',
+      input: '/api/projects/browser-project/memory/analyze',
       init: {
         method: 'POST',
         body: JSON.stringify(input),
       },
     })
     expect(String(requests[0]?.input)).not.toContain('/publish')
+  })
+
+  it('rejects an invalid successful analysis response in the browser adapter', async () => {
+    const apiModulePath = '../../client/src/lib/projectMemoryApi.ts'
+    const apiModule = await import(apiModulePath).catch(() => undefined)
+    const fetchProjectMemory = async () => new Response(JSON.stringify({
+      analysis: undefined,
+      revision: 0,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const api = apiModule?.createProjectMemoryApi('browser-session', fetchProjectMemory)
+
+    const failure = await api?.analyze?.('browser-project', {
+      surface: 'synopsis',
+      content: 'A changed synopsis.',
+    }).then(() => undefined, (error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(apiModule?.ProjectMemoryApiError)
+    expect(failure).toMatchObject({
+      statusCode: 200,
+      code: 'invalid-response',
+      message: 'WriterOS project memory returned an invalid response.',
+    })
   })
 
   it('preserves stale-revision status and code for browser conflict handling', async () => {

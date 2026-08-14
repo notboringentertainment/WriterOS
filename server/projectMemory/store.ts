@@ -63,7 +63,11 @@ export class ProjectMemoryStoreError extends Error {
 export interface ProjectMemoryStore {
   readSnapshot(projectPath: string): Promise<ProjectMemorySnapshot>
   publish(projectPath: string, input: PublishMemoryInput): Promise<PublishResult>
-  applyAction(projectPath: string, action: ProjectMemoryAction): Promise<ProjectMemorySnapshot>
+  applyAction(
+    projectPath: string,
+    action: ProjectMemoryAction,
+    expectedProjectId?: string,
+  ): Promise<ProjectMemorySnapshot>
   rebuild(projectPath: string): Promise<ProjectMemorySnapshot>
 }
 
@@ -943,12 +947,18 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       })
     },
 
-    async applyAction(projectPath, rawAction) {
+    async applyAction(projectPath, rawAction, expectedProjectId) {
       const parsed = ProjectMemoryActionSchema.safeParse(rawAction)
       if (!parsed.success) {
         throw new ProjectMemoryStoreError(parsed.error.issues[0]?.message ?? 'Invalid project memory action.', 'invalid-input')
       }
       return withProjectLock(projectPath, async projectId => {
+        if (expectedProjectId !== undefined && projectId !== expectedProjectId) {
+          throw new ProjectMemoryStoreError(
+            'The locked WriterOS project does not match the expected project identity.',
+            'project-mismatch',
+          )
+        }
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         const event = createActionEvent(replayed.snapshot, parsed.data)

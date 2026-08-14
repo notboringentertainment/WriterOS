@@ -1,4 +1,4 @@
-import type { Express, Response } from 'express'
+import type { Express, NextFunction, Request, Response } from 'express'
 import { z } from 'zod'
 import type { ProjectLibraryConfig } from '../projectLibrary/config'
 import { ProjectLibraryStoreError, type ProjectLibraryStore } from '../projectLibrary/store'
@@ -10,13 +10,37 @@ import {
   type ProjectMemoryStore,
 } from './store'
 import { buildMemoryContext } from './retrieval'
-import type { ProjectMemorySnapshot } from '../../shared/projectMemory'
+import {
+  ProjectMemoryAnalysisRequestSchema,
+  ProjectMemoryAnalysisResponseSchema,
+  ProjectMemoryAnalysisResultSchema,
+  type ProjectMemoryAnalysisRequest,
+  type ProjectMemoryAnalysisResult,
+  type ProjectMemorySnapshot,
+} from '../../shared/projectMemory'
 
 export type ProjectMemoryAnalyzeHandler = (input: {
   projectId: string
-  request: unknown
+  request: ProjectMemoryAnalysisRequest
   snapshot: ProjectMemorySnapshot
-}) => Promise<unknown>
+}) => Promise<ProjectMemoryAnalysisResult | unknown>
+
+const PROJECT_MEMORY_PREFIXES = [
+  '/api/project-memory/:projectId',
+  '/api/projects/:projectId/memory',
+] as const
+
+const PROJECT_MEMORY_SECURITY_MOUNTS = [
+  { mount: '/api/project-memory', path: /^\/[^/]+(?:\/|$)/ },
+  { mount: '/api/projects', path: /^\/[^/]+\/memory(?:\/|$)/ },
+] as const
+
+const PROJECT_MEMORY_ROUTE_PATHS = {
+  snapshot: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/snapshot`),
+  context: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/context`),
+  actions: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/actions`),
+  analyze: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analyze`),
+} as const
 
 const MemoryContextQuerySchema = z.object({
   query: z.string().max(8_000).default(''),
@@ -103,6 +127,64 @@ function routeError(res: Response, error: unknown) {
   })
 }
 
+function isProjectMemoryPath(requestPath: string): boolean {
+  return /^\/api\/project-memory\/[^/]+(?:\/|$)/.test(requestPath)
+    || /^\/api\/projects\/[^/]+\/memory(?:\/|$)/.test(requestPath)
+}
+
+export function registerProjectMemorySecurityBoundary(
+  app: Express,
+  config: ProjectLibraryConfig,
+): void {
+  const requireSameOrigin = sameOrigin(config, 'Project memory')
+  const requireSession = authenticated(config, 'Project memory')
+  for (const boundary of PROJECT_MEMORY_SECURITY_MOUNTS) {
+    app.use(boundary.mount, (req, res, next) => {
+      if (!boundary.path.test(req.path)) return next()
+      res.setHeader('Cache-Control', 'no-store')
+      return requireSameOrigin(req, res, () => requireSession(req, res, () => {
+        const encodedProjectId = req.path.split('/')[1] ?? ''
+        let projectId: string
+        try {
+          projectId = decodeURIComponent(encodedProjectId)
+        } catch {
+          return res.status(400).json({
+            error: 'invalid-project-id',
+            message: 'Project memory requires a valid project id.',
+          })
+        }
+        if (!WRITEROS_PROJECT_ID_PATTERN.test(projectId)) {
+          return res.status(400).json({
+            error: 'invalid-project-id',
+            message: 'Project memory requires a valid project id.',
+          })
+        }
+        return next()
+      }))
+    })
+  }
+}
+
+export function projectMemoryJsonErrorBoundary(
+  error: unknown,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (
+    isProjectMemoryPath(req.path)
+    && error instanceof SyntaxError
+    && 'status' in error
+    && error.status === 400
+  ) {
+    return res.status(400).json({
+      error: 'invalid-json',
+      message: 'Project memory request body is invalid JSON.',
+    })
+  }
+  next(error)
+}
+
 export function registerProjectMemoryRoutes(
   app: Express,
   config: ProjectLibraryConfig,
@@ -113,12 +195,9 @@ export function registerProjectMemoryRoutes(
   const requireSameOrigin = sameOrigin(config, 'Project memory')
   const requireSession = authenticated(config, 'Project memory')
 
-  app.use('/api/project-memory', (_req, res, next) => {
-    res.setHeader('Cache-Control', 'no-store')
-    next()
-  })
+  registerProjectMemorySecurityBoundary(app, config)
 
-  app.get('/api/project-memory/:projectId/snapshot', requireSameOrigin, requireSession, async (req, res) => {
+  app.get(PROJECT_MEMORY_ROUTE_PATHS.snapshot, requireSameOrigin, requireSession, async (req, res) => {
     try {
       const projectId = validatedProjectId(req.params.projectId)
       const projectPath = await libraryStore(config, projectLibraryStore)
@@ -137,7 +216,7 @@ export function registerProjectMemoryRoutes(
     }
   })
 
-  app.get('/api/project-memory/:projectId/context', requireSameOrigin, requireSession, async (req, res) => {
+  app.get(PROJECT_MEMORY_ROUTE_PATHS.context, requireSameOrigin, requireSession, async (req, res) => {
     try {
       const projectId = validatedProjectId(req.params.projectId)
       const query = MemoryContextQuerySchema.parse(req.query)
@@ -169,7 +248,7 @@ export function registerProjectMemoryRoutes(
     }
   })
 
-  app.post('/api/project-memory/:projectId/actions', requireSameOrigin, requireSession, async (req, res) => {
+  app.post(PROJECT_MEMORY_ROUTE_PATHS.actions, requireSameOrigin, requireSession, async (req, res) => {
     try {
       const projectId = validatedProjectId(req.params.projectId)
       const projectPath = await libraryStore(config, projectLibraryStore)
@@ -182,7 +261,7 @@ export function registerProjectMemoryRoutes(
           'project-mismatch',
         )
       }
-      const snapshot = await memoryStore.applyAction(projectPath, req.body)
+      const snapshot = await memoryStore.applyAction(projectPath, req.body, projectId)
       if (snapshot.projectId !== projectId) {
         throw new ProjectLibraryStoreError(
           'URL project id does not match the WriterOS project package.',
@@ -196,9 +275,10 @@ export function registerProjectMemoryRoutes(
     }
   })
 
-  app.post('/api/project-memory/:projectId/analyze', requireSameOrigin, requireSession, async (req, res) => {
+  app.post(PROJECT_MEMORY_ROUTE_PATHS.analyze, requireSameOrigin, requireSession, async (req, res) => {
     try {
       const projectId = validatedProjectId(req.params.projectId)
+      const request = ProjectMemoryAnalysisRequestSchema.parse(req.body)
       const projectPath = await libraryStore(config, projectLibraryStore)
         .resolveProjectPackagePath(projectId)
       const snapshot = await memoryStore.readSnapshot(projectPath)
@@ -210,8 +290,19 @@ export function registerProjectMemoryRoutes(
         )
       }
       if (analyze) {
-        const analysis = await analyze({ projectId, request: req.body, snapshot })
-        return res.json({ analysis, revision: snapshot.revision })
+        const result = ProjectMemoryAnalysisResultSchema.safeParse(
+          await analyze({ projectId, request, snapshot }),
+        )
+        if (!result.success) {
+          return res.status(502).json({
+            error: 'analysis-invalid',
+            message: 'Project memory analysis returned an invalid result.',
+          })
+        }
+        return res.json(ProjectMemoryAnalysisResponseSchema.parse({
+          analysis: result.data,
+          revision: snapshot.revision,
+        }))
       }
       return res.status(503).json({
         error: 'analysis-unavailable',

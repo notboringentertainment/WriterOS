@@ -11,6 +11,11 @@ import { ProjectMemoryStoreError, projectMemoryStore } from './store'
 import type { MemoryContextPackage } from '../../shared/projectMemory'
 import { MemoryWorkflowSchema, PublishMemoryInputSchema, type PublishMemoryInput } from '../../shared/projectMemory'
 import { z } from 'zod'
+import {
+  guardExistingPath,
+  UnsafeProjectMemoryPathError,
+  type SafeExistingPath,
+} from './safePaths'
 
 export interface ProjectMemoryCliIo {
   stdout(value: string): void
@@ -31,7 +36,13 @@ export interface ProjectMemoryCliDependencies {
     projectId: string
     sourceRoot: string
   }): Promise<ProjectMemoryImportPreview>
+  /** @internal Deterministic same-inode growth injection for regression tests. */
+  beforePublishInputRead?(inputPath: string): Promise<void>
+  /** @internal Deterministic project-directory swap injection for regression tests. */
+  beforeLinkSourceLockedRead?(projectPath: string): Promise<void>
 }
+
+const MAX_PUBLISH_INPUT_BYTES = 1_000_000
 
 const processIo: ProjectMemoryCliIo = {
   stdout: value => process.stdout.write(value),
@@ -39,6 +50,17 @@ const processIo: ProjectMemoryCliIo = {
 }
 
 class CliInputError extends Error {}
+
+class CliImportPartialError extends Error {
+  readonly name = 'CliImportPartialError'
+
+  constructor(
+    readonly appliedCount: number,
+    readonly lastRevision: number,
+  ) {
+    super('A project memory import stopped after earlier records became durable.')
+  }
+}
 
 interface ParsedArguments {
   command: string
@@ -79,6 +101,10 @@ function absoluteProjectPath(args: ParsedArguments): string {
   return projectPath
 }
 
+async function safeProjectPath(args: ParsedArguments): Promise<SafeExistingPath> {
+  return guardExistingPath(absoluteProjectPath(args), 'directory')
+}
+
 function assertAllowedOptions(
   args: ParsedArguments,
   values: readonly string[],
@@ -96,9 +122,11 @@ function assertAllowedOptions(
 
 async function runContext(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
   assertAllowedOptions(args, ['project', 'query', 'format', 'surface', 'persona', 'entity'])
-  const projectPath = absoluteProjectPath(args)
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
   const format = args.values.get('format') ?? 'json'
   if (format !== 'json' && format !== 'markdown') throw new CliInputError('--format must be json or markdown.')
+  await project.verify()
   const snapshot = await projectMemoryStore.readSnapshot(projectPath)
   const context = buildMemoryContext(snapshot, {
     message: args.values.get('query') ?? '',
@@ -112,10 +140,28 @@ async function runContext(args: ParsedArguments, io: ProjectMemoryCliIo): Promis
   return 0
 }
 
-async function readSafeJsonInput(inputPath: string): Promise<unknown> {
-  const resolved = path.resolve(inputPath)
+async function readBoundedFile(handle: Awaited<ReturnType<typeof open>>): Promise<string> {
+  const buffer = Buffer.alloc(MAX_PUBLISH_INPUT_BYTES + 1)
+  let offset = 0
+  while (offset < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset)
+    if (bytesRead === 0) break
+    offset += bytesRead
+  }
+  if (offset > MAX_PUBLISH_INPUT_BYTES) {
+    throw new CliInputError('The input must be a bounded regular file.')
+  }
+  return buffer.subarray(0, offset).toString('utf8')
+}
+
+async function readSafeJsonInput(
+  inputPath: string,
+  dependencies: ProjectMemoryCliDependencies,
+): Promise<unknown> {
+  const guarded = await guardExistingPath(inputPath, 'file')
+  const resolved = guarded.path
   const stats = await lstat(resolved)
-  if (!stats.isFile() || stats.isSymbolicLink() || stats.size > 1_000_000) {
+  if (!stats.isFile() || stats.isSymbolicLink() || stats.size > MAX_PUBLISH_INPUT_BYTES) {
     throw new CliInputError('The input must be a bounded regular file.')
   }
   const handle = await open(resolved, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -124,8 +170,19 @@ async function readSafeJsonInput(inputPath: string): Promise<unknown> {
     if (!opened.isFile() || opened.dev !== stats.dev || opened.ino !== stats.ino) {
       throw new CliInputError('The input file changed while opening it.')
     }
+    await dependencies.beforePublishInputRead?.(resolved)
+    await guarded.verify()
+    const rechecked = await handle.stat()
+    if (
+      !rechecked.isFile()
+      || rechecked.dev !== stats.dev
+      || rechecked.ino !== stats.ino
+      || rechecked.size > MAX_PUBLISH_INPUT_BYTES
+    ) {
+      throw new CliInputError('The input must be a stable bounded regular file.')
+    }
     try {
-      return JSON.parse(await handle.readFile('utf8'))
+      return JSON.parse(await readBoundedFile(handle))
     } catch (error) {
       if (error instanceof SyntaxError) throw new CliInputError('The input is not valid JSON.')
       throw error
@@ -135,10 +192,16 @@ async function readSafeJsonInput(inputPath: string): Promise<unknown> {
   }
 }
 
-async function runPublish(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+async function runPublish(
+  args: ParsedArguments,
+  io: ProjectMemoryCliIo,
+  dependencies: ProjectMemoryCliDependencies,
+): Promise<number> {
   assertAllowedOptions(args, ['project', 'input'])
-  const projectPath = absoluteProjectPath(args)
-  const input = await readSafeJsonInput(requiredValue(args, 'input'))
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
+  const input = await readSafeJsonInput(requiredValue(args, 'input'), dependencies)
+  await project.verify()
   const result = await projectMemoryStore.publish(projectPath, input as PublishMemoryInput)
   io.stdout(`${JSON.stringify({
     published: result.published,
@@ -182,9 +245,11 @@ async function runExport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
     ['project', 'query', 'format', 'surface', 'persona', 'entity'],
     ['include-spoilers'],
   )
-  const projectPath = absoluteProjectPath(args)
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
   const format = args.values.get('format') ?? 'markdown'
   if (format !== 'json' && format !== 'markdown') throw new CliInputError('--format must be json or markdown.')
+  await project.verify()
   const snapshot = await projectMemoryStore.readSnapshot(projectPath)
   const context = buildMemoryContext(snapshot, {
     message: args.values.get('query') ?? '',
@@ -248,19 +313,20 @@ async function readSafeManifest(projectPath: string) {
   }
 }
 
-async function runLinkSource(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+async function runLinkSource(
+  args: ParsedArguments,
+  io: ProjectMemoryCliIo,
+  dependencies: ProjectMemoryCliDependencies,
+): Promise<number> {
   assertAllowedOptions(args, ['project', 'workflow', 'source-id'])
-  const projectPath = absoluteProjectPath(args)
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
   if (requiredValue(args, 'workflow') !== 'buzz') {
     throw new CliInputError('Only the Buzz source linkage is supported.')
   }
   const sourceId = requiredValue(args, 'source-id')
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(sourceId)) {
     throw new CliInputError('The source id must be opaque and path-free.')
-  }
-  const projectStats = await lstat(projectPath)
-  if (!projectStats.isDirectory() || projectStats.isSymbolicLink()) {
-    throw new CliInputError('The project must be a real directory.')
   }
   const initial = await readSafeManifest(projectPath)
   const lock = await acquirePackageWriteLock({
@@ -269,12 +335,15 @@ async function runLinkSource(args: ParsedArguments, io: ProjectMemoryCliIo): Pro
   })
   let primaryError: unknown
   try {
+    await dependencies.beforeLinkSourceLockedRead?.(projectPath)
+    await project.verify()
     const locked = await readSafeManifest(projectPath)
     if (locked.projectId !== initial.projectId) {
       throw new CliInputError('project.json changed while acquiring its lock.')
     }
     const linked = locked.sources?.buzzChannelId !== sourceId
     if (linked) {
+      await project.verify()
       await atomicWriteManifest(projectPath, {
         ...locked,
         sources: { ...locked.sources, buzzChannelId: sourceId },
@@ -328,22 +397,23 @@ async function runImport(
   const dryRun = args.flags.has('dry-run')
   const apply = args.flags.has('apply')
   if (dryRun === apply) throw new CliInputError('Import requires exactly one of --dry-run or --apply.')
-  const projectPath = absoluteProjectPath(args)
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
   const source = requiredValue(args, 'source')
   if (source !== 'wayfinder' && source !== 'pitchstudio' && source !== 'buzz') {
     throw new CliInputError('Unsupported import source.')
   }
-  const sourceRoot = path.resolve(requiredValue(args, 'from'))
-  const sourceStats = await lstat(sourceRoot)
-  if (!sourceStats.isDirectory() || sourceStats.isSymbolicLink()) {
-    throw new CliInputError('Import source must be a real directory.')
-  }
+  const sourceGuard = await guardExistingPath(requiredValue(args, 'from'), 'directory')
+  const sourceRoot = sourceGuard.path
+  await project.verify()
   const snapshot = await projectMemoryStore.readSnapshot(projectPath)
   const rawPreview = await (dependencies.importPreview ?? loadImportPreview)({
     source,
     projectId: snapshot.projectId,
     sourceRoot,
   })
+  await sourceGuard.verify()
+  await project.verify()
   const parsed = ImportPreviewSchema.safeParse(rawPreview)
   if (!parsed.success || parsed.data.projectId !== snapshot.projectId) {
     throw new CliInputError('Import preview is invalid for this project.')
@@ -352,8 +422,22 @@ async function runImport(
   if (parsed.data.source !== expectedWorkflow) {
     throw new CliInputError('Import preview source does not match the selected adapter.')
   }
-  if (parsed.data.records.some(record => record.projectId !== snapshot.projectId)) {
+  if (parsed.data.records.some(record => (
+    record.projectId !== snapshot.projectId
+    || record.source.workflow !== expectedWorkflow
+  ))) {
     throw new CliInputError('Import record project id does not match the project package.')
+  }
+  if (source === 'wayfinder' && parsed.data.records.some(record => {
+    if (record.kind !== 'canon' || record.requestedStatus !== 'active') return false
+    const authority = record.source.authority
+    return record.source.approval !== 'explicit'
+      || authority === undefined
+      || !('mode' in authority)
+      || authority.mode !== 'hitl'
+      || (authority.ticketType !== 'grill' && authority.ticketType !== 'sketch')
+  })) {
+    throw new CliInputError('Wayfinder active canon lacks eligible ticket authority.')
   }
   if (dryRun) {
     io.stdout(`${JSON.stringify(parsed.data, null, 2)}\n`)
@@ -363,8 +447,15 @@ async function runImport(
   let applied = 0
   let idempotent = 0
   let revision = snapshot.revision
-  for (const record of parsed.data.records) {
-    const result = await projectMemoryStore.publish(projectPath, record)
+  for (const [index, record] of parsed.data.records.entries()) {
+    let result
+    try {
+      await project.verify()
+      result = await projectMemoryStore.publish(projectPath, record)
+    } catch (error) {
+      if (index > 0) throw new CliImportPartialError(applied, revision)
+      throw error
+    }
     if (result.published) applied += 1
     else idempotent += 1
     revision = result.snapshot.revision
@@ -379,7 +470,8 @@ async function runImport(
 }
 
 function exitCodeFor(error: unknown): 1 | 2 | 3 {
-  if (error instanceof CliInputError) return 2
+  if (error instanceof CliImportPartialError) return 3
+  if (error instanceof CliInputError || error instanceof UnsafeProjectMemoryPathError) return 2
   if (error instanceof ProjectMemoryStoreError) {
     return error.code === 'invalid-input' || error.code === 'invalid-action' ? 2 : 3
   }
@@ -397,13 +489,22 @@ export async function runProjectMemoryCli(
   try {
     const args = parseArguments(argv)
     if (args.command === 'context') return await runContext(args, io)
-    if (args.command === 'publish') return await runPublish(args, io)
+    if (args.command === 'publish') return await runPublish(args, io, dependencies)
     if (args.command === 'export') return await runExport(args, io)
-    if (args.command === 'link-source') return await runLinkSource(args, io)
+    if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
     throw new CliInputError('Unknown memory command.')
   } catch (error) {
     const exitCode = exitCodeFor(error)
+    if (error instanceof CliImportPartialError) {
+      io.stderr(`${JSON.stringify({
+        error: 'import-partial',
+        appliedCount: error.appliedCount,
+        lastRevision: error.lastRevision,
+        retry: 'Retry the same import with --apply; previously applied records are idempotent.',
+      })}\n`)
+      return exitCode
+    }
     io.stderr(exitCode === 2
       ? 'Invalid memory command input.\n'
       : exitCode === 3

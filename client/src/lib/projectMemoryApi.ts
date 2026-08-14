@@ -1,7 +1,11 @@
-import type {
-  MemoryContextPackage,
-  ProjectMemoryAction,
-  ProjectMemorySnapshot,
+import {
+  ProjectMemoryAnalysisRequestSchema,
+  ProjectMemoryAnalysisResponseSchema,
+  type ProjectMemoryAnalysisRequest,
+  type ProjectMemoryAnalysisResult,
+  type MemoryContextPackage,
+  type ProjectMemoryAction,
+  type ProjectMemorySnapshot,
 } from '../../../shared/projectMemory'
 import type { MemoryQuery } from '../../../server/projectMemory/retrieval'
 
@@ -71,11 +75,13 @@ export function createProjectMemoryApi(
     Accept: 'application/json',
     'X-WriterOS-Session': sessionToken,
   }
+  const projectMemoryPath = (projectId: string) =>
+    `/api/projects/${encodeURIComponent(projectId)}/memory`
 
   return {
     async snapshot(projectId: string): Promise<ProjectMemorySnapshot> {
       const body = await requestJson<ProjectMemorySnapshotResponse>(fetchProjectMemory,
-        `/api/project-memory/${encodeURIComponent(projectId)}/snapshot`,
+        `${projectMemoryPath(projectId)}/snapshot`,
         { headers },
       )
       return body.snapshot
@@ -86,14 +92,14 @@ export function createProjectMemoryApi(
       if (query.personaId !== undefined) search.set('personaId', query.personaId)
       for (const entity of query.currentEntities ?? []) search.append('currentEntities', entity)
       const body = await requestJson<ProjectMemoryContextResponse>(fetchProjectMemory,
-        `/api/project-memory/${encodeURIComponent(projectId)}/context?${search.toString()}`,
+        `${projectMemoryPath(projectId)}/context?${search.toString()}`,
         { headers },
       )
       return body.context
     },
     async action(projectId: string, action: ProjectMemoryAction): Promise<ProjectMemorySnapshot> {
       const body = await requestJson<ProjectMemorySnapshotResponse>(fetchProjectMemory,
-        `/api/project-memory/${encodeURIComponent(projectId)}/actions`,
+        `${projectMemoryPath(projectId)}/actions`,
         {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -102,16 +108,35 @@ export function createProjectMemoryApi(
       )
       return body.snapshot
     },
-    async analyze<TAnalysis = unknown>(projectId: string, input: unknown): Promise<TAnalysis> {
-      const body = await requestJson<{ analysis: TAnalysis }>(fetchProjectMemory,
-        `/api/project-memory/${encodeURIComponent(projectId)}/analyze`,
+    async analyze(
+      projectId: string,
+      input: ProjectMemoryAnalysisRequest,
+    ): Promise<ProjectMemoryAnalysisResult> {
+      const request = ProjectMemoryAnalysisRequestSchema.safeParse(input)
+      if (!request.success) {
+        throw new ProjectMemoryApiError(
+          'Project memory analysis input is invalid.',
+          400,
+          'invalid-request',
+        )
+      }
+      const body = await requestJson<unknown>(fetchProjectMemory,
+        `${projectMemoryPath(projectId)}/analyze`,
         {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify(input),
+          body: JSON.stringify(request.data),
         },
       )
-      return body.analysis
+      const response = ProjectMemoryAnalysisResponseSchema.safeParse(body)
+      if (!response.success) {
+        throw new ProjectMemoryApiError(
+          'WriterOS project memory returned an invalid response.',
+          200,
+          'invalid-response',
+        )
+      }
+      return response.data.analysis
     },
   }
 }

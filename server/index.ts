@@ -3,11 +3,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { redactApiLogResponse } from "./apiLogRedaction";
-import { WRITEROS_JSON_BODY_LIMIT } from "./httpLimits";
 
 const app = express();
-app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }));
-app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
   const start = Date.now();

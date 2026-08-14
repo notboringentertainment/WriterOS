@@ -217,6 +217,33 @@ export const ProjectMemorySnapshotSchema = z.object({
   conflicts: z.array(ProjectMemoryConflictSchema),
 }).strict()
 
+export const ProjectMemoryAnalysisRequestSchema = z.object({
+  surface: z.string().min(1).max(200),
+  content: z.string().min(1).max(200_000),
+}).strict()
+
+export const ProjectMemoryAnalysisProposalSchema = z.object({
+  kind: MemoryKindSchema,
+  claim: z.string().min(1).max(600),
+  detail: z.string().max(8_000).optional(),
+  tags: z.array(z.string().min(1).max(100)).max(20).optional(),
+  entities: z.array(z.string().min(1).max(200)).max(30).optional(),
+  evidence: z.array(MemoryEvidenceSchema).max(3).optional(),
+  safety: MemorySafetySchema.optional(),
+  spoiler: z.boolean().optional(),
+  conflictsWith: ReferenceListSchema.optional(),
+  supersedes: ReferenceListSchema.optional(),
+}).strict()
+
+export const ProjectMemoryAnalysisResultSchema = z.object({
+  records: z.array(ProjectMemoryAnalysisProposalSchema).max(100),
+}).strict()
+
+export const ProjectMemoryAnalysisResponseSchema = z.object({
+  analysis: ProjectMemoryAnalysisResultSchema,
+  revision: z.number().int().nonnegative(),
+}).strict()
+
 const EventBase = {
   schemaVersion: z.literal(1),
   id: IdentifierSchema,
@@ -291,6 +318,10 @@ export type PublishMemoryInput = z.input<typeof PublishMemoryInputSchema>
 export type ParsedPublishMemoryInput = z.output<typeof PublishMemoryInputSchema>
 export type ProjectMemoryAction = z.infer<typeof ProjectMemoryActionSchema>
 export type ProjectMemorySnapshot = z.infer<typeof ProjectMemorySnapshotSchema>
+export type ProjectMemoryAnalysisRequest = z.infer<typeof ProjectMemoryAnalysisRequestSchema>
+export type ProjectMemoryAnalysisProposal = z.infer<typeof ProjectMemoryAnalysisProposalSchema>
+export type ProjectMemoryAnalysisResult = z.infer<typeof ProjectMemoryAnalysisResultSchema>
+export type ProjectMemoryAnalysisResponse = z.infer<typeof ProjectMemoryAnalysisResponseSchema>
 export type ProjectMemoryEvent = z.infer<typeof ProjectMemoryEventSchema>
 
 export interface PublishResult {

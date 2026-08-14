@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
 import { isDebugApiEnabled } from "./ai/morganRuntime";
@@ -20,7 +20,12 @@ import { isRoomConfigured } from "./room/supabaseClient";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
-import { registerProjectMemoryRoutes } from "./projectMemory/routes";
+import {
+  projectMemoryJsonErrorBoundary,
+  registerProjectMemoryRoutes,
+  registerProjectMemorySecurityBoundary,
+} from "./projectMemory/routes";
+import { WRITEROS_JSON_BODY_LIMIT } from "./httpLimits";
 
 const openaiService = new OpenAIService();
 
@@ -883,6 +888,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       WRITEROS_PROJECTS_ROOT: undefined,
     });
   }
+  registerProjectMemorySecurityBoundary(app, projectLibraryConfig);
+  app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }));
+  app.use(express.urlencoded({ extended: false }));
+  app.use(projectMemoryJsonErrorBoundary);
   const projectLibraryStore = projectLibraryConfig.enabled && projectLibraryConfig.rootPath
     ? await createProjectLibraryStore(projectLibraryConfig.rootPath)
     : null;
