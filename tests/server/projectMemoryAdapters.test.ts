@@ -367,7 +367,7 @@ Which flag replaces the old warning?
       'resolved: absent; no resolved tickets found',
       'tickets: absent (valid); no open tickets',
       'atoms/atoms.jsonl:1: canon-ratified lacks verifiable hitl grill/sketch authority; imported as a candidate',
-      'atoms/atoms.jsonl:3: absolute source locator discarded',
+      'atoms/atoms.jsonl:3: unsafe legacy source locator discarded; stable atom locator used',
       'atoms/atoms.jsonl:3: entity truncated to 200 characters',
       'atoms/atoms.jsonl:4: unmapped canon_status "canon-shape"; record not imported',
       'atoms/atoms.jsonl:5: unmapped canon_status "superseded"; record not imported',
@@ -376,6 +376,74 @@ Which flag replaces the old warning?
       'atoms/atoms.jsonl:8: malformed JSON; record not imported',
     ])
     expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 2, openQuestions: 1 })
+  })
+
+  it('uses only bounded project-relative legacy evidence locators with a stable safe fallback', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-safe-locators-')
+    const invalidLocators = [
+      '../../private.md#decision',
+      'notes/../private.md#decision',
+      'notes/..%2Fprivate.md#decision',
+      'notes/%252e%252e/private.md#decision',
+      'notes\\private.md#decision',
+      'C:\\private\\note.md#decision',
+      'file:private.md#decision',
+      'http://example.invalid/private.md#decision',
+      '/private/note.md#decision',
+      '~/private/note.md#decision',
+      'notes//ferry.md#decision',
+      'notes/ferry.md?view=private#decision',
+      'notes/ferry.md#decision#extra',
+      'notes/ferry.md#bad\u0000fragment',
+      ' notes/ferry.md#decision',
+      'notes/ferry.md#decision ',
+      `${'a'.repeat(501)}#decision`,
+    ]
+    const atoms = [
+      ...invalidLocators.map((source, index) => ({
+        id: `unsafe-locator-${index + 1}`,
+        claim: `Fallback locator ${index + 1}.`,
+        canon_status: 'open',
+        source,
+      })),
+      {
+        id: 'safe-locator',
+        claim: 'The safe locator remains resolvable.',
+        canon_status: 'open',
+        source: 'notes/story/ferry-note.md#decision-01',
+      },
+    ]
+    await writeSource(root, 'atoms/atoms.jsonl', atoms.map(atom => JSON.stringify(atom)).join('\n'))
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const input = {
+      source: 'wayfinder' as const,
+      projectId: 'project-wayfinder-safe-locators',
+      sourceRoot: root,
+    }
+
+    const preview = await previewProjectMemoryImport(input)
+    const repeated = await previewProjectMemoryImport(input)
+
+    expect(repeated).toEqual(preview)
+    expect(preview.records).toHaveLength(atoms.length)
+    expect(preview.counts).toMatchObject({ openQuestions: atoms.length, candidates: 0 })
+    for (const [index] of invalidLocators.entries()) {
+      const id = `unsafe-locator-${index + 1}`
+      const record = preview.records.find(candidate => candidate.source.sourceId.endsWith(`:${id}`))
+      const fallback = `story-wayfinder:atoms/atoms.jsonl#atom=${id}`
+      expect(record?.source.sourceUri).toBe(fallback)
+      expect(record?.evidence?.[0]?.locator).toBe(fallback)
+      expect(preview.warnings).toContain(
+        `atoms/atoms.jsonl:${index + 1}: unsafe legacy source locator discarded; stable atom locator used`,
+      )
+    }
+    const safeRecord = preview.records.find(record => record.source.sourceId.endsWith(':safe-locator'))
+    expect(safeRecord?.source.sourceUri).toBe(
+      'story-wayfinder:atoms/atoms.jsonl#atom=safe-locator',
+    )
+    expect(safeRecord?.evidence?.[0]?.locator).toBe('notes/story/ferry-note.md#decision-01')
+    expect(preview.warnings).toHaveLength(invalidLocators.length + 3)
+    expect(preview.warnings.join('\n')).not.toMatch(/private|%2|example\.invalid|file:/i)
   })
 
   it('rejects path-like or private-shaped legacy atom ids without echoing them', async () => {

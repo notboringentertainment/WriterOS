@@ -100,6 +100,18 @@ function isSafeLegacyAtomId(value: string): boolean {
     && segments.slice(1).every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
 }
 
+function isSafeLegacySourceLocator(value: string): boolean {
+  if (!value || value.length > 500 || value !== value.trim()) return false
+  if (/[\\?%\u0000-\u001f\u007f]/.test(value)) return false
+  const parts = value.split('#')
+  if (parts.length > 2) return false
+  const [relativePath, fragment] = parts
+  if (!relativePath) return false
+  const segments = relativePath.split('/')
+  if (segments.some(segment => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))) return false
+  return fragment === undefined || /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(fragment)
+}
+
 async function rootMetadata(sourceRoot: string): Promise<{ canonNotes: string[]; hasToDelete: boolean }> {
   const entries = await readdir(sourceRoot, { withFileTypes: true })
   if (entries.some(entry => entry.isSymbolicLink())) {
@@ -365,16 +377,14 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           )
         }
         const defaultLocator = `story-wayfinder:atoms/atoms.jsonl#atom=${encodeURIComponent(atomId)}`
-        const rawLocator = typeof rawAtom.source === 'string' ? rawAtom.source.trim() : ''
-        const absoluteLocator = path.isAbsolute(rawLocator)
-          || /^[A-Za-z]:[\\/]/.test(rawLocator)
-          || /^file:/i.test(rawLocator)
-        if (absoluteLocator) {
-          warnings.push(`atoms/atoms.jsonl:${lineNumber}: absolute source locator discarded`)
+        const rawLocator = typeof rawAtom.source === 'string' ? rawAtom.source : ''
+        const safeRawLocator = isSafeLegacySourceLocator(rawLocator)
+        if (rawLocator && !safeRawLocator) {
+          warnings.push(
+            `atoms/atoms.jsonl:${lineNumber}: unsafe legacy source locator discarded; stable atom locator used`,
+          )
         }
-        const locator = rawLocator && !absoluteLocator && rawLocator.length <= 2_000
-          ? rawLocator
-          : defaultLocator
+        const locator = safeRawLocator ? rawLocator : defaultLocator
         const entities = Array.isArray(rawAtom.entities)
           ? rawAtom.entities
             .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
