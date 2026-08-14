@@ -144,3 +144,28 @@ The work proceeded in isolated behavior cycles:
 - Citation deletion never normalizes ordinary output. It inspects only the two preserved edges around a removed complete citation and preserves the original surrounding UTF-16 code units.
 - Malformed citation cap scanning requires a standalone or explicitly wrapped normalized `M-` plus four hex characters and a second dash; prose and identifier-embedded `M-hyphen` text therefore remains outside the protected candidate contract.
 - HTTPS percent validation is classification-only and returns safe source URIs byte-for-byte. Unsafe source hashes continue to derive from the original value without exposing it in prompts, receipts, or errors.
+
+## Review round 5 fixes
+
+- RED proved status, start, and Pitch Packet work used independent freshness clocks, allowing older same-project status/history/export/start/packet completions to overwrite newer operations. GREEN gives every state-mutating Project Meeting action one coherent last-started-wins operation generation and checks its mounted, project-bound scope token after every await, in every mutating error branch, between approval awaits, and before/between download side effects.
+- RED proved reused and explicitly blank caller scope keys could preserve an old request across a real project change. GREEN derives effective scope identity from the exact `projectId` plus a nonempty caller UI-instance key or stable component fallback; interview, room, outline, synopsis, and treatment public optional contracts all use that binding, while browser-only projects remain separated by their UI instance keys.
+- RED proved an old room stream event could visibly render during the next project's render-to-passive-cleanup window, and reused/blank keys allowed old pending room mutations to restore errors. GREEN adds a render-synchronous mounted/current-scope predicate to stream, session-open, and lock-sync callbacks in addition to effect cancellation and request generations. The scope-only stream predicate remains live across same-project memory retries.
+- RED proved zero-tail and punctuation/nonhex citation-like candidates could be cut internally. GREEN treats standalone and wrapped normalized `M-` + four hex + second dash heads as citation-like even with no tail, scans monotonically through the candidate or wrapper to a delimiter, and cuts before `[M-ABCD-]`, `[M-ABCD-?]`, `[M-ABCD-Z?]`, and their standalone forms at every internal boundary without protecting identifier-embedded prose.
+- RED proved raw HTTPS source locators containing C1 controls passed allowlisting. GREEN rejects C0, DEL, C1, and Unicode line/paragraph separators before URL parsing while preserving all prior safe URI probes byte-for-byte.
+
+### Review round 5 RED / GREEN evidence
+
+- Strict RED: interview and agent-context probes produced **10 expected failures** with 93 prior tests passing; room probes separately produced **3 expected failures** with 8 prior tests passing. Failures covered three same-project cross-operation orders, reused/blank project scope collisions, three exact citation-cap candidates, two C1 controls, two room scope collisions, and the render-to-cleanup stream window.
+- Focused GREEN after the expanded deferred order matrix: **3 files, 120 tests passed**. The matrix covers status → start, nested history/export → start, start → packet, packet → start, and refresh → packet, plus project changes with reused and blank keys.
+- Expanded related room, Project Meeting, compose, memory-route, retrieval, and server-room gate: **64 files, 607 tests passed**.
+- TypeScript validation (`npm run check`): **passed**.
+- Whitespace validation (`git diff --check`): **passed**.
+- Full suite (`npm run test:run`): **210 files passed, 2 skipped; 2,236 tests passed, 10 skipped**.
+- Production build (`npm run build`): **passed** with the existing informational large-chunk advisory.
+
+### Review round 5 self-review
+
+- One bound scope helper now owns the collision-resistant identity rule. The project identity is always present in the serialized tuple, caller whitespace-only keys fall back to a stable component instance, and a caller cannot bypass invalidation by reusing a public optional key.
+- One interview generation owns all asynchronous state mutation, including preview/bank actions that previously had separate or no guards. Synchronous new-round preparation also advances the clock so an older continuation cannot repopulate cleared state.
+- Room event freshness deliberately separates scope liveness from operation ordering: stream events use the render-time scope/mounted predicate, while loads, retries, sends, resolves, session-open, and lock-sync work retain operation tokens. This prevents stale cross-project events without silencing the current stream when a memory retry supersedes a load.
+- Citation scanning remains linear: each code-point cursor advances monotonically, candidate-local normalization remains bounded to encountered characters, and cap protection does not authorize or remove malformed spans. URI classification remains non-mutating and safe source values are returned unchanged.

@@ -148,6 +148,179 @@ describe('useInterviewSession', () => {
     expect(result.current.memoryReceipt).toEqual(receiptB)
   })
 
+  it('uses one same-project operation clock so an older status cannot overwrite a newer start', async () => {
+    const staleStatus = deferred<Awaited<ReturnType<typeof apiMock.fetchInterviewStatus>>>()
+    const started = { ...session('interviewing'), id: 'session-new' }
+    apiMock.fetchInterviewStatus.mockImplementationOnce(() => staleStatus.promise)
+    apiMock.startInterview.mockResolvedValue({
+      session: started,
+      currentQuestion: { ...question, id: 'question-new' },
+      memoryReceipt: { revision: 31, status: 'available', citations: [], conflictIds: [] },
+    })
+    const { result } = renderHook(() => useInterviewSession('p1', 'browser:shared'))
+    await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalledTimes(1))
+
+    let startOk = false
+    await act(async () => {
+      startOk = await result.current.start({ mode: 'full', seedText: 'Newest operation.' })
+    })
+    expect(startOk).toBe(true)
+
+    await act(async () => {
+      staleStatus.resolve({
+        activeSession: { ...session('paused'), id: 'session-stale-status' },
+        hasBankedSeed: false,
+        actionLabel: 'Project Meeting',
+        currentQuestion: null,
+        recap: [],
+      })
+      await staleStatus.promise
+    })
+
+    expect(result.current.status.activeSession?.id).toBe('session-new')
+    expect(result.current.status.currentQuestion?.id).toBe('question-new')
+    expect(result.current.memoryReceipt?.revision).toBe(31)
+  })
+
+  it('uses one same-project operation clock so an older start cannot overwrite a newer Pitch Packet operation', async () => {
+    const staleStart = deferred<Awaited<ReturnType<typeof apiMock.startInterview>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.startInterview.mockImplementationOnce(() => staleStart.promise)
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: { ...pitchRow(), id: 'packet-new' }, proposalUnavailable: false })
+    const { result } = renderHook(() => useInterviewSession('p1', 'browser:shared'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+
+    let oldStart!: Promise<boolean>
+    act(() => { oldStart = result.current.start({ mode: 'full', seedText: 'Older start.' }) })
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Newest packet'))
+    expect(result.current.pitchPacketRow?.id).toBe('packet-new')
+
+    let staleOk = true
+    await act(async () => {
+      staleStart.resolve({
+        session: { ...session('interviewing'), id: 'session-stale-start' },
+        currentQuestion: { ...question, id: 'question-stale-start' },
+        memoryReceipt: { revision: 12, status: 'available', citations: [], conflictIds: [] },
+      })
+      staleOk = await oldStart
+    })
+
+    expect(staleOk).toBe(false)
+    expect(result.current.status.activeSession?.state).toBe('banked')
+    expect(result.current.pitchPacketRow?.id).toBe('packet-new')
+    expect(result.current.memoryReceipt).toBeUndefined()
+  })
+
+  it('invalidates nested exported-history work when a newer same-project start wins', async () => {
+    const staleExportedPacket = deferred<Awaited<ReturnType<typeof apiMock.fetchExportedPitchPacket>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({
+      activeSession: null,
+      latestTerminalSession: session('exported'),
+      hasBankedSeed: true,
+      actionLabel: 'New interview round',
+      currentQuestion: null,
+      recap: [],
+    })
+    apiMock.fetchExportedPitchPacket.mockImplementationOnce(() => staleExportedPacket.promise)
+    apiMock.startInterview.mockResolvedValue({
+      session: { ...session('interviewing'), id: 'session-new' },
+      currentQuestion: { ...question, id: 'question-new' },
+      memoryReceipt: { revision: 42, status: 'available', citations: [], conflictIds: [] },
+    })
+    const { result } = renderHook(() => useInterviewSession('p1', 'browser:shared'))
+    await waitFor(() => expect(apiMock.fetchExportedPitchPacket).toHaveBeenCalledTimes(1))
+
+    await act(async () => result.current.start({ mode: 'full', seedText: 'New start.' }))
+    await act(async () => {
+      staleExportedPacket.resolve({ ...pitchRow('exported'), id: 'packet-stale-history' })
+      await staleExportedPacket.promise
+    })
+
+    expect(result.current.status.activeSession?.id).toBe('session-new')
+    expect(result.current.pitchPacketRow).toBeNull()
+  })
+
+  it('keeps a newer same-project start when an older Pitch Packet draft finishes last', async () => {
+    const stalePacket = deferred<Awaited<ReturnType<typeof apiMock.createPitchPacketDraft>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockImplementationOnce(() => stalePacket.promise)
+    apiMock.startInterview.mockResolvedValue({
+      session: { ...session('interviewing'), id: 'session-new-start' },
+      currentQuestion: { ...question, id: 'question-new-start' },
+      memoryReceipt: { revision: 52, status: 'available', citations: [], conflictIds: [] },
+    })
+    const { result } = renderHook(() => useInterviewSession('p1', 'browser:shared'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+
+    let oldPacket!: Promise<void>
+    act(() => { oldPacket = result.current.openPitchPacket(createEmptyDocuments(), 'Older packet') })
+    await act(async () => result.current.start({ mode: 'full', seedText: 'Newer start.' }))
+    await act(async () => {
+      stalePacket.resolve({ row: { ...pitchRow(), id: 'packet-stale' }, proposalUnavailable: false })
+      await oldPacket
+    })
+
+    expect(result.current.status.activeSession?.id).toBe('session-new-start')
+    expect(result.current.pitchPacketRow).toBeNull()
+    expect(result.current.memoryReceipt?.revision).toBe(52)
+  })
+
+  it('keeps a newer same-project Pitch Packet when an older refresh finishes last', async () => {
+    const staleRefresh = deferred<Awaited<ReturnType<typeof apiMock.fetchInterviewStatus>>>()
+    apiMock.fetchInterviewStatus
+      .mockResolvedValueOnce({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+      .mockImplementationOnce(() => staleRefresh.promise)
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: { ...pitchRow(), id: 'packet-new' }, proposalUnavailable: false })
+    const { result } = renderHook(() => useInterviewSession('p1', 'browser:shared'))
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+
+    let oldRefresh!: Promise<void>
+    act(() => { oldRefresh = result.current.refresh() })
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Newer packet'))
+    await act(async () => {
+      staleRefresh.resolve({
+        activeSession: { ...session('paused'), id: 'session-stale-refresh' },
+        hasBankedSeed: false,
+        actionLabel: 'Project Meeting',
+        currentQuestion: null,
+        recap: [],
+      })
+      await oldRefresh
+    })
+
+    expect(result.current.status.activeSession?.state).toBe('banked')
+    expect(result.current.pitchPacketRow?.id).toBe('packet-new')
+  })
+
+  it.each(['reused-ui-key', ''])('binds the actual project to caller scope %j so an old project cannot complete into a new one', async scope => {
+    const staleStart = deferred<Awaited<ReturnType<typeof apiMock.startInterview>>>()
+    apiMock.startInterview.mockImplementationOnce(() => staleStart.promise)
+    const { result, rerender } = renderHook(
+      ({ projectId, uiKey }) => useInterviewSession(projectId, uiKey),
+      { initialProps: { projectId: 'project-a', uiKey: scope } },
+    )
+    await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalledWith('project-a'))
+
+    let oldStart!: Promise<boolean>
+    act(() => { oldStart = result.current.start({ mode: 'full', seedText: 'Project A.' }) })
+    rerender({ projectId: 'project-b', uiKey: scope })
+    await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalledWith('project-b'))
+
+    let staleOk = true
+    await act(async () => {
+      staleStart.resolve({
+        session: { ...session('interviewing'), id: 'session-project-a', project_id: 'project-a' },
+        currentQuestion: question,
+        memoryReceipt: { revision: 8, status: 'available', citations: [], conflictIds: [] },
+      })
+      staleOk = await oldStart
+    })
+
+    expect(staleOk).toBe(false)
+    expect(result.current.status.activeSession).toBeNull()
+    expect(result.current.memoryReceipt).toBeUndefined()
+  })
+
   it('answer adopts the confirmed proposal server-first', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('interviewing'), hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: question })
     apiMock.answerInterviewQuestion.mockResolvedValue({ session: session('interviewing'), currentQuestion: null, proposal: { id: 'proposal-1' } })

@@ -21,7 +21,7 @@ import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 import type { MemoryReceipt } from '@shared/schema'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
-import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
@@ -59,8 +59,7 @@ export function OutlineTab({
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
-  const componentScopeId = React.useId()
-  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'

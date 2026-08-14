@@ -147,13 +147,15 @@ function parseCitationHead(text: string, start: number): number | undefined {
   return character?.normalized === '-' ? character.next : undefined
 }
 
-function citationLikeRunEnd(text: string, start: number): number | undefined {
+function citationLikeRunEnd(text: string, start: number, expectedClose?: string): number | undefined {
   const headEnd = parseCitationHead(text, start)
   if (headEnd === undefined) return undefined
   let index = headEnd
   let character = citationCharacterAt(text, index)
-  if (!character || !blocksCitationBoundary(character)) return undefined
-  while (character && blocksCitationBoundary(character)) {
+  while (character) {
+    if (expectedClose && character.normalized === expectedClose) break
+    if (isCitationWhitespace(character)) break
+    if (!expectedClose && ['[', ']', '(', ')'].includes(character.normalized)) break
     index = character.next
     character = citationCharacterAt(text, index)
   }
@@ -197,13 +199,13 @@ function scanCitationSpans(text: string): CitationSpan[] {
           index = end
           continue
         }
-        const runEnd = citationLikeRunEnd(text, coreStart) ?? core.end
+        const runEnd = citationLikeRunEnd(text, coreStart, expectedClose) ?? core.end
         const citationLikeEnd = includeCitationWrapperClose(text, runEnd, expectedClose)
         spans.push({ start: index, end: citationLikeEnd, complete: false })
         index = citationLikeEnd
         continue
       }
-      const citationLikeEnd = citationLikeRunEnd(text, coreStart)
+      const citationLikeEnd = citationLikeRunEnd(text, coreStart, expectedClose)
       if (citationLikeEnd !== undefined) {
         const spanEnd = includeCitationWrapperClose(text, citationLikeEnd, expectedClose)
         spans.push({ start: index, end: spanEnd, complete: false })
@@ -266,7 +268,7 @@ function disabledContext(): AgentMemoryContext {
 const SAFE_WORKFLOW_URI = /^(?:writeros-room|story-wayfinder|pitchstudio|buzz):\S+$/iu
 
 function containsUnsafeSourceUriCharacters(value: string): boolean {
-  return /[\u0000-\u001F\u007F]/u.test(value) || value.includes('\\')
+  return /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/u.test(value) || value.includes('\\')
 }
 
 function hasInvalidPercentEncoding(value: string): boolean {

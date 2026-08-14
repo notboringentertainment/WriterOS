@@ -275,6 +275,38 @@ describe('project memory agent context boundary', () => {
     expect(capAgentMemoryText(ordinaryEmbedded, 80)).toBe(ordinaryEmbedded.slice(0, 80))
   })
 
+  it.each([
+    '[M-ABCD-]',
+    '[M-ABCD-?]',
+    '[M-ABCD-Z?]',
+  ])('protects every internal cap boundary of zero-tail and punctuated citation-like candidate %s', candidate => {
+    const prefix = 'safe prefix '
+    const input = `${prefix}${candidate} trailing text`
+    for (let offset = 1; offset < candidate.length; offset += 1) {
+      expect(capAgentMemoryText(input, prefix.length + offset)).toBe(prefix)
+    }
+  })
+
+  it.each([
+    'M-ABCD-',
+    'M-ABCD-?',
+    'M-ABCD-Z?',
+  ])('protects every internal cap boundary of standalone citation-like candidate %s', candidate => {
+    const prefix = 'safe prefix '
+    const input = `${prefix}${candidate} trailing text`
+    for (let offset = 1; offset < candidate.length; offset += 1) {
+      expect(capAgentMemoryText(input, prefix.length + offset)).toBe(prefix)
+    }
+  })
+
+  it('does not protect zero-tail heads embedded in identifiers or ordinary prose', () => {
+    const embedded = 'safe TEAM-ABCD-? prose'
+    const ordinary = 'safe M-ABCDish-? prose'
+
+    expect(capAgentMemoryText(embedded, 12)).toBe(embedded.slice(0, 12))
+    expect(capAgentMemoryText(ordinary, 12)).toBe(ordinary.slice(0, 12))
+  })
+
   it('bounds citation scanning on long hostile candidates without changing non-citation content', async () => {
     const prepared = await buildAgentMemoryContext(
       { context: vi.fn().mockResolvedValue(memoryContext()) },
@@ -358,6 +390,10 @@ describe('project memory agent context boundary', () => {
   it.each([
     'https://example.test/a b',
     'https://example.test/a\tb',
+    'https://example.test/a\u0080b',
+    'https://example.test/a\u009Fb',
+    'https://example.test/a\u2028b',
+    'https://example.test/a\u2029b',
     'https://example.test/%',
     'https://example.test/%A',
     'https://example.test/%E0%A4%A',

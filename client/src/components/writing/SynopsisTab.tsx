@@ -10,7 +10,7 @@ import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditVie
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
 import type { MemoryReceipt } from '@shared/schema'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
-import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 export interface SynopsisTabProps {
   projectId?: string
@@ -46,8 +46,7 @@ export function SynopsisTab({
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
-  const componentScopeId = React.useId()
-  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = useCallback(async () => {

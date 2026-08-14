@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useLayoutEffect } from 'react'
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
@@ -27,7 +28,7 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
 
 import { RoomChannel } from '../../client/src/components/room/RoomChannel'
-import type { RoomProposal } from '../../client/src/lib/roomApi'
+import type { RoomProposal, RoomStreamEvent } from '../../client/src/lib/roomApi'
 
 const pendingProposal: RoomProposal = {
   id: 'prop-1',
@@ -73,10 +74,10 @@ beforeEach(() => {
   apiMock.isRoomMemoryUnavailable.mockReturnValue(false)
 })
 
-function channel(projectScopeKey: string, onAdoptProposal: (p: RoomProposal) => boolean) {
+function channel(projectScopeKey: string, onAdoptProposal: (p: RoomProposal) => boolean, projectId = 'p1') {
   return (
     <RoomChannel
-      projectId="p1"
+      projectId={projectId}
       projectScopeKey={projectScopeKey}
       characterNames={['Rosa']}
       characterBriefs={[{ id: 'r1', name: 'Rosa', want: 'win the contest' }]}
@@ -85,6 +86,11 @@ function channel(projectScopeKey: string, onAdoptProposal: (p: RoomProposal) => 
       onAdoptProposal={onAdoptProposal}
     />
   )
+}
+
+function EmitDuringLayout({ emit }: { emit?: () => void }) {
+  useLayoutEffect(() => { emit?.() }, [emit])
+  return null
 }
 
 function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
@@ -143,6 +149,96 @@ describe('RoomChannel proposal adoption ordering', () => {
     expect(screen.queryByText('stale A send failed')).not.toBeInTheDocument()
     expect(onAdoptA).not.toHaveBeenCalled()
     expect(onAdoptB).not.toHaveBeenCalled()
+  })
+
+  it.each(['reused-ui-key', ''])('binds project identity to caller scope %j for pending room mutations', async scope => {
+    const sendA = deferred<void>()
+    apiMock.sendRoomMessage.mockImplementationOnce(() => sendA.promise)
+    const { rerender } = render(channel(scope, vi.fn(), 'project-a'))
+    const input = screen.getByPlaceholderText('Say something to the room…')
+    fireEvent.change(input, { target: { value: 'project A draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message to the room' }))
+
+    rerender(channel(scope, vi.fn(), 'project-b'))
+    await act(async () => {
+      sendA.reject(new Error('stale project A failure'))
+      await Promise.allSettled([sendA.promise])
+    })
+
+    expect(screen.queryByText('stale project A failure')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Say something to the room…')).toHaveValue('')
+  })
+
+  it('rejects an old stream callback in the render-to-passive-cleanup window', async () => {
+    let oldStreamEvent: ((event: RoomStreamEvent) => void) | undefined
+    apiMock.openRoomStream.mockImplementationOnce((_projectId, onEvent) => {
+      oldStreamEvent = onEvent
+      return () => {}
+    })
+    const { container, rerender } = render(
+      <>
+        {channel('shared-ui-key', vi.fn(), 'project-a')}
+        <EmitDuringLayout />
+      </>,
+    )
+    await waitFor(() => expect(oldStreamEvent).toBeTypeOf('function'))
+    const observedText: string[] = []
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) observedText.push(node.textContent ?? '')
+      }
+    })
+    observer.observe(container, { childList: true, subtree: true })
+
+    rerender(
+      <>
+        {channel('shared-ui-key', vi.fn(), 'project-b')}
+        <EmitDuringLayout emit={() => oldStreamEvent?.({
+          type: 'message',
+          message: {
+            id: 'stale-window-message',
+            project_id: 'project-a',
+            author: 'casey',
+            kind: 'say',
+            content: 'Stale render-window message.',
+            reply_to: null,
+            created_at: 'now',
+          },
+        })} />
+      </>,
+    )
+    await act(async () => { await Promise.resolve() })
+    observer.disconnect()
+
+    expect(observedText.join('\n')).not.toContain('Stale render-window message.')
+  })
+
+  it('keeps the current project stream live after a room-memory retry starts a newer load', async () => {
+    let streamEvent: ((event: RoomStreamEvent) => void) | undefined
+    apiMock.fetchRoomMessages.mockRejectedValueOnce(new Error('memory unavailable'))
+    apiMock.isRoomMemoryUnavailable.mockReturnValue(true)
+    apiMock.openRoomStream.mockImplementation((_projectId, onEvent) => {
+      streamEvent = onEvent
+      return () => {}
+    })
+    renderChannel(vi.fn())
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(apiMock.ensureRoomMemory).toHaveBeenCalledTimes(1))
+
+    act(() => streamEvent?.({
+      type: 'message',
+      message: {
+        id: 'message-after-retry',
+        project_id: 'p1',
+        author: 'casey',
+        kind: 'say',
+        content: 'The current stream still works.',
+        reply_to: null,
+        created_at: 'now',
+      },
+    }))
+
+    expect(await screen.findByText('The current stream still works.')).toBeInTheDocument()
   })
 
   it('shows unified memory status on room messages and proposal cards', async () => {

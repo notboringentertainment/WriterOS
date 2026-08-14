@@ -25,7 +25,7 @@ import { useInterviewSession } from '../../lib/useInterviewSession'
 import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
-import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration, useProjectScopeCurrent } from '../../lib/useProjectRequestGeneration'
 
 export interface RoomChannelProps {
   projectId: string
@@ -67,12 +67,14 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
   const [memoryRetrying, setMemoryRetrying] = useState(false)
   const [streamDown, setStreamDown] = useState(false)
   // Read-only: the interview itself lives on the Project Meeting page.
-  const effectiveProjectScopeKey = projectScopeKey ?? `memory:${projectId}`
-  const interview = useInterviewSession(projectId, effectiveProjectScopeKey)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  const isCurrentProjectScope = useProjectScopeCurrent(effectiveProjectScopeKey)
+  const interview = useInterviewSession(projectId, projectScopeKey)
   const beginRoomLoadRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const beginMemoryRetryRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const beginSendRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const beginResolveRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
+  const beginLockSyncRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -181,27 +183,28 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
 
     const close = openRoomStream(
       projectId,
-      event => { if (!cancelled) handleStreamEvent(event) },
-      () => { if (!cancelled) setStreamDown(true) },
+      event => { if (!cancelled && isCurrentProjectScope()) handleStreamEvent(event) },
+      () => { if (!cancelled && isCurrentProjectScope()) setStreamDown(true) },
     )
     void postRoomEvent(projectId, 'session_opened', {}).then(result => {
-      if (!cancelled) handleMutationResult(result)
+      if (!cancelled && isCurrent()) handleMutationResult(result)
     })
 
     return () => {
       cancelled = true
       close()
     }
-  }, [beginRoomLoadRequest, effectiveProjectScopeKey, projectId, handleStreamEvent, handleMutationResult, loadRoom])
+  }, [beginRoomLoadRequest, effectiveProjectScopeKey, projectId, handleStreamEvent, handleMutationResult, isCurrentProjectScope, loadRoom])
 
   // Writer-only sync of the story_locks shared block (§10).
   useEffect(() => {
     let cancelled = false
+    const isCurrent = beginLockSyncRequest()
     void syncStoryLocksBlock(projectId, locksText).then(result => {
-      if (!cancelled) handleMutationResult(result)
+      if (!cancelled && isCurrent() && isCurrentProjectScope()) handleMutationResult(result)
     })
     return () => { cancelled = true }
-  }, [effectiveProjectScopeKey, projectId, locksText, handleMutationResult])
+  }, [beginLockSyncRequest, effectiveProjectScopeKey, projectId, locksText, handleMutationResult, isCurrentProjectScope])
 
   // Keep the feed pinned to the latest activity.
   useEffect(() => {

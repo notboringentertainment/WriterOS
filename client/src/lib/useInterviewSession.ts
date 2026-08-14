@@ -1,7 +1,7 @@
 // Project Meeting interview session state + actions, extracted from RoomChannel so the
 // ritual page and the room's status line share one implementation (§A3-A12).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ProjectDocuments } from '@shared/documents'
 import type { MemoryReceipt } from '@shared/schema'
 import { pitchPacketFileNames, renderPitchPacketJson, renderPitchPacketMarkdown, type PitchPacket } from '@shared/pitchPacket'
@@ -34,7 +34,7 @@ import {
   type PitchPacketRow,
 } from './roomApi'
 import { downloadTextFile } from './downloadTextFile'
-import { useProjectRequestGeneration } from './useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from './useProjectRequestGeneration'
 
 export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
 export type { InterviewMutability }
@@ -86,7 +86,7 @@ export interface InterviewSessionHandle {
   redownloadPitchPacket: () => Promise<void>
 }
 
-export function useInterviewSession(projectId: string, projectScopeKey = `memory:${projectId}`): InterviewSessionHandle {
+export function useInterviewSession(projectId: string, projectScopeKey?: string): InterviewSessionHandle {
   const [status, setStatus] = useState<InterviewStatus>(emptyInterviewStatus)
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
   const [finalValues, setFinalValues] = useState<InterviewBankFinalValues | null>(null)
@@ -101,15 +101,13 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
   const [packetMessage, setPacketMessage] = useState<string | null>(null)
   const [packetDownloadError, setPacketDownloadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Monotonic id for preview requests: rapid mutability toggles fire overlapping
-  // fetches, and only the latest response may write bankPreview.
-  const previewSeqRef = useRef(0)
-  const beginStatusRequest = useProjectRequestGeneration(projectScopeKey)
-  const beginStartRequest = useProjectRequestGeneration(projectScopeKey)
-  const beginPitchPacketRequest = useProjectRequestGeneration(projectScopeKey)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  // Every state-mutating interview request shares this clock. Starting any newer
+  // operation invalidates every older status/start/meeting/packet continuation.
+  const beginOperationRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   useEffect(() => {
-    const isCurrent = beginStatusRequest()
+    const isCurrent = beginOperationRequest()
     setStatus(emptyInterviewStatus())
     setBankPreview(null)
     setFinalValues(null)
@@ -143,12 +141,12 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       .catch(() => {
         // Project Meeting is an explicit enhancement; callers remain usable if unavailable.
       })
-  }, [beginStatusRequest, projectId, projectScopeKey])
+  }, [beginOperationRequest, effectiveProjectScopeKey, projectId])
 
   const clearError = useCallback(() => setError(null), [])
 
   const refresh = useCallback(async () => {
-    const isCurrent = beginStatusRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const next = await fetchInterviewStatus(projectId)
       if (!isCurrent()) return
@@ -166,9 +164,10 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
     } catch {
       // Keep the last known status; the room stays usable without the interview API.
     }
-  }, [beginStatusRequest, projectId])
+  }, [beginOperationRequest, projectId])
 
   const prepareNewRound = useCallback(() => {
+    beginOperationRequest()
     setStatus(prev => ({
       ...prev,
       activeSession: prev.activeSession?.state === 'banked' || prev.activeSession?.state === 'exported' ? null : prev.activeSession,
@@ -182,7 +181,7 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
     setPacketMessage(null)
     setPacketDownloadError(null)
     setError(null)
-  }, [])
+  }, [beginOperationRequest])
 
   const setSessionResult = useCallback((result: { session: InterviewSession; currentQuestion?: InterviewQuestion | null }) => {
     // An explicit null clears the question (e.g. the lane ran dry); only an ABSENT
@@ -195,7 +194,7 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
   }, [])
 
   const start = useCallback(async (input: { mode: 'quick' | 'full'; seedText: string }) => {
-    const isCurrent = beginStartRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const result = await startInterview(projectId, input)
       if (!isCurrent()) return false
@@ -211,20 +210,23 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       setError(err instanceof Error ? err.message : 'Project Meeting start failed')
       return false
     }
-  }, [beginStartRequest, projectId])
+  }, [beginOperationRequest, projectId])
 
   const answer = useCallback(async (input: { answerText: string; origin: InterviewAnswerOrigin; rejectMapping?: boolean }) => {
     const session = status.activeSession
     const answerText = input.answerText
     if (!session || !answerText.trim()) return false
+    const isCurrent = beginOperationRequest()
     const rejectMapping = input.rejectMapping ?? false
     let result: Awaited<ReturnType<typeof answerInterviewQuestion>>
     try {
       result = await answerInterviewQuestion(projectId, session.id, { answerText, origin: input.origin, rejectMapping })
     } catch (err) {
+      if (!isCurrent()) return false
       setError(err instanceof Error ? err.message : 'Project Meeting answer failed')
       return false
     }
+    if (!isCurrent()) return false
     // The answer is recorded and the session advanced server-side — reflect that
     // locally BEFORE the follow-up proposal adoption, so an adoption failure can't
     // strand the UI on a question that was already answered.
@@ -233,56 +235,69 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       try {
         await resolveRoomProposal(projectId, result.proposal.id, 'adopted', { resolvedValue: answerText, origin: input.origin })
       } catch (err) {
+        if (!isCurrent()) return false
         setError(err instanceof Error
           ? `Answer recorded, but adopting the mapping failed: ${err.message}`
           : 'Answer recorded, but adopting the mapping failed.')
       }
     }
-    return true
-  }, [projectId, status.activeSession, setSessionResult])
+    return isCurrent()
+  }, [beginOperationRequest, projectId, status.activeSession, setSessionResult])
 
   const skip = useCallback(async () => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
-      setSessionResult(await skipInterviewQuestion(projectId, session.id))
+      const result = await skipInterviewQuestion(projectId, session.id)
+      if (isCurrent()) setSessionResult(result)
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Project Meeting skip failed')
     }
-  }, [projectId, status.activeSession, setSessionResult])
+  }, [beginOperationRequest, projectId, status.activeSession, setSessionResult])
 
   const pause = useCallback(async () => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
       const result = await pauseInterview(projectId, session.id)
+      if (!isCurrent()) return
       setStatus(prev => ({ ...prev, activeSession: result.session }))
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Project Meeting pause failed')
     }
-  }, [projectId, status.activeSession])
+  }, [beginOperationRequest, projectId, status.activeSession])
 
   const resume = useCallback(async () => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
       const result = await resumeInterview(projectId, session.id)
+      if (!isCurrent()) return
       setStatus(prev => ({ ...prev, activeSession: result.session }))
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Project Meeting resume failed')
     }
-  }, [projectId, status.activeSession])
+  }, [beginOperationRequest, projectId, status.activeSession])
 
   const wrap = useCallback(async () => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
       const result = await wrapInterview(projectId, session.id)
+      if (!isCurrent()) return
       setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: null }))
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Project Meeting wrap failed')
     }
-  }, [projectId, status.activeSession])
+  }, [beginOperationRequest, projectId, status.activeSession])
 
   const setRevisionOperation = useCallback((operation: MeetingRevisionInput) => {
     const nextTargets = new Set(operationTargets(operation))
@@ -294,23 +309,26 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
   const redirect = useCallback(async (area: string, questionId: string) => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
-      setSessionResult(await redirectInterviewArea(projectId, session.id, area, questionId))
+      const result = await redirectInterviewArea(projectId, session.id, area, questionId)
+      if (isCurrent()) setSessionResult(result)
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Could not reopen that question')
     }
-  }, [projectId, status.activeSession, setSessionResult])
+  }, [beginOperationRequest, projectId, status.activeSession, setSessionResult])
 
   const previewBank = useCallback(async (mutability: Record<string, InterviewMutability> = {}, operations: MeetingRevisionInput[] = revisionOperations) => {
     const session = status.activeSession
     if (!session) return
-    const seq = ++previewSeqRef.current
+    const isCurrent = beginOperationRequest()
     setPreviewPending(true)
     setBankPreview(null)
     setFinalValues(null)
     try {
       const result = await fetchInterviewBankPreview(projectId, session.id, mutability, operations)
-      if (seq === previewSeqRef.current) {
+      if (isCurrent()) {
         setBankPreview(result.preview)
         setFinalValues(result.finalValues)
         setDirectionDiff(result.directionDiff ?? [])
@@ -318,7 +336,7 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
         setPreviewPending(false)
       }
     } catch (err) {
-      if (seq === previewSeqRef.current) {
+      if (isCurrent()) {
         setBankPreview(null)
         setFinalValues(null)
         setDirectionDiff([])
@@ -327,29 +345,30 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
         setError(err instanceof Error ? err.message : 'Bank preview failed')
       }
     }
-  }, [projectId, revisionOperations, status.activeSession])
+  }, [beginOperationRequest, projectId, revisionOperations, status.activeSession])
 
   const bank = useCallback(async (mutability: Record<string, InterviewMutability> = {}) => {
     const session = status.activeSession
     if (!session) return
+    const isCurrent = beginOperationRequest()
     try {
       const result = await bankInterview(projectId, session.id, mutability, revisionOperations)
-      // The banked preview is authoritative; invalidate any preview still in flight.
-      previewSeqRef.current++
+      if (!isCurrent()) return
       setStatus(prev => ({ ...prev, activeSession: result.session, hasBankedSeed: true, actionLabel: 'New interview round' }))
       setBankPreview(result.preview)
       setFinalValues(null)
       setDirectionDiff([])
       setPreviewPending(false)
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Bank failed')
     }
-  }, [projectId, revisionOperations, status.activeSession])
+  }, [beginOperationRequest, projectId, revisionOperations, status.activeSession])
 
   const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string) => {
     const session = status.activeSession ?? status.latestTerminalSession
     if (!session) return
-    const isCurrent = beginPitchPacketRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
       if (!isCurrent()) return
@@ -364,11 +383,11 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet draft failed')
     }
-  }, [beginPitchPacketRequest, projectId, status.activeSession, status.latestTerminalSession])
+  }, [beginOperationRequest, projectId, status.activeSession, status.latestTerminalSession])
 
   const savePitchPacket = useCallback(async (packet: PitchPacket) => {
     if (!pitchPacketRow) return
-    const isCurrent = beginPitchPacketRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const saved = await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet)
       if (!isCurrent()) return
@@ -378,11 +397,11 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet save failed')
     }
-  }, [beginPitchPacketRequest, pitchPacketRow, projectId])
+  }, [beginOperationRequest, pitchPacketRow, projectId])
 
   const approvePitchPacketReview = useCallback(async (packet: PitchPacket) => {
     if (!pitchPacketRow) return
-    const isCurrent = beginPitchPacketRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const saved = await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet)
       if (!isCurrent()) return
@@ -394,17 +413,20 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
       if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet approval failed')
     }
-  }, [beginPitchPacketRequest, pitchPacketRow, projectId])
+  }, [beginOperationRequest, pitchPacketRow, projectId])
 
-  const downloadPacket = useCallback((row: PitchPacketRow) => {
+  const downloadPacket = useCallback((row: PitchPacketRow, isCurrent: () => boolean): boolean => {
     const filenames = pitchPacketFileNames(row.packet)
+    if (!isCurrent()) return false
     downloadTextFile(filenames.markdown, renderPitchPacketMarkdown(row.packet), 'text/markdown')
+    if (!isCurrent()) return false
     downloadTextFile(filenames.json, renderPitchPacketJson(row.packet), 'application/json')
+    return isCurrent()
   }, [])
 
   const exportPitchPacketFiles = useCallback(async () => {
     if (!pitchPacketRow) return
-    const isCurrent = beginPitchPacketRequest()
+    const isCurrent = beginOperationRequest()
     let exported: PitchPacketRow
     try {
       // The persisted export transaction completes before either browser download starts.
@@ -420,30 +442,30 @@ export function useInterviewSession(projectId: string, projectScopeKey = `memory
     }
     try {
       if (!isCurrent()) return
-      downloadPacket(exported)
+      if (!downloadPacket(exported, isCurrent)) return
       setPacketMessage('Pitch Packet exported. Two files downloaded: Markdown and JSON.')
     } catch (err) {
       if (!isCurrent()) return
       setPacketDownloadError(err instanceof Error ? err.message : 'The packet was exported, but the files could not be downloaded.')
     }
-  }, [beginPitchPacketRequest, downloadPacket, pitchPacketRow, projectId])
+  }, [beginOperationRequest, downloadPacket, pitchPacketRow, projectId])
 
   const redownloadPitchPacket = useCallback(async () => {
     if (!pitchPacketRow) return
-    const isCurrent = beginPitchPacketRequest()
+    const isCurrent = beginOperationRequest()
     try {
       const exported = await fetchExportedPitchPacket(projectId, pitchPacketRow.session_id)
       if (!isCurrent()) return
       if (!exported) throw new Error('No exported Pitch Packet was found.')
       setPitchPacketRow(exported)
-      downloadPacket(exported)
+      if (!downloadPacket(exported, isCurrent)) return
       setPacketDownloadError(null)
       setPacketMessage('Pitch Packet downloaded again: Markdown and JSON.')
     } catch (err) {
       if (!isCurrent()) return
       setPacketDownloadError(err instanceof Error ? err.message : 'Pitch Packet download failed')
     }
-  }, [beginPitchPacketRequest, downloadPacket, pitchPacketRow, projectId])
+  }, [beginOperationRequest, downloadPacket, pitchPacketRow, projectId])
 
   return {
     status,

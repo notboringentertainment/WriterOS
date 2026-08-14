@@ -23,7 +23,7 @@ import {
 } from '../../lib/treatmentDeck'
 import type { MemoryReceipt } from '@shared/schema'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
-import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 interface TreatmentTabProps {
   projectId?: string
@@ -114,8 +114,7 @@ export function TreatmentTab({
   const [memoryReceipt, setMemoryReceipt] = React.useState<MemoryReceipt | undefined>()
   // The double-submit guard lives here in the tab handler, not in the compose client.
   const isComposingRef = React.useRef(false)
-  const componentScopeId = React.useId()
-  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = React.useCallback(async () => {
