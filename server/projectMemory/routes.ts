@@ -1,4 +1,4 @@
-import type { Express, NextFunction, Request, Response } from 'express'
+import express, { type Express, type NextFunction, type Request, type RequestHandler, type Response } from 'express'
 import { z } from 'zod'
 import type { ProjectLibraryConfig } from '../projectLibrary/config'
 import { ProjectLibraryStoreError, type ProjectLibraryStore } from '../projectLibrary/store'
@@ -41,6 +41,8 @@ const PROJECT_MEMORY_ROUTE_PATHS = {
   actions: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/actions`),
   analyze: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analyze`),
 } as const
+
+const trustedProjectMemoryParserErrors = new WeakSet<object>()
 
 const MemoryContextQuerySchema = z.object({
   query: z.string().max(8_000).default(''),
@@ -204,6 +206,20 @@ export function registerProjectMemorySecurityBoundary(
   }
 }
 
+export function createProjectMemoryJsonParser(limit: string | number): RequestHandler {
+  const parser = express.json({ limit })
+  return (req, res, next) => {
+    const requestPath = req.originalUrl.split('?')[0] ?? req.path
+    if (!isProjectMemoryPath(requestPath)) return next()
+    return parser(req, res, error => {
+      if (error !== null && typeof error === 'object') {
+        trustedProjectMemoryParserErrors.add(error)
+      }
+      return next(error)
+    })
+  }
+}
+
 export function projectMemoryJsonErrorBoundary(
   error: unknown,
   req: Request,
@@ -214,33 +230,30 @@ export function projectMemoryJsonErrorBoundary(
   const type = 'type' in error && typeof error.type === 'string' ? error.type : undefined
   const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined
 
-  if (status === 415 && (type === 'charset.unsupported' || type === 'encoding.unsupported')) {
-    return res.status(status).json({
-      error: 'unsupported-body',
-      message: 'Project memory request body encoding or media type is unsupported.',
-    })
-  }
-  if (status === 413 && (type === 'entity.too.large' || type === 'parameters.too.many')) {
-    return res.status(status).json({
-      error: 'payload-too-large',
-      message: 'Project memory request body exceeds the allowed size.',
-    })
-  }
-  if (status === 400 && type === 'entity.parse.failed') {
-    return res.status(status).json({
-      error: 'invalid-json',
-      message: 'Project memory request body is invalid JSON.',
-    })
-  }
-  if (status === 400 && (
-    type === 'request.aborted'
-    || type === 'request.size.invalid'
-    || type === 'querystring.parse.rangeError'
-  )) {
-    return res.status(status).json({
-      error: 'invalid-body',
-      message: 'Project memory request body could not be read.',
-    })
+  if (trustedProjectMemoryParserErrors.has(error)) {
+    if (status === 415) {
+      return res.status(status).json({
+        error: 'unsupported-body',
+        message: 'Project memory request body encoding or media type is unsupported.',
+      })
+    }
+    if (status === 413) {
+      return res.status(status).json({
+        error: 'payload-too-large',
+        message: 'Project memory request body exceeds the allowed size.',
+      })
+    }
+    if (status === 400) {
+      return res.status(status).json(type === 'entity.parse.failed'
+        ? {
+            error: 'invalid-json',
+            message: 'Project memory request body is invalid JSON.',
+          }
+        : {
+            error: 'invalid-body',
+            message: 'Project memory request body could not be read.',
+      })
+    }
   }
   next(error)
 }

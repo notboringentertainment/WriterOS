@@ -1,8 +1,9 @@
-import express from 'express'
+import express, { type NextFunction, type Request, type Response } from 'express'
 import http, { type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { deflateSync, gzipSync } from 'node:zlib'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
@@ -12,6 +13,7 @@ import type { ProjectLibraryConfig } from '../../server/projectLibrary/config'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../../server/projectLibrary/store'
 import { ProjectLibraryStoreError } from '../../server/projectLibrary/store'
 import {
+  createProjectMemoryJsonParser,
   projectMemoryJsonErrorBoundary,
   registerProjectMemoryRoutes,
   registerProjectMemorySecurityBoundary,
@@ -45,6 +47,7 @@ async function startMemoryApp(
 ) {
   const app = express()
   registerProjectMemorySecurityBoundary(app, config)
+  app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT))
   app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
   app.use(projectMemoryJsonErrorBoundary)
   const register = registerProjectMemoryRoutes as (...args: any[]) => void
@@ -129,9 +132,10 @@ function requestRaw(
   options: {
     method: string
     headers?: Record<string, string>
-    body?: string
+    body?: string | Buffer
   },
 ) {
+  const body = typeof options.body === 'string' ? Buffer.from(options.body) : options.body
   return new Promise<{ status: number; text: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
     const request = http.request({
       hostname: '127.0.0.1',
@@ -139,7 +143,7 @@ function requestRaw(
       path: requestPath,
       method: options.method,
       headers: {
-        ...(options.body === undefined ? {} : { 'Content-Length': String(Buffer.byteLength(options.body)) }),
+        ...(body === undefined ? {} : { 'Content-Length': String(body.byteLength) }),
         ...options.headers,
       },
     }, response => {
@@ -152,7 +156,7 @@ function requestRaw(
       }))
     })
     request.on('error', reject)
-    if (options.body !== undefined) request.write(options.body)
+    if (body !== undefined) request.write(body)
     request.end()
   })
 }
@@ -426,6 +430,136 @@ describe('project memory HTTP routes', () => {
       error: 'analysis-unavailable',
       message: 'Project memory analysis is unavailable.',
     })
+  })
+
+  it('returns safe JSON for malformed supported compressed bodies', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'compressed-body-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store)
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+      'Content-Type': 'application/json',
+    }
+
+    const malformedGzip = await requestRaw(
+      port,
+      `/api/projects/${project.id}/memory/analyze`,
+      {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Encoding': 'gzip' },
+        body: Buffer.from('not-a-gzip-stream'),
+      },
+    )
+    const malformedDeflate = await requestRaw(
+      port,
+      `/api/project-memory/${project.id}/analyze`,
+      {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Encoding': 'deflate' },
+        body: Buffer.from('not-a-deflate-stream'),
+      },
+    )
+    const validGzip = await requestRaw(
+      port,
+      `/api/projects/${project.id}/memory/analyze`,
+      {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Encoding': 'gzip' },
+        body: gzipSync(JSON.stringify({ surface: 'synopsis', content: 'Compressed synopsis.' })),
+      },
+    )
+    const validDeflate = await requestRaw(
+      port,
+      `/api/project-memory/${project.id}/analyze`,
+      {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Encoding': 'deflate' },
+        body: deflateSync(JSON.stringify({ surface: 'synopsis', content: 'Compressed synopsis.' })),
+      },
+    )
+
+    for (const response of [malformedGzip, malformedDeflate]) {
+      expect(response.status).toBe(400)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'invalid-body',
+        message: 'Project memory request body could not be read.',
+      })
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('<!DOCTYPE')
+      expect(response.text).not.toMatch(/Z_(?:DATA|BUF|STREAM)_ERROR/)
+    }
+    for (const response of [validGzip, validDeflate]) {
+      expect(response.status).toBe(503)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'analysis-unavailable',
+        message: 'Project memory analysis is unavailable.',
+      })
+    }
+  })
+
+  it('does not classify an unrelated downstream error as a parser failure', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const config: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const spoofedError = Object.assign(new SyntaxError('spoofed parser error'), {
+      status: 400,
+      type: 'entity.parse.failed',
+      code: 'Z_DATA_ERROR',
+    })
+    let observedError: unknown
+    const app = express()
+    registerProjectMemorySecurityBoundary(app, config)
+    app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT))
+    app.use((_req, _res, next) => next(spoofedError))
+    app.use(projectMemoryJsonErrorBoundary)
+    app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+      observedError = error
+      res.status(418).json({ error: 'downstream-error' })
+    })
+    const server = http.createServer(app)
+    servers.push(server)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as AddressInfo).port
+
+    const response = await requestRaw(
+      port,
+      '/api/projects/spoof-error-project/memory/actions',
+      {
+        method: 'POST',
+        headers: {
+          Origin: 'http://127.0.0.1:5177',
+          'X-WriterOS-Session': 'route-session',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'spoof' }),
+      },
+    )
+
+    expect(response.status).toBe(418)
+    expect(JSON.parse(response.text)).toEqual({ error: 'downstream-error' })
+    expect(observedError).toBe(spoofedError)
   })
 
   it('rejects missing origin, wrong origin, and missing session token before project lookup', async () => {
