@@ -14,6 +14,7 @@ import { useProjectRequestGeneration } from '../../lib/useProjectRequestGenerati
 
 export interface SynopsisTabProps {
   projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<SynopsisDocumentContent>
   projectFormat?: ProjectFormat
   identity?: ComposeIdentity
@@ -28,6 +29,7 @@ export interface SynopsisTabProps {
 
 export function SynopsisTab({
   projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -44,7 +46,9 @@ export function SynopsisTab({
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
-  const beginComposeRequest = useProjectRequestGeneration(projectId)
+  const componentScopeId = React.useId()
+  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
@@ -77,7 +81,7 @@ export function SynopsisTab({
     setIsComposing(false)
     setComposeError(null)
     setMemoryReceipt(undefined)
-  }, [projectId])
+  }, [effectiveProjectScopeKey])
 
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return

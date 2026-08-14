@@ -27,6 +27,7 @@ import { useProjectRequestGeneration } from '../../lib/useProjectRequestGenerati
 
 interface TreatmentTabProps {
   projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<TreatmentDocumentContent>
   projectFormat?: ProjectFormat
   // Optional so existing Edit View tests keep compiling (Synopsis build-reality delta).
@@ -92,6 +93,7 @@ function hasTreatmentAnswers(content: TreatmentDocumentContent): boolean {
 
 export function TreatmentTab({
   projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -112,7 +114,9 @@ export function TreatmentTab({
   const [memoryReceipt, setMemoryReceipt] = React.useState<MemoryReceipt | undefined>()
   // The double-submit guard lives here in the tab handler, not in the compose client.
   const isComposingRef = React.useRef(false)
-  const beginComposeRequest = useProjectRequestGeneration(projectId)
+  const componentScopeId = React.useId()
+  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = React.useCallback(async () => {
     if (isComposingRef.current) return
@@ -145,7 +149,7 @@ export function TreatmentTab({
     setIsComposing(false)
     setComposeError(null)
     setMemoryReceipt(undefined)
-  }, [projectId])
+  }, [effectiveProjectScopeKey])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {

@@ -819,6 +819,7 @@ export default function App() {
         return (
           <SynopsisTab
             projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.synopsis}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -835,6 +836,7 @@ export default function App() {
         return (
           <OutlineTab
             projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.outline}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -851,6 +853,7 @@ export default function App() {
         return (
           <TreatmentTab
             projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.treatment}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}

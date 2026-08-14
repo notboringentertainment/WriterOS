@@ -27,6 +27,7 @@ type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
 interface OutlineTabProps {
   projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<OutlineDocumentContent>
   projectFormat?: ProjectFormat
   identity: ComposeIdentity
@@ -41,6 +42,7 @@ interface OutlineTabProps {
 
 export function OutlineTab({
   projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity,
@@ -57,7 +59,9 @@ export function OutlineTab({
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
-  const beginComposeRequest = useProjectRequestGeneration(projectId)
+  const componentScopeId = React.useId()
+  const effectiveProjectScopeKey = projectScopeKey ?? (projectId ? `memory:${projectId}` : `component:${componentScopeId}`)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
@@ -98,7 +102,7 @@ export function OutlineTab({
     setIsComposing(false)
     setComposeError(null)
     setMemoryReceipt(undefined)
-  }, [projectId])
+  }, [effectiveProjectScopeKey])
 
   useEffect(() => {
     if (activeFormat === 'series' && document.content.episodes.length === 0) {

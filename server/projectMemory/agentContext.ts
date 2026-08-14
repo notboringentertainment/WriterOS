@@ -41,22 +41,148 @@ const DISABLED_RECEIPT: MemoryReceipt = {
   conflictIds: [],
 }
 
-const CITATION_DASHES = '\\-\\u2010\\u2011\\u2012\\u2013\\u2014\\u2015\\u2212\\uFE58\\uFE63\\uFF0D'
-const CITATION_HEX = '0-9A-Fa-f０-９Ａ-Ｆａ-ｆ'
-// A record id is capped at 500 UTF-16 code units, so its encoded citation tail
-// is at most 2,000 hex characters. Bounding the candidate prevents adversarial
-// model text from creating an unbounded regex scan.
-const CITATION_CORE = `[MmＭｍ][${CITATION_DASHES}][${CITATION_HEX}]{4}[${CITATION_DASHES}][${CITATION_HEX}]{1,2000}`
-const CITATION_BOUNDARY = `\\p{L}\\p{N}\\p{M}\\p{Pc}${CITATION_DASHES}`
-const MEMORY_CITATION_PATTERN = new RegExp(
-  `(?<![${CITATION_BOUNDARY}])(?:[\\[［]\\s*(${CITATION_CORE})\\s*[\\]］]|[\\(（]\\s*(${CITATION_CORE})\\s*[\\)）]|(${CITATION_CORE}))(?![${CITATION_BOUNDARY}])`,
-  'giu',
-)
-const CITATION_DASH_PATTERN = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/gu
+const CITATION_DASHES = new Set(['-', '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015', '\u2212', '\uFE58', '\uFE63', '\uFF0D'])
+const IDENTIFIER_BOUNDARY = /[\p{L}\p{N}\p{M}\p{Pc}]/u
+const ASCII_HEX = /^[0-9A-F]$/u
+const MAX_CANONICAL_CITATION_HEX = 2_000
 
-function canonicalCitationId(candidate: string): string {
-  const normalized = candidate.normalize('NFKC').replace(CITATION_DASH_PATTERN, '-').toUpperCase()
-  return `[${normalized}]`
+interface CitationCharacter {
+  raw: string
+  normalized: string
+  next: number
+}
+
+interface CitationCore {
+  end: number
+  canonicalId?: string
+}
+
+interface CitationSpan {
+  start: number
+  end: number
+  complete: boolean
+  canonicalId?: string
+}
+
+function citationCharacterAt(text: string, index: number): CitationCharacter | undefined {
+  if (index >= text.length) return undefined
+  const codePoint = text.codePointAt(index) as number
+  const raw = String.fromCodePoint(codePoint)
+  const nfkc = raw.normalize('NFKC')
+  const normalized = CITATION_DASHES.has(nfkc) || CITATION_DASHES.has(raw)
+    ? '-'
+    : nfkc.length === 1 ? nfkc.toUpperCase() : ''
+  return { raw, normalized, next: index + raw.length }
+}
+
+function citationCharacterBefore(text: string, index: number): CitationCharacter | undefined {
+  if (index <= 0) return undefined
+  let start = index - 1
+  const code = text.charCodeAt(start)
+  if (code >= 0xDC00 && code <= 0xDFFF && start > 0) start -= 1
+  return citationCharacterAt(text, start)
+}
+
+function blocksCitationBoundary(character: CitationCharacter | undefined): boolean {
+  return character !== undefined
+    && (
+      IDENTIFIER_BOUNDARY.test(character.raw)
+      || IDENTIFIER_BOUNDARY.test(character.normalized)
+      || character.normalized === '-'
+    )
+}
+
+function isCitationWhitespace(character: CitationCharacter | undefined): boolean {
+  return character !== undefined && /^\s$/u.test(character.raw)
+}
+
+function parseCitationCore(text: string, start: number): CitationCore | undefined {
+  let character = citationCharacterAt(text, start)
+  if (character?.normalized !== 'M') return undefined
+  let index = character.next
+
+  character = citationCharacterAt(text, index)
+  if (character?.normalized !== '-') return undefined
+  index = character.next
+
+  let digest = ''
+  for (let position = 0; position < 4; position += 1) {
+    character = citationCharacterAt(text, index)
+    if (!character || !ASCII_HEX.test(character.normalized)) return undefined
+    digest += character.normalized
+    index = character.next
+  }
+
+  character = citationCharacterAt(text, index)
+  if (character?.normalized !== '-') return undefined
+  index = character.next
+
+  let tailLength = 0
+  let tail = ''
+  while ((character = citationCharacterAt(text, index)) && ASCII_HEX.test(character.normalized)) {
+    tailLength += 1
+    if (tailLength <= MAX_CANONICAL_CITATION_HEX) tail += character.normalized
+    index = character.next
+  }
+  if (tailLength === 0) return undefined
+  return {
+    end: index,
+    ...(tailLength <= MAX_CANONICAL_CITATION_HEX ? { canonicalId: `[M-${digest}-${tail}]` } : {}),
+  }
+}
+
+function scanCitationSpans(text: string): CitationSpan[] {
+  const spans: CitationSpan[] = []
+  let index = 0
+  while (index < text.length) {
+    const character = citationCharacterAt(text, index) as CitationCharacter
+    const expectedClose = character.normalized === '[' ? ']' : character.normalized === '(' ? ')' : undefined
+    if (expectedClose) {
+      let coreStart = character.next
+      let next = citationCharacterAt(text, coreStart)
+      while (isCitationWhitespace(next)) {
+        coreStart = next!.next
+        next = citationCharacterAt(text, coreStart)
+      }
+      const core = parseCitationCore(text, coreStart)
+      if (core) {
+        let closeStart = core.end
+        next = citationCharacterAt(text, closeStart)
+        while (isCitationWhitespace(next)) {
+          closeStart = next!.next
+          next = citationCharacterAt(text, closeStart)
+        }
+        const leftIsClear = !blocksCitationBoundary(citationCharacterBefore(text, index))
+        if (next?.normalized === expectedClose) {
+          const end = next.next
+          if (leftIsClear && !blocksCitationBoundary(citationCharacterAt(text, end))) {
+            spans.push({ start: index, end, complete: true, canonicalId: core.canonicalId })
+          }
+          index = end
+          continue
+        }
+        if (leftIsClear) spans.push({ start: index, end: core.end, complete: false })
+        index = core.end
+        continue
+      }
+    }
+
+    if (character.normalized === 'M') {
+      const core = parseCitationCore(text, index)
+      if (core) {
+        if (
+          !blocksCitationBoundary(citationCharacterBefore(text, index))
+          && !blocksCitationBoundary(citationCharacterAt(text, core.end))
+        ) {
+          spans.push({ start: index, end: core.end, complete: true, canonicalId: core.canonicalId })
+        }
+        index = core.end
+        continue
+      }
+    }
+    index = character.next
+  }
+  return spans
 }
 
 const MEMORY_AUTHORITY_RULES = `PROJECT MEMORY AUTHORITY RULES:
@@ -75,10 +201,28 @@ function disabledContext(): AgentMemoryContext {
   }
 }
 
-function unsafeSourceUriView(value: string): boolean {
-  const normalized = value.trim().normalize('NFKC')
+const SAFE_WORKFLOW_URI = /^(?:writeros-room|story-wayfinder|pitchstudio|buzz):\S+$/iu
+
+function containsUnsafeSourceUriCharacters(value: string): boolean {
+  return /[\u0000-\u001F\u007F]/u.test(value) || value.includes('\\')
+}
+
+function isAllowlistedAbsoluteSourceUri(value: string): boolean {
+  if (containsUnsafeSourceUriCharacters(value)) return false
+  if (SAFE_WORKFLOW_URI.test(value)) return true
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === 'https:') return Boolean(parsed.hostname)
+    if (parsed.protocol === 'writeros:') return value.startsWith('writeros://') && Boolean(parsed.hostname)
+  } catch {
+    return false
+  }
+  return false
+}
+
+function unsafeSourceUriView(normalized: string): boolean {
   const pathPart = normalized.split(/[?#]/, 1)[0]
-  return /[\u0000-\u001F\u007F]/u.test(normalized)
+  return containsUnsafeSourceUriCharacters(normalized)
     || /^(?:\/|~|\\|file:)/iu.test(normalized)
     || /^[A-Z]:[\\/]/iu.test(normalized)
     || /^(?:\.\/)*(?:private|\.writeros)(?:[\\/]|$)/iu.test(pathPart)
@@ -87,21 +231,28 @@ function unsafeSourceUriView(value: string): boolean {
 }
 
 function sourceUriIsUnsafe(sourceUri: string): boolean {
-  let classification = sourceUri.trim().normalize('NFKC')
-  for (let round = 0; round < 4; round += 1) {
+  if (sourceUri !== sourceUri.trim()) return true
+  let classification = sourceUri.normalize('NFKC')
+  const maxDecodeRounds = Math.max(1, sourceUri.length)
+  for (let round = 0; round < maxDecodeRounds; round += 1) {
+    if (isAllowlistedAbsoluteSourceUri(classification)) return false
     if (unsafeSourceUriView(classification)) return true
     if (!classification.includes('%')) return false
     try {
       const decoded = decodeURIComponent(classification)
       if (decoded === classification) return false
-      classification = decoded.trim().normalize('NFKC')
+      if (decoded !== decoded.trim()) return true
+      classification = decoded.normalize('NFKC')
     } catch {
       // A malformed escape cannot be classified reliably, so keep it out of
       // the model and receipt instead of leaking a disguised local locator.
       return true
     }
   }
-  return unsafeSourceUriView(classification)
+  // Every successful percent-decoding round shortens the input. Reaching the
+  // original input-length bound means classification is still changing and is
+  // therefore intentionally treated as unsafe.
+  return true
 }
 
 function safeSourceUri(sourceUri: string): string {
@@ -224,12 +375,18 @@ export function finalizeAgentMemoryText(
   }
 
   const citedIds = new Set<string>()
-  const filtered = text.replace(MEMORY_CITATION_PATTERN, (_citation, bracketed, parenthesized, bare) => {
-    const normalized = canonicalCitationId(String(bracketed ?? parenthesized ?? bare))
-    if (!context.allowedCitations.has(normalized)) return ''
-    citedIds.add(normalized)
-    return normalized
-  })
+  let cursor = 0
+  let filtered = ''
+  for (const span of scanCitationSpans(text)) {
+    if (!span.complete) continue
+    filtered += text.slice(cursor, span.start)
+    if (span.canonicalId && context.allowedCitations.has(span.canonicalId)) {
+      citedIds.add(span.canonicalId)
+      filtered += span.canonicalId
+    }
+    cursor = span.end
+  }
+  filtered += text.slice(cursor)
   const citations = [...citedIds]
     .sort((left, right) => left.localeCompare(right))
     .map(id => {
@@ -250,10 +407,9 @@ export function finalizeAgentMemoryText(
 export function capAgentMemoryText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   let end = maxLength
-  for (const match of text.matchAll(MEMORY_CITATION_PATTERN)) {
-    const start = match.index
-    if (start < maxLength && start + match[0].length > maxLength) {
-      end = Math.min(end, start)
+  for (const span of scanCitationSpans(text)) {
+    if (span.start < maxLength && span.end > maxLength) {
+      end = Math.min(end, span.start)
     }
   }
   return text.slice(0, end)

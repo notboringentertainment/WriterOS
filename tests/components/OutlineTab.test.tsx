@@ -168,7 +168,7 @@ describe('OutlineTab Document View', () => {
 
   // Stateful harness mirroring App.tsx: persists composed + view toggle back
   // into the controlled document prop so the Document View reflects the result.
-  function DocumentHarness({ projectId = 'folder-outline-1', onComposedSpy }: { projectId?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
+  function DocumentHarness({ projectId = 'folder-outline-1', projectScopeKey, onComposedSpy }: { projectId?: string; projectScopeKey?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
     const base = defaultProjectState().documents.outline
     const [doc, setDoc] = useState<AuthoredDocumentState<OutlineDocumentContent>>({
       ...base,
@@ -179,6 +179,7 @@ describe('OutlineTab Document View', () => {
     return (
       <OutlineTab
         projectId={projectId}
+        projectScopeKey={projectScopeKey}
         document={doc}
         projectFormat="feature"
         identity={identity}
@@ -239,16 +240,16 @@ describe('OutlineTab Document View', () => {
   it('ignores project A completion after project B starts and applies only B composition', async () => {
     const pendingA = deferred<Record<string, unknown>>()
     const pendingB = deferred<Record<string, unknown>>()
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const projectId = JSON.parse(String(init?.body)).projectId
-      return { ok: true, json: async () => projectId === 'outline-A' ? pendingA.promise : pendingB.promise }
+    const fetchMock = vi.fn(async () => {
+      const response = fetchMock.mock.calls.length === 1 ? pendingA.promise : pendingB.promise
+      return { ok: true, json: async () => response }
     })
     vi.stubGlobal('fetch', fetchMock)
     const onComposed = vi.fn()
-    const { rerender } = render(<DocumentHarness projectId="outline-A" onComposedSpy={onComposed} />)
+    const { rerender } = render(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-A" onComposedSpy={onComposed} />)
     fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
 
-    rerender(<DocumentHarness projectId="outline-B" onComposedSpy={onComposed} />)
+    rerender(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-B" onComposedSpy={onComposed} />)
     const composeB = screen.getByRole('button', { name: /compose this outline/i })
     expect(composeB).toBeEnabled()
     fireEvent.click(composeB)

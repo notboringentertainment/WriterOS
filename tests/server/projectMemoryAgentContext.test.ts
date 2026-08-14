@@ -6,6 +6,7 @@ import type { MemoryContextPackage } from '../../shared/projectMemory'
 import {
   ProjectMemoryAgentUnavailableError,
   buildAgentMemoryContext,
+  capAgentMemoryText,
   createProjectMemoryProvider,
   finalizeAgentMemoryText,
   type ProjectMemoryProvider,
@@ -191,6 +192,60 @@ describe('project memory agent context boundary', () => {
     }])
   })
 
+  it('normalizes mathematical and circled citation glyphs only inside bounded citation candidates', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const mathematical = '𝐌−𝟞𝟜𝐄𝟛−𝟘𝟘𝟟𝟞𝟘𝟘𝟞𝟡𝟘𝟘𝟟𝟛𝟘𝟘𝟞𝟡𝟘𝟘𝟞𝟚𝟘𝟘𝟞𝐂𝟘𝟘𝟞𝟝'
+    const circled = '﹙Ⓜ－６４Ｅ３－００７６００６９００７３００６９００６２００６Ｃ００６５﹚'
+    const ordinary = '𝐌organ keeps Ⓜ and 𝟞𝟜𝐄𝟛 as ordinary typography.'
+
+    const finalized = finalizeAgentMemoryText(`${ordinary} ${mathematical}; ${circled}.`, prepared)
+
+    expect(finalized.text).toBe(`${ordinary} ${visibleCitation}; ${visibleCitation}.`)
+    expect(finalized.receipt.citations).toEqual([{
+      id: visibleCitation,
+      workflow: 'writeros',
+      sourceUri: 'writeros://documents/story-bible#harbor',
+    }])
+  })
+
+  it('keeps NFKC-equivalent citations embedded in Unicode identifiers untouched', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const candidate = 'Ⓜ－６４Ｅ３－００７６００６９００７３００６９００６２００６Ｃ００６５'
+    const input = `_ ${candidate}_ · \u0301${candidate} · word${candidate}word · ⓧ${candidate}ⓧ`
+
+    expect(finalizeAgentMemoryText(input, prepared).text).toBe(input)
+    expect(finalizeAgentMemoryText(input, prepared).receipt.citations).toEqual([])
+  })
+
+  it('caps before allowed, invented, unclosed, and overlong citation-shaped tokens without slicing any token', async () => {
+    const prefix = 'x'.repeat(32)
+    const allowed = `${prefix} ${visibleCitation} tail`
+    const invented = `${prefix} [M-FFFF-0066006F006F] tail`
+    const unclosed = `${prefix} [M-ABCD-${'A'.repeat(3000)}`
+    const overlong = `${prefix} M-ABCD-${'B'.repeat(3000)} tail`
+
+    expect(capAgentMemoryText(allowed, 40)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(invented, 40)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(unclosed, 80)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(overlong, 80)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(`${visibleCitation} ${'z'.repeat(100)}`, 60)).toHaveLength(60)
+
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) }, 'project-1', { message: 'harbor' },
+    )
+    expect(finalizeAgentMemoryText(capAgentMemoryText(invented, 40), prepared).receipt).toEqual({
+      revision: 17, status: 'available', citations: [], conflictIds: ['conflict-visible'],
+    })
+  })
+
   it('bounds citation scanning on long hostile candidates without changing non-citation content', async () => {
     const prepared = await buildAgentMemoryContext(
       { context: vi.fn().mockResolvedValue(memoryContext()) },
@@ -225,6 +280,7 @@ describe('project memory agent context boundary', () => {
     'file%253A%252F%252F%252Fprivate%252Fvar%252Fending.md',
     '%20%20%2Fprivate%2Fvar%2Fending.md',
     '%E0%A4%A/private/invalid-escape.md',
+    ' https://example.test/safe',
   ])('redacts unsafe source URI %s consistently from prompt and receipt', async unsafeSourceUri => {
     const context = memoryContext()
     context.activeCanon[0] = {
@@ -247,8 +303,12 @@ describe('project memory agent context boundary', () => {
 
   it.each([
     'https://example.test/story/harbor?view=memory#lock',
+    'https://example.test/story/../harbor?rate=100%25#lock',
     'writeros://documents/story-bible#harbor',
+    'writeros://documents/story%25bible#harbor',
     'story-wayfinder:atoms/atoms.jsonl#atom=decision-1',
+    'pitchstudio:packet/section%25value',
+    'buzz:research/source%25value',
     'drafts/chapter%202.md#scene-4',
     'opaque:section-1',
   ])('preserves safe workflow-relative and opaque source URI %s without decoding it', async safeSourceUri => {
@@ -265,6 +325,64 @@ describe('project memory agent context boundary', () => {
     expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
       .toBe(safeSourceUri)
   })
+
+  it('classifies an encoded safe scheme structurally without recursively decoding its percent data', async () => {
+    const encodedSafeUri = 'https%3A%2F%2Fexample.test%2Fstory%2Fharbor%3Frate%3D100%2525'
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: encodedSafeUri },
+    }
+    context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
+
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+
+    expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
+      .toBe(encodedSafeUri)
+  })
+
+  it.each([
+    '/private/story.writeros',
+    'file:///private/story.writeros',
+    'C:\\Users\\writer\\story.writeros',
+    '\\\\server\\share\\story.writeros',
+    '.writeros/memory/ledger.jsonl',
+  ])('redacts deeply encoded local source URI %s after decoding until stable', async localUri => {
+    let deeplyEncoded = localUri
+    for (let round = 0; round < 8; round += 1) deeplyEncoded = encodeURIComponent(deeplyEncoded)
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: deeplyEncoded },
+    }
+    context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
+
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+
+    expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
+      .toMatch(/^redacted-source:[0-9a-f]{24}$/)
+  })
+
+  it('handles percent bombs in linear bounded work while preserving allowlisted web percent data', async () => {
+    const safePercentUri = `https://example.test/story?data=${'%25'.repeat(500)}`
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: safePercentUri },
+    }
+    context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
+
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+
+    expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
+      .toBe(safePercentUri)
+  }, 1_000)
 
   it('preserves browser-only behavior as disabled without calling a provider', async () => {
     const prepared = await buildAgentMemoryContext(null, undefined, { message: 'hello' })

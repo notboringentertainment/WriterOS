@@ -91,3 +91,29 @@ The work proceeded in isolated behavior cycles:
 - Citation normalization is local to matched candidates. Source URI decoding is classification-only; safe values are returned byte-for-byte and unsafe hashes are derived without exposing the locator.
 - Pitch Packet's top-level generation receipt remains authoritative for that generated draft and stays displayed even if a later save response omits its optional row copy.
 - No voice-profile path, browser-only missing-project behavior, model prompt authority, or unrelated endpoint semantics changed in this round.
+
+## Review round 3 fixes
+
+- RED proved the composition guard still keyed browser projects on the optional memory `projectId`, making browser A and B both `undefined`, and proved the current request closure remained live after unmount. GREEN gives the three tabs an explicit UI project-scope key from the existing browser/folder library instance identity, keeps it distinct from the optional memory ID, resets on scope changes, and invalidates every request during effect cleanup.
+- RED proved the citation regex missed NFKC-equivalent mathematical/circled glyphs and compatible brackets. GREEN replaces it with a shared linear span scanner that normalizes only candidate code points, recognizes compatibility M/hex/digit/bracket/dash forms, and applies raw plus normalized Unicode identifier boundaries without changing ordinary typography.
+- RED proved a citation-shaped token longer than the prior 2,000-hex candidate limit could still be cut in half. GREEN uses the same unbounded-to-input, linear scanner for capping, while bounding canonical-label construction to the schema maximum; allowed, invented, unclosed, and overlong crossing tokens are never partially persisted, and finalization runs on the exact capped value.
+- RED proved fixed-round URI decoding missed deeply encoded local paths while recursive handling rejected safe `%25` data and web dot paths. GREEN structurally allowlists safe absolute https/WriterOS/workflow schemes before decoding their payload, rejects trim mismatches, and decodes non-safe or encoded-scheme candidates until stable with iterations bounded by the original input length.
+
+### Review round 3 RED / GREEN evidence
+
+- UI scope/unmount RED: **4 expected failures** across the shared hook and outline/synopsis/treatment browser swaps; GREEN includes deferred stale success, stale error, current-B completion, and unmounted completion coverage.
+- Citation/cap RED: mathematical/circled candidates were unchanged and an overlong crossing token was partially returned; GREEN covers compatibility forms, embedded Unicode identifiers, allowed/invented/unclosed/overlong cap spans, exact receipt semantics, and long hostile input.
+- URI RED: **12 expected failures** covered trim mismatch, safe dot paths and `%25`, encoded safe scheme, eight-layer local paths, and percent-bomb handling; all are GREEN.
+- Focused affected gate: **6 files, 130 tests passed** before the final added stale-error/unmount and compatibility-boundary probes.
+- Expanded route/room/UI/retrieval gate: **60 files, 518 tests passed**.
+- TypeScript validation (`npm run check`): **passed**.
+- Whitespace validation (`git diff --check`): **passed**.
+- Full suite (`npm run test:run`): **210 files passed, 2 skipped; 2,200 tests passed, 10 skipped**.
+- Production build (`npm run build`): **passed** with the existing informational large-chunk advisory.
+
+### Review round 3 self-review
+
+- The App scope key uses the existing library project instance ID and storage kind, never mutable title text. Direct tab callers receive a stable component-instance fallback, while legacy folder-ID callers still invalidate correctly.
+- Request guards cover success, catch, callback/persistence, and finally branches. Cleanup makes stale closures false before an unmounted completion can update UI or persistence.
+- The scanner walks UTF-16 safely by code point, advances monotonically, and bounds only canonical-label allocation; overlong citation-shaped spans remain visible to cap protection without ReDoS behavior.
+- Safe source URI decoding is classification-only. Allowlisted values retain their original representation, encoded safe schemes stop once structurally recognized, and unsafe hashes never expose decoded or original path material.
