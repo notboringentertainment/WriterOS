@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type {
   MemoryContextPackage,
+  ProjectMemoryConflict,
   ProjectMemoryRecord,
   ProjectMemorySnapshot,
 } from '../../shared/projectMemory'
@@ -109,11 +110,22 @@ export function citationLabelsForRecords(
 ): ReadonlyMap<string, string> {
   const labels = new Map<string, string>()
   for (const record of records) {
-    const digest = createHash('sha256').update(record.id, 'utf8').digest('hex').toUpperCase()
-    const encodedRecordId = Buffer.from(record.id, 'utf8').toString('base64url')
+    const encodedRecordId = exactUtf16CodeUnitHex(record.id)
+    const digest = createHash('sha256')
+      .update(encodedRecordId, 'ascii')
+      .digest('hex')
+      .toUpperCase()
     labels.set(record.id, `[M-${digest.slice(0, 4)}-${encodedRecordId}]`)
   }
   return labels
+}
+
+function exactUtf16CodeUnitHex(value: string): string {
+  let encoded = ''
+  for (let index = 0; index < value.length; index += 1) {
+    encoded += value.charCodeAt(index).toString(16).padStart(4, '0').toUpperCase()
+  }
+  return encoded
 }
 
 export function escapeMemoryDataForMarkdown(value: string): string {
@@ -147,11 +159,22 @@ export function citationMarkdownLine(record: ProjectMemoryRecord, label: string)
   return `- ${label} ${escapeMemoryDataForMarkdown(record.source.workflow)} · ${escapeMemoryDataForMarkdown(record.source.sourceUri)}`
 }
 
+export function conflictMarkdownLines(conflict: ProjectMemoryConflict): string[] {
+  return [
+    `- ID (data): ${escapeMemoryDataForMarkdown(conflict.id)}`,
+    `  - Left record (data): ${escapeMemoryDataForMarkdown(conflict.leftRecordId)}`,
+    `  - Right record (data): ${escapeMemoryDataForMarkdown(conflict.rightRecordId)}`,
+    `  - Reason (data): ${escapeMemoryDataForMarkdown(conflict.reason)}`,
+  ]
+}
+
 function relevanceRepresentationsFit(
   projectId: string,
   revision: number,
   activeCanon: readonly ProjectMemoryRecord[],
   relevant: readonly ProjectMemoryRecord[],
+  conflicts: readonly ProjectMemoryConflict[],
+  spoilerConflictIds: readonly string[],
 ): boolean {
   const citedRecords = [...activeCanon, ...relevant]
   const labels = citationLabelsForRecords(citedRecords)
@@ -164,8 +187,8 @@ function relevanceRepresentationsFit(
     revision,
     activeCanon: [],
     relevant,
-    conflicts: [],
-    spoilerConflictIds: [],
+    conflicts,
+    spoilerConflictIds,
     citationMap: relevantCitationMap,
   }).length
   const markdownLines = [
@@ -189,23 +212,31 @@ function relevanceRepresentationsFit(
       labels.get(record.id) as string,
     ))
   }
-  markdownLines.push(
-    '',
-    '## Unresolved Conflicts',
-    '',
-    'None.',
-    '',
-    '## Citation Map',
-    '',
-  )
+  markdownLines.push('', '## Unresolved Conflicts', '')
+  if (conflicts.length === 0) {
+    markdownLines.push('None.')
+  } else {
+    for (const conflict of conflicts) {
+      markdownLines.push(...conflictMarkdownLines(conflict))
+    }
+  }
+  markdownLines.push('', '## Citation Map', '')
   for (const record of relevant) {
     markdownLines.push(citationMarkdownLine(
       record,
       labels.get(record.id) as string,
     ))
   }
+  const markdownCharacters = `${markdownLines.join('\n').trimEnd()}\n`.length
   return jsonCharacters <= MAX_RELEVANT_CHARACTERS
-    && markdownLines.join('\n').length <= MAX_RELEVANT_CHARACTERS
+    && markdownCharacters <= MAX_RELEVANT_CHARACTERS
+}
+
+function conflictTouchesRecordIds(
+  conflict: ProjectMemoryConflict,
+  recordIds: ReadonlySet<string>,
+): boolean {
+  return recordIds.has(conflict.leftRecordId) || recordIds.has(conflict.rightRecordId)
 }
 
 export function buildMemoryContext(
@@ -231,6 +262,17 @@ export function buildMemoryContext(
     )
   }
   const activeCanonIds = new Set(activeCanon.map(record => record.id))
+  const openConflicts = snapshot.conflicts
+    .filter(conflict => conflict.status === 'open')
+    .sort((left, right) => compareCodePoints(left.id, right.id))
+  const canonDrivenConflictIds = new Set(
+    openConflicts
+      .filter(conflict => conflictTouchesRecordIds(conflict, activeCanonIds))
+      .map(conflict => conflict.id),
+  )
+  const spoilerRecordIds = new Set(
+    snapshot.records.filter(record => record.spoiler).map(record => record.id),
+  )
   const queryTokens = queryTokenSets(query)
   const rankedRelevant = snapshot.records
     .filter(record => (
@@ -249,11 +291,25 @@ export function buildMemoryContext(
   const relevant: ProjectMemoryRecord[] = []
   for (const record of rankedRelevant) {
     if (relevant.length >= MAX_RELEVANT_RECORDS) break
+    const trialRelevant = [...relevant, record]
+    const trialRelevantIds = new Set(trialRelevant.map(item => item.id))
+    const trialConflicts = openConflicts.filter(conflict => (
+      !canonDrivenConflictIds.has(conflict.id)
+      && conflictTouchesRecordIds(conflict, trialRelevantIds)
+    ))
+    const trialSpoilerConflictIds = trialConflicts
+      .filter(conflict => (
+        spoilerRecordIds.has(conflict.leftRecordId)
+        || spoilerRecordIds.has(conflict.rightRecordId)
+      ))
+      .map(conflict => conflict.id)
     if (!relevanceRepresentationsFit(
       snapshot.projectId,
       snapshot.revision,
       activeCanon,
-      [...relevant, record],
+      trialRelevant,
+      trialConflicts,
+      trialSpoilerConflictIds,
     )) continue
     relevant.push(record)
   }
@@ -261,24 +317,15 @@ export function buildMemoryContext(
     ...activeCanonIds,
     ...relevant.map(record => record.id),
   ])
-  const conflicts = snapshot.conflicts
-    .filter(conflict => (
-      conflict.status === 'open'
-      && (
-        contextRecordIds.has(conflict.leftRecordId)
-        || contextRecordIds.has(conflict.rightRecordId)
-      )
-    ))
-    .sort((left, right) => compareCodePoints(left.id, right.id))
+  const conflicts = openConflicts.filter(conflict => (
+    conflictTouchesRecordIds(conflict, contextRecordIds)
+  ))
   const citedRecords = [...activeCanon, ...relevant]
   const citationLabels = citationLabelsForRecords(citedRecords)
   const citationMap = Object.fromEntries(citedRecords.map(record => [
     citationLabels.get(record.id) as string,
     record.source,
   ]))
-  const spoilerRecordIds = new Set(
-    snapshot.records.filter(record => record.spoiler).map(record => record.id),
-  )
   const spoilerConflictIds = conflicts
     .filter(conflict => (
       spoilerRecordIds.has(conflict.leftRecordId)

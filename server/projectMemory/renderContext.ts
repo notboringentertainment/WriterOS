@@ -2,6 +2,7 @@ import type { MemoryContextPackage } from '../../shared/projectMemory'
 import {
   citationMarkdownLine,
   citationLabelsForRecords,
+  conflictMarkdownLines,
   escapeMemoryDataForMarkdown,
   relevantRecordMarkdownLines,
 } from './retrieval'
@@ -73,12 +74,7 @@ export function renderMemoryContextMarkdown(
     lines.push('None.')
   } else {
     for (const conflict of conflicts) {
-      lines.push(
-        `- ID (data): ${escapeMemoryDataForMarkdown(conflict.id)}`,
-        `  - Left record (data): ${escapeMemoryDataForMarkdown(conflict.leftRecordId)}`,
-        `  - Right record (data): ${escapeMemoryDataForMarkdown(conflict.rightRecordId)}`,
-        `  - Reason (data): ${escapeMemoryDataForMarkdown(conflict.reason)}`,
-      )
+      lines.push(...conflictMarkdownLines(conflict))
     }
   }
 
