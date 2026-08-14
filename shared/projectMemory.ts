@@ -244,6 +244,16 @@ export const ProjectMemoryAnalysisResponseSchema = z.object({
   revision: z.number().int().nonnegative(),
 }).strict()
 
+export const ProjectMemoryImportCountsSchema = z.object({
+  activeCanon: z.number().int().nonnegative(),
+  candidates: z.number().int().nonnegative(),
+  development: z.number().int().nonnegative(),
+  openQuestions: z.number().int().nonnegative(),
+  conflicts: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
+  flagged: z.number().int().nonnegative(),
+}).strict()
+
 const EventBase = {
   schemaVersion: z.literal(1),
   id: IdentifierSchema,
@@ -318,6 +328,7 @@ export type PublishMemoryInput = z.input<typeof PublishMemoryInputSchema>
 export type ParsedPublishMemoryInput = z.output<typeof PublishMemoryInputSchema>
 export type ProjectMemoryAction = z.infer<typeof ProjectMemoryActionSchema>
 export type ProjectMemorySnapshot = z.infer<typeof ProjectMemorySnapshotSchema>
+export type ProjectMemoryImportCounts = z.infer<typeof ProjectMemoryImportCountsSchema>
 export type ProjectMemoryAnalysisRequest = z.infer<typeof ProjectMemoryAnalysisRequestSchema>
 export type ProjectMemoryAnalysisProposal = z.infer<typeof ProjectMemoryAnalysisProposalSchema>
 export type ProjectMemoryAnalysisResult = z.infer<typeof ProjectMemoryAnalysisResultSchema>

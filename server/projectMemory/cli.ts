@@ -9,13 +9,20 @@ import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
 import { renderMemoryContextMarkdown } from './renderContext'
 import { ProjectMemoryStoreError, projectMemoryStore, type ProjectMemoryStore } from './store'
 import type { MemoryContextPackage } from '../../shared/projectMemory'
-import { MemoryWorkflowSchema, PublishMemoryInputSchema, type PublishMemoryInput } from '../../shared/projectMemory'
+import {
+  MemoryWorkflowSchema,
+  ProjectMemoryImportCountsSchema,
+  PublishMemoryInputSchema,
+  type ProjectMemoryImportCounts,
+  type PublishMemoryInput,
+} from '../../shared/projectMemory'
 import { z } from 'zod'
 import {
   guardExistingPath,
   UnsafeProjectMemoryPathError,
   type SafeExistingPath,
 } from './safePaths'
+import { previewProjectMemoryImport } from './importer'
 
 export interface ProjectMemoryCliIo {
   stdout(value: string): void
@@ -28,6 +35,7 @@ export interface ProjectMemoryImportPreview {
   records: PublishMemoryInput[]
   warnings: string[]
   duplicates: number
+  counts: ProjectMemoryImportCounts
 }
 
 export interface ProjectMemoryCliDependencies {
@@ -35,6 +43,7 @@ export interface ProjectMemoryCliDependencies {
     source: 'wayfinder' | 'pitchstudio' | 'buzz'
     projectId: string
     sourceRoot: string
+    linkedSourceId?: string
   }): Promise<ProjectMemoryImportPreview>
   /** @internal Deterministic same-inode growth injection for regression tests. */
   beforePublishInputRead?(inputPath: string): Promise<void>
@@ -380,23 +389,41 @@ const ImportPreviewSchema = z.object({
   records: z.array(PublishMemoryInputSchema),
   warnings: z.array(z.string()),
   duplicates: z.number().int().nonnegative(),
-}).strict()
+  counts: ProjectMemoryImportCountsSchema,
+}).strict().superRefine((preview, context) => {
+  const expected: ProjectMemoryImportCounts = {
+    activeCanon: preview.records.filter(record => (
+      record.kind === 'canon' && record.requestedStatus === 'active'
+    )).length,
+    candidates: preview.records.filter(record => record.requestedStatus === 'candidate').length,
+    development: preview.records.filter(record => record.kind === 'development').length,
+    openQuestions: preview.records.filter(record => record.kind === 'open_question').length,
+    conflicts: preview.records.reduce((total, record) => (
+      total
+      + record.conflictsWith.length
+      + (record.tags.includes('memory:conflict') ? 1 : 0)
+    ), 0),
+    duplicates: preview.duplicates,
+    flagged: preview.records.filter(record => record.safety === 'flagged').length,
+  }
+  for (const [name, value] of Object.entries(expected) as [keyof ProjectMemoryImportCounts, number][]) {
+    if (preview.counts[name] !== value) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['counts', name],
+        message: `Import preview ${name} count does not match its records.`,
+      })
+    }
+  }
+})
 
 async function loadImportPreview(input: {
   source: 'wayfinder' | 'pitchstudio' | 'buzz'
   projectId: string
   sourceRoot: string
+  linkedSourceId?: string
 }): Promise<ProjectMemoryImportPreview> {
-  try {
-    const importerModuleUrl = new URL('./importer.ts', import.meta.url).href
-    const module = await import(importerModuleUrl) as {
-      previewProjectMemoryImport?: (value: typeof input) => Promise<ProjectMemoryImportPreview>
-    }
-    if (typeof module.previewProjectMemoryImport !== 'function') throw new Error('missing importer')
-    return module.previewProjectMemoryImport(input)
-  } catch {
-    throw Object.assign(new Error('Project memory importer is unavailable.'), { code: 'ENOENT' })
-  }
+  return previewProjectMemoryImport(input)
 }
 
 async function runImport(
@@ -419,13 +446,32 @@ async function runImport(
   const memoryStore = dependencies.memoryStore ?? projectMemoryStore
   await project.verify()
   const snapshot = await memoryStore.readSnapshot(projectPath)
+  const manifest = await readSafeManifest(projectPath)
+  if (manifest.projectId !== snapshot.projectId) {
+    throw new CliInputError('The project manifest does not match project memory.')
+  }
+  const linkedSourceId = source === 'buzz' ? manifest.sources?.buzzChannelId : undefined
+  if (source === 'buzz' && !linkedSourceId && dependencies.importPreview === undefined) {
+    throw new CliInputError('Buzz must be linked before import.')
+  }
+  const verifyImportManifest = async () => {
+    await project.verify()
+    const current = await readSafeManifest(projectPath)
+    if (
+      current.projectId !== snapshot.projectId
+      || (source === 'buzz' && current.sources?.buzzChannelId !== linkedSourceId)
+    ) {
+      throw new CliInputError('The project source linkage changed during import.')
+    }
+  }
   const rawPreview = await (dependencies.importPreview ?? loadImportPreview)({
     source,
     projectId: snapshot.projectId,
     sourceRoot,
+    ...(linkedSourceId ? { linkedSourceId } : {}),
   })
   await sourceGuard.verify()
-  await project.verify()
+  await verifyImportManifest()
   const parsed = ImportPreviewSchema.safeParse(rawPreview)
   if (!parsed.success || parsed.data.projectId !== snapshot.projectId) {
     throw new CliInputError('Import preview is invalid for this project.')
@@ -462,7 +508,7 @@ async function runImport(
   for (const record of parsed.data.records) {
     let result
     try {
-      await project.verify()
+      await verifyImportManifest()
       result = await memoryStore.publish(projectPath, record)
     } catch {
       let reconciled
@@ -490,10 +536,12 @@ async function runImport(
     else idempotent += 1
     revision = result.snapshot.revision
   }
+  const duplicates = parsed.data.duplicates + idempotent
   io.stdout(`${JSON.stringify({
     ...parsed.data,
     applied,
-    duplicates: parsed.data.duplicates + idempotent,
+    duplicates,
+    counts: { ...parsed.data.counts, duplicates },
     revision,
   }, null, 2)}\n`)
   return 0
@@ -506,6 +554,7 @@ function exitCodeFor(error: unknown): 1 | 2 | 3 {
     return error.code === 'invalid-input' || error.code === 'invalid-action' ? 2 : 3
   }
   if (error && typeof error === 'object' && 'code' in error) {
+    if (error.code === 'ERR_PROJECT_MEMORY_IMPORT_INPUT') return 2
     if (['ENOENT', 'EACCES', 'EPERM', 'lock-timeout', 'lock-corrupt'].includes(String(error.code))) return 3
   }
   return 1

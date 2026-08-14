@@ -8,6 +8,22 @@ import { createProjectMemoryStore, projectMemoryStore } from '../../server/proje
 
 const temporaryRoots: string[] = []
 
+function importCounts(overrides: Partial<Record<
+  'activeCanon' | 'candidates' | 'development' | 'openQuestions' | 'conflicts' | 'duplicates' | 'flagged',
+  number
+>> = {}) {
+  return {
+    activeCanon: 0,
+    candidates: 0,
+    development: 0,
+    openQuestions: 0,
+    conflicts: 0,
+    duplicates: 0,
+    flagged: 0,
+    ...overrides,
+  }
+}
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -306,6 +322,15 @@ describe('project memory CLI', () => {
       }],
       warnings: ['fixture warning'],
       duplicates: 0,
+      counts: {
+        activeCanon: 0,
+        candidates: 0,
+        development: 1,
+        openQuestions: 0,
+        conflicts: 0,
+        duplicates: 0,
+        flagged: 0,
+      },
     }
     let previewCalls = 0
     const dependencies = {
@@ -337,13 +362,69 @@ describe('project memory CLI', () => {
     expect(missingMode).toBe(2)
     expect(dryRun).toBe(0)
     expect(beforeApply.revision).toBe(0)
-    expect(JSON.parse(dryOutput.join(''))).toMatchObject({ warnings: ['fixture warning'] })
+    expect(JSON.parse(dryOutput.join(''))).toMatchObject({
+      warnings: ['fixture warning'],
+      counts: {
+        activeCanon: 0,
+        candidates: 0,
+        development: 1,
+        openQuestions: 0,
+        conflicts: 0,
+        duplicates: 0,
+        flagged: 0,
+      },
+    })
     expect(apply).toBe(0)
     expect(afterApply).toMatchObject({
       revision: 1,
       records: [{ claim: 'The lighthouse sequence should feel claustrophobic.' }],
     })
     expect(previewCalls).toBe(2)
+  })
+
+  it('rejects an import preview whose structured counts do not match its records', async () => {
+    const projectId = 'cli-import-count-mismatch'
+    const { root, projectPath } = await createProject(projectId)
+    const sourceRoot = await mkdtemp(path.join(root, 'wayfinder-counts-'))
+    const { runProjectMemoryCli } = await import('../../server/projectMemory/cli')
+    const exitCode = await runProjectMemoryCli([
+      'import', '--source', 'wayfinder', '--from', sourceRoot, '--project', projectPath, '--dry-run',
+    ], { stdout: () => undefined, stderr: () => undefined }, {
+      importPreview: async () => ({
+        source: 'story-wayfinder',
+        projectId,
+        records: [{
+          projectId,
+          dedupeKey: 'counted-development',
+          kind: 'development',
+          requestedStatus: 'active',
+          claim: 'This record must appear in the development count.',
+          source: {
+            workflow: 'story-wayfinder',
+            sourceId: 'resolved/counted.md',
+            sourceUri: 'story-wayfinder:resolved/counted.md',
+            sourceHash: 'counted-development-hash',
+            capturedAt: '2026-08-02T12:00:00.000Z',
+            approval: 'none',
+            authority: { ticketType: 'homework', mode: 'hitl' },
+          },
+        }],
+        warnings: [],
+        duplicates: 0,
+        counts: {
+          activeCanon: 0,
+          candidates: 0,
+          development: 0,
+          openQuestions: 0,
+          conflicts: 0,
+          duplicates: 0,
+          flagged: 0,
+        },
+      }),
+    })
+
+    expect(exitCode).toBe(2)
+    expect(await projectMemoryStore.readSnapshot(projectPath)).toMatchObject({ revision: 0, records: [] })
   })
 
   it('reports durable import progress when a later record fails', async () => {
@@ -379,6 +460,7 @@ describe('project memory CLI', () => {
       ],
       warnings: [],
       duplicates: 0,
+      counts: importCounts({ development: 2 }),
     }
     const stderr: string[] = []
 
@@ -443,6 +525,7 @@ describe('project memory CLI', () => {
       }],
       warnings: [],
       duplicates: 0,
+      counts: importCounts({ development: 1 }),
     }
     const cliModulePath = '../../server/projectMemory/cli.ts'
     const cliModule = await import(cliModulePath).catch(() => undefined)
@@ -532,6 +615,7 @@ describe('project memory CLI', () => {
       }],
       warnings: [],
       duplicates: 0,
+      counts: importCounts({ development: 1 }),
     }
     const cliModulePath = '../../server/projectMemory/cli.ts'
     const cliModule = await import(cliModulePath).catch(() => undefined)
@@ -698,7 +782,9 @@ describe('project memory CLI', () => {
       importPreview: async () => {
         await rename(sourceRoot, `${sourceRoot}.original`)
         await mkdir(sourceRoot)
-        return { source: 'buzz', projectId, records: [], warnings: [], duplicates: 0 }
+        return {
+          source: 'buzz', projectId, records: [], warnings: [], duplicates: 0, counts: importCounts(),
+        }
       },
     })
     const publishCode = await cliModule?.runProjectMemoryCli?.([
@@ -743,6 +829,7 @@ describe('project memory CLI', () => {
       }],
       warnings: [],
       duplicates: 0,
+      counts: importCounts({ activeCanon: 1 }),
     }
     const dependencies = { importPreview: async () => spoofedPreview }
     const base = [
@@ -764,5 +851,112 @@ describe('project memory CLI', () => {
       revision: 0,
       records: [],
     })
+  })
+
+  it('passes the linked Buzz channel to real dry-run preview without writing either source', async () => {
+    const projectId = 'cli-real-buzz-preview'
+    const channelId = '1d0c9106-a6ec-4a72-9d71-329e18440c7f'
+    const { root, projectPath } = await createProject(projectId)
+    const sourceRoot = await mkdtemp(path.join(root, 'buzz-real-preview-'))
+    const atomPath = path.join(sourceRoot, 'atoms', 'canon', 'bell.md')
+    await mkdir(path.dirname(atomPath), { recursive: true })
+    const atom = `# Bell signal
+type: atom
+source: room-session ${channelId}/session-02
+created: 2026-08-01
+status: canon
+evidence: [${'b'.repeat(64)}]
+canon-at: 2026-08-12
+
+## Decision
+The bell sounds once at sunrise.
+`
+    await writeFile(atomPath, atom)
+    const { runProjectMemoryCli } = await import('../../server/projectMemory/cli')
+    const base = [
+      'import', '--source', 'buzz', '--from', sourceRoot, '--project', projectPath, '--dry-run',
+    ]
+
+    const missingLink = await runProjectMemoryCli(base, {
+      stdout: () => undefined,
+      stderr: () => undefined,
+    })
+    const link = await runProjectMemoryCli([
+      'link-source', '--workflow', 'buzz', '--source-id', channelId, '--project', projectPath,
+    ], { stdout: () => undefined, stderr: () => undefined })
+    const output: string[] = []
+    const dryRun = await runProjectMemoryCli(base, {
+      stdout: value => output.push(value),
+      stderr: () => undefined,
+    })
+    const beforeApply = await projectMemoryStore.readSnapshot(projectPath)
+    const applyOutput: string[] = []
+    const applyCommand = base.map(value => value === '--dry-run' ? '--apply' : value)
+    const apply = await runProjectMemoryCli(applyCommand, {
+      stdout: value => applyOutput.push(value),
+      stderr: () => undefined,
+    })
+    const repeat = await runProjectMemoryCli(applyCommand, {
+      stdout: value => applyOutput.push(value),
+      stderr: () => undefined,
+    })
+
+    expect(missingLink).toBe(2)
+    expect(link).toBe(0)
+    expect(dryRun).toBe(0)
+    expect(JSON.parse(output.join(''))).toMatchObject({
+      source: 'buzz',
+      projectId,
+      counts: { activeCanon: 0, candidates: 1 },
+    })
+    expect(beforeApply).toMatchObject({ revision: 0, records: [] })
+    expect(apply).toBe(0)
+    expect(repeat).toBe(0)
+    expect(applyOutput.map(value => JSON.parse(value))).toMatchObject([
+      { applied: 1, duplicates: 0, counts: { duplicates: 0 } },
+      { applied: 0, duplicates: 1, counts: { duplicates: 1 } },
+    ])
+    expect(await projectMemoryStore.readSnapshot(projectPath)).toMatchObject({
+      revision: 1,
+      records: [{ kind: 'canon', status: 'candidate', source: { workflow: 'buzz' } }],
+    })
+    expect(await readFile(atomPath, 'utf8')).toBe(atom)
+  })
+
+  it('rejects a Buzz link mapping that changes while its preview is running', async () => {
+    const projectId = 'cli-buzz-link-swap'
+    const firstChannel = 'a1cf3f60-e04f-4482-8f0c-8265c3c2f07e'
+    const secondChannel = '1c254390-523c-47dc-b113-6626a38210af'
+    const { root, projectPath } = await createProject(projectId)
+    const sourceRoot = await mkdtemp(path.join(root, 'buzz-link-swap-'))
+    const { runProjectMemoryCli } = await import('../../server/projectMemory/cli')
+    expect(await runProjectMemoryCli([
+      'link-source', '--workflow', 'buzz', '--source-id', firstChannel, '--project', projectPath,
+    ], { stdout: () => undefined, stderr: () => undefined })).toBe(0)
+
+    const exitCode = await runProjectMemoryCli([
+      'import', '--source', 'buzz', '--from', sourceRoot, '--project', projectPath, '--dry-run',
+    ], { stdout: () => undefined, stderr: () => undefined }, {
+      importPreview: async input => {
+        expect(input.linkedSourceId).toBe(firstChannel)
+        const manifestPath = path.join(projectPath, 'project.json')
+        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+        await writeFile(manifestPath, JSON.stringify({
+          ...manifest,
+          sources: { ...manifest.sources, buzzChannelId: secondChannel },
+        }))
+        return {
+          source: 'buzz',
+          projectId,
+          records: [],
+          warnings: [],
+          duplicates: 0,
+          counts: importCounts(),
+        }
+      },
+    })
+
+    expect(exitCode).toBe(2)
+    expect(await projectMemoryStore.readSnapshot(projectPath)).toMatchObject({ revision: 0, records: [] })
   })
 })
