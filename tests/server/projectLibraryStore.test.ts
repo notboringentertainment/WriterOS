@@ -498,6 +498,67 @@ describe('server project library store', () => {
     expect(outcome.result.ok && outcome.result.project.updatedAt).toBe(changed.updatedAt)
   })
 
+  it('reads one project while an unrelated project is snapshotted after scan enumeration', async () => {
+    const root = await makeTemporaryDirectory()
+    const requestedProject = makeStoredProject('Requested Project')
+    const unrelatedProject = makeStoredProject(
+      'Unrelated Project',
+      '7a24bf46-d850-43a7-9d77-c915e8b9dd79',
+    )
+    await writeSerializedPackage(root, 'Requested Project (8f4e2c9a).writeros', requestedProject)
+    const unrelatedPackageName = 'Unrelated Project (7a24bf46).writeros'
+    await writeSerializedPackage(root, unrelatedPackageName, unrelatedProject)
+
+    let snapshotReached!: () => void
+    const atSnapshot = new Promise<void>(resolve => {
+      snapshotReached = resolve
+    })
+    let allowWriter!: () => void
+    const writerMayContinue = new Promise<void>(resolve => {
+      allowWriter = resolve
+    })
+    const writerStore = await createProjectLibraryStore(root, {
+      fileOperations: {
+        afterPackageSnapshot: async () => {
+          snapshotReached()
+          await writerMayContinue
+        },
+      },
+    })
+    const changedUnrelatedProject = makeStoredProject(
+      'Unrelated Project',
+      unrelatedProject.id,
+    )
+    changedUnrelatedProject.updatedAt += 5_000
+    let writerSave: Promise<unknown> | undefined
+    const readerFileOperations = {
+      beforeProjectScanPackage: async (packagePath: string) => {
+        if (path.basename(packagePath) !== unrelatedPackageName || writerSave) return
+        writerSave = writerStore.writeProject(changedUnrelatedProject)
+        await atSnapshot
+      },
+    }
+    const readerStore = await createProjectLibraryStore(root, {
+      fileOperations: readerFileOperations,
+    })
+
+    const readOutcomePromise = readerStore.readProject(requestedProject.id).then(result => ({
+      status: 'resolved' as const,
+      result,
+    }), error => ({
+      status: 'rejected' as const,
+      error,
+    }))
+    await atSnapshot
+    const readOutcome = await readOutcomePromise
+    allowWriter()
+    await writerSave
+
+    expect(readOutcome.status).toBe('resolved')
+    if (readOutcome.status !== 'resolved') throw readOutcome.error
+    expect(readOutcome.result.ok && readOutcome.result.project.id).toBe(requestedProject.id)
+  })
+
   it('resolves the renamed live package only after a writer-first save releases the lock', async () => {
     const root = await makeTemporaryDirectory()
     const project = makeStoredProject()

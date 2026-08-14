@@ -61,6 +61,8 @@ export interface ProjectLibraryStore {
 export interface ProjectLibraryFileOperations {
   rename(from: string, to: string): Promise<void>
   rm(target: string, options: { recursive: true; force: true }): Promise<void>
+  /** @internal Deterministic scan interleaving injection for regression tests. */
+  beforeProjectScanPackage?(packagePath: string): Promise<void>
   beforePreservedFileOpen?(sourcePath: string): Promise<void>
   afterPackageSnapshot?(originalPath: string, snapshotPath: string): Promise<void>
 }
@@ -310,6 +312,7 @@ export async function createProjectLibraryStore(
   const fileOperations: ProjectLibraryFileOperations = {
     rename: options.fileOperations?.rename ?? renamePath,
     rm: options.fileOperations?.rm ?? removePath,
+    beforeProjectScanPackage: options.fileOperations?.beforeProjectScanPackage,
     beforePreservedFileOpen: options.fileOperations?.beforePreservedFileOpen,
     afterPackageSnapshot: options.fileOperations?.afterPackageSnapshot,
   }
@@ -340,6 +343,7 @@ export async function createProjectLibraryStore(
       const packagePath = path.join(rootPath, child.name)
 
       try {
+        await fileOperations.beforeProjectScanPackage?.(packagePath)
         const stats = await lstat(packagePath)
         if (stats.isSymbolicLink()) {
           entries.push({
@@ -370,6 +374,12 @@ export async function createProjectLibraryStore(
           warnings: result.warnings,
         })
       } catch (error) {
+        if (isNotFoundError(error)) {
+          // Another project can be snapshotted under its own package lock
+          // after this scan enumerates the root. Treat that vanished inventory
+          // entry as absent; callers still decide whether their target exists.
+          continue
+        }
         if (error instanceof ProjectLibraryStoreError && error.code === 'unsafe-path') {
           entries.push({
             status: 'corrupt',
