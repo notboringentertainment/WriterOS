@@ -4,7 +4,6 @@ import {
   citationLabelsForRecords,
   escapeMemoryDataForMarkdown,
   relevantRecordMarkdownLines,
-  spoilerConflictIdsForContext,
 } from './retrieval'
 
 export interface RenderMemoryContextMarkdownOptions {
@@ -30,7 +29,7 @@ export function renderMemoryContextMarkdown(
   )
   const activeCanon = context.activeCanon.filter(record => !hiddenRecordIds.has(record.id))
   const relevant = context.relevant.filter(record => !hiddenRecordIds.has(record.id))
-  const spoilerConflictIds = spoilerConflictIdsForContext(context)
+  const spoilerConflictIds = new Set(context.spoilerConflictIds)
   const conflicts = context.conflicts.filter(conflict => (
     (options.includeSpoilers === true || !spoilerConflictIds.has(conflict.id))
     && !hiddenRecordIds.has(conflict.leftRecordId)

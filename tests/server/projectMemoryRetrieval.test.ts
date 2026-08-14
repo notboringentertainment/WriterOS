@@ -235,11 +235,11 @@ describe('buildMemoryContext', () => {
     const reordered = buildMemoryContext(snapshot([canon, relevant]), { message: 'ferry' })
 
     expect(Object.keys(first.citationMap)).toEqual([
-      '[M-D06708E44AD9]',
-      '[M-A09F182DE3D8]',
+      '[M-D067-Y2Fub24tYWxwaGE]',
+      '[M-A09F-Y2l0YXRpb24tb25l]',
     ])
-    expect(first.citationMap['[M-D06708E44AD9]'].sourceId).toBe('canon-source')
-    expect(first.citationMap['[M-A09F182DE3D8]'].sourceId).toBe('draft-source')
+    expect(first.citationMap['[M-D067-Y2Fub24tYWxwaGE]'].sourceId).toBe('canon-source')
+    expect(first.citationMap['[M-A09F-Y2l0YXRpb24tb25l]'].sourceId).toBe('draft-source')
     expect(reordered.citationMap).toEqual(first.citationMap)
   })
 
@@ -303,11 +303,11 @@ Revision: 7
 
 ## Active Canon
 
-- [M-D06708E44AD9] Claim (data): The ferry stops at dusk.
+- [M-D067-Y2Fub24tYWxwaGE] Claim (data): The ferry stops at dusk.
 
 ## Relevant Memory
 
-- [M-A09F182DE3D8] Kind/status (data): development / candidate
+- [M-A09F-Y2l0YXRpb24tb25l] Kind/status (data): development / candidate
   - Claim (data): Mara once missed the ferry.
   - Detail (data): She waited until sunrise.
   - Source (data): writeros · draft.md#ferry
@@ -319,8 +319,8 @@ None.
 
 ## Citation Map
 
-- [M-D06708E44AD9] writeros · canon.md#ferry
-- [M-A09F182DE3D8] writeros · draft.md#ferry
+- [M-D067-Y2Fub24tYWxwaGE] writeros · canon.md#ferry
+- [M-A09F-Y2l0YXRpb24tb25l] writeros · draft.md#ferry
 `)
   })
 
@@ -358,7 +358,7 @@ None.
     expect(withoutSpoilers).not.toContain('The ferryman is Mara’s father.')
 
     const withSpoilers = renderMemoryContextMarkdown(context, { includeSpoilers: true })
-    expect(withSpoilers).toContain('- [M-AB25F0BD0261] Kind/status (data): development / candidate')
+    expect(withSpoilers).toContain('- [M-AB25-c3BvaWxlci1yZWNvcmQ] Kind/status (data): development / candidate')
     expect(withSpoilers).toContain('Claim (data): The ferryman is Mara’s father.')
     expect(withSpoilers).toContain('- ID (data): spoiler-conflict')
   })
@@ -387,18 +387,33 @@ None.
     ]), { message: 'ferry' })
 
     expect(context.relevant.map(item => item.id)).toEqual(['selected-normal'])
+    expect(context).toMatchObject({
+      spoilerConflictIds: ['cross-endpoint-secret'],
+    })
     expect(renderMemoryContextJson(context).conflicts.map(item => item.id)).toEqual([
       'cross-endpoint-secret',
     ])
 
-    const withoutSpoilers = renderMemoryContextMarkdown(context)
-    expect(withoutSpoilers).not.toContain('cross-endpoint-secret')
-    expect(withoutSpoilers).not.toContain('unselected-spoiler')
-    expect(withoutSpoilers).not.toContain('hidden culprit')
+    const contextVariants = [
+      context,
+      JSON.parse(JSON.stringify(context)) as typeof context,
+      structuredClone(context),
+    ]
+    for (const contextVariant of contextVariants) {
+      expect(contextVariant.spoilerConflictIds).toEqual(['cross-endpoint-secret'])
+      expect(renderMemoryContextJson(contextVariant).conflicts.map(item => item.id)).toEqual([
+        'cross-endpoint-secret',
+      ])
 
-    const withSpoilers = renderMemoryContextMarkdown(context, { includeSpoilers: true })
-    expect(withSpoilers).toContain('- ID (data): cross-endpoint-secret')
-    expect(withSpoilers).toContain('Right record (data): unselected-spoiler')
+      const withoutSpoilers = renderMemoryContextMarkdown(contextVariant)
+      expect(withoutSpoilers).not.toContain('cross-endpoint-secret')
+      expect(withoutSpoilers).not.toContain('unselected-spoiler')
+      expect(withoutSpoilers).not.toContain('hidden culprit')
+
+      const withSpoilers = renderMemoryContextMarkdown(contextVariant, { includeSpoilers: true })
+      expect(withSpoilers).toContain('- ID (data): cross-endpoint-secret')
+      expect(withSpoilers).toContain('Right record (data): unselected-spoiler')
+    }
   })
 
   it('bounds adversarial metadata in both JSON relevance context and Markdown', async () => {
@@ -431,21 +446,57 @@ None.
     expect(renderMemoryContextMarkdown(context).length).toBeLessThanOrEqual(16_000)
   })
 
-  it('keeps fixed citation labels stable when colliding records are together or alone', () => {
+  it('charges complete Markdown framing at the 16000-character boundary', async () => {
+    const { renderMemoryContextMarkdown } = await import('../../server/projectMemory/renderContext')
+    const context = buildMemoryContext(snapshot([
+      record({
+        id: 'boundary-newer',
+        claim: 'Newer ferry boundary memory.',
+        detail: '*'.repeat(1_890),
+        tags: ['ferry'],
+        source: source({ sourceUri: '*'.repeat(970) }),
+        updatedAt: '2026-08-13T20:02:00.000Z',
+      }),
+      record({
+        id: 'boundary-older',
+        claim: 'Older ferry boundary memory',
+        detail: '*'.repeat(1_890),
+        tags: ['ferry'],
+        source: source({ sourceUri: '*'.repeat(970) }),
+        updatedAt: '2026-08-13T20:01:00.000Z',
+      }),
+    ]), { message: 'ferry' })
+
+    const markdown = renderMemoryContextMarkdown(context)
+    expect(markdown.length).toBeLessThanOrEqual(16_000)
+    expect(context.relevant.map(item => item.id)).toEqual(['boundary-newer'])
+  })
+
+  it('keeps injective citation labels and sources stable when hash prefixes collide', () => {
     const collidingRecords = [
-      record({ id: 'record-313', tags: ['ferry'] }),
-      record({ id: 'record-329', tags: ['ferry'] }),
+      record({
+        id: 'record-313',
+        tags: ['ferry'],
+        source: source({ sourceId: 'source-313' }),
+      }),
+      record({
+        id: 'record-329',
+        tags: ['ferry'],
+        source: source({ sourceId: 'source-329' }),
+      }),
     ]
 
     const together = buildMemoryContext(snapshot(collidingRecords), { message: 'ferry' })
     const record329Alone = buildMemoryContext(snapshot([collidingRecords[1]]), { message: 'ferry' })
 
     expect(Object.keys(together.citationMap)).toEqual([
-      '[M-719B976DA87B]',
-      '[M-719BDC397E63]',
+      '[M-719B-cmVjb3JkLTMxMw]',
+      '[M-719B-cmVjb3JkLTMyOQ]',
     ])
     expect(Object.keys(record329Alone.citationMap)).toEqual([
-      '[M-719BDC397E63]',
+      '[M-719B-cmVjb3JkLTMyOQ]',
     ])
+    expect(together.citationMap['[M-719B-cmVjb3JkLTMxMw]'].sourceId).toBe('source-313')
+    expect(together.citationMap['[M-719B-cmVjb3JkLTMyOQ]'].sourceId).toBe('source-329')
   })
 })

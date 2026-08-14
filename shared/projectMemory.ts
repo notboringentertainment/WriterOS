@@ -305,6 +305,7 @@ export interface MemoryContextPackage {
   activeCanon: ProjectMemoryRecord[]
   relevant: ProjectMemoryRecord[]
   conflicts: ProjectMemoryConflict[]
+  spoilerConflictIds: string[]
   citationMap: Record<string, MemorySource>
 }
 
