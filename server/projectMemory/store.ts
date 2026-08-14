@@ -102,6 +102,21 @@ function sameOrderedList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+function sourceHasLegacyUnverifiedAuthority(source: MemorySource): boolean {
+  return source.workflow === 'story-wayfinder'
+    && source.authority !== undefined
+    && 'verification' in source.authority
+    && source.authority.verification === 'legacy-unverified'
+}
+
+function activeLegacyAuthorityRecordIds(snapshot: ProjectMemorySnapshot): string[] {
+  return snapshot.records.filter(record => (
+    record.kind === 'canon'
+    && record.status === 'active'
+    && sourceHasLegacyUnverifiedAuthority(record.source)
+  )).map(record => record.id)
+}
+
 function stableId(prefix: string, parts: string[]): string {
   const digest = createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 32)
   return `${prefix}_${digest}`
@@ -322,6 +337,18 @@ function applyEvent(
       throw corruptLedger(lineNumber, 'only a current candidate may be rejected.')
     }
     records = replaceRecord(records, event.recordId, record => ({ ...record, status: 'rejected', updatedAt: event.occurredAt }))
+  } else if (event.type === 'legacy-authority-downgraded') {
+    const expectedRecordIds = activeLegacyAuthorityRecordIds(state.snapshot)
+    if (!sameOrderedList(event.recordIds, expectedRecordIds) || expectedRecordIds.length === 0) {
+      throw corruptLedger(lineNumber, 'legacy authority migration does not match active unverified records.')
+    }
+    for (const recordId of event.recordIds) {
+      records = replaceRecord(records, recordId, record => ({
+        ...record,
+        status: 'candidate',
+        updatedAt: event.occurredAt,
+      }))
+    }
   } else {
     let mutation: ConflictResolutionMutation
     try {
@@ -351,8 +378,10 @@ function applyEvent(
       if (!knownRecord(recordId)) throw corruptLedger(lineNumber, `unknown rejected record ${recordId}.`)
       records = replaceRecord(records, recordId, record => ({ ...record, status: 'rejected', updatedAt: event.occurredAt }))
     }
-    if (event.activatedRecordIds.length === 1 && event.supersededRecordIds.length > 0) {
-      const winnerId = event.activatedRecordIds[0]
+    if (event.supersededRecordIds.length > 0 && (event.resolution === 'left' || event.resolution === 'right')) {
+      const winnerId = event.resolution === 'left'
+        ? mutation.conflict.leftRecordId
+        : mutation.conflict.rightRecordId
       records = replaceRecord(records, winnerId, record => ({
         ...record,
         supersedes: unique([...record.supersedes, ...event.supersededRecordIds]),
@@ -369,6 +398,33 @@ function applyEvent(
   })
   if (!snapshot.success) throw corruptLedger(lineNumber, snapshot.error.issues[0]?.message ?? 'invalid replay state.')
   return { snapshot: snapshot.data, publications }
+}
+
+function migrateLegacyWayfinderPublication(json: unknown): unknown {
+  if (!json || typeof json !== 'object') return json
+  const event = json as Record<string, unknown>
+  if (event.schemaVersion !== 1 || event.type !== 'published') return json
+  if (!event.record || typeof event.record !== 'object') return json
+  const record = event.record as Record<string, unknown>
+  if (record.kind !== 'canon' || record.status !== 'active') return json
+  if (!record.source || typeof record.source !== 'object') return json
+  const source = record.source as Record<string, unknown>
+  if (
+    source.workflow !== 'story-wayfinder'
+    || source.approval !== 'explicit'
+    || source.authority !== undefined
+  ) return json
+
+  return {
+    ...event,
+    record: {
+      ...record,
+      source: {
+        ...source,
+        authority: { verification: 'legacy-unverified' },
+      },
+    },
+  }
 }
 
 async function replayLedger(ledgerPath: string, projectId: string): Promise<ReplayResult> {
@@ -392,7 +448,7 @@ async function replayLedger(ledgerPath: string, projectId: string): Promise<Repl
     } catch {
       throw corruptLedger(lineNumber, 'invalid JSON.')
     }
-    const parsed = ProjectMemoryEventSchema.safeParse(json)
+    const parsed = ProjectMemoryEventSchema.safeParse(migrateLegacyWayfinderPublication(json))
     if (!parsed.success) {
       throw corruptLedger(lineNumber, parsed.error.issues[0]?.message ?? 'event schema validation failed.')
     }
@@ -428,6 +484,21 @@ async function appendEvent(
   } finally {
     await handle.close()
   }
+}
+
+async function replayLedgerWithMigrations(
+  ledgerPath: string,
+  projectId: string,
+  testHooks?: ProjectMemoryStoreTestHooks,
+): Promise<ReplayResult> {
+  const replayed = await replayLedger(ledgerPath, projectId)
+  const recordIds = activeLegacyAuthorityRecordIds(replayed.snapshot)
+  if (recordIds.length === 0) return replayed
+
+  const event = createLegacyAuthorityMigrationEvent(replayed.snapshot, recordIds)
+  const next = applyEvent(replayed, event, event.revision)
+  await appendEvent(ledgerPath, event, testHooks)
+  return next
 }
 
 async function atomicReplace(filePath: string, contents: string): Promise<void> {
@@ -535,7 +606,9 @@ function publicationStatus(input: ParsedPublishMemoryInput, hasUnresolvedConflic
 function sourceCanActivateCanon(source: MemorySource): boolean {
   if (source.approval !== 'explicit') return false
   if (source.workflow !== 'story-wayfinder') return true
-  return source.authority?.mode === 'hitl'
+  return source.authority !== undefined
+    && 'mode' in source.authority
+    && source.authority.mode === 'hitl'
     && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
 }
 
@@ -626,15 +699,18 @@ function deriveConflictResolutionMutation(
   if (left.kind !== right.kind || left.kind === 'document_fact') return mutation
 
   const ensureActivatable = (record: ProjectMemoryRecord) => {
-    if (record.status === 'active') return
-    if (!recordCanActivate(record)) {
-      throw new ProjectMemoryStoreError('The selected conflict record is not eligible for activation.', 'invalid-action')
+    if (record.safety !== 'clear') {
+      throw new ProjectMemoryStoreError('The selected conflict record is not safe for activation.', 'invalid-action')
     }
     if (otherOpenConflicts(snapshot, record.id, [conflict.id]).length > 0) {
       throw new ProjectMemoryStoreError(
         'The selected conflict record has another unresolved conflict.',
         'unresolved-conflict',
       )
+    }
+    if (record.status === 'active') return
+    if (!recordCanActivate(record)) {
+      throw new ProjectMemoryStoreError('The selected conflict record is not eligible for activation.', 'invalid-action')
     }
     mutation.activatedRecordIds.push(record.id)
   }
@@ -655,7 +731,8 @@ function deriveConflictResolutionMutation(
   }
   ensureActivatable(winner)
   if (loser.status === 'active') {
-    if (winner.status !== 'candidate') {
+    const activeNoncanonWinner = winner.status === 'active' && winner.kind !== 'canon'
+    if (winner.status !== 'candidate' && !activeNoncanonWinner) {
       throw new ProjectMemoryStoreError(
         'Only an eligible candidate may supersede an active conflict record.',
         'invalid-action',
@@ -791,12 +868,29 @@ function createActionEvent(
   })
 }
 
+function createLegacyAuthorityMigrationEvent(
+  snapshot: ProjectMemorySnapshot,
+  recordIds: string[],
+): Extract<ProjectMemoryEvent, { type: 'legacy-authority-downgraded' }> {
+  const revision = snapshot.revision + 1
+  const occurredAt = new Date().toISOString()
+  return ProjectMemoryEventSchema.parse({
+    schemaVersion: 1,
+    id: stableId('event', [snapshot.projectId, String(revision), 'legacy-authority-downgraded']),
+    projectId: snapshot.projectId,
+    revision,
+    occurredAt,
+    type: 'legacy-authority-downgraded',
+    recordIds,
+  }) as Extract<ProjectMemoryEvent, { type: 'legacy-authority-downgraded' }>
+}
+
 export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}): ProjectMemoryStore {
   return {
     async readSnapshot(projectPath) {
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
-        const replayed = await replayLedger(ledgerPath, projectId)
+        const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         if (!await projectionsMatch(projectPath, replayed.snapshot)) {
           await writeProjections(projectPath, replayed.snapshot)
         }
@@ -823,7 +917,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
           throw new ProjectMemoryStoreError('Publication projectId does not match the locked project.', 'project-mismatch')
         }
         const ledgerPath = await ensureLedger(projectPath)
-        const replayed = await replayLedger(ledgerPath, projectId)
+        const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         const duplicate = replayed.publications.find(publication => (
           publication.dedupeKey === input.dedupeKey
           && publication.sourceHash === input.source.sourceHash
@@ -851,7 +945,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       }
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
-        const replayed = await replayLedger(ledgerPath, projectId)
+        const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         const event = createActionEvent(replayed.snapshot, parsed.data)
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
@@ -863,7 +957,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
     async rebuild(projectPath) {
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
-        const replayed = await replayLedger(ledgerPath, projectId)
+        const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         await writeProjections(projectPath, replayed.snapshot)
         return replayed.snapshot
       })

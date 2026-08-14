@@ -23,6 +23,9 @@ function renderRecord(record: ProjectMemoryRecord): string[] {
     `- Source: ${sourceLine(record)}`,
     `- Updated: ${record.updatedAt}`,
   ]
+  if (record.source.authority !== undefined && 'verification' in record.source.authority) {
+    lines.push('- Authority: legacy / unverified')
+  }
   if (record.spoiler) lines.push('- Spoiler: yes')
   if (record.detail) lines.push('', escapedInline(record.detail))
   return lines

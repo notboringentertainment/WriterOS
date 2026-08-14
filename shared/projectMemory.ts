@@ -40,10 +40,19 @@ const TimestampSchema = z.string().datetime({ offset: true })
 const IdentifierSchema = z.string().min(1).max(500)
 const ReferenceListSchema = z.array(IdentifierSchema).max(100)
 
-export const WayfinderAuthoritySchema = z.object({
+export const VerifiedWayfinderAuthoritySchema = z.object({
   ticketType: WayfinderTicketTypeSchema,
   mode: WayfinderModeSchema,
 }).strict()
+
+export const LegacyWayfinderAuthoritySchema = z.object({
+  verification: z.literal('legacy-unverified'),
+}).strict()
+
+export const WayfinderAuthoritySchema = z.union([
+  VerifiedWayfinderAuthoritySchema,
+  LegacyWayfinderAuthoritySchema,
+])
 
 export const MemorySourceSchema = z.object({
   workflow: MemoryWorkflowSchema,
@@ -66,8 +75,17 @@ export const MemorySourceSchema = z.object({
 function sourceCanActivateCanon(source: z.infer<typeof MemorySourceSchema>): boolean {
   if (source.approval !== 'explicit') return false
   if (source.workflow !== 'story-wayfinder') return true
-  return source.authority?.mode === 'hitl'
+  return source.authority !== undefined
+    && 'mode' in source.authority
+    && source.authority.mode === 'hitl'
     && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
+}
+
+function sourceHasLegacyUnverifiedAuthority(source: z.infer<typeof MemorySourceSchema>): boolean {
+  return source.workflow === 'story-wayfinder'
+    && source.authority !== undefined
+    && 'verification' in source.authority
+    && source.authority.verification === 'legacy-unverified'
 }
 
 export const MemoryEvidenceSchema = z.object({
@@ -99,7 +117,12 @@ export const ProjectMemoryRecordSchema = z.object({
       message: 'Safety-flagged memory cannot be active.',
     })
   }
-  if (record.kind === 'canon' && record.status === 'active' && !sourceCanActivateCanon(record.source)) {
+  if (
+    record.kind === 'canon'
+    && record.status === 'active'
+    && !sourceCanActivateCanon(record.source)
+    && !sourceHasLegacyUnverifiedAuthority(record.source)
+  ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['source'],
@@ -153,6 +176,13 @@ export const PublishMemoryInputSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['requestedStatus'],
       message: 'Safety-flagged memory cannot be requested as active.',
+    })
+  }
+  if (sourceHasLegacyUnverifiedAuthority(input.source)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['source', 'authority'],
+      message: 'Legacy-unverified authority is derived during ledger migration and cannot be published.',
     })
   }
 })
@@ -236,11 +266,18 @@ const ConflictResolvedMemoryEventSchema = z.object({
   rejectedRecordIds: ReferenceListSchema,
 }).strict()
 
+const LegacyAuthorityDowngradedMemoryEventSchema = z.object({
+  ...EventBase,
+  type: z.literal('legacy-authority-downgraded'),
+  recordIds: ReferenceListSchema,
+}).strict()
+
 export const ProjectMemoryEventSchema = z.union([
   PublishedMemoryEventSchema,
   PromotedMemoryEventSchema,
   RejectedMemoryEventSchema,
   ConflictResolvedMemoryEventSchema,
+  LegacyAuthorityDowngradedMemoryEventSchema,
 ])
 
 export type MemoryKind = z.infer<typeof MemoryKindSchema>
