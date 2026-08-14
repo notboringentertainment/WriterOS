@@ -49,6 +49,7 @@ async function startMemoryApp(
   registerProjectMemorySecurityBoundary(app, config)
   app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT))
   app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
+  app.use(express.urlencoded({ extended: false }))
   app.use(projectMemoryJsonErrorBoundary)
   const register = registerProjectMemoryRoutes as (...args: any[]) => void
   register(app, config, store, memoryStore, analyze)
@@ -430,6 +431,147 @@ describe('project memory HTTP routes', () => {
       error: 'analysis-unavailable',
       message: 'Project memory analysis is unavailable.',
     })
+  })
+
+  it('rejects body-bearing non-JSON media types before alternate body parsers', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'json-only-body-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store)
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+    const canonicalAnalyze = `/api/projects/${project.id}/memory/analyze`
+    const legacyAnalyze = `/api/project-memory/${project.id}/analyze`
+
+    const oversizedForm = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `content=${'x'.repeat(200 * 1024)}`,
+    })
+    const unsupportedFormCharset = await requestRaw(port, legacyAnalyze, {
+      method: 'POST',
+      headers: {
+        ...authorized,
+        'Content-Type': 'application/x-www-form-urlencoded; charset=iso-8859-1',
+      },
+      body: 'surface=synopsis&content=Changed',
+    })
+    const malformedGzipForm = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: {
+        ...authorized,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Encoding': 'gzip',
+      },
+      body: Buffer.from('not-a-gzip-stream'),
+    })
+    const plainText = await requestRaw(port, legacyAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'text/plain' },
+      body: '/Users/writer/Secret.writeros',
+    })
+    const multipart = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'multipart/form-data; boundary=memory-boundary' },
+      body: '--memory-boundary\r\nContent-Disposition: form-data; name="content"\r\n\r\nChanged\r\n--memory-boundary--',
+    })
+    const missingContentType = await requestRaw(port, legacyAnalyze, {
+      method: 'POST',
+      headers: authorized,
+      body: '{"surface":"synopsis","content":"Changed"}',
+    })
+    const emptyContentType = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': '' },
+      body: '{"surface":"synopsis","content":"Changed"}',
+    })
+
+    const unsupportedMediaResponses = [
+      oversizedForm,
+      unsupportedFormCharset,
+      malformedGzipForm,
+      plainText,
+      multipart,
+      missingContentType,
+      emptyContentType,
+    ]
+    expect(unsupportedMediaResponses.map(response => response.status)).toEqual([
+      415, 415, 415, 415, 415, 415, 415,
+    ])
+    for (const response of unsupportedMediaResponses) {
+      expect(response.status).toBe(415)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'unsupported-body',
+        message: 'Project memory request body encoding or media type is unsupported.',
+      })
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('/Users/writer')
+      expect(response.text).not.toContain('Error')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+
+    const emptyBody = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: authorized,
+    })
+    const validJson = await requestRaw(port, legacyAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ surface: 'synopsis', content: 'Changed synopsis.' }),
+    })
+    const malformedJson = await requestRaw(port, canonicalAnalyze, {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: '{"surface":',
+    })
+    const unsupportedMethod = await requestRaw(port, canonicalAnalyze, {
+      method: 'PATCH',
+      headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'content=Changed',
+    })
+    const snapshot = await requestRaw(
+      port,
+      `/api/projects/${project.id}/memory/snapshot`,
+      { method: 'GET', headers: authorized },
+    )
+
+    expect(emptyBody.status).toBe(400)
+    expect(JSON.parse(emptyBody.text)).toEqual({
+      error: 'invalid-request',
+      message: 'Project memory request is invalid.',
+    })
+    expect(validJson.status).toBe(503)
+    expect(JSON.parse(validJson.text)).toEqual({
+      error: 'analysis-unavailable',
+      message: 'Project memory analysis is unavailable.',
+    })
+    expect(malformedJson.status).toBe(400)
+    expect(JSON.parse(malformedJson.text)).toEqual({
+      error: 'invalid-json',
+      message: 'Project memory request body is invalid JSON.',
+    })
+    expect(unsupportedMethod.status).toBe(405)
+    expect(JSON.parse(unsupportedMethod.text)).toEqual({
+      error: 'method-not-allowed',
+      message: 'Project memory request method is not allowed.',
+    })
+    expect(snapshot.status).toBe(200)
   })
 
   it('returns safe JSON for malformed supported compressed bodies', async () => {

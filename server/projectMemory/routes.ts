@@ -211,6 +211,19 @@ export function createProjectMemoryJsonParser(limit: string | number): RequestHa
   return (req, res, next) => {
     const requestPath = req.originalUrl.split('?')[0] ?? req.path
     if (!isProjectMemoryPath(requestPath)) return next()
+    const contentLength = Number(req.headers['content-length'])
+    const hasBody = req.headers['transfer-encoding'] !== undefined
+      || (Number.isFinite(contentLength) && contentLength > 0)
+    if (
+      expectedMethodForProjectMemoryPath(requestPath) === 'POST'
+      && hasBody
+      && !req.is('application/json')
+    ) {
+      return res.status(415).json({
+        error: 'unsupported-body',
+        message: 'Project memory request body encoding or media type is unsupported.',
+      })
+    }
     return parser(req, res, error => {
       if (error !== null && typeof error === 'object') {
         trustedProjectMemoryParserErrors.add(error)
