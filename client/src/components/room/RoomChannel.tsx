@@ -25,9 +25,11 @@ import { useInterviewSession } from '../../lib/useInterviewSession'
 import { deriveProjectMeetingStanding, projectMeetingStandingLabel } from '../../lib/projectMeetingStatus'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 export interface RoomChannelProps {
   projectId: string
+  projectScopeKey?: string
   characterNames: string[]
   characterBriefs?: RoomCharacterBrief[]
   surfaceAwareness: SurfaceAwareness
@@ -55,7 +57,7 @@ function personaColor(author: string): string {
   return accent ? `var(${accent})` : 'var(--fg-muted)'
 }
 
-export function RoomChannel({ projectId, characterNames, characterBriefs = [], surfaceAwareness, locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
+export function RoomChannel({ projectId, projectScopeKey, characterNames, characterBriefs = [], surfaceAwareness, locksText, onAdoptProposal, onOpenProjectMeeting }: RoomChannelProps) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
   const [proposals, setProposals] = useState<RoomProposal[]>([])
   const [streaming, setStreaming] = useState<Map<string, StreamingTurn>>(new Map())
@@ -65,7 +67,12 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
   const [memoryRetrying, setMemoryRetrying] = useState(false)
   const [streamDown, setStreamDown] = useState(false)
   // Read-only: the interview itself lives on the Project Meeting page.
-  const interview = useInterviewSession(projectId)
+  const effectiveProjectScopeKey = projectScopeKey ?? `memory:${projectId}`
+  const interview = useInterviewSession(projectId, effectiveProjectScopeKey)
+  const beginRoomLoadRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
+  const beginMemoryRetryRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
+  const beginSendRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
+  const beginResolveRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -112,9 +119,7 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
   }, [])
 
   const loadRoom = useCallback(async () => {
-    const [msgs, props] = await Promise.all([fetchRoomMessages(projectId), fetchRoomProposals(projectId, 'pending')])
-    setMessages(msgs)
-    setProposals(props)
+    return Promise.all([fetchRoomMessages(projectId), fetchRoomProposals(projectId, 'pending')])
   }, [projectId])
 
   const handleMutationResult = useCallback((result: RoomMutationResult) => {
@@ -123,51 +128,80 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
   }, [])
 
   const retryMemory = useCallback(async () => {
+    const isCurrent = beginMemoryRetryRequest()
+    const isRoomLoadCurrent = beginRoomLoadRequest()
     setMemoryRetrying(true)
-    const result = await ensureRoomMemory(projectId)
-    if (result.outcome === 'ok') {
-      try {
-        await loadRoom()
+    try {
+      const result = await ensureRoomMemory(projectId)
+      if (!isCurrent() || !isRoomLoadCurrent()) return
+      if (result.outcome === 'ok') {
+        const [msgs, props] = await loadRoom()
+        if (!isCurrent() || !isRoomLoadCurrent()) return
+        setMessages(msgs)
+        setProposals(props)
         setMemoryDown(false)
         setError(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Room unavailable')
+      } else {
+        handleMutationResult(result)
       }
-    } else {
-      handleMutationResult(result)
+    } catch (err) {
+      if (!isCurrent() || !isRoomLoadCurrent()) return
+      setError(err instanceof Error ? err.message : 'Room unavailable')
+    } finally {
+      if (isCurrent() && isRoomLoadCurrent()) setMemoryRetrying(false)
     }
-    setMemoryRetrying(false)
-  }, [handleMutationResult, loadRoom, projectId])
+  }, [beginMemoryRetryRequest, beginRoomLoadRequest, handleMutationResult, loadRoom, projectId])
 
   // Connect: load history, open the stream, announce the session.
   useEffect(() => {
     let cancelled = false
+    const isCurrent = beginRoomLoadRequest()
     setMessages([])
     setProposals([])
     setStreaming(new Map())
+    setInputText('')
     setError(null)
+    setMemoryDown(false)
+    setMemoryRetrying(false)
+    setStreamDown(false)
 
     loadRoom()
+      .then(([msgs, props]) => {
+        if (!cancelled && isCurrent()) {
+          setMessages(msgs)
+          setProposals(props)
+        }
+      })
       .catch((err) => {
-        if (!cancelled) {
+        if (!cancelled && isCurrent()) {
           if (isRoomMemoryUnavailable(err)) setMemoryDown(true)
           else setError(err instanceof Error ? err.message : 'Room unavailable')
         }
       })
 
-    const close = openRoomStream(projectId, handleStreamEvent, () => setStreamDown(true))
-    void postRoomEvent(projectId, 'session_opened', {}).then(handleMutationResult)
+    const close = openRoomStream(
+      projectId,
+      event => { if (!cancelled) handleStreamEvent(event) },
+      () => { if (!cancelled) setStreamDown(true) },
+    )
+    void postRoomEvent(projectId, 'session_opened', {}).then(result => {
+      if (!cancelled) handleMutationResult(result)
+    })
 
     return () => {
       cancelled = true
       close()
     }
-  }, [projectId, handleStreamEvent, handleMutationResult, loadRoom])
+  }, [beginRoomLoadRequest, effectiveProjectScopeKey, projectId, handleStreamEvent, handleMutationResult, loadRoom])
 
   // Writer-only sync of the story_locks shared block (§10).
   useEffect(() => {
-    void syncStoryLocksBlock(projectId, locksText).then(handleMutationResult)
-  }, [projectId, locksText, handleMutationResult])
+    let cancelled = false
+    void syncStoryLocksBlock(projectId, locksText).then(result => {
+      if (!cancelled) handleMutationResult(result)
+    })
+    return () => { cancelled = true }
+  }, [effectiveProjectScopeKey, projectId, locksText, handleMutationResult])
 
   // Keep the feed pinned to the latest activity.
   useEffect(() => {
@@ -177,11 +211,14 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
   async function handleSend() {
     const text = inputText.trim()
     if (!text) return
+    const isCurrent = beginSendRequest()
     setInputText('')
     try {
       await sendRoomMessage(projectId, text, characterNames, characterBriefs, surfaceAwareness)
+      if (!isCurrent()) return
       // The message itself arrives via the SSE broadcast.
     } catch (err) {
+      if (!isCurrent()) return
       if (isRoomMemoryUnavailable(err)) setMemoryDown(true)
       setError(err instanceof Error ? err.message : 'Send failed')
       setInputText(text)
@@ -192,9 +229,12 @@ export function RoomChannel({ projectId, characterNames, characterBriefs = [], s
     // Server resolve FIRST — the document is never written unless the server
     // accepted the resolution (a stale/double click 409s and changes nothing).
     let resolved: RoomProposal
+    const isCurrent = beginResolveRequest()
     try {
       resolved = await resolveRoomProposal(projectId, proposal.id, status)
+      if (!isCurrent()) return
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Resolve failed')
       return
     }

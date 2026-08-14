@@ -55,6 +55,24 @@ const question = {
   budget: 2,
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function pitchRow(status: 'draft' | 'approved' | 'exported' = 'draft') {
+  return {
+    id: 'packet-1', project_id: 'p1', session_id: 's1', packet: {} as PitchPacket,
+    packet_version: 1, status, direction_revision: 2, created_at: 'now',
+    exported_at: status === 'exported' ? '2026-07-14T01:00:00Z' : null,
+  }
+}
+
 beforeEach(() => {
   Object.values(apiMock).forEach(mock => mock.mockReset())
   apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: null, hasBankedSeed: false, actionLabel: 'Project Meeting', currentQuestion: null, recap: [] })
@@ -94,6 +112,40 @@ describe('useInterviewSession', () => {
     expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'A grieving chef returns home.' })
     expect(result.current.status.currentQuestion?.id).toBe('morgan-locks')
     expect(result.current.memoryReceipt).toEqual(memoryReceipt)
+  })
+
+  it('ignores a stale start completion after scope change while the current scope can start', async () => {
+    const startA = deferred<Awaited<ReturnType<typeof apiMock.startInterview>>>()
+    const receiptA = { revision: 10, status: 'available', citations: [], conflictIds: [] }
+    const receiptB = { revision: 20, status: 'available', citations: [], conflictIds: [] }
+    apiMock.startInterview
+      .mockImplementationOnce(() => startA.promise)
+      .mockResolvedValueOnce({ session: { ...session('interviewing'), id: 'session-b' }, currentQuestion: { ...question, id: 'question-b' }, memoryReceipt: receiptB })
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInterviewSession('p1', scope),
+      { initialProps: { scope: 'browser:A' } },
+    )
+    await waitFor(() => expect(apiMock.fetchInterviewStatus).toHaveBeenCalled())
+
+    let staleStart!: Promise<boolean>
+    act(() => { staleStart = result.current.start({ mode: 'full', seedText: 'A seed' }) })
+    rerender({ scope: 'browser:B' })
+    let currentOk = false
+    await act(async () => {
+      currentOk = await result.current.start({ mode: 'full', seedText: 'B seed' })
+    })
+    expect(currentOk).toBe(true)
+    expect(result.current.status.currentQuestion?.id).toBe('question-b')
+    expect(result.current.memoryReceipt).toEqual(receiptB)
+
+    let staleOk = true
+    await act(async () => {
+      startA.resolve({ session: session('interviewing'), currentQuestion: question, memoryReceipt: receiptA })
+      staleOk = await staleStart
+    })
+    expect(staleOk).toBe(false)
+    expect(result.current.status.currentQuestion?.id).toBe('question-b')
+    expect(result.current.memoryReceipt).toEqual(receiptB)
   })
 
   it('answer adopts the confirmed proposal server-first', async () => {
@@ -311,6 +363,101 @@ describe('useInterviewSession', () => {
     await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'Ace'))
 
     expect(result.current.pitchPacketMemoryReceipt).toEqual(memoryReceipt)
+  })
+
+  it('ignores stale Pitch Packet draft and save completions after project scope changes', async () => {
+    const openA = deferred<Awaited<ReturnType<typeof apiMock.createPitchPacketDraft>>>()
+    const saveB = deferred<Awaited<ReturnType<typeof apiMock.savePitchPacketDraft>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft
+      .mockImplementationOnce(() => openA.promise)
+      .mockResolvedValueOnce({ row: pitchRow(), proposalUnavailable: false })
+    apiMock.savePitchPacketDraft.mockImplementationOnce(() => saveB.promise)
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInterviewSession('p1', scope),
+      { initialProps: { scope: 'browser:A' } },
+    )
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+
+    let staleOpen!: Promise<void>
+    act(() => { staleOpen = result.current.openPitchPacket(createEmptyDocuments(), 'A') })
+    rerender({ scope: 'browser:B' })
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'B'))
+    expect(result.current.pitchPacketRow?.id).toBe('packet-1')
+
+    let staleSave!: Promise<void>
+    act(() => { staleSave = result.current.savePitchPacket({} as PitchPacket) })
+    rerender({ scope: 'browser:C' })
+    await act(async () => {
+      openA.resolve({ row: { ...pitchRow(), id: 'stale-open' }, proposalUnavailable: false, memoryReceipt: { revision: 1, status: 'available', citations: [], conflictIds: [] } })
+      saveB.resolve({ ...pitchRow(), id: 'stale-save' })
+      await Promise.all([staleOpen, staleSave])
+    })
+    expect(result.current.pitchPacketRow).toBeNull()
+    expect(result.current.pitchPacketMemoryReceipt).toBeUndefined()
+    expect(result.current.packetMessage).toBeNull()
+  })
+
+  it('stops Pitch Packet approval between awaits after scope change', async () => {
+    const saved = deferred<Awaited<ReturnType<typeof apiMock.savePitchPacketDraft>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: pitchRow(), proposalUnavailable: false })
+    apiMock.savePitchPacketDraft.mockImplementationOnce(() => saved.promise)
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInterviewSession('p1', scope),
+      { initialProps: { scope: 'browser:A' } },
+    )
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'A'))
+
+    let approval!: Promise<void>
+    act(() => { approval = result.current.approvePitchPacketReview({} as PitchPacket) })
+    rerender({ scope: 'browser:B' })
+    await act(async () => {
+      saved.resolve(pitchRow('approved'))
+      await approval
+    })
+
+    expect(apiMock.approvePitchPacket).not.toHaveBeenCalled()
+    expect(result.current.pitchPacketRow).toBeNull()
+    expect(result.current.packetMessage).toBeNull()
+  })
+
+  it('does not download or surface stale export and re-download completions', async () => {
+    const exportedA = deferred<Awaited<ReturnType<typeof apiMock.exportPitchPacket>>>()
+    const fetchedC = deferred<Awaited<ReturnType<typeof apiMock.fetchExportedPitchPacket>>>()
+    apiMock.fetchInterviewStatus.mockResolvedValue({ activeSession: session('banked'), hasBankedSeed: true, actionLabel: 'New interview round', currentQuestion: null, recap: [] })
+    apiMock.createPitchPacketDraft.mockResolvedValue({ row: pitchRow('approved'), proposalUnavailable: false })
+    apiMock.exportPitchPacket.mockImplementationOnce(() => exportedA.promise)
+    apiMock.fetchExportedPitchPacket.mockImplementationOnce(() => fetchedC.promise)
+    const { result, rerender } = renderHook(
+      ({ scope }) => useInterviewSession('p1', scope),
+      { initialProps: { scope: 'browser:A' } },
+    )
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'A'))
+    let staleExport!: Promise<void>
+    act(() => { staleExport = result.current.exportPitchPacketFiles() })
+    rerender({ scope: 'browser:B' })
+    await act(async () => {
+      exportedA.resolve(pitchRow('exported'))
+      await staleExport
+    })
+    expect(downloadMock).not.toHaveBeenCalled()
+    expect(result.current.packetMessage).toBeNull()
+
+    await waitFor(() => expect(result.current.status.activeSession?.state).toBe('banked'))
+    await act(async () => result.current.openPitchPacket(createEmptyDocuments(), 'B'))
+    let staleRedownload!: Promise<void>
+    act(() => { staleRedownload = result.current.redownloadPitchPacket() })
+    rerender({ scope: 'browser:C' })
+    await act(async () => {
+      fetchedC.resolve(pitchRow('exported'))
+      await staleRedownload
+    })
+    expect(downloadMock).not.toHaveBeenCalled()
+    expect(result.current.packetDownloadError).toBeNull()
   })
 
   it('keeps exported state after a download failure and re-downloads the persisted packet', async () => {

@@ -117,3 +117,30 @@ The work proceeded in isolated behavior cycles:
 - Request guards cover success, catch, callback/persistence, and finally branches. Cleanup makes stale closures false before an unmounted completion can update UI or persistence.
 - The scanner walks UTF-16 safely by code point, advances monotonically, and bounds only canonical-label allocation; overlong citation-shaped spans remain visible to cap protection without ReDoS behavior.
 - Safe source URI decoding is classification-only. Allowlisted values retain their original representation, encoded safe schemes stop once structurally recognized, and unsafe hashes never expose decoded or original path material.
+
+## Review round 4 fixes
+
+- RED proved RoomChannel history/proposal success, send failure recovery, and proposal adoption could mutate the next project after a UI-scope switch. GREEN threads the stable App project-scope key into the room and Project Meeting, resets room state on scope changes, and guards every post-await success/error/finally branch plus stream/event callbacks against scope, generation, and unmount changes. The initial room-load cancellation flag now guards success as well as failure.
+- RED proved Project Meeting start and every Pitch Packet mutation could complete into a newer project. GREEN gives status/start/Pitch work independent monotonic request guards, checks both awaits in approval, prevents stale export/re-download browser downloads, and preserves current-scope behavior and receipts.
+- RED proved deleting an invented wrapped citation could join words, combining marks, or a high/low surrogate pair. GREEN reconstructs finalized text by code unit and inserts a visible space only when removal would join identifier/surrogate token edges; existing whitespace and punctuation remain unchanged and no zero-width channel is introduced.
+- RED proved malformed citation-like runs such as `[M-ABCD-ZZZ…` could still be sliced at the digest cap, including immediately before a closing wrapper. GREEN recognizes standalone/wrapped valid heads with malformed, nonhex, unclosed, or overlong runs, includes a present wrapper close in the protected span, and retains Unicode-aware embedded-identifier boundaries with linear scanning.
+- RED proved raw HTTPS values with interior whitespace, malformed percent syntax, or invalid/incomplete UTF-8 escapes were accepted by URL normalization. GREEN validates the raw representation before allowlisting while preserving valid `%25`, dot paths, normal HTTPS/workflow URIs, and the existing deep-decoding redaction for encoded local/private locators.
+
+### Review round 4 RED / GREEN evidence
+
+- Agent-context RED: **7 expected failures** for delimiter, malformed cap, and raw HTTPS probes; self-review added one expected failure at the malformed closing-wrapper boundary. GREEN: **69 agent-context tests passed** and **75 agent-context/digest tests passed** after the closing-wrapper refinement.
+- Room/UI RED: **2 expected failures** proved stale room history did not trigger a current load and stale send/resolve mutated the next scope. GREEN: the room component suite passed.
+- Interview/Pitch RED: **4 expected failures** proved stale start, draft/save, between-await approval, and export/re-download mutation. GREEN: combined room and interview suites passed **29 tests**.
+- Expanded related route/room/UI/retrieval gate: **54 files, 505 tests passed**.
+- TypeScript validation (`npm run check`): **passed**.
+- Whitespace validation (`git diff --check`): **passed**.
+- Full suite (`npm test -- --run`): **210 files passed, 2 skipped; 2,214 tests passed, 10 skipped**.
+- Production build (`npm run build`): **passed** with the existing informational large-chunk advisory.
+
+### Review round 4 self-review
+
+- Scope identity remains distinct from optional memory identity: the App supplies the existing stable browser/folder project instance key, while direct legacy callers fall back to the memory project ID. Generation refs update during render, so stale closures are invalid before effects run; cleanup invalidates them on unmount.
+- Pitch Packet uses one generation across all mutually exclusive packet mutations, so a newer packet action invalidates an older one. Approval checks after save and approval separately; export and re-download check before any state or download side effect.
+- Citation deletion never normalizes ordinary output. It inspects only the two preserved edges around a removed complete citation and preserves the original surrounding UTF-16 code units.
+- Malformed citation cap scanning requires a standalone or explicitly wrapped normalized `M-` plus four hex characters and a second dash; prose and identifier-embedded `M-hyphen` text therefore remains outside the protected candidate contract.
+- HTTPS percent validation is classification-only and returns safe source URIs byte-for-byte. Unsafe source hashes continue to derive from the original value without exposing it in prompts, receipts, or errors.

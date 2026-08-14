@@ -124,6 +124,22 @@ describe('project memory agent context boundary', () => {
     })
   })
 
+  it('uses a visible delimiter when removing an invented citation would join identifier or surrogate code units', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const invented = '[M-FFFF-0066006F006F]'
+
+    expect(finalizeAgentMemoryText(`left${invented}right`, prepared).text).toBe('left right')
+    expect(finalizeAgentMemoryText(`a${invented}\u0301`, prepared).text).toBe('a \u0301')
+    expect(finalizeAgentMemoryText(`\uD83D${invented}\uDE00`, prepared).text).toBe('\uD83D \uDE00')
+    expect(finalizeAgentMemoryText(`left ${invented}right`, prepared).text).toBe('left right')
+    expect(finalizeAgentMemoryText(`left${invented} right`, prepared).text).toBe('left right')
+    expect(finalizeAgentMemoryText(`left,${invented}.right`, prepared).text).toBe('left,.right')
+  })
+
   it('normalizes supplied citations across brackets, whitespace, parentheses, bare text, and case', async () => {
     const prepared = await buildAgentMemoryContext(
       { context: vi.fn().mockResolvedValue(memoryContext()) },
@@ -246,6 +262,19 @@ describe('project memory agent context boundary', () => {
     })
   })
 
+  it('caps before malformed and unclosed citation-like runs but leaves embedded M-hyphen prose alone', () => {
+    const prefix = 'x'.repeat(32)
+    const malformedWrapped = `${prefix} [M-ABCD-ZZZ${'Q'.repeat(3000)}`
+    const malformedClosed = `${prefix} [M-ABCD-ZZZ] trailing text`
+    const malformedBare = `${prefix} M-ABCD-12G${'R'.repeat(3000)}`
+    const ordinaryEmbedded = `${prefix} TEAM-ABCD-ZZZ${'S'.repeat(3000)}`
+
+    expect(capAgentMemoryText(malformedWrapped, 80)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(malformedClosed, malformedClosed.indexOf(']'))).toBe(`${prefix} `)
+    expect(capAgentMemoryText(malformedBare, 80)).toBe(`${prefix} `)
+    expect(capAgentMemoryText(ordinaryEmbedded, 80)).toBe(ordinaryEmbedded.slice(0, 80))
+  })
+
   it('bounds citation scanning on long hostile candidates without changing non-citation content', async () => {
     const prepared = await buildAgentMemoryContext(
       { context: vi.fn().mockResolvedValue(memoryContext()) },
@@ -324,6 +353,29 @@ describe('project memory agent context boundary', () => {
 
     expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
       .toBe(safeSourceUri)
+  })
+
+  it.each([
+    'https://example.test/a b',
+    'https://example.test/a\tb',
+    'https://example.test/%',
+    'https://example.test/%A',
+    'https://example.test/%E0%A4%A',
+    'https://example.test/%FF',
+  ])('redacts malformed raw HTTPS source URI %s before URL allowlisting', async unsafeSourceUri => {
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: unsafeSourceUri },
+    }
+    context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
+
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+
+    expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
+      .toMatch(/^redacted-source:[0-9a-f]{24}$/)
   })
 
   it('classifies an encoded safe scheme structurally without recursively decoding its percent data', async () => {

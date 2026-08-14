@@ -16,6 +16,7 @@ import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 export interface ProjectMeetingPageProps {
   projectId: string
+  projectScopeKey?: string
   projectTitle?: string
   documents: ProjectDocuments
   onExit: () => void
@@ -26,8 +27,8 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function ProjectMeetingPage({ projectId, projectTitle, documents, onExit }: ProjectMeetingPageProps) {
-  const interview = useInterviewSession(projectId)
+export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, documents, onExit }: ProjectMeetingPageProps) {
+  const interview = useInterviewSession(projectId, projectScopeKey)
   const [seedDraft, setSeedDraft] = useState('')
   const [answerDraft, setAnswerDraft] = useState('')
   const [origin, setOrigin] = useState<InterviewAnswerOrigin>('seed')

@@ -903,6 +903,7 @@ export default function App() {
       return (
         <ProjectMeetingPage
           projectId={project.activeProjectId}
+          projectScopeKey={activeAgentProjectKey}
           projectTitle={getDisplayProjectTitle(project.state.meta.title)}
           documents={project.state.documents}
           onExit={shellState.closeRitual}
@@ -976,6 +977,7 @@ export default function App() {
               project.activeProjectId
                 ? {
                     projectId: project.activeProjectId,
+                    projectScopeKey: activeAgentProjectKey,
                     characterNames: project.state.documents.storyBible.content.characters
                       .map((c) => c.name)
                       .filter(Boolean),

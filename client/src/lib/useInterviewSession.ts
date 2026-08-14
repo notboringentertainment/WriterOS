@@ -34,6 +34,7 @@ import {
   type PitchPacketRow,
 } from './roomApi'
 import { downloadTextFile } from './downloadTextFile'
+import { useProjectRequestGeneration } from './useProjectRequestGeneration'
 
 export type InterviewAnswerOrigin = 'seed' | 'extrapolated'
 export type { InterviewMutability }
@@ -85,7 +86,7 @@ export interface InterviewSessionHandle {
   redownloadPitchPacket: () => Promise<void>
 }
 
-export function useInterviewSession(projectId: string): InterviewSessionHandle {
+export function useInterviewSession(projectId: string, projectScopeKey = `memory:${projectId}`): InterviewSessionHandle {
   const [status, setStatus] = useState<InterviewStatus>(emptyInterviewStatus)
   const [bankPreview, setBankPreview] = useState<InterviewBankPreview | null>(null)
   const [finalValues, setFinalValues] = useState<InterviewBankFinalValues | null>(null)
@@ -103,9 +104,12 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   // Monotonic id for preview requests: rapid mutability toggles fire overlapping
   // fetches, and only the latest response may write bankPreview.
   const previewSeqRef = useRef(0)
+  const beginStatusRequest = useProjectRequestGeneration(projectScopeKey)
+  const beginStartRequest = useProjectRequestGeneration(projectScopeKey)
+  const beginPitchPacketRequest = useProjectRequestGeneration(projectScopeKey)
 
   useEffect(() => {
-    let cancelled = false
+    const isCurrent = beginStatusRequest()
     setStatus(emptyInterviewStatus())
     setBankPreview(null)
     setFinalValues(null)
@@ -122,7 +126,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
     setError(null)
     fetchInterviewStatus(projectId)
       .then(next => {
-        if (!cancelled) {
+        if (isCurrent()) {
           const normalized = { ...next, recap: next.recap ?? [] }
           setStatus(normalized)
           setRevisionOperations(defaultKeepOperations(normalized.recap))
@@ -131,7 +135,7 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
           const terminal = normalized.latestTerminalSession
           if (terminal?.state === 'exported') {
             void fetchExportedPitchPacket(projectId, terminal.id)
-              .then(row => { if (!cancelled && row) setPitchPacketRow(row) })
+              .then(row => { if (isCurrent() && row) setPitchPacketRow(row) })
               .catch(() => { /* Export remains persisted; surface stays usable for a new round. */ })
           }
         }
@@ -139,16 +143,15 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       .catch(() => {
         // Project Meeting is an explicit enhancement; callers remain usable if unavailable.
       })
-    return () => {
-      cancelled = true
-    }
-  }, [projectId])
+  }, [beginStatusRequest, projectId, projectScopeKey])
 
   const clearError = useCallback(() => setError(null), [])
 
   const refresh = useCallback(async () => {
+    const isCurrent = beginStatusRequest()
     try {
       const next = await fetchInterviewStatus(projectId)
+      if (!isCurrent()) return
       const normalized = { ...next, recap: next.recap ?? [] }
       setStatus(normalized)
       setRevisionOperations(defaultKeepOperations(normalized.recap))
@@ -157,12 +160,13 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       const terminal = normalized.latestTerminalSession
       if (terminal?.state === 'exported') {
         const row = await fetchExportedPitchPacket(projectId, terminal.id)
+        if (!isCurrent()) return
         if (row) setPitchPacketRow(row)
       }
     } catch {
       // Keep the last known status; the room stays usable without the interview API.
     }
-  }, [projectId])
+  }, [beginStatusRequest, projectId])
 
   const prepareNewRound = useCallback(() => {
     setStatus(prev => ({
@@ -191,8 +195,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   }, [])
 
   const start = useCallback(async (input: { mode: 'quick' | 'full'; seedText: string }) => {
+    const isCurrent = beginStartRequest()
     try {
       const result = await startInterview(projectId, input)
+      if (!isCurrent()) return false
       const recap = result.recap ?? []
       setStatus(prev => ({ ...prev, activeSession: result.session, currentQuestion: result.currentQuestion, recap }))
       setRevisionOperations(defaultKeepOperations(recap))
@@ -201,10 +207,11 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setMemoryReceipt(result.memoryReceipt)
       return true
     } catch (err) {
+      if (!isCurrent()) return false
       setError(err instanceof Error ? err.message : 'Project Meeting start failed')
       return false
     }
-  }, [projectId])
+  }, [beginStartRequest, projectId])
 
   const answer = useCallback(async (input: { answerText: string; origin: InterviewAnswerOrigin; rejectMapping?: boolean }) => {
     const session = status.activeSession
@@ -342,8 +349,10 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
   const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string) => {
     const session = status.activeSession ?? status.latestTerminalSession
     if (!session) return
+    const isCurrent = beginPitchPacketRequest()
     try {
       const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
+      if (!isCurrent()) return
       setPitchPacketMemoryReceipt(result.memoryReceipt)
       setPitchPacketRow(result.memoryReceipt && !result.row.memory_receipt
         ? { ...result.row, memory_receipt: result.memoryReceipt }
@@ -352,30 +361,40 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
       setPacketMessage(null)
       setPacketDownloadError(null)
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet draft failed')
     }
-  }, [projectId, status.activeSession, status.latestTerminalSession])
+  }, [beginPitchPacketRequest, projectId, status.activeSession, status.latestTerminalSession])
 
   const savePitchPacket = useCallback(async (packet: PitchPacket) => {
     if (!pitchPacketRow) return
+    const isCurrent = beginPitchPacketRequest()
     try {
-      setPitchPacketRow(await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet))
+      const saved = await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet)
+      if (!isCurrent()) return
+      setPitchPacketRow(saved)
       setPacketMessage('Pitch Packet draft saved.')
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet save failed')
     }
-  }, [pitchPacketRow, projectId])
+  }, [beginPitchPacketRequest, pitchPacketRow, projectId])
 
   const approvePitchPacketReview = useCallback(async (packet: PitchPacket) => {
     if (!pitchPacketRow) return
+    const isCurrent = beginPitchPacketRequest()
     try {
       const saved = await savePitchPacketDraft(projectId, pitchPacketRow.session_id, pitchPacketRow.id, packet)
-      setPitchPacketRow(await approvePitchPacket(projectId, saved.session_id, saved.id))
+      if (!isCurrent()) return
+      const approved = await approvePitchPacket(projectId, saved.session_id, saved.id)
+      if (!isCurrent()) return
+      setPitchPacketRow(approved)
       setPacketMessage('Pitch Packet approved. It is ready to export.')
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet approval failed')
     }
-  }, [pitchPacketRow, projectId])
+  }, [beginPitchPacketRequest, pitchPacketRow, projectId])
 
   const downloadPacket = useCallback((row: PitchPacketRow) => {
     const filenames = pitchPacketFileNames(row.packet)
@@ -385,38 +404,46 @@ export function useInterviewSession(projectId: string): InterviewSessionHandle {
 
   const exportPitchPacketFiles = useCallback(async () => {
     if (!pitchPacketRow) return
+    const isCurrent = beginPitchPacketRequest()
     let exported: PitchPacketRow
     try {
       // The persisted export transaction completes before either browser download starts.
       exported = await exportPitchPacket(projectId, pitchPacketRow.session_id, pitchPacketRow.id)
+      if (!isCurrent()) return
       setPitchPacketRow(exported)
       setPacketMessage(null)
       setPacketDownloadError(null)
     } catch (err) {
+      if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Pitch Packet export failed')
       return
     }
     try {
+      if (!isCurrent()) return
       downloadPacket(exported)
       setPacketMessage('Pitch Packet exported. Two files downloaded: Markdown and JSON.')
     } catch (err) {
+      if (!isCurrent()) return
       setPacketDownloadError(err instanceof Error ? err.message : 'The packet was exported, but the files could not be downloaded.')
     }
-  }, [downloadPacket, pitchPacketRow, projectId])
+  }, [beginPitchPacketRequest, downloadPacket, pitchPacketRow, projectId])
 
   const redownloadPitchPacket = useCallback(async () => {
     if (!pitchPacketRow) return
+    const isCurrent = beginPitchPacketRequest()
     try {
       const exported = await fetchExportedPitchPacket(projectId, pitchPacketRow.session_id)
+      if (!isCurrent()) return
       if (!exported) throw new Error('No exported Pitch Packet was found.')
       setPitchPacketRow(exported)
       downloadPacket(exported)
       setPacketDownloadError(null)
       setPacketMessage('Pitch Packet downloaded again: Markdown and JSON.')
     } catch (err) {
+      if (!isCurrent()) return
       setPacketDownloadError(err instanceof Error ? err.message : 'Pitch Packet download failed')
     }
-  }, [downloadPacket, pitchPacketRow, projectId])
+  }, [beginPitchPacketRequest, downloadPacket, pitchPacketRow, projectId])
 
   return {
     status,

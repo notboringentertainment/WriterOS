@@ -131,6 +131,45 @@ function parseCitationCore(text: string, start: number): CitationCore | undefine
   }
 }
 
+function parseCitationHead(text: string, start: number): number | undefined {
+  let character = citationCharacterAt(text, start)
+  if (character?.normalized !== 'M') return undefined
+  let index = character.next
+  character = citationCharacterAt(text, index)
+  if (character?.normalized !== '-') return undefined
+  index = character.next
+  for (let position = 0; position < 4; position += 1) {
+    character = citationCharacterAt(text, index)
+    if (!character || !ASCII_HEX.test(character.normalized)) return undefined
+    index = character.next
+  }
+  character = citationCharacterAt(text, index)
+  return character?.normalized === '-' ? character.next : undefined
+}
+
+function citationLikeRunEnd(text: string, start: number): number | undefined {
+  const headEnd = parseCitationHead(text, start)
+  if (headEnd === undefined) return undefined
+  let index = headEnd
+  let character = citationCharacterAt(text, index)
+  if (!character || !blocksCitationBoundary(character)) return undefined
+  while (character && blocksCitationBoundary(character)) {
+    index = character.next
+    character = citationCharacterAt(text, index)
+  }
+  return index
+}
+
+function includeCitationWrapperClose(text: string, runEnd: number, expectedClose: string): number {
+  let closeStart = runEnd
+  let character = citationCharacterAt(text, closeStart)
+  while (isCitationWhitespace(character)) {
+    closeStart = character!.next
+    character = citationCharacterAt(text, closeStart)
+  }
+  return character?.normalized === expectedClose ? character.next : runEnd
+}
+
 function scanCitationSpans(text: string): CitationSpan[] {
   const spans: CitationSpan[] = []
   let index = 0
@@ -152,17 +191,23 @@ function scanCitationSpans(text: string): CitationSpan[] {
           closeStart = next!.next
           next = citationCharacterAt(text, closeStart)
         }
-        const leftIsClear = !blocksCitationBoundary(citationCharacterBefore(text, index))
         if (next?.normalized === expectedClose) {
           const end = next.next
-          if (leftIsClear && !blocksCitationBoundary(citationCharacterAt(text, end))) {
-            spans.push({ start: index, end, complete: true, canonicalId: core.canonicalId })
-          }
+          spans.push({ start: index, end, complete: true, canonicalId: core.canonicalId })
           index = end
           continue
         }
-        if (leftIsClear) spans.push({ start: index, end: core.end, complete: false })
-        index = core.end
+        const runEnd = citationLikeRunEnd(text, coreStart) ?? core.end
+        const citationLikeEnd = includeCitationWrapperClose(text, runEnd, expectedClose)
+        spans.push({ start: index, end: citationLikeEnd, complete: false })
+        index = citationLikeEnd
+        continue
+      }
+      const citationLikeEnd = citationLikeRunEnd(text, coreStart)
+      if (citationLikeEnd !== undefined) {
+        const spanEnd = includeCitationWrapperClose(text, citationLikeEnd, expectedClose)
+        spans.push({ start: index, end: spanEnd, complete: false })
+        index = spanEnd
         continue
       }
     }
@@ -170,13 +215,30 @@ function scanCitationSpans(text: string): CitationSpan[] {
     if (character.normalized === 'M') {
       const core = parseCitationCore(text, index)
       if (core) {
+        const leftIsClear = !blocksCitationBoundary(citationCharacterBefore(text, index))
         if (
-          !blocksCitationBoundary(citationCharacterBefore(text, index))
+          leftIsClear
           && !blocksCitationBoundary(citationCharacterAt(text, core.end))
         ) {
           spans.push({ start: index, end: core.end, complete: true, canonicalId: core.canonicalId })
+        } else if (leftIsClear) {
+          const citationLikeEnd = citationLikeRunEnd(text, index)
+          if (citationLikeEnd !== undefined) {
+            spans.push({ start: index, end: citationLikeEnd, complete: false })
+            index = citationLikeEnd
+            continue
+          }
         }
         index = core.end
+        continue
+      }
+      const citationLikeEnd = citationLikeRunEnd(text, index)
+      if (
+        citationLikeEnd !== undefined
+        && !blocksCitationBoundary(citationCharacterBefore(text, index))
+      ) {
+        spans.push({ start: index, end: citationLikeEnd, complete: false })
+        index = citationLikeEnd
         continue
       }
     }
@@ -207,8 +269,19 @@ function containsUnsafeSourceUriCharacters(value: string): boolean {
   return /[\u0000-\u001F\u007F]/u.test(value) || value.includes('\\')
 }
 
+function hasInvalidPercentEncoding(value: string): boolean {
+  if (/%(?![0-9A-F]{2})/iu.test(value)) return true
+  if (!value.includes('%')) return false
+  try {
+    decodeURIComponent(value)
+    return false
+  } catch {
+    return true
+  }
+}
+
 function isAllowlistedAbsoluteSourceUri(value: string): boolean {
-  if (containsUnsafeSourceUriCharacters(value)) return false
+  if (/\s/u.test(value) || containsUnsafeSourceUriCharacters(value) || hasInvalidPercentEncoding(value)) return false
   if (SAFE_WORKFLOW_URI.test(value)) return true
   try {
     const parsed = new URL(value)
@@ -233,6 +306,9 @@ function unsafeSourceUriView(normalized: string): boolean {
 function sourceUriIsUnsafe(sourceUri: string): boolean {
   if (sourceUri !== sourceUri.trim()) return true
   let classification = sourceUri.normalize('NFKC')
+  if (/^(?:https|writeros|writeros-room|story-wayfinder|pitchstudio|buzz):/iu.test(classification)) {
+    return !isAllowlistedAbsoluteSourceUri(classification)
+  }
   const maxDecodeRounds = Math.max(1, sourceUri.length)
   for (let round = 0; round < maxDecodeRounds; round += 1) {
     if (isAllowlistedAbsoluteSourceUri(classification)) return false
@@ -366,6 +442,26 @@ export async function buildAgentMemoryContext(
   }
 }
 
+function isIdentifierOrSurrogateEdgeAtEnd(value: string): boolean {
+  const lastUnit = value.charCodeAt(value.length - 1)
+  if (lastUnit >= 0xD800 && lastUnit <= 0xDBFF) return true
+  const character = citationCharacterBefore(value, value.length)
+  return character !== undefined
+    && (IDENTIFIER_BOUNDARY.test(character.raw) || IDENTIFIER_BOUNDARY.test(character.normalized))
+}
+
+function isIdentifierOrSurrogateEdgeAtStart(value: string): boolean {
+  const firstUnit = value.charCodeAt(0)
+  if (firstUnit >= 0xDC00 && firstUnit <= 0xDFFF) return true
+  const character = citationCharacterAt(value, 0)
+  return character !== undefined
+    && (IDENTIFIER_BOUNDARY.test(character.raw) || IDENTIFIER_BOUNDARY.test(character.normalized))
+}
+
+function removalNeedsDelimiter(left: string, right: string): boolean {
+  return isIdentifierOrSurrogateEdgeAtEnd(left) && isIdentifierOrSurrogateEdgeAtStart(right)
+}
+
 export function finalizeAgentMemoryText(
   text: string,
   context: AgentMemoryContext,
@@ -377,16 +473,27 @@ export function finalizeAgentMemoryText(
   const citedIds = new Set<string>()
   let cursor = 0
   let filtered = ''
+  let removedCitation = false
+  const appendKept = (value: string) => {
+    if (value.length === 0) return
+    if (removedCitation && filtered.length > 0 && value.length > 0 && removalNeedsDelimiter(filtered, value)) {
+      filtered += ' '
+    }
+    filtered += value
+    removedCitation = false
+  }
   for (const span of scanCitationSpans(text)) {
     if (!span.complete) continue
-    filtered += text.slice(cursor, span.start)
+    appendKept(text.slice(cursor, span.start))
     if (span.canonicalId && context.allowedCitations.has(span.canonicalId)) {
       citedIds.add(span.canonicalId)
-      filtered += span.canonicalId
+      appendKept(span.canonicalId)
+    } else {
+      removedCitation = true
     }
     cursor = span.end
   }
-  filtered += text.slice(cursor)
+  appendKept(text.slice(cursor))
   const citations = [...citedIds]
     .sort((left, right) => left.localeCompare(right))
     .map(id => {

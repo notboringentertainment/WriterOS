@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
@@ -51,6 +51,16 @@ const pendingInterviewProposal: RoomProposal = {
   origin: 'seed',
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(() => {
   Object.values(apiMock).forEach((mock) => mock.mockReset())
   apiMock.fetchRoomMessages.mockResolvedValue([])
@@ -63,20 +73,78 @@ beforeEach(() => {
   apiMock.isRoomMemoryUnavailable.mockReturnValue(false)
 })
 
-function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
-  return render(
+function channel(projectScopeKey: string, onAdoptProposal: (p: RoomProposal) => boolean) {
+  return (
     <RoomChannel
       projectId="p1"
+      projectScopeKey={projectScopeKey}
       characterNames={['Rosa']}
       characterBriefs={[{ id: 'r1', name: 'Rosa', want: 'win the contest' }]}
       surfaceAwareness={{ kind: 'none' }}
       locksText=""
       onAdoptProposal={onAdoptProposal}
-    />,
+    />
+  )
+}
+
+function renderChannel(onAdoptProposal: (p: RoomProposal) => boolean) {
+  return render(
+    channel('folder:p1', onAdoptProposal),
   )
 }
 
 describe('RoomChannel proposal adoption ordering', () => {
+  it('ignores stale history and proposal success after the stable project UI scope changes', async () => {
+    const messagesA = deferred<Awaited<ReturnType<typeof apiMock.fetchRoomMessages>>>()
+    const proposalsA = deferred<Awaited<ReturnType<typeof apiMock.fetchRoomProposals>>>()
+    apiMock.fetchRoomMessages
+      .mockImplementationOnce(() => messagesA.promise)
+      .mockResolvedValueOnce([{ id: 'message-b', project_id: 'p1', author: 'casey', kind: 'say', content: 'Current B history.', reply_to: null, created_at: 'now' }])
+    apiMock.fetchRoomProposals
+      .mockImplementationOnce(() => proposalsA.promise)
+      .mockResolvedValueOnce([])
+    const { rerender } = render(channel('browser:A', vi.fn()))
+    await waitFor(() => expect(apiMock.fetchRoomMessages).toHaveBeenCalledTimes(1))
+
+    rerender(channel('browser:B', vi.fn()))
+    expect(await screen.findByText('Current B history.')).toBeInTheDocument()
+
+    await act(async () => {
+      messagesA.resolve([{ id: 'message-a', project_id: 'p1', author: 'casey', kind: 'say', content: 'Stale A history.', reply_to: null, created_at: 'now' }])
+      proposalsA.resolve([pendingProposal])
+      await Promise.all([messagesA.promise, proposalsA.promise])
+    })
+    expect(screen.queryByText('Stale A history.')).not.toBeInTheDocument()
+    expect(screen.queryByText('win back the restaurant')).not.toBeInTheDocument()
+    expect(screen.getByText('Current B history.')).toBeInTheDocument()
+  })
+
+  it('does not restore a stale send error or apply a stale resolved proposal after a scope switch', async () => {
+    const sendA = deferred<void>()
+    const resolveA = deferred<RoomProposal>()
+    apiMock.sendRoomMessage.mockImplementationOnce(() => sendA.promise)
+    apiMock.resolveRoomProposal.mockImplementationOnce(() => resolveA.promise)
+    const onAdoptA = vi.fn().mockReturnValue(true)
+    const onAdoptB = vi.fn().mockReturnValue(true)
+    const { rerender } = render(channel('browser:A', onAdoptA))
+    const input = screen.getByPlaceholderText('Say something to the room…')
+    fireEvent.change(input, { target: { value: 'stale A draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message to the room' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Adopt' }))
+
+    rerender(channel('browser:B', onAdoptB))
+    await act(async () => {
+      sendA.reject(new Error('stale A send failed'))
+      resolveA.resolve({ ...pendingProposal, status: 'adopted', resolved_at: 'now' })
+      await Promise.allSettled([sendA.promise, resolveA.promise])
+    })
+
+    expect(screen.getByPlaceholderText('Say something to the room…')).toHaveValue('')
+    expect(screen.queryByText('stale A send failed')).not.toBeInTheDocument()
+    expect(onAdoptA).not.toHaveBeenCalled()
+    expect(onAdoptB).not.toHaveBeenCalled()
+  })
+
   it('shows unified memory status on room messages and proposal cards', async () => {
     apiMock.fetchRoomMessages.mockResolvedValueOnce([{
       id: 'message-memory', project_id: 'p1', author: 'casey', kind: 'say', content: 'Memory-aware note.',
