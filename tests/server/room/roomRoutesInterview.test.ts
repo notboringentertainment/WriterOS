@@ -34,6 +34,7 @@ vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
 }))
 
 import { registerRoomRoutes } from '../../../server/room/roomRoutes'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 let server: http.Server
 let port: number
@@ -106,6 +107,14 @@ describe('Project Meeting routes', () => {
 
     expect(res.status).toBe(409)
     expect(res.json).toMatchObject({ message: expect.stringContaining('already in progress') })
+  })
+
+  it('returns a safe 503 when unified project memory needs repair', async () => {
+    runtimeMock.startInterview.mockRejectedValueOnce(new RoomMemoryError('/private/ledger.jsonl corrupt'))
+    const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: 'harbor seed' })
+    expect(res.status).toBe(503)
+    expect(res.json).toEqual({ message: 'Project memory is unavailable and needs repair.' })
+    expect(JSON.stringify(res.json)).not.toContain('/private')
   })
 
   it('rejects blank start seed before creating anything', async () => {

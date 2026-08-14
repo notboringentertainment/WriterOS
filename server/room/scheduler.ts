@@ -11,6 +11,7 @@ import * as store from './store';
 import { isRoomConfigured } from './supabaseClient';
 import { decideSpeakers } from './wakeRules';
 import { RoomMemoryError } from './memoryContract';
+import type { ProjectMemoryProvider } from '../projectMemory/agentContext';
 
 const TICK_MS = 5_000;
 const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -33,7 +34,7 @@ async function maybeEmitIdleTicks(): Promise<void> {
   }
 }
 
-async function processEvents(): Promise<void> {
+async function processEvents(memoryProvider?: ProjectMemoryProvider | null): Promise<void> {
   const events = await store.claimQueuedEvents();
   for (const event of events) {
     const speakers = decideSpeakers(event);
@@ -46,9 +47,9 @@ async function processEvents(): Promise<void> {
       if (completed.has(speakerKey)) continue;
       try {
         if (speaker.mode === 'digest') {
-          await runCaseyDigest({ projectId: event.project_id, event });
+          await runCaseyDigest({ projectId: event.project_id, event, memoryProvider });
         } else {
-          await runRoomTurn({ projectId: event.project_id, agentId: speaker.agentId, event });
+          await runRoomTurn({ projectId: event.project_id, agentId: speaker.agentId, event, memoryProvider });
         }
         completed.add(speakerKey);
       } catch (error) {
@@ -80,12 +81,12 @@ async function processEvents(): Promise<void> {
 
 export const __processEventsForTests = processEvents;
 
-async function tick(): Promise<void> {
+async function tick(memoryProvider?: ProjectMemoryProvider | null): Promise<void> {
   if (ticking) return; // never overlap turns; slow turns just delay the next tick
   ticking = true;
   try {
     await maybeEmitIdleTicks();
-    await processEvents();
+    await processEvents(memoryProvider);
   } catch (error) {
     console.error('[room.scheduler] tick failed:', error);
   } finally {
@@ -93,13 +94,13 @@ async function tick(): Promise<void> {
   }
 }
 
-export function startRoomScheduler(): boolean {
+export function startRoomScheduler(memoryProvider?: ProjectMemoryProvider | null): boolean {
   if (timer) return true;
   if (!isRoomConfigured() || !isAnthropicConfigured()) {
     console.log('[room] scheduler not started (needs SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY)');
     return false;
   }
-  timer = setInterval(() => void tick(), TICK_MS);
+  timer = setInterval(() => void tick(memoryProvider), TICK_MS);
   timer.unref?.();
   console.log('[room] scheduler started (5s tick)');
   return true;

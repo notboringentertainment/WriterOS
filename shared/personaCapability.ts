@@ -67,6 +67,7 @@ export interface CapabilityReceipt {
   }
   missingSurfaces: CapabilityMissingSurface[]
   sources: CapabilityReceiptSource[]
+  memory?: import('./schema').MemoryReceipt
   failureReason?: PersonaCapabilityFailureReason
 }
 
@@ -162,6 +163,7 @@ export interface PersonaCapabilityProjectContext {
 }
 
 export interface PersonaCapabilityRequest {
+  projectId?: string
   personaId: PersonaCapabilityPersonaId
   taskKind: PersonaCapabilityId
   message: string
@@ -318,6 +320,7 @@ export const personaCapabilityProjectContextSchema = z.object({
 })
 
 const personaCapabilityRequestBaseSchema = z.object({
+  projectId: z.string().min(1).optional(),
   personaId: z.string(),
   taskKind: z.enum(['research_world_context']),
   message: z.string().trim().min(1),
@@ -361,6 +364,16 @@ export const capabilityReceiptSchema: z.ZodType<CapabilityReceipt> = z.object({
     ).optional(),
     citedInFinal: z.boolean(),
   })),
+  memory: z.object({
+    revision: z.number().int().nonnegative(),
+    status: z.enum(['available', 'disabled']),
+    citations: z.array(z.object({
+      id: z.string(),
+      workflow: z.enum(['writeros', 'writeros-room', 'story-wayfinder', 'pitchstudio', 'buzz']),
+      sourceUri: z.string(),
+    })),
+    conflictIds: z.array(z.string()),
+  }).optional(),
   failureReason: z.enum(['timeout', 'upstream_error', 'invalid_upstream', 'aborted']).optional(),
 })
 

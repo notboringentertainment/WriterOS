@@ -15,8 +15,6 @@ import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
-import * as roomStore from "./room/store";
-import { isRoomConfigured } from "./room/supabaseClient";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
@@ -28,11 +26,21 @@ import {
   registerProjectMemorySecurityBoundary,
 } from "./projectMemory/routes";
 import { WRITEROS_JSON_BODY_LIMIT } from "./httpLimits";
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  createProjectMemoryProvider,
+  finalizeAgentMemoryText,
+  finalizeAgentMemoryValue,
+  type AgentMemoryContext,
+  type ProjectMemoryProvider,
+} from "./projectMemory/agentContext";
 
 const openaiService = new OpenAIService();
 
 // Request schemas
 const chatMessageSchema = z.object({
+  projectId: z.string().min(1).optional(),
   personaId: z.string(),
   message: z.string(),
   userProfile: z.object({
@@ -79,6 +87,7 @@ const chatMessageSchema = z.object({
 });
 
 const synopsisAssistSchema = z.object({
+  projectId: z.string().min(1).optional(),
   userInput: z.string(),
   currentLogline: z.string(),
   currentSynopsis: z.string(),
@@ -402,6 +411,7 @@ const wpChatSchema = z.object({
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
+  projectId: z.string().min(1).optional(),
   message: z.string(),
   projectContext: projectContextSchema,
   voiceProfile: voiceProfileDocumentSchema.optional(),
@@ -713,7 +723,8 @@ function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
 export function buildOpenSwarmWritingPartnerPrompt(
   message: string,
   projectContext: ProjectContextForOpenSwarm,
-  voiceProfile?: VoiceProfileDocument
+  voiceProfile?: VoiceProfileDocument,
+  projectMemoryPrompt = '',
 ): string {
   const synopsisContextLines = buildSynopsisContextLines(projectContext)
     .map(line => `- ${line}`);
@@ -860,7 +871,7 @@ Story Bible:
 ${bulletLines(storyBibleLines)}
 
 Script context:
-${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
+${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}${projectMemoryPrompt ? `\n\n${projectMemoryPrompt}` : ''}`;
 }
 
 // Build the HTTP body for a PersonaResponse, gating admin/debug trace metadata.
@@ -868,10 +879,15 @@ ${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
 // EVERY persona-chat adapter (/api/chat, /api/wp-chat) must route through this so
 // debug never leaks from any surface by default. The default contract stays
 // { message, suggestions }.
-function personaResponseBody(response: PersonaResponse) {
-  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug'] } = {
+function personaResponseBody(response: PersonaResponse, memory: AgentMemoryContext) {
+  const finalized = finalizeAgentMemoryValue({
     message: response.message,
     suggestions: response.suggestions,
+  }, memory);
+  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug']; memoryReceipt: typeof finalized.receipt } = {
+    message: finalized.value.message,
+    suggestions: finalized.value.suggestions,
+    memoryReceipt: finalized.receipt,
   };
   if (isDebugApiEnabled() && response.debug) {
     body.debug = response.debug;
@@ -879,7 +895,11 @@ function personaResponseBody(response: PersonaResponse) {
   return body;
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export interface RegisterRoutesOptions {
+  projectMemoryProvider?: ProjectMemoryProvider | null;
+}
+
+export async function registerRoutes(app: Express, options: RegisterRoutesOptions = {}): Promise<Server> {
   let projectLibraryConfig;
   try {
     projectLibraryConfig = await loadProjectLibraryConfig(process.env);
@@ -898,12 +918,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const projectLibraryStore = projectLibraryConfig.enabled && projectLibraryConfig.rootPath
     ? await createProjectLibraryStore(projectLibraryConfig.rootPath)
     : null;
+  const agentMemoryProvider = options.projectMemoryProvider !== undefined
+    ? options.projectMemoryProvider
+    : projectLibraryStore
+      ? createProjectMemoryProvider({ projectLibraryStore })
+      : null;
   registerProjectLibraryRoutes(app, projectLibraryConfig, projectLibraryStore);
   registerProjectMemoryRoutes(app, projectLibraryConfig, projectLibraryStore);
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
-  registerRoomRoutes(app);
+  registerRoomRoutes(app, agentMemoryProvider);
 
   // Chat with persona
   app.post("/api/chat", async (req, res) => {
@@ -915,16 +940,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid persona ID" });
       }
 
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'chat',
+        personaId: data.personaId,
+      });
       const response = await openaiService.generatePersonaResponse(
         persona,
         data.message,
         data.userProfile,
         data.storyMemory,
-        data.conversationHistory
+        data.conversationHistory,
+        undefined,
+        memory,
       );
 
-      res.json(personaResponseBody(response));
+      res.json(personaResponseBody(response, memory));
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({
+          error: 'project-memory-unavailable',
+          message: error.message,
+        });
+      }
       console.error("Chat error:", error);
       res.status(500).json({
         error: "Failed to process chat message",
@@ -937,17 +975,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/synopsis-assist", async (req, res) => {
     try {
       const data = synopsisAssistSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.userInput,
+        surface: 'synopsis',
+        personaId: 'sam',
+      });
       
       const response = await openaiService.generateSynopsisAssistance(
         data.userInput,
         data.currentLogline,
         data.currentSynopsis,
         data.projectDetails,
-        data.userProfile
+        data.userProfile,
+        memory,
       );
 
-      res.json(response);
+      const finalized = finalizeAgentMemoryValue(response, memory);
+      res.json({ ...finalized.value, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       console.error("Synopsis assist error:", error);
       res.status(500).json({ 
         error: "Failed to process synopsis assistance",
@@ -974,13 +1022,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         immediateNeed: '',
       };
       const scriptContext = data.projectContext.script;
-      const sharedMemory = isRoomConfigured()
-        ? (await roomStore.getSharedBlocksForAgent(data.projectId, data.personaId))
-          .map(block => ({ label: block.label, value: block.value }))
-        : [];
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: data.projectContext.surface?.kind === 'intake'
+          ? data.projectContext.surface.surface
+          : 'writing-partner',
+        personaId: data.personaId,
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
 
       const storyMemory: StoryMemory = {
-        sharedMemory,
+        sharedMemory: [],
         project: {
           title: data.projectContext.title,
           genre: data.projectContext.genre,
@@ -1041,11 +1093,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userProfile,
         storyMemory,
         data.conversationHistory,
-        data.voiceProfile
+        data.voiceProfile,
+        memory,
       );
 
-      res.json(personaResponseBody(response));
+      res.json(personaResponseBody(response, memory));
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       console.error("WP chat error:", error);
       res.status(500).json({
         error: "Failed to process message",
@@ -1058,6 +1114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/openswarm/writing-partner", async (req, res) => {
     try {
       const data = openSwarmWritingPartnerSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'openswarm-writing-partner',
+        personaId: 'writingPartner',
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
       const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
       const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const controller = new AbortController();
@@ -1073,7 +1135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
           body: JSON.stringify({
             recipient_agent: 'Writing Partner',
-            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext, data.voiceProfile),
+            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext, data.voiceProfile, memory.prompt),
             chat_history: [],
           }),
           signal: controller.signal,
@@ -1100,10 +1162,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      res.json({
-        message: typeof payload.response === 'string' ? payload.response : "OpenSwarm Writing Partner did not return a text response.",
-      });
+      const finalized = finalizeAgentMemoryText(
+        typeof payload.response === 'string' ? payload.response : "OpenSwarm Writing Partner did not return a text response.",
+        memory,
+      );
+      res.json({ message: finalized.text, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("OpenSwarm bridge validation error:", error.flatten());
         return res.status(400).json({
@@ -1124,16 +1191,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/persona-capability/run", async (req, res) => {
     try {
       const data = personaCapabilityRequestSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'persona-capability',
+        personaId: data.personaId,
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
       const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
       const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const response = await runPersonaTask(data, {
         baseUrl,
         token,
         synthesizeFinal: input => openaiService.synthesizePersonaCapabilityResponse(input),
+        agentMemory: memory,
       });
 
       res.json(response);
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("Persona capability validation error:", error.flatten());
         return res.status(400).json({
@@ -1153,17 +1230,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/compose-document", async (req, res) => {
     try {
       const data = ComposeDocumentRequestSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: `${data.identity.title} ${data.identity.genre}`,
+        surface: data.surface,
+      });
       const result = data.surface === "treatment"
-        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity })
+        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
         : data.surface === "synopsis"
-          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity })
-          : await composeOutline({ content: data.content, format: data.format, identity: data.identity });
+          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
+          : await composeOutline({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt });
       if (!result.ok) {
         console.error("compose-document soft-fail:", result.reason);
         return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
       }
-      res.json({ composed: result.composed });
+      const finalized = finalizeAgentMemoryValue(result.composed, memory);
+      res.json({ composed: finalized.value, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("compose-document validation error:", error.flatten());
         return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });

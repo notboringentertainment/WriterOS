@@ -8,11 +8,11 @@ function fenceSafe(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe): { system: string; user: string } {
+export function buildComposePrompt(factSheet: FactSheet, recipe: Recipe, projectMemoryPrompt = ''): { system: string; user: string } {
   const system = getPromptContract(recipe.surface).buildSystem(recipe)
 
   const facts = factSheet.fields.map(f => `  - id=${f.id} | ${fenceSafe(f.label)}: ${fenceSafe(f.value)}`).join('\n')
-  const user = `Project format: ${factSheet.format}\n<source_facts>\n${facts}\n</source_facts>`
+  const user = `Project format: ${factSheet.format}\n<source_facts>\n${facts}\n</source_facts>${projectMemoryPrompt ? `\n\n${projectMemoryPrompt}` : ''}`
 
   return { system, user }
 }

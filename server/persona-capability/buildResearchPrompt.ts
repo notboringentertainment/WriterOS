@@ -104,7 +104,7 @@ function formatProjectContext(projectContext: PersonaCapabilityProjectContext): 
   ].join('\n')
 }
 
-export function buildResearchWorldContextPrompt(request: PersonaCapabilityRequest): string {
+export function buildResearchWorldContextPrompt(request: PersonaCapabilityRequest, projectMemoryPrompt = ''): string {
   const voiceProfileLines = formatVoiceProfileSlice(request.voiceProfile)
 
   return `You are running a bounded world-context research task for WriterOS.
@@ -147,5 +147,5 @@ WriterOS project packet:
 ${formatProjectContext(request.projectContext)}
 
 Writer Voice Profile slice supplied by WriterOS:
-${voiceProfileLines.length ? bulletLines(voiceProfileLines) : '- None supplied for this request.'}`
+${voiceProfileLines.length ? bulletLines(voiceProfileLines) : '- None supplied for this request.'}${projectMemoryPrompt ? `\n\n${projectMemoryPrompt}` : ''}`
 }

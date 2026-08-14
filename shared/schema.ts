@@ -1,6 +1,14 @@
 import type { ProjectFormat } from './projectFormat'
 import type { SurfaceAwareness } from './surfaceAwareness'
 import type { WorkspaceLocation } from './workspaceLocation'
+import type { MemoryWorkflow } from './projectMemory'
+
+export interface MemoryReceipt {
+  revision: number
+  status: 'available' | 'disabled'
+  citations: Array<{ id: string; workflow: MemoryWorkflow; sourceUri: string }>
+  conflictIds: string[]
+}
 
 export type EntryState =
   | 'blank_slate'

@@ -53,6 +53,15 @@ const caseyActiveSession: InterviewSessionRow = {
   cursor: { lane: 'casey', question_id: 'casey-load-bearing-character', budgets_spent: {} },
 };
 
+function roomProviderForInterview() {
+  return {
+    context: vi.fn().mockResolvedValue({
+      projectId: 'p1', revision: 31, activeCanon: [], relevant: [], conflicts: [],
+      spoilerConflictIds: [], citationMap: {},
+    }),
+  };
+}
+
 describe('interviewRuntime status direction', () => {
   it('reports the current direction revision even when no round is active', async () => {
     const interviewStore = await import('../../../server/room/interview/store');
@@ -307,6 +316,25 @@ describe('interviewRuntime.length caps', () => {
 });
 
 describe('interviewRuntime.verbatim Meeting record', () => {
+  it('grounds the Morgan audit before persistence and attaches its exact revision receipt', async () => {
+    const interviewStore = await import('../../../server/room/interview/store')
+    const roomStore = await import('../../../server/room/store')
+    vi.spyOn(interviewStore, 'listInterviewSessions').mockResolvedValue([])
+    vi.spyOn(interviewStore, 'createInterviewSession').mockResolvedValue({ ...activeSession, state: 'intake' })
+    vi.spyOn(interviewStore, 'updateInterviewSession').mockResolvedValue(activeSession)
+    const insertMessage = vi.spyOn(roomStore, 'insertMessage').mockResolvedValue(undefined as never)
+    const memoryProvider = roomProviderForInterview()
+
+    const { startInterview } = await import('../../../server/room/interview/runtime')
+    const result = await startInterview({ projectId: 'p1', mode: 'full', seedText: 'A harbor story.', memoryProvider })
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      memoryReceipt: expect.objectContaining({ revision: 31, status: 'available' }),
+    }))
+    expect(result.memoryReceipt).toMatchObject({ revision: 31, status: 'available' })
+  })
+
   it('persists padded seed text byte-identically', async () => {
     const interviewStore = await import('../../../server/room/interview/store');
     const roomStore = await import('../../../server/room/store');

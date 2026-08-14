@@ -31,6 +31,7 @@ export async function insertMessage(input: {
   content: string;
   kind?: RoomMessageKind;
   replyTo?: string;
+  memoryReceipt?: import('../../shared/schema').MemoryReceipt;
 }): Promise<RoomMessageRow> {
   const res = await getRoomDb()
     .from('room_messages')
@@ -40,6 +41,7 @@ export async function insertMessage(input: {
       kind: input.kind ?? 'say',
       content: input.content,
       reply_to: input.replyTo ?? null,
+      memory_receipt: input.memoryReceipt ?? null,
     })
     .select()
     .single();

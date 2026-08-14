@@ -6,6 +6,7 @@ import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult 
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
 import { createModelProvider, type ModelMessage } from "./modelProvider";
 import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps, type RunDebug } from "./morganRuntime";
+import type { AgentMemoryContext } from '../projectMemory/agentContext';
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -741,7 +742,7 @@ Project context snapshot:
 - Logline: ${input.projectContext.logline || input.projectContext.synopsis.logline || 'Not supplied'}
 - Story Bible setting: ${input.projectContext.storyBible.world.setting || 'Not supplied'}
 - Story Bible rules: ${input.projectContext.storyBible.rules || 'Not supplied'}
-- Script context: ${input.projectContext.script?.contextLabel || (input.projectContext.script?.excerpt ? `${input.projectContext.script.excerptWordCount} excerpt words` : 'Not supplied')}
+- Script context: ${input.projectContext.script?.contextLabel || (input.projectContext.script?.excerpt ? `${input.projectContext.script.excerptWordCount} excerpt words` : 'Not supplied')}${input.projectMemoryPrompt ? `\n\n${input.projectMemoryPrompt}` : ''}
 
 Rules for Zoe's final response:
 - Sound like Zoe: practical, immersive, precise, and focused on how the world works on the page.
@@ -791,7 +792,8 @@ export function createPersonaSystemPrompt(
   storyMemory: StoryMemory,
   userMessage: string,
   voiceProfile?: VoiceProfileDocument,
-  responseMode: 'json' | 'tool' = 'json'
+  responseMode: 'json' | 'tool' = 'json',
+  agentMemory?: AgentMemoryContext,
 ): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
     const isMorgan = persona.id === 'writingPartner';
@@ -827,7 +829,7 @@ ${storyMemory.project.logline ? `Logline: ${storyMemory.project.logline}` : ''}
 ${storyMemory.project.synopsis ? `Synopsis: ${storyMemory.project.synopsis}` : ''}
 
 STRUCTURED PROJECT MEMORY:
-${contextSummary}
+${contextSummary}${agentMemory?.prompt ? `\n\n${agentMemory.prompt}` : ''}
 
 WRITER'S STATE: ${userProfile.entryState.replace('_', ' ')}
 IMMEDIATE NEED: ${userProfile.immediateNeed}
@@ -966,14 +968,15 @@ export class OpenAIService {
     userProfile: AssessmentProfile,
     storyMemory: StoryMemory,
     conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
-    voiceProfile?: VoiceProfileDocument
+    voiceProfile?: VoiceProfileDocument,
+    agentMemory?: AgentMemoryContext,
   ): Promise<PersonaResponse> {
     try {
       // Morgan runs on the Claude-native tool-loop runtime, not the single-shot
       // path. She no longer falls into the hollow JSON fallback below.
       if (persona.id === 'writingPartner') {
         const inventory = buildReachInventory(storyMemory);
-        const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool');
+        const toolPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'tool', agentMemory);
         const systemPrompt = `${renderReachContract(inventory)}\n\n${toolPrompt}`;
         // Specialist caller: reuse the existing single-shot persona path. Specialists
         // are never `writingPartner`, so this never re-enters runMorgan (no recursion).
@@ -982,7 +985,7 @@ export class OpenAIService {
           callSpecialist: async ({ specialistId, question }) => {
             // Use the single-shot helper directly so provider failures propagate
             // to askSpecialist.error instead of being converted into fallback prose.
-            const res = await this.generateSingleShotPersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile);
+            const res = await this.generateSingleShotPersonaResponse(PERSONAS[specialistId], question, userProfile, storyMemory, [], voiceProfile, agentMemory);
             return { message: res.message };
           },
         };
@@ -996,7 +999,7 @@ export class OpenAIService {
         return { message: result.message, suggestions: result.suggestions, debug: result.debug };
       }
 
-      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile);
+      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile, agentMemory);
     } catch (error) {
       console.error('AI provider error:', error);
       return {
@@ -1011,9 +1014,10 @@ export class OpenAIService {
     userProfile: AssessmentProfile,
     storyMemory: StoryMemory,
     conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
-    voiceProfile?: VoiceProfileDocument
+    voiceProfile?: VoiceProfileDocument,
+    agentMemory?: AgentMemoryContext,
   ): Promise<PersonaResponse> {
-    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile);
+    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'json', agentMemory);
 
     const messages: ModelMessage[] = [
       ...conversationHistory.slice(-6).map(msg => ({
@@ -1051,7 +1055,8 @@ export class OpenAIService {
     currentLogline: string,
     currentSynopsis: string,
     projectDetails: { title?: string; genre?: string },
-    userProfile: AssessmentProfile
+    userProfile: AssessmentProfile,
+    agentMemory?: AgentMemoryContext,
   ): Promise<{
     feedback: string;
     suggestions: string[];
@@ -1062,7 +1067,7 @@ export class OpenAIService {
 PROJECT: ${projectDetails.title || 'Untitled'} (${projectDetails.genre || 'Genre TBD'})
 CURRENT LOGLINE: ${currentLogline || 'Not written yet'}
 CURRENT SYNOPSIS: ${currentSynopsis || 'Not written yet'}
-USER REQUEST: ${userInput}
+USER REQUEST: ${userInput}${agentMemory?.prompt ? `\n\n${agentMemory.prompt}` : ''}
 
 FEEDBACK STYLE: ${userProfile.feedbackStyle}
 

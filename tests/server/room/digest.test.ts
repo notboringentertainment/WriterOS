@@ -24,6 +24,7 @@ vi.mock('../../../server/ai/morganRuntime/anthropicToolClient', () => ({
 
 import { runCaseyDigest } from '../../../server/room/digest'
 import type { RoomEventRow } from '../../../server/room/types'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 const event: RoomEventRow = {
   id: 'evt-digest',
@@ -41,6 +42,36 @@ beforeEach(() => {
 })
 
 describe('runCaseyDigest', () => {
+  it('grounds scheduled digest work and attaches the exact receipt to a surfaced flag', async () => {
+    const memoryProvider = {
+      context: vi.fn().mockResolvedValue({
+        projectId: 'p1', revision: 29, activeCanon: [], relevant: [], conflicts: [],
+        spoilerConflictIds: [], citationMap: {},
+      }),
+    }
+    storeMock.getPrivateBlocks.mockResolvedValue([])
+    storeMock.listRecentMessages.mockResolvedValue([])
+    sendStreamingMessageMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"flag":"A continuity risk."}' }],
+    })
+    storeMock.insertMessage.mockResolvedValue({ id: 'm1' })
+
+    await runCaseyDigest({ projectId: 'p1', event, memoryProvider })
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(sendStreamingMessageMock.mock.calls[0][0].system).toContain('<project_memory_data>')
+    expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      memoryReceipt: expect.objectContaining({ revision: 29, status: 'available' }),
+    }))
+  })
+
+  it('fails closed before scheduled digest model execution when folder memory is unavailable', async () => {
+    const memoryProvider = { context: vi.fn().mockRejectedValue(new Error('/private/ledger corrupt')) }
+    await expect(runCaseyDigest({ projectId: 'p1', event, memoryProvider }))
+      .rejects.toBeInstanceOf(RoomMemoryError)
+    expect(sendStreamingMessageMock).not.toHaveBeenCalled()
+  })
+
   it('uses the same caps in prompt, truncation, and writeBlock charCap', async () => {
     storeMock.getPrivateBlocks.mockResolvedValueOnce([])
     storeMock.listRecentMessages.mockResolvedValueOnce([])

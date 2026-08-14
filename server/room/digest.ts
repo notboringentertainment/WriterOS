@@ -10,6 +10,12 @@ import { broadcast } from './sseHub';
 import * as store from './store';
 import type { RoomEventRow } from './types';
 import { RoomMemoryError, ensureProjectMemory } from './memoryContract';
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  finalizeAgentMemoryText,
+  type ProjectMemoryProvider,
+} from '../projectMemory/agentContext';
 
 const CASEY_ID = 'casey';
 const LANE_NOTES_CAP = 3400;
@@ -18,11 +24,25 @@ const WRITER_RAPPORT_CAP = 1200;
 export async function runCaseyDigest(input: {
   projectId: string;
   event: RoomEventRow;
+  memoryProvider?: ProjectMemoryProvider | null;
 }): Promise<void> {
   const { projectId, event } = input;
 
   try {
     await ensureProjectMemory(projectId);
+    let projectMemory;
+    try {
+      projectMemory = await buildAgentMemoryContext(input.memoryProvider ?? null, projectId, {
+        message: JSON.stringify(event.payload),
+        surface: 'writers-room-digest',
+        personaId: CASEY_ID,
+      });
+    } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        throw new RoomMemoryError('Project memory is unavailable and needs repair.');
+      }
+      throw error;
+    }
     const [privateBlocks, sharedBlocks, channel] = await Promise.all([
       store.getPrivateBlocks(projectId, CASEY_ID),
       store.getSharedBlocksForAgent(projectId, CASEY_ID),
@@ -46,7 +66,8 @@ export async function runCaseyDigest(input: {
         `Digest bias (what lane_notes keeps): per-character psychology; contradictions between page behavior and stated spine. ` +
         `Keep what will matter next session; drop chatter. lane_notes max ${LANE_NOTES_CAP} chars, writer_rapport max ${WRITER_RAPPORT_CAP} chars. ` +
         'Respond with ONLY a JSON object: {"lane_notes": string, "writer_rapport": string, "flag": string | null}. ' +
-        'Set flag ONLY for a genuine contradiction or risk the writer must see — almost always null.',
+        'Set flag ONLY for a genuine contradiction or risk the writer must see — almost always null.' +
+        (projectMemory.prompt ? `\n\n${projectMemory.prompt}` : ''),
       messages: [
         {
           role: 'user',
@@ -69,7 +90,7 @@ export async function runCaseyDigest(input: {
         projectId,
         agentId: CASEY_ID,
         label: 'lane_notes',
-        value: parsed.lane_notes.slice(0, LANE_NOTES_CAP),
+        value: finalizeAgentMemoryText(parsed.lane_notes, projectMemory).text.slice(0, LANE_NOTES_CAP),
         updatedBy: 'digest',
         charCap: LANE_NOTES_CAP,
       });
@@ -79,18 +100,20 @@ export async function runCaseyDigest(input: {
         projectId,
         agentId: CASEY_ID,
         label: 'writer_rapport',
-        value: parsed.writer_rapport.slice(0, WRITER_RAPPORT_CAP),
+        value: finalizeAgentMemoryText(parsed.writer_rapport, projectMemory).text.slice(0, WRITER_RAPPORT_CAP),
         updatedBy: 'digest',
         charCap: WRITER_RAPPORT_CAP,
       });
     }
 
     if (typeof parsed.flag === 'string' && parsed.flag.trim()) {
+      const finalizedFlag = finalizeAgentMemoryText(parsed.flag.trim(), projectMemory);
       const message = await store.insertMessage({
         projectId,
         author: CASEY_ID,
         kind: 'say',
-        content: `⚑ (from my notes) ${parsed.flag.trim()}`,
+        content: `⚑ (from my notes) ${finalizedFlag.text}`,
+        memoryReceipt: finalizedFlag.receipt,
       });
       broadcast(projectId, { type: 'message', message });
     }

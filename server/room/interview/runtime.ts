@@ -12,6 +12,14 @@ import { getQuestionById, QUESTION_BANK, selectQuestionsForAudit, type QuestionB
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
 import type { InterviewCursor, InterviewMode, InterviewSessionRow, MeetingBankSnapshot, MeetingRecapItem } from './types';
 import type { ProposalOrigin } from '../types';
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  finalizeAgentMemoryText,
+  type MemoryReceipt,
+  type ProjectMemoryProvider,
+} from '../../projectMemory/agentContext';
+import { RoomMemoryError } from '../memoryContract';
 
 export interface InterviewStatus {
   activeSession: InterviewSessionRow | null;
@@ -31,6 +39,7 @@ export interface InterviewStartResult {
   recap: MeetingRecapItem[];
   directionDiff: DirectionDiffEntry[];
   directionRevision: number;
+  memoryReceipt: MemoryReceipt;
 }
 
 export interface InterviewAnswerResult {
@@ -190,10 +199,25 @@ export async function startInterview(input: {
   mode: InterviewMode;
   seedText: string;
   speculative?: boolean;
+  memoryProvider?: ProjectMemoryProvider | null;
 }): Promise<InterviewStartResult> {
   const seedText = input.seedText;
   if (!seedText.trim()) throw new Error('seedText is required.');
   validateTextLength('seedText', seedText);
+
+  let projectMemory;
+  try {
+    projectMemory = await buildAgentMemoryContext(input.memoryProvider ?? null, input.projectId, {
+      message: seedText,
+      surface: 'project-meeting',
+      personaId: 'writingPartner',
+    });
+  } catch (error) {
+    if (error instanceof ProjectMemoryAgentUnavailableError) {
+      throw new RoomMemoryError('Project memory is unavailable and needs repair.');
+    }
+    throw error;
+  }
 
   // One active Project Meeting per project (§A4 assumes a single live session).
   // This check is advisory; the unique partial index on interview_sessions is the
@@ -226,9 +250,23 @@ export async function startInterview(input: {
     cursor: initialInterviewCursor(questions),
   });
 
-  await roomStore.insertMessage({ projectId: input.projectId, author: 'morgan', content: formatAuditMessage(audit.verdicts) });
+  const finalizedAudit = finalizeAgentMemoryText(formatAuditMessage(audit.verdicts), projectMemory);
+  await roomStore.insertMessage({
+    projectId: input.projectId,
+    author: 'morgan',
+    content: finalizedAudit.text,
+    memoryReceipt: finalizedAudit.receipt,
+  });
 
-  return { session, auditMessage: formatAuditMessage(audit.verdicts), currentQuestion: currentQuestionFor(session), recap, directionDiff: [], directionRevision: directionSnapshot?.revision ?? 0 };
+  return {
+    session,
+    auditMessage: finalizedAudit.text,
+    currentQuestion: currentQuestionFor(session),
+    recap,
+    directionDiff: [],
+    directionRevision: directionSnapshot?.revision ?? 0,
+    memoryReceipt: finalizedAudit.receipt,
+  };
 }
 
 export async function answerInterviewQuestion(input: {

@@ -13,9 +13,10 @@ import * as pitchPacketRuntime from './interview/pitchPacketRuntime';
 import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
 import { syncSurfaceLocks } from './surfaceLockSync';
-import { ensureProjectMemory } from './memoryContract';
+import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
 import type { ProposalOrigin, RoomEventKind } from './types';
 import type { MeetingRevisionInput } from './interview/banking';
+import type { ProjectMemoryProvider } from '../projectMemory/agentContext';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
 const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
@@ -42,6 +43,10 @@ async function ensureMemoryOr503(req: Request, res: Response): Promise<boolean> 
 
 function handleInterviewError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
+  if (error instanceof RoomMemoryError) {
+    res.status(503).json({ message: 'Project memory is unavailable and needs repair.' });
+    return;
+  }
   if (error instanceof InvalidLockSectionsError) {
     res.status(422).json({ message: 'Story locks contain malformed reserved section headers. Repair the lock sections before banking.' });
     return;
@@ -72,7 +77,7 @@ function handlePitchPacketError(res: Response, error: unknown): void {
   res.status(500).json({ message });
 }
 
-export function registerRoomRoutes(app: Express): void {
+export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryProvider | null): void {
   // Live channel stream. An open connection = "project is open" for idle_tick.
   app.get('/api/room/:projectId/stream', async (req, res) => {
     if (!requireRoom(res)) return;
@@ -287,6 +292,7 @@ export function registerRoomRoutes(app: Express): void {
         mode,
         seedText,
         speculative: Boolean(req.body?.speculative),
+        memoryProvider,
       });
       res.json(result);
     } catch (error) {
@@ -491,5 +497,5 @@ export function registerRoomRoutes(app: Express): void {
     } catch (error) { handlePitchPacketError(res, error); }
   });
 
-  startRoomScheduler();
+  startRoomScheduler(memoryProvider);
 }

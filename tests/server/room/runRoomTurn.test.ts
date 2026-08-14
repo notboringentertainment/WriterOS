@@ -38,6 +38,8 @@ vi.mock('../../../server/ai/morganRuntime/anthropicToolClient', async (importOri
 
 import { runRoomTurn } from '../../../server/room/runRoomTurn'
 import type { RoomEventRow } from '../../../server/room/types'
+import type { ProjectMemoryProvider } from '../../../server/projectMemory/agentContext'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 const event: RoomEventRow = {
   id: 'evt-1',
@@ -79,6 +81,24 @@ const toolTurn = (uses: Array<{ id: string; name: string; input: unknown }>, tex
   assistantContent: [],
 })
 
+const roomCitation = '[M-6182-00630061006E006F006E]'
+function roomProvider(): ProjectMemoryProvider {
+  return {
+    context: vi.fn().mockResolvedValue({
+      projectId: 'p1', revision: 23,
+      activeCanon: [{
+        id: 'canon', projectId: 'p1', kind: 'canon', status: 'active',
+        claim: 'Rosa cannot leave the restaurant.', tags: [], entities: [],
+        source: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/rosa', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' },
+        evidence: [], safety: 'clear', spoiler: false, supersedes: [],
+        createdAt: '2026-08-14T12:00:00.000Z', updatedAt: '2026-08-14T12:00:00.000Z',
+      }],
+      relevant: [], conflicts: [], spoilerConflictIds: [],
+      citationMap: { [roomCitation]: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/rosa', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' } },
+    }),
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   storeMock.getSharedBlocksForAgent.mockResolvedValue([])
@@ -100,6 +120,30 @@ beforeEach(() => {
 })
 
 describe('runRoomTurn', () => {
+  it('grounds the room specialist once and persists a validated exact-revision receipt', async () => {
+    const memoryProvider = roomProvider()
+    sendToolTurnMock.mockResolvedValueOnce(toolTurn([{
+      id: 'u1', name: 'speak',
+      input: { content: `Canon holds ${roomCitation}; invented [M-FFFF-0066006F006F].` },
+    }]))
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider })
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(sendToolTurnMock.mock.calls[0][0].system).toContain('<project_memory_data>')
+    expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: `Canon holds ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23, status: 'available' }),
+    }))
+  })
+
+  it('fails closed before the model when folder memory is unavailable', async () => {
+    const memoryProvider = { context: vi.fn().mockRejectedValue(new Error('/private/ledger corrupt')) }
+    await expect(runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider }))
+      .rejects.toBeInstanceOf(RoomMemoryError)
+    expect(sendToolTurnMock).not.toHaveBeenCalled()
+  })
+
   it('speak turn: streams, inserts the message post-guard, ledgers as spoke', async () => {
     sendToolTurnMock.mockResolvedValueOnce(
       toolTurn([{ id: 'u1', name: 'speak', input: { content: 'That want shift changes her arc math.' } }]),

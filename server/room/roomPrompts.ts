@@ -22,6 +22,7 @@ export function buildRoomSystemPrompt(input: {
   sharedBlocks: MemoryBlockRow[];
   privateBlocks: MemoryBlockRow[];
   ambient: boolean; // true when the trigger is not a writer message
+  projectMemoryPrompt?: string;
 }): string {
   const persona = PERSONAS[input.agentId];
   if (!persona) throw new Error(`Unknown persona: ${input.agentId}`);
@@ -68,6 +69,8 @@ No greetings, no recaps, no "I noticed that…" throat-clearing. Enter
 mid-thought, like a real room. React to the substance of the event.`,
     );
   }
+
+  if (input.projectMemoryPrompt) sections.push(input.projectMemoryPrompt);
 
   const shared = renderBlocks('SHARED MEMORY (the room blackboard — read every turn):', input.sharedBlocks);
   if (shared) sections.push(shared);

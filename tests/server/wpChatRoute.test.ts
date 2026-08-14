@@ -61,19 +61,14 @@ function postJson(port: number, path: string, body: unknown): Promise<{ status: 
 }
 
 describe('/api/wp-chat synopsis story-coach context', () => {
-  it('loads agent-attached shared project memory for Morgan on document surfaces', async () => {
+  it('uses unified project memory instead of loading legacy Supabase shared blocks directly', async () => {
     vi.stubEnv('SUPABASE_URL', 'https://writeros-memory.test')
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key')
     const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
       message: 'Morgan response.',
       suggestions: [],
     })
-    const memorySpy = vi.spyOn(roomStore, 'getSharedBlocksForAgent').mockResolvedValue([
-      { label: 'concept_seed', value: 'Mara searches a wildfire zone for her missing sister.' },
-      { label: 'story_locks', value: 'The sister remains alive.' },
-      { label: 'open_questions', value: 'Who set the first fire?' },
-      { label: 'project_state', value: 'Outline is in intake.' },
-    ] as never)
+    const memorySpy = vi.spyOn(roomStore, 'getSharedBlocksForAgent')
     const state = defaultProjectState()
 
     const { server, port } = await startApp()
@@ -87,14 +82,15 @@ describe('/api/wp-chat synopsis story-coach context', () => {
       })
 
       expect(response.status).toBe(200)
-      expect(memorySpy).toHaveBeenCalledWith('project-1', 'writingPartner')
+      expect(memorySpy).not.toHaveBeenCalled()
       const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
-      expect(storyMemory.sharedMemory).toEqual([
-        { label: 'concept_seed', value: 'Mara searches a wildfire zone for her missing sister.' },
-        { label: 'story_locks', value: 'The sister remains alive.' },
-        { label: 'open_questions', value: 'Who set the first fire?' },
-        { label: 'project_state', value: 'Outline is in intake.' },
-      ])
+      expect(storyMemory.sharedMemory).toEqual([])
+      expect(response.json.memoryReceipt).toEqual({
+        revision: 0,
+        status: 'disabled',
+        citations: [],
+        conflictIds: [],
+      })
     } finally {
       server.close()
     }
