@@ -133,10 +133,39 @@ function routeError(res: Response, error: unknown) {
 function projectMemoryRequestPath(req: Pick<Request, 'originalUrl' | 'url'>): string | undefined {
   const requestTarget = typeof req.originalUrl === 'string' ? req.originalUrl : req.url
   try {
-    return parseUrl(requestTarget).pathname ?? undefined
+    return expressRequestTargetPathname(requestTarget)
   } catch {
     return undefined
   }
+}
+
+// Mirrors parseurl@1.3.3's fastparse behavior used by Express 4.22.1. Origin-form
+// targets keep literal backslashes; absolute and exceptional targets use node:url.
+function expressRequestTargetPathname(requestTarget: string): string | undefined {
+  if (requestTarget.charCodeAt(0) !== 0x2f) return parseUrl(requestTarget).pathname ?? undefined
+
+  let pathname = requestTarget
+  let hasSearch = false
+  for (let index = 1; index < requestTarget.length; index += 1) {
+    switch (requestTarget.charCodeAt(index)) {
+      case 0x3f: // ?
+        if (!hasSearch) {
+          pathname = requestTarget.substring(0, index)
+          hasSearch = true
+        }
+        break
+      case 0x09: // tab
+      case 0x0a: // newline
+      case 0x0c: // form feed
+      case 0x0d: // carriage return
+      case 0x20: // space
+      case 0x23: // #
+      case 0xa0: // non-breaking space
+      case 0xfeff: // byte-order mark
+        return parseUrl(requestTarget).pathname ?? undefined
+    }
+  }
+  return pathname
 }
 
 type ProjectMemoryExpectedMethod = 'GET' | 'POST'

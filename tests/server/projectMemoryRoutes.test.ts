@@ -178,6 +178,122 @@ function requestRaw(
 }
 
 describe('project memory HTTP routes', () => {
+  it('preserves Express parseurl backslash semantics for origin and absolute request targets', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'Backslash-Target-Project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const globalParserCalls = { json: 0, urlencoded: 0 }
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store, undefined, projectMemoryStore, globalParserCalls)
+    const malformedJson = '{"claim":'
+
+    const invalidIdWrites = await Promise.all([
+      requestRaw(port, '/api/projects/foo\\bar/memory/actions?probe=canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: malformedJson,
+      }),
+      requestRaw(port, '/api/project-memory/foo\\bar/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: malformedJson,
+      }),
+    ])
+    for (const response of invalidIdWrites) {
+      expect(response.status).toBe(403)
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain('SyntaxError')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+    expect(globalParserCalls).toEqual({ json: 0, urlencoded: 0 })
+
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+    const invalidIdReads = await Promise.all([
+      requestRaw(port, '/api/projects/foo\\bar/memory/snapshot', {
+        method: 'GET',
+        headers: { ...authorized, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `secret=${'x'.repeat(200 * 1024)}`,
+      }),
+      requestRaw(port, '/api/project-memory/foo\\bar/context', {
+        method: 'GET',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Encoding': 'gzip',
+        },
+        body: Buffer.from('not-a-gzip-stream'),
+      }),
+    ])
+    for (const response of invalidIdReads) {
+      expect(response.status).toBe(400)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'invalid-project-id',
+        message: 'Project memory requires a valid project id.',
+      })
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('Error')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+    expect(globalParserCalls).toEqual({ json: 0, urlencoded: 0 })
+
+    const unrelatedBackslashTargets = await Promise.all([
+      requestRaw(port, '/api\\projects\\foo\\memory\\actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'title=Canonical+Write',
+      }),
+      requestRaw(port, '/api\\project-memory\\foo\\analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'title=Legacy+Write',
+      }),
+      requestRaw(port, '/api\\projects\\foo\\memory\\snapshot', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'title=Canonical+Read',
+      }),
+      requestRaw(port, '/api\\project-memory\\foo\\context', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'title=Legacy+Read',
+      }),
+    ])
+    expect(unrelatedBackslashTargets.map(response => response.status)).toEqual([404, 404, 404, 404])
+    expect(globalParserCalls).toEqual({ json: 4, urlencoded: 4 })
+
+    const absoluteBackslashTarget = await requestRaw(
+      port,
+      `http://attacker.invalid/API\\PROJECTS\\${project.id}\\MEMORY\\ANALYZE`,
+      {
+        method: 'POST',
+        headers: { ...authorized, 'Content-Type': 'text/plain' },
+        body: 'absolute-form-still-follows-node-url-semantics',
+      },
+    )
+    expect(absoluteBackslashTarget.status).toBe(415)
+    expect(JSON.parse(absoluteBackslashTarget.text)).toEqual({
+      error: 'unsupported-body',
+      message: 'Project memory request body encoding or media type is unsupported.',
+    })
+    expect(globalParserCalls).toEqual({ json: 4, urlencoded: 4 })
+  })
+
   it('matches Express routing semantics before parsing mixed-case and absolute-form memory targets', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
     temporaryRoots.push(root)
