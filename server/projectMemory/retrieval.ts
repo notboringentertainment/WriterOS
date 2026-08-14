@@ -15,6 +15,11 @@ const RELEVANCE_WEIGHTS = {
   personaLane: 1,
 } as const
 
+const spoilerConflictIdsByContext = new WeakMap<
+  MemoryContextPackage,
+  ReadonlySet<string>
+>()
+
 export class ProjectMemoryRetrievalError extends Error {
   constructor(
     readonly code: 'canon_context_too_large',
@@ -38,11 +43,24 @@ function compareCodePoints(left: string, right: string): number {
   return 0
 }
 
-function conciseCanonRecord(record: ProjectMemoryRecord): ProjectMemoryRecord {
-  const { detail: _detail, ...withoutDetail } = record
+function contextRecordProjection(
+  record: ProjectMemoryRecord,
+  includeDetail: boolean,
+): ProjectMemoryRecord {
+  const { detail, ...withoutDetail } = record
   return {
     ...withoutDetail,
+    ...(includeDetail && detail !== undefined ? { detail } : {}),
+    tags: [],
+    entities: [],
+    source: {
+      ...record.source,
+      ...(record.source.authority === undefined
+        ? {}
+        : { authority: { ...record.source.authority } }),
+    },
     evidence: [],
+    supersedes: [],
   }
 }
 
@@ -91,34 +109,84 @@ function relevanceScore(record: ProjectMemoryRecord, queryTokens: QueryTokenSets
   return score
 }
 
-function contextRecord(record: ProjectMemoryRecord): ProjectMemoryRecord {
-  return {
-    ...record,
-    evidence: [],
-  }
-}
-
-function recordCharacterCount(record: ProjectMemoryRecord): number {
-  return record.claim.length + (record.detail?.length ?? 0)
-}
-
 export function citationLabelsForRecords(
   records: readonly ProjectMemoryRecord[],
 ): ReadonlyMap<string, string> {
   const labels = new Map<string, string>()
-  const usedLabels = new Set<string>()
   for (const record of records) {
     const digest = createHash('sha256').update(record.id, 'utf8').digest('hex').toUpperCase()
-    let digestLength = 4
-    let label = `[M-${digest.slice(0, digestLength)}]`
-    while (usedLabels.has(label) && digestLength < digest.length) {
-      digestLength += 1
-      label = `[M-${digest.slice(0, digestLength)}]`
-    }
-    labels.set(record.id, label)
-    usedLabels.add(label)
+    labels.set(record.id, `[M-${digest.slice(0, 12)}]`)
   }
   return labels
+}
+
+export function escapeMemoryDataForMarkdown(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/([\\`*_\[\]()<>])/g, '\\$1')
+}
+
+export function relevantRecordMarkdownLines(
+  record: ProjectMemoryRecord,
+  label: string,
+): string[] {
+  const lines = [
+    `- ${label} Kind/status (data): ${escapeMemoryDataForMarkdown(record.kind)} / ${escapeMemoryDataForMarkdown(record.status)}`,
+    `  - Claim (data): ${escapeMemoryDataForMarkdown(record.claim)}`,
+  ]
+  if (record.detail !== undefined) {
+    lines.push(`  - Detail (data): ${escapeMemoryDataForMarkdown(record.detail)}`)
+  }
+  lines.push(
+    `  - Source (data): ${escapeMemoryDataForMarkdown(record.source.workflow)} · ${escapeMemoryDataForMarkdown(record.source.sourceUri)}`,
+    `  - Updated: ${escapeMemoryDataForMarkdown(record.updatedAt)}`,
+  )
+  return lines
+}
+
+export function citationMarkdownLine(record: ProjectMemoryRecord, label: string): string {
+  return `- ${label} ${escapeMemoryDataForMarkdown(record.source.workflow)} · ${escapeMemoryDataForMarkdown(record.source.sourceUri)}`
+}
+
+function relevanceRepresentationsFit(
+  activeCanon: readonly ProjectMemoryRecord[],
+  relevant: readonly ProjectMemoryRecord[],
+): boolean {
+  const citedRecords = [...activeCanon, ...relevant]
+  const labels = citationLabelsForRecords(citedRecords)
+  const relevantCitationMap = Object.fromEntries(relevant.map(record => [
+    labels.get(record.id) as string,
+    record.source,
+  ]))
+  const jsonCharacters = JSON.stringify({
+    relevant,
+    citationMap: relevantCitationMap,
+  }).length
+  const markdownLines = ['## Relevant Memory', '']
+  for (const record of relevant) {
+    markdownLines.push(...relevantRecordMarkdownLines(
+      record,
+      labels.get(record.id) as string,
+    ))
+  }
+  markdownLines.push('', '## Citation Map', '')
+  for (const record of relevant) {
+    markdownLines.push(citationMarkdownLine(
+      record,
+      labels.get(record.id) as string,
+    ))
+  }
+  return jsonCharacters <= MAX_RELEVANT_CHARACTERS
+    && markdownLines.join('\n').length <= MAX_RELEVANT_CHARACTERS
+}
+
+export function spoilerConflictIdsForContext(
+  context: MemoryContextPackage,
+): ReadonlySet<string> {
+  return spoilerConflictIdsByContext.get(context) ?? new Set<string>()
 }
 
 export function buildMemoryContext(
@@ -132,7 +200,7 @@ export function buildMemoryContext(
       && record.safety === 'clear'
     ))
     .sort((left, right) => compareCodePoints(left.id, right.id))
-    .map(conciseCanonRecord)
+    .map(record => contextRecordProjection(record, false))
   const activeCanonCharacters = activeCanon.reduce(
     (total, record) => total + record.claim.length,
     0,
@@ -158,15 +226,12 @@ export function buildMemoryContext(
       || Date.parse(right.record.updatedAt) - Date.parse(left.record.updatedAt)
       || compareCodePoints(left.record.id, right.record.id)
     ))
-    .map(result => contextRecord(result.record))
+    .map(result => contextRecordProjection(result.record, true))
   const relevant: ProjectMemoryRecord[] = []
-  let relevantCharacters = 0
   for (const record of rankedRelevant) {
     if (relevant.length >= MAX_RELEVANT_RECORDS) break
-    const characterCount = recordCharacterCount(record)
-    if (relevantCharacters + characterCount > MAX_RELEVANT_CHARACTERS) continue
+    if (!relevanceRepresentationsFit(activeCanon, [...relevant, record])) continue
     relevant.push(record)
-    relevantCharacters += characterCount
   }
   const contextRecordIds = new Set([
     ...activeCanonIds,
@@ -188,7 +253,7 @@ export function buildMemoryContext(
     record.source,
   ]))
 
-  return {
+  const context: MemoryContextPackage = {
     projectId: snapshot.projectId,
     revision: snapshot.revision,
     activeCanon,
@@ -196,4 +261,16 @@ export function buildMemoryContext(
     conflicts,
     citationMap,
   }
+  const spoilerRecordIds = new Set(
+    snapshot.records.filter(record => record.spoiler).map(record => record.id),
+  )
+  spoilerConflictIdsByContext.set(context, new Set(
+    conflicts
+      .filter(conflict => (
+        spoilerRecordIds.has(conflict.leftRecordId)
+        || spoilerRecordIds.has(conflict.rightRecordId)
+      ))
+      .map(conflict => conflict.id),
+  ))
+  return context
 }
