@@ -348,7 +348,7 @@ Which flag replaces the old warning?
         requestedStatus: 'active',
         spoiler: false,
         tags: ['legacy-canon-status:open'],
-        locator: 'story-wayfinder:atoms/atoms.jsonl#line=2',
+        locator: 'story-wayfinder:atoms/atoms.jsonl#atom=atom-open',
         entityLength: undefined,
       },
       {
@@ -357,7 +357,7 @@ Which flag replaces the old warning?
         requestedStatus: 'candidate',
         spoiler: false,
         tags: ['legacy-canon-status:unratified-input'],
-        locator: 'story-wayfinder:atoms/atoms.jsonl#line=3',
+        locator: 'story-wayfinder:atoms/atoms.jsonl#atom=atom-input',
         entityLength: 200,
       },
     ])
@@ -393,6 +393,18 @@ Which flag replaces the old warning?
       '..',
       'private@example.com',
       'https://private.example/file',
+      'FTP:private-host',
+      'DATA:text',
+      'JaVaScRiPt:alert',
+      'SSH:private-host',
+      'custom:resource',
+      'ATOM:decision:01',
+      'atom:',
+      'atom:decision',
+      'atom::01',
+      'atom://private-host',
+      'atom:decision%2Fsecret',
+      ' atom:decision:01',
       'bad\u0000id',
       'bad\nid',
       'x'.repeat(201),
@@ -787,6 +799,49 @@ Claims without resolvable locators stay out.
       hashes.push(preview.records[0]?.source.sourceHash ?? '')
     }
     expect(hashes).toEqual([expectedLineHash, expectedLineHash])
+  })
+
+  it('uses stable encoded atom-id provenance when legacy JSONL lines are reordered', async () => {
+    const root = await createSourceRoot('writeros-import-stable-atom-provenance-')
+    const namespaced = JSON.stringify({
+      id: 'atom:decision:01', claim: 'The ferry leaves at dawn.', canon_status: 'open',
+    })
+    const plain = JSON.stringify({
+      id: 'plain-atom', claim: 'The bell rings twice.', canon_status: 'open',
+    })
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const input = {
+      source: 'wayfinder' as const,
+      projectId: 'project-stable-atom-provenance',
+      sourceRoot: root,
+    }
+    await writeSource(root, 'atoms/atoms.jsonl', `${namespaced}\n${plain}\n`)
+    const first = await previewProjectMemoryImport(input)
+    await writeSource(root, 'atoms/atoms.jsonl', `${plain}\n${namespaced}\n`)
+    const reordered = await previewProjectMemoryImport(input)
+    const summarize = (sourceId: string, preview: typeof first) => {
+      const record = preview.records.find(candidate => candidate.source.sourceId === sourceId)
+      return {
+        dedupeKey: record?.dedupeKey,
+        sourceHash: record?.source.sourceHash,
+        sourceUri: record?.source.sourceUri,
+        locator: record?.evidence?.[0]?.locator,
+      }
+    }
+
+    expect(summarize('atoms/atoms.jsonl:atom:decision:01', first)).toEqual({
+      dedupeKey: summarize('atoms/atoms.jsonl:atom:decision:01', reordered).dedupeKey,
+      sourceHash: summarize('atoms/atoms.jsonl:atom:decision:01', reordered).sourceHash,
+      sourceUri: 'story-wayfinder:atoms/atoms.jsonl#atom=atom%3Adecision%3A01',
+      locator: 'story-wayfinder:atoms/atoms.jsonl#atom=atom%3Adecision%3A01',
+    })
+    expect(summarize('atoms/atoms.jsonl:plain-atom', reordered)).toEqual({
+      dedupeKey: summarize('atoms/atoms.jsonl:plain-atom', first).dedupeKey,
+      sourceHash: summarize('atoms/atoms.jsonl:plain-atom', first).sourceHash,
+      sourceUri: 'story-wayfinder:atoms/atoms.jsonl#atom=plain-atom',
+      locator: 'story-wayfinder:atoms/atoms.jsonl#atom=plain-atom',
+    })
+    expect(JSON.stringify([...first.records, ...reordered.records])).not.toContain('#line=')
   })
 
   it('rejects nested symbolic links instead of reading through a source-root escape', async () => {

@@ -93,9 +93,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isSafeLegacyAtomId(value: string): boolean {
   if (value !== value.trim() || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) return false
-  if (/[\/\\\u0000-\u001f\u007f]/.test(value) || value.startsWith('~')) return false
-  if (/^[A-Za-z]:/.test(value) || /^(?:file|https?|smb):/i.test(value)) return false
-  return !value.split(':').some(segment => segment === '.' || segment === '..')
+  if (!value.includes(':')) return true
+  const segments = value.split(':')
+  return segments[0] === 'atom'
+    && segments.length >= 3
+    && segments.slice(1).every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
 }
 
 async function rootMetadata(sourceRoot: string): Promise<{ canonNotes: string[]; hasToDelete: boolean }> {
@@ -362,7 +364,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             `atoms/atoms.jsonl:${lineNumber}: prompt-injection pattern detected; imported as a flagged candidate`,
           )
         }
-        const defaultLocator = `story-wayfinder:atoms/atoms.jsonl#line=${lineNumber}`
+        const defaultLocator = `story-wayfinder:atoms/atoms.jsonl#atom=${encodeURIComponent(atomId)}`
         const rawLocator = typeof rawAtom.source === 'string' ? rawAtom.source.trim() : ''
         const absoluteLocator = path.isAbsolute(rawLocator)
           || /^[A-Za-z]:[\\/]/.test(rawLocator)
