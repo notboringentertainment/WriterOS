@@ -35,6 +35,7 @@ const LEDGER_FILE = 'ledger.jsonl'
 const SNAPSHOT_FILE = 'snapshot.json'
 const CANON_FILE = 'canon.md'
 const REVIEW_FILE = 'review.md'
+const LEGACY_AUTHORITY_MIGRATION_BATCH_SIZE = 100
 
 type ProjectMemoryErrorCode =
   | 'invalid-project'
@@ -339,6 +340,7 @@ function applyEvent(
     records = replaceRecord(records, event.recordId, record => ({ ...record, status: 'rejected', updatedAt: event.occurredAt }))
   } else if (event.type === 'legacy-authority-downgraded') {
     const expectedRecordIds = activeLegacyAuthorityRecordIds(state.snapshot)
+      .slice(0, LEGACY_AUTHORITY_MIGRATION_BATCH_SIZE)
     if (!sameOrderedList(event.recordIds, expectedRecordIds) || expectedRecordIds.length === 0) {
       throw corruptLedger(lineNumber, 'legacy authority migration does not match active unverified records.')
     }
@@ -491,14 +493,17 @@ async function replayLedgerWithMigrations(
   projectId: string,
   testHooks?: ProjectMemoryStoreTestHooks,
 ): Promise<ReplayResult> {
-  const replayed = await replayLedger(ledgerPath, projectId)
-  const recordIds = activeLegacyAuthorityRecordIds(replayed.snapshot)
-  if (recordIds.length === 0) return replayed
+  let replayed = await replayLedger(ledgerPath, projectId)
+  while (true) {
+    const recordIds = activeLegacyAuthorityRecordIds(replayed.snapshot)
+      .slice(0, LEGACY_AUTHORITY_MIGRATION_BATCH_SIZE)
+    if (recordIds.length === 0) return replayed
 
-  const event = createLegacyAuthorityMigrationEvent(replayed.snapshot, recordIds)
-  const next = applyEvent(replayed, event, event.revision)
-  await appendEvent(ledgerPath, event, testHooks)
-  return next
+    const event = createLegacyAuthorityMigrationEvent(replayed.snapshot, recordIds)
+    const next = applyEvent(replayed, event, event.revision)
+    await appendEvent(ledgerPath, event, testHooks)
+    replayed = next
+  }
 }
 
 async function atomicReplace(filePath: string, contents: string): Promise<void> {

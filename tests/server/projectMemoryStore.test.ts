@@ -132,6 +132,30 @@ function memoryRecord(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function legacyWayfinderLedgerEvents(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const suffix = String(index).padStart(3, '0')
+    return {
+      ...forgedEventBase(index + 1, 'published'),
+      id: `event-legacy-wayfinder-${suffix}`,
+      dedupeKey: `wayfinder:legacy:${suffix}`,
+      record: memoryRecord({
+        id: `mem-legacy-wayfinder-${suffix}`,
+        status: 'active',
+        claim: `Legacy Wayfinder claim ${suffix}.`,
+        source: source({
+          workflow: 'story-wayfinder',
+          sourceId: `resolved:legacy-${suffix}`,
+          sourceHash: `sha256:legacy-wayfinder-${suffix}`,
+          approval: 'explicit',
+        }),
+      }),
+      conflicts: [],
+      supersededRecordIds: [],
+    }
+  })
+}
+
 describe('project memory schemas', () => {
   it.each([
     ['kind', MemoryKindSchema, ['canon', 'document_fact', 'development', 'decision', 'open_question']],
@@ -519,6 +543,74 @@ describe('append-only project memory store', () => {
       } as MemorySource,
     }))).rejects.toMatchObject({ code: 'invalid-input' })
     expect(await readFile(ledgerPath, 'utf8')).toBe(firstLedger)
+  })
+
+  it('migrates 101 active legacy Wayfinder records in deterministic bounded batches', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    await store.readSnapshot(projectPath)
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const legacyEvents = legacyWayfinderLedgerEvents(101)
+    const recordIds = legacyEvents.map(event => event.record.id)
+    await writeFile(ledgerPath, `${legacyEvents.map(event => JSON.stringify(event)).join('\n')}\n`, 'utf8')
+
+    const migrated = await store.readSnapshot(projectPath)
+    const firstLedger = await readFile(ledgerPath, 'utf8')
+    const events = firstLedger.trim().split('\n').map(line => JSON.parse(line))
+    const migrationEvents = events.filter(event => event.type === 'legacy-authority-downgraded')
+
+    expect(migrated.revision).toBe(103)
+    expect(migrated.records).toHaveLength(101)
+    expect(migrated.records.every(record => (
+      record.status === 'candidate'
+      && record.source.authority !== undefined
+      && 'verification' in record.source.authority
+      && record.source.authority.verification === 'legacy-unverified'
+    ))).toBe(true)
+    expect(migrationEvents.map(event => event.recordIds)).toEqual([
+      recordIds.slice(0, 100),
+      recordIds.slice(100),
+    ])
+    expect(await readFile(path.join(projectPath, 'memory', 'review.md'), 'utf8'))
+      .toContain('Legacy Wayfinder claim 100.')
+    expect(await readFile(path.join(projectPath, 'memory', 'canon.md'), 'utf8'))
+      .not.toContain('Legacy Wayfinder claim 000.')
+
+    await expect(store.readSnapshot(projectPath)).resolves.toEqual(migrated)
+    expect(await readFile(ledgerPath, 'utf8')).toBe(firstLedger)
+  })
+
+  it('resumes after one persisted legacy migration batch without duplicating completed work', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    await store.readSnapshot(projectPath)
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const legacyEvents = legacyWayfinderLedgerEvents(101)
+    const recordIds = legacyEvents.map(event => event.record.id)
+    const firstBatch = {
+      ...forgedEventBase(102, 'legacy-authority-downgraded'),
+      id: 'event-legacy-authority-batch-1',
+      recordIds: recordIds.slice(0, 100),
+    }
+    await writeFile(ledgerPath, `${[
+      ...legacyEvents.map(event => JSON.stringify(event)),
+      JSON.stringify(firstBatch),
+    ].join('\n')}\n`, 'utf8')
+
+    const resumed = await store.readSnapshot(projectPath)
+    const resumedLedger = await readFile(ledgerPath, 'utf8')
+    const events = resumedLedger.trim().split('\n').map(line => JSON.parse(line))
+    const migrationEvents = events.filter(event => event.type === 'legacy-authority-downgraded')
+
+    expect(resumed.revision).toBe(103)
+    expect(resumed.records.every(record => record.status === 'candidate')).toBe(true)
+    expect(migrationEvents.map(event => event.recordIds)).toEqual([
+      recordIds.slice(0, 100),
+      [recordIds[100]],
+    ])
+
+    await expect(store.rebuild(projectPath)).resolves.toEqual(resumed)
+    expect(await readFile(ledgerPath, 'utf8')).toBe(resumedLedger)
   })
 
   it('promotes an eligible candidate through an explicit revision-checked action', async () => {
