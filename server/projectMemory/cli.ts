@@ -53,13 +53,22 @@ const processIo: ProjectMemoryCliIo = {
 
 class CliInputError extends Error {}
 
+type CliImportProgress =
+  | {
+      durability: 'reconciled'
+      appliedCount: number
+      lastRevision: number
+    }
+  | {
+      durability: 'unknown'
+      lastKnownAppliedCount: number
+      lastKnownRevision: number
+    }
+
 class CliImportPartialError extends Error {
   readonly name = 'CliImportPartialError'
 
-  constructor(
-    readonly appliedCount: number,
-    readonly lastRevision: number,
-  ) {
+  constructor(readonly progress: CliImportProgress) {
     super('A project memory import stopped after earlier records became durable.')
   }
 }
@@ -456,23 +465,26 @@ async function runImport(
       await project.verify()
       result = await memoryStore.publish(projectPath, record)
     } catch {
-      let lastRevision = revision
-      let durableApplied = 0
+      let reconciled
       try {
         await project.verify()
-        const reconciled = await memoryStore.reconcilePublication(projectPath, record)
-        lastRevision = reconciled.snapshot.revision
-        if (
-          reconciled.publication !== undefined
-          && reconciled.publication.eventRevision > revision
-        ) {
-          durableApplied = 1
-        }
+        reconciled = await memoryStore.reconcilePublication(projectPath, record)
       } catch {
-        // The structured progress still reports the last revision known durable
-        // before this record when reconciliation itself is unavailable.
+        throw new CliImportPartialError({
+          durability: 'unknown',
+          lastKnownAppliedCount: applied,
+          lastKnownRevision: revision,
+        })
       }
-      throw new CliImportPartialError(applied + durableApplied, lastRevision)
+      const durableApplied = (
+        reconciled.publication !== undefined
+        && reconciled.publication.eventRevision > revision
+      ) ? 1 : 0
+      throw new CliImportPartialError({
+        durability: 'reconciled',
+        appliedCount: applied + durableApplied,
+        lastRevision: reconciled.snapshot.revision,
+      })
     }
     if (result.published) applied += 1
     else idempotent += 1
@@ -515,12 +527,25 @@ export async function runProjectMemoryCli(
   } catch (error) {
     const exitCode = exitCodeFor(error)
     if (error instanceof CliImportPartialError) {
-      io.stderr(`${JSON.stringify({
-        error: 'import-partial',
-        appliedCount: error.appliedCount,
-        lastRevision: error.lastRevision,
-        retry: 'Retry the same import with --apply; previously applied records are idempotent.',
-      })}\n`)
+      if (error.progress.durability === 'reconciled') {
+        io.stderr(`${JSON.stringify({
+          error: 'import-partial',
+          durability: 'reconciled',
+          appliedCount: error.progress.appliedCount,
+          lastRevision: error.progress.lastRevision,
+          retry: 'Retry the same import with --apply; previously applied records are idempotent.',
+        })}\n`)
+      } else {
+        io.stderr(`${JSON.stringify({
+          error: 'import-partial',
+          durability: 'unknown',
+          lastKnownAppliedCount: error.progress.lastKnownAppliedCount,
+          lastKnownRevision: error.progress.lastKnownRevision,
+          currentRecordMayBeDurable: true,
+          message: 'The ledger may contain the current import record; exact durability could not be verified.',
+          retry: 'Retry the same import with --apply; deterministic dedupe key and source hash make the retry safe. Do not assume the current record was absent.',
+        })}\n`)
+      }
       return exitCode
     }
     io.stderr(exitCode === 2

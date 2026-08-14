@@ -348,6 +348,86 @@ describe('project memory HTTP routes', () => {
     }
   })
 
+  it('returns safe JSON for authenticated unsupported body encodings and charsets', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'body-parser-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store)
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+    const body = JSON.stringify({ surface: 'synopsis', content: 'Changed synopsis.' })
+
+    const unsupportedCharset = await requestRaw(
+      port,
+      `/api/projects/${project.id}/memory/analyze`,
+      {
+        method: 'POST',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/json; charset=iso-8859-1',
+        },
+        body,
+      },
+    )
+    const unsupportedEncoding = await requestRaw(
+      port,
+      `/api/project-memory/${project.id}/analyze`,
+      {
+        method: 'POST',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'compress',
+        },
+        body,
+      },
+    )
+    const normalUtf8 = await requestRaw(
+      port,
+      `/api/projects/${project.id}/memory/analyze`,
+      {
+        method: 'POST',
+        headers: {
+          ...authorized,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body,
+      },
+    )
+
+    for (const response of [unsupportedCharset, unsupportedEncoding]) {
+      expect(response.status).toBe(415)
+      expect(JSON.parse(response.text)).toEqual({
+        error: 'unsupported-body',
+        message: 'Project memory request body encoding or media type is unsupported.',
+      })
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('UnsupportedMediaTypeError')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+    expect(normalUtf8.status).toBe(503)
+    expect(JSON.parse(normalUtf8.text)).toEqual({
+      error: 'analysis-unavailable',
+      message: 'Project memory analysis is unavailable.',
+    })
+  })
+
   it('rejects missing origin, wrong origin, and missing session token before project lookup', async () => {
     const port = await startApp()
 

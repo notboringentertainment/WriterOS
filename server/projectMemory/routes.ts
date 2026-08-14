@@ -210,27 +210,36 @@ export function projectMemoryJsonErrorBoundary(
   res: Response,
   next: NextFunction,
 ) {
-  if (
-    isProjectMemoryPath(req.path)
-    && error !== null
-    && typeof error === 'object'
-    && 'status' in error
-    && error.status === 413
-  ) {
-    return res.status(413).json({
+  if (!isProjectMemoryPath(req.path) || error === null || typeof error !== 'object') return next(error)
+  const type = 'type' in error && typeof error.type === 'string' ? error.type : undefined
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined
+
+  if (status === 415 && (type === 'charset.unsupported' || type === 'encoding.unsupported')) {
+    return res.status(status).json({
+      error: 'unsupported-body',
+      message: 'Project memory request body encoding or media type is unsupported.',
+    })
+  }
+  if (status === 413 && (type === 'entity.too.large' || type === 'parameters.too.many')) {
+    return res.status(status).json({
       error: 'payload-too-large',
       message: 'Project memory request body exceeds the allowed size.',
     })
   }
-  if (
-    isProjectMemoryPath(req.path)
-    && error instanceof SyntaxError
-    && 'status' in error
-    && error.status === 400
-  ) {
-    return res.status(400).json({
+  if (status === 400 && type === 'entity.parse.failed') {
+    return res.status(status).json({
       error: 'invalid-json',
       message: 'Project memory request body is invalid JSON.',
+    })
+  }
+  if (status === 400 && (
+    type === 'request.aborted'
+    || type === 'request.size.invalid'
+    || type === 'querystring.parse.rangeError'
+  )) {
+    return res.status(status).json({
+      error: 'invalid-body',
+      message: 'Project memory request body could not be read.',
     })
   }
   next(error)

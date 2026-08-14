@@ -396,6 +396,7 @@ describe('project memory CLI', () => {
     expect(exitCode).toBe(3)
     expect(JSON.parse(stderr.join(''))).toEqual({
       error: 'import-partial',
+      durability: 'reconciled',
       appliedCount: 1,
       lastRevision: 1,
       retry: 'Retry the same import with --apply; previously applied records are idempotent.',
@@ -471,6 +472,7 @@ describe('project memory CLI', () => {
     expect(projectionFailures).toBe(1)
     expect(JSON.parse(firstStderr.join(''))).toEqual({
       error: 'import-partial',
+      durability: 'reconciled',
       appliedCount: 1,
       lastRevision: 1,
       retry: 'Retry the same import with --apply; previously applied records are idempotent.',
@@ -487,6 +489,94 @@ describe('project memory CLI', () => {
       revision: 1,
     })
     expect(firstStderr.join('')).not.toContain(root)
+  })
+
+  it('marks import durability unknown when a post-append failure cannot be reconciled', async () => {
+    const projectId = 'cli-unreconciled-import-project'
+    const { root, projectPath } = await createProject(projectId)
+    const sourceRoot = await mkdtemp(path.join(root, 'buzz-unreconciled-source-'))
+    let projectionFailed = false
+    const failingStore = createProjectMemoryStore({
+      testHooks: {
+        beforeProjectionWrite: async (_projectPath, snapshot) => {
+          if (snapshot.revision === 1 && !projectionFailed) {
+            projectionFailed = true
+            throw Object.assign(new Error('forced projection failure'), { code: 'EIO' })
+          }
+        },
+      },
+    })
+    const unavailableStore = {
+      ...failingStore,
+      reconcilePublication: async () => {
+        throw Object.assign(new Error('forced replay failure'), { code: 'EIO' })
+      },
+    }
+    const preview = {
+      source: 'buzz',
+      projectId,
+      records: [{
+        projectId,
+        dedupeKey: 'unreconciled-first',
+        kind: 'development',
+        requestedStatus: 'active',
+        claim: 'This append cannot be reconciled during the failed command.',
+        source: {
+          workflow: 'buzz',
+          sourceId: 'unreconciled-first',
+          sourceUri: 'buzz://record/unreconciled-first',
+          sourceHash: 'unreconciled-first-hash',
+          capturedAt: '2026-08-02T12:00:00.000Z',
+          approval: 'none',
+        },
+      }],
+      warnings: [],
+      duplicates: 0,
+    }
+    const cliModulePath = '../../server/projectMemory/cli.ts'
+    const cliModule = await import(cliModulePath).catch(() => undefined)
+    const stderr: string[] = []
+    const retryStdout: string[] = []
+    const command = [
+      'import',
+      '--source', 'buzz',
+      '--from', sourceRoot,
+      '--project', projectPath,
+      '--apply',
+    ]
+    const dependencies = { importPreview: async () => preview, memoryStore: unavailableStore }
+
+    const first = await cliModule?.runProjectMemoryCli?.(command, {
+      stdout: () => undefined,
+      stderr: (value: string) => stderr.push(value),
+    }, dependencies)
+    const retry = await cliModule?.runProjectMemoryCli?.(command, {
+      stdout: (value: string) => retryStdout.push(value),
+      stderr: () => undefined,
+    }, dependencies)
+    const durable = await failingStore.readSnapshot(projectPath)
+
+    expect(first).toBe(3)
+    expect(JSON.parse(stderr.join(''))).toEqual({
+      error: 'import-partial',
+      durability: 'unknown',
+      lastKnownAppliedCount: 0,
+      lastKnownRevision: 0,
+      currentRecordMayBeDurable: true,
+      message: 'The ledger may contain the current import record; exact durability could not be verified.',
+      retry: 'Retry the same import with --apply; deterministic dedupe key and source hash make the retry safe. Do not assume the current record was absent.',
+    })
+    expect(stderr.join('')).not.toContain(root)
+    expect(retry).toBe(0)
+    expect(JSON.parse(retryStdout.join(''))).toMatchObject({
+      applied: 0,
+      duplicates: 1,
+      revision: 1,
+    })
+    expect(durable).toMatchObject({
+      revision: 1,
+      records: [{ claim: 'This append cannot be reconciled during the failed command.' }],
+    })
   })
 
   it('rejects a symbolic-link import source without invoking an adapter or leaking its path', async () => {
