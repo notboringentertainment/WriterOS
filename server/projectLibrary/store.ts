@@ -1,8 +1,8 @@
 import {
-  copyFile,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   realpath,
@@ -10,6 +10,7 @@ import {
   rm as removePath,
   writeFile,
 } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import {
@@ -33,7 +34,7 @@ import type {
   ProjectStorageProjectRef,
 } from '../../client/src/lib/projectStorage'
 import { WRITEROS_PROJECT_ID_PATTERN } from '../../shared/projectLibraryApi'
-import { acquirePackageWriteLock } from './packageLock'
+import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from './packageLock'
 
 const PACKAGE_TEXT_PATHS = [
   WRITEROS_PROJECT_MANIFEST_PATH,
@@ -60,10 +61,13 @@ export interface ProjectLibraryStore {
 export interface ProjectLibraryFileOperations {
   rename(from: string, to: string): Promise<void>
   rm(target: string, options: { recursive: true; force: true }): Promise<void>
+  beforePreservedFileOpen?(sourcePath: string): Promise<void>
 }
 
 export interface ProjectLibraryStoreOptions {
   fileOperations?: Partial<ProjectLibraryFileOperations>
+  /** @internal Deterministic lock failure injection for regression tests. */
+  packageLockTestHooks?: PackageWriteLockTestHooks
 }
 
 export class ProjectLibraryStoreError extends Error {
@@ -79,6 +83,15 @@ export class ProjectLibraryStoreError extends Error {
 
 function isNotFoundError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+}
+
+function isNoFollowError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error.code === 'ELOOP' || error.code === 'EMLINK'),
+  )
 }
 
 function isContained(rootPath: string, candidatePath: string): boolean {
@@ -112,6 +125,33 @@ async function assertSafeExistingPath(rootPath: string, candidatePath: string): 
   return canonicalPath
 }
 
+function unsafePackagePath(): ProjectLibraryStoreError {
+  return new ProjectLibraryStoreError('Symbolic links are not allowed in project packages.', 400, 'unsafe-path')
+}
+
+async function readSafeRegularFile(
+  rootPath: string,
+  candidatePath: string,
+): Promise<Buffer> {
+  await assertSafeExistingPath(rootPath, candidatePath)
+  let handle
+  try {
+    handle = await open(candidatePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (error) {
+    if (isNoFollowError(error)) throw unsafePackagePath()
+    throw error
+  }
+
+  try {
+    const stats = await handle.stat()
+    if (!stats.isFile()) throw unsafePackagePath()
+    await assertSafeExistingPath(rootPath, candidatePath)
+    return await handle.readFile()
+  } finally {
+    await handle.close()
+  }
+}
+
 async function readPackageFiles(rootPath: string, packagePath: string): Promise<Record<string, string | undefined>> {
   await assertSafeExistingPath(rootPath, packagePath)
   const files: Record<string, string | undefined> = {}
@@ -119,8 +159,7 @@ async function readPackageFiles(rootPath: string, packagePath: string): Promise<
   await Promise.all(PACKAGE_TEXT_PATHS.map(async relativePath => {
     const filePath = path.join(packagePath, relativePath)
     try {
-      await assertSafeExistingPath(rootPath, filePath)
-      files[relativePath] = await readFile(filePath, 'utf8')
+      files[relativePath] = (await readSafeRegularFile(rootPath, filePath)).toString('utf8')
     } catch (error) {
       if (isNotFoundError(error)) {
         files[relativePath] = undefined
@@ -169,8 +208,38 @@ async function copyExistingPackageTree(
   rootPath: string,
   sourcePath: string,
   destinationPath: string,
+  fileOperations: ProjectLibraryFileOperations,
 ): Promise<void> {
-  const entries = await readdir(sourcePath)
+  let directoryHandle
+  try {
+    directoryHandle = await open(
+      sourcePath,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    )
+  } catch (error) {
+    if (isNoFollowError(error)) throw unsafePackagePath()
+    throw error
+  }
+  let entries: string[]
+  try {
+    const openedDirectory = await directoryHandle.stat()
+    if (!openedDirectory.isDirectory()) throw unsafePackagePath()
+    entries = await readdir(sourcePath)
+    const assertSameDirectory = async () => {
+      const currentDirectory = await lstat(sourcePath)
+      if (
+        currentDirectory.isSymbolicLink()
+        || currentDirectory.dev !== openedDirectory.dev
+        || currentDirectory.ino !== openedDirectory.ino
+      ) {
+        throw unsafePackagePath()
+      }
+    }
+    await assertSameDirectory()
+  } finally {
+    await directoryHandle.close()
+  }
+
   for (const entry of entries) {
     const source = path.join(sourcePath, entry)
     const destination = path.join(destinationPath, entry)
@@ -181,9 +250,11 @@ async function copyExistingPackageTree(
     await assertSafeExistingPath(rootPath, source)
     if (stats.isDirectory()) {
       await mkdir(destination, { recursive: true })
-      await copyExistingPackageTree(rootPath, source, destination)
+      await copyExistingPackageTree(rootPath, source, destination, fileOperations)
     } else if (stats.isFile()) {
-      await copyFile(source, destination)
+      await fileOperations.beforePreservedFileOpen?.(source)
+      const contents = await readSafeRegularFile(rootPath, source)
+      await writeFile(destination, contents)
     } else {
       throw new ProjectLibraryStoreError('Project packages may only contain regular files and directories.', 400, 'unsafe-path')
     }
@@ -191,11 +262,11 @@ async function copyExistingPackageTree(
 }
 
 async function preserveManifestSources(
-  existingPackagePath: string,
+  stagingPath: string,
   serializedFiles: Record<string, string>,
 ): Promise<void> {
   const existingManifest = JSON.parse(
-    await readFile(path.join(existingPackagePath, WRITEROS_PROJECT_MANIFEST_PATH), 'utf8'),
+    await readFile(path.join(stagingPath, WRITEROS_PROJECT_MANIFEST_PATH), 'utf8'),
   ) as Record<string, unknown>
   const sources = existingManifest.sources
   if (
@@ -233,6 +304,7 @@ export async function createProjectLibraryStore(
   const fileOperations: ProjectLibraryFileOperations = {
     rename: options.fileOperations?.rename ?? renamePath,
     rm: options.fileOperations?.rm ?? removePath,
+    beforePreservedFileOpen: options.fileOperations?.beforePreservedFileOpen,
   }
   const projectPaths = new Map<string, { packageName: string; packagePath: string }>()
 
@@ -335,7 +407,12 @@ export async function createProjectLibraryStore(
         throw new ProjectLibraryStoreError('Cannot save a WriterOS project without a project id.', 400, 'invalid-project')
       }
 
-      const packageWriteLock = await acquirePackageWriteLock({ workspaceRoot: rootPath, projectId: project.id })
+      const packageWriteLock = await acquirePackageWriteLock({
+        workspaceRoot: rootPath,
+        projectId: project.id,
+        testHooks: options.packageLockTestHooks,
+      })
+      let writeFailed = false
       try {
         await scanProjects()
         const existing = projectPaths.get(project.id)
@@ -363,8 +440,8 @@ export async function createProjectLibraryStore(
 
         try {
           if (originalPath) {
-            await copyExistingPackageTree(rootPath, originalPath, stagingPath)
-            await preserveManifestSources(originalPath, serialized.files)
+            await copyExistingPackageTree(rootPath, originalPath, stagingPath, fileOperations)
+            await preserveManifestSources(stagingPath, serialized.files)
           }
           await writeStagedPackage(stagingPath, serialized.files)
           await validateStagedPackage(rootPath, stagingPath)
@@ -404,8 +481,15 @@ export async function createProjectLibraryStore(
         projectPaths.delete(project.id)
         projectPaths.set(project.id, { packageName, packagePath: destinationPath })
         return serverRef(packageName, project)
+      } catch (error) {
+        writeFailed = true
+        throw error
       } finally {
-        await packageWriteLock.release()
+        try {
+          await packageWriteLock.release()
+        } catch (releaseError) {
+          if (!writeFailed) throw releaseError
+        }
       }
     },
   }
