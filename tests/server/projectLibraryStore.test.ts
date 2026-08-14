@@ -157,7 +157,7 @@ describe('project package write lock', () => {
     expect(thirdResult.outcome).toBe('lock-timeout')
   })
 
-  it('elects only one contender after recovering a stale claim', async () => {
+  it('elects only one contender after recovering a stale claim when append order differs from call order', async () => {
     const root = await makeTemporaryDirectory()
     const projectId = makeStoredProject().id
     const lockPath = packageLockPath(root, projectId)
@@ -168,10 +168,33 @@ describe('project package write lock', () => {
       pid: 2_147_483_647,
       createdAt: new Date(Date.now() - 60_000).toISOString(),
     })}\n`, 'utf8')
-    const contenderPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 500 })
+    let firstReachedAppend!: () => void
+    const firstAtAppend = new Promise<void>(resolve => {
+      firstReachedAppend = resolve
+    })
+    let allowFirstAppend!: () => void
+    const firstMayAppend = new Promise<void>(resolve => {
+      allowFirstAppend = resolve
+    })
+    let delayFirstAppend = true
+    const contenderPromise = acquirePackageWriteLock({
+      workspaceRoot: root,
+      projectId,
+      timeoutMs: 500,
+      testHooks: {
+        beforeJournalOpen: async () => {
+          if (!delayFirstAppend) return
+          delayFirstAppend = false
+          firstReachedAppend()
+          await firstMayAppend
+        },
+      },
+    })
+    await firstAtAppend
     const successorPromise = acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 60 })
-    const contender = await contenderPromise
-    const successorResult = await successorPromise.then(lock => ({
+    const successor = await successorPromise
+    allowFirstAppend()
+    const contenderResult = await contenderPromise.then(lock => ({
       outcome: 'acquired',
       lock,
     }), error => ({
@@ -179,9 +202,9 @@ describe('project package write lock', () => {
       lock: null,
     }))
 
-    await successorResult.lock?.release()
-    await contender.release()
-    expect(successorResult.outcome).toBe('lock-timeout')
+    await contenderResult.lock?.release()
+    await successor.release()
+    expect(contenderResult.outcome).toBe('lock-timeout')
   })
 
   it('rejects a lock journal replaced by a symlink before append', async () => {
