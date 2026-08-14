@@ -8,8 +8,11 @@ import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import { requestSynopsisCompose } from '../../lib/synopsisComposeClient'
 import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 export interface SynopsisTabProps {
+  projectId?: string
   document: AuthoredDocumentState<SynopsisDocumentContent>
   projectFormat?: ProjectFormat
   identity?: ComposeIdentity
@@ -23,6 +26,7 @@ export interface SynopsisTabProps {
 }
 
 export function SynopsisTab({
+  projectId,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -37,6 +41,7 @@ export function SynopsisTab({
 
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
 
   const handleCompose = useCallback(async () => {
@@ -45,7 +50,8 @@ export function SynopsisTab({
     setIsComposing(true)
     setComposeError(null)
     try {
-      const result = await requestSynopsisCompose({ content: document.content, format: activeFormat, identity })
+      const result = await requestSynopsisCompose({ projectId, content: document.content, format: activeFormat, identity })
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
       } else {
@@ -57,7 +63,7 @@ export function SynopsisTab({
       isComposingRef.current = false
       setIsComposing(false)
     }
-  }, [document.content, activeFormat, identity, onComposed])
+  }, [projectId, document.content, activeFormat, identity, onComposed])
 
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return
@@ -144,6 +150,7 @@ export function SynopsisTab({
           onCompose={handleCompose}
         />
       )}
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
     </div>
   )
 }

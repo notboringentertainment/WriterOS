@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { createEmptyDocuments } from '../../../shared/documents'
 
 const { runtimeMock } = vi.hoisted(() => ({
   runtimeMock: {
@@ -38,12 +39,13 @@ import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 let server: http.Server
 let port: number
+const memoryProvider = { context: vi.fn() }
 
 beforeEach(async () => {
   vi.clearAllMocks()
   const app = express()
   app.use(express.json())
-  registerRoomRoutes(app)
+  registerRoomRoutes(app, memoryProvider)
   server = http.createServer(app)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
@@ -96,7 +98,7 @@ describe('Project Meeting routes', () => {
     const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: '  thin seed  ', speculative: true })
 
     expect(res.status).toBe(200)
-    expect(runtimeMock.startInterview).toHaveBeenCalledWith({ projectId: 'project-A', mode: 'full', seedText: '  thin seed  ', speculative: true })
+    expect(runtimeMock.startInterview).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-A', mode: 'full', seedText: '  thin seed  ', speculative: true }))
     expect(res.json).toMatchObject({ session: { id: 's1' }, auditMessage: 'Morgan audit' })
   })
 
@@ -210,5 +212,16 @@ describe('Project Meeting routes', () => {
     expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1/export')).json).toMatchObject({ status: 'exported' })
     expect((await get('/api/room/project-A/interview/s1/pitch-packet/exported')).json).toMatchObject({ status: 'exported' })
     expect(runtimeMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-A', sessionId: 's1', projectMeta: { title: 'Ace' } }))
+    expect(runtimeMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ memoryProvider }))
+  })
+
+  it('returns a safe retryable Pitch Packet failure when unified memory needs repair', async () => {
+    runtimeMock.createPitchPacketDraft.mockRejectedValueOnce(new RoomMemoryError('/Users/writer/private-memory.jsonl'))
+
+    const res = await post('/api/room/project-A/interview/s1/pitch-packet/draft', { documents: createEmptyDocuments() })
+
+    expect(res.status).toBe(503)
+    expect(res.json).toEqual({ message: 'Project memory is unavailable and needs repair.' })
+    expect(JSON.stringify(res.json)).not.toContain('/Users')
   })
 })

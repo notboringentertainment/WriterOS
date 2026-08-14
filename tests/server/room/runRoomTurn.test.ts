@@ -240,6 +240,45 @@ describe('runRoomTurn', () => {
     expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'spoke' }))
   })
 
+  it('filters remember and proposal text and preserves the exact receipt when the agent proposes then passes', async () => {
+    storeMock.writeBlock.mockResolvedValue({ ok: true, nearCap: false })
+    storeMock.insertProposal.mockResolvedValue({
+      id: 'prop-memory', agent_id: 'casey', surface: 'storyBible', field_path: 'characters[r1].want',
+    })
+    sendToolTurnMock.mockResolvedValueOnce(toolTurn([
+      {
+        id: 'u1', name: 'remember',
+        input: { label: 'lane_notes', value: `Canon ${roomCitation}; invented [M-FFFF-0066006F006F].` },
+      },
+      {
+        id: 'u2', name: 'propose_field_write',
+        input: {
+          surface: 'storyBible', fieldPath: 'characters[r1].want',
+          value: `Honor (${roomCitation.slice(1, -1)}), not (M-FFFF-0066006F006F).`,
+          rationale: `Canon supports ${roomCitation}; invented M-FFFF-0066006F006F.`,
+        },
+      },
+      { id: 'u3', name: 'pass', input: { reason: `Enough ${roomCitation}` } },
+    ]))
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider: roomProvider() })
+
+    expect(storeMock.writeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      value: `Canon ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23 }),
+    }))
+    expect(storeMock.insertProposal).toHaveBeenCalledWith(expect.objectContaining({
+      proposedValue: `Honor ${roomCitation}, not .`,
+      rationale: `Canon supports ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23, citations: [expect.objectContaining({ id: roomCitation })] }),
+    }))
+    expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'proposal_ref',
+      memoryReceipt: expect.objectContaining({ revision: 23, citations: [expect.objectContaining({ id: roomCitation })] }),
+    }))
+    expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'proposed' }))
+  })
+
   it('clears the streaming turn and ledgers errored when message persistence fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     storeMock.insertMessage.mockRejectedValueOnce(new Error('insert failed'))

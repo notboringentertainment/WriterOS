@@ -3,6 +3,7 @@ import type { TranscriptMessage } from '../../lib/projectState'
 import { getActiveHelperText, type ActiveTab } from '../../lib/wpRouting'
 import type { StoryBibleSection } from '../../lib/shellState'
 import { CapabilityReceiptChip } from '../transcript/CapabilityReceiptChip'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 interface LeftRailProps {
   open: boolean
@@ -99,6 +100,9 @@ export function LeftRail({
                     </div>
                     {msg.role === 'assistant' && msg.capabilityReceipt && (
                       <CapabilityReceiptChip receipt={msg.capabilityReceipt} />
+                    )}
+                    {msg.role === 'assistant' && msg.memoryReceipt && (
+                      <MemoryReceiptDisclosure receipt={msg.memoryReceipt} />
                     )}
                   </div>
                 ))}

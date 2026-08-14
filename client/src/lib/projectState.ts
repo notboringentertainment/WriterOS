@@ -10,6 +10,7 @@ import {
 } from './documentMigration'
 import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import type { MemoryReceipt } from '@shared/schema'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { defaultScriptFactsCache, normalizeScriptFactsCache, type ScriptFactsCache } from './scriptFacts'
 
@@ -25,6 +26,7 @@ export interface TranscriptMessage {
   speaker: string
   ts: number
   capabilityReceipt?: CapabilityReceipt
+  memoryReceipt?: MemoryReceipt
 }
 
 export interface ScriptScene {

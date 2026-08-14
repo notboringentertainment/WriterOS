@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createPitchPacketDraft, exportPitchPacketRow } from '../../../server/room/interview/pitchPacketStore'
+import type { MemoryReceipt } from '../../../shared/schema'
 
 const field = <T>(value: T) => ({ value, origin: 'writer' as const, approved: true, sourceRef: 'writer:test' })
 const packet = {
@@ -9,6 +10,7 @@ const packet = {
   premise: field('Premise'), storyEngine: field('Engine'), coreCharacters: field([{ name: 'Mara', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]),
   locks: field([]), openQuestions: field([]),
 }
+const memoryReceipt: MemoryReceipt = { revision: 31, status: 'available', citations: [], conflictIds: [] }
 
 describe('pitchPacketStore', () => {
   it('deletes only draft/approved rows for the same session before inserting a replacement', async () => {
@@ -23,12 +25,13 @@ describe('pitchPacketStore', () => {
     insertChain.single = vi.fn(async () => inserted)
     const db = { from: vi.fn(() => ({ delete: () => deleteChain, insert: (value: unknown) => { calls.push(['insert', value]); return insertChain } })) } as unknown as SupabaseClient
 
-    const row = await createPitchPacketDraft({ projectId: 'p1', sessionId: 's1', packet, directionRevision: 2 }, db)
+    const row = await createPitchPacketDraft({ projectId: 'p1', sessionId: 's1', packet, directionRevision: 2, memoryReceipt }, db)
 
     expect(row).toMatchObject({ id: 'new', status: 'draft' })
     expect(calls).toContainEqual(['eq:session_id', 's1'])
     expect(calls).toContainEqual(['in:status', ['draft', 'approved']])
     expect(calls.filter(([key]) => key === 'in:status')).toEqual([['in:status', ['draft', 'approved']]])
+    expect(calls).toContainEqual(['insert', expect.objectContaining({ memory_receipt: memoryReceipt })])
   })
 
   it('exports through the single transaction RPC and returns its persisted row', async () => {

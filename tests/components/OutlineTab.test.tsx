@@ -172,6 +172,7 @@ describe('OutlineTab Document View', () => {
     })
     return (
       <OutlineTab
+        projectId="folder-outline-1"
         document={doc}
         projectFormat="feature"
         identity={identity}
@@ -207,8 +208,24 @@ describe('OutlineTab Document View', () => {
     await waitFor(() => expect(screen.getByText('Who We Follow')).toBeInTheDocument())
     expect(screen.getByText(/Vera Solano fights The Meridian Group/)).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/compose-document', expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).projectId).toBe('folder-outline-1')
     // Renderer purity: no labeled answer rows leak into the composed body.
     expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
+  })
+
+  it('discloses disabled project memory from the compose receipt', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        composed: cleanComposed(),
+        memoryReceipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+      }),
+    }))
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+
+    expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is already in flight', async () => {

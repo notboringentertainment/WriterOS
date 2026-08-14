@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEmptyDocuments } from '../../../shared/documents'
+import type { ProjectMemoryProvider } from '../../../server/projectMemory/agentContext'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 const packetStoreMock = vi.hoisted(() => ({
   createPitchPacketDraft: vi.fn(), getPitchPacket: vi.fn(), updatePitchPacketDraft: vi.fn(),
@@ -22,6 +24,24 @@ function input() {
   const documents = createEmptyDocuments(() => '2026-07-14T00:00:00.000Z')
   documents.synopsis.content.header.title = 'Home Service'
   return { projectId: 'p1', sessionId: 's1', documents, projectMeta: { title: 'Home Service' }, now: () => '2026-07-14T12:00:00.000Z' }
+}
+
+const pitchCitation = '[M-6182-00630061006E006F006E]'
+function pitchMemoryProvider(): ProjectMemoryProvider {
+  return {
+    context: vi.fn().mockResolvedValue({
+      projectId: 'p1', revision: 31,
+      activeCanon: [{
+        id: 'canon', projectId: 'p1', kind: 'canon', status: 'active',
+        claim: 'Mara cannot sell the family restaurant.', tags: [], entities: [],
+        source: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/mara', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' },
+        evidence: [], safety: 'clear', spoiler: false, supersedes: [],
+        createdAt: '2026-08-14T12:00:00.000Z', updatedAt: '2026-08-14T12:00:00.000Z',
+      }],
+      relevant: [], conflicts: [], spoilerConflictIds: [],
+      citationMap: { [pitchCitation]: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/mara', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' } },
+    }),
+  }
 }
 
 beforeEach(() => {
@@ -64,6 +84,40 @@ describe('pitchPacketRuntime', () => {
     expect(result.proposalUnavailable).toBe(true)
     expect(result.row.packet.storyEngine).toMatchObject({ value: '', approved: false })
     expect(packetStoreMock.createPitchPacketDraft).toHaveBeenCalled()
+  })
+
+  it('builds Pitch Packet memory once, fences it in the model prompt, and persists the exact filtered receipt', async () => {
+    const memoryProvider = pitchMemoryProvider()
+    providerMock.generateResponse.mockResolvedValueOnce(JSON.stringify({
+      logline: `Mara protects the restaurant ${pitchCitation} [M-FFFF-ABCD]`,
+      premise: `A family inheritance forces Mara home ${pitchCitation.toLowerCase()}`,
+    }))
+    const { createPitchPacketDraft } = await import('../../../server/room/interview/pitchPacketRuntime')
+
+    const result = await createPitchPacketDraft({ ...input(), memoryProvider })
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(providerMock.generateResponse).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining('<project_memory_data>'),
+    }))
+    expect(result.row.packet.logline.value).toBe(`Mara protects the restaurant ${pitchCitation}`)
+    expect(result.memoryReceipt).toEqual({
+      revision: 31, status: 'available', conflictIds: [],
+      citations: [{ id: pitchCitation, workflow: 'writeros', sourceUri: 'writeros://locks/mara' }],
+    })
+    expect(packetStoreMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ memoryReceipt: result.memoryReceipt }))
+  })
+
+  it('fails closed before Pitch Packet reads or model execution when folder memory is corrupt', async () => {
+    const memoryProvider = { context: vi.fn().mockRejectedValue(new Error('/private/ledger corrupt')) }
+    const { createPitchPacketDraft } = await import('../../../server/room/interview/pitchPacketRuntime')
+
+    await expect(createPitchPacketDraft({ ...input(), memoryProvider })).rejects.toBeInstanceOf(RoomMemoryError)
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(interviewStoreMock.getInterviewSession).not.toHaveBeenCalled()
+    expect(providerMock.generateResponse).not.toHaveBeenCalled()
+    expect(packetStoreMock.createPitchPacketDraft).not.toHaveBeenCalled()
   })
 
   it('rejects unapproved/conflicted packets and stale direction before export', async () => {

@@ -4,6 +4,7 @@
 import type { ProjectDocuments } from '@shared/documents'
 import type { PitchPacket } from '@shared/pitchPacket'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
+import type { MemoryReceipt } from '@shared/schema'
 
 export interface RoomMessage {
   id: string
@@ -13,6 +14,7 @@ export interface RoomMessage {
   content: string
   reply_to: string | null
   created_at: string
+  memory_receipt?: MemoryReceipt | null
 }
 
 export interface RoomProposal {
@@ -31,6 +33,7 @@ export interface RoomProposal {
   question_id?: string | null
   origin?: 'seed' | 'extrapolated' | 'invented' | null
   created_at: string
+  memory_receipt?: MemoryReceipt | null
 }
 
 export interface RoomCharacterBrief {
@@ -90,6 +93,7 @@ export interface PitchPacketRow {
   direction_revision: number
   created_at: string
   exported_at: string | null
+  memory_receipt?: MemoryReceipt
 }
 
 export interface MeetingRecapItem {
@@ -353,7 +357,7 @@ export async function createPitchPacketDraft(
   sessionId: string,
   documents: ProjectDocuments,
   projectMeta: { title?: string },
-): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean }> {
+): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
   const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/draft`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

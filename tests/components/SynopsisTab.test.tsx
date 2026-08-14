@@ -354,6 +354,7 @@ describe('SynopsisTab — Document View composer', () => {
     })
     return (
       <SynopsisTab
+        projectId="folder-synopsis-1"
         document={doc}
         projectFormat="feature"
         identity={identity}
@@ -378,6 +379,22 @@ describe('SynopsisTab — Document View composer', () => {
     await waitFor(() => expect(screen.getByText(/Vera races a rising flood to expose Meridian/)).toBeInTheDocument())
     const [, options] = fetchMock.mock.calls[0]
     expect(JSON.parse(options.body).surface).toBe('synopsis')
+    expect(JSON.parse(options.body).projectId).toBe('folder-synopsis-1')
+  })
+
+  it('discloses the exact project-memory revision after composition', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        composed: cleanComposed(),
+        memoryReceipt: { revision: 52, status: 'available', citations: [], conflictIds: [] },
+      }),
+    }))
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    expect(await screen.findByText(/project memory revision 52/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is in flight', async () => {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { PitchPacketSchema, type PitchPacket } from '../../../shared/pitchPacket'
 import { getRoomDb } from '../supabaseClient'
+import type { MemoryReceipt } from '../../../shared/schema'
 
 export type PitchPacketStatus = 'draft' | 'approved' | 'exported'
 
@@ -14,6 +15,7 @@ export interface PitchPacketRow {
   direction_revision: number
   created_at: string
   exported_at: string | null
+  memory_receipt?: MemoryReceipt
 }
 
 function normalizeRow(value: unknown): PitchPacketRow {
@@ -26,13 +28,14 @@ function errorMessage(error: { message: string } | null, action: string): void {
 }
 
 export async function createPitchPacketDraft(input: {
-  projectId: string; sessionId: string; packet: PitchPacket; directionRevision: number
+  projectId: string; sessionId: string; packet: PitchPacket; directionRevision: number; memoryReceipt: MemoryReceipt
 }, db: SupabaseClient = getRoomDb()): Promise<PitchPacketRow> {
   const removed = await db.from('pitch_packets').delete().eq('project_id', input.projectId).eq('session_id', input.sessionId).in('status', ['draft', 'approved'])
   errorMessage(removed.error, 'replace draft')
   const result = await db.from('pitch_packets').insert({
     project_id: input.projectId, session_id: input.sessionId, packet: input.packet,
     packet_version: input.packet.packetVersion, status: 'draft', direction_revision: input.directionRevision,
+    memory_receipt: input.memoryReceipt,
   }).select().single()
   errorMessage(result.error, 'create draft')
   return normalizeRow(result.data)

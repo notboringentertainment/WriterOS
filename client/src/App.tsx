@@ -36,6 +36,8 @@ import type { StoredProject } from './lib/projectLibrary'
 import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import type { MemoryReceipt } from '@shared/schema'
+import { parseMemoryReceipt } from './lib/memoryReceipt'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
 import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib/projectMeetingStatus'
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
@@ -56,7 +58,7 @@ function makeMessage(
   role: 'user' | 'assistant',
   content: string,
   speaker: string,
-  options: { capabilityReceipt?: CapabilityReceipt } = {}
+  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt } = {}
 ): TranscriptMessage {
   return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...options }
 }
@@ -77,28 +79,35 @@ async function postWPChat(body: {
   projectContext: ReturnType<typeof buildProjectContext>
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
   voiceProfile?: VoiceProfileDocument
-}): Promise<{ message: string; suggestions?: string[] }> {
+}): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`wp-chat ${res.status}`)
-  return res.json()
+  const response = await res.json()
+  return { ...response, memoryReceipt: parseMemoryReceipt(response?.memoryReceipt) }
 }
 
 async function postOpenSwarmWritingPartner(body: {
+  projectId?: string
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
   voiceProfile?: VoiceProfileDocument
-}): Promise<{ message: string }> {
+}): Promise<{ message: string; memoryReceipt?: MemoryReceipt }> {
   const res = await fetch('/api/openswarm/writing-partner', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`openswarm writing-partner ${res.status}`)
-  return res.json()
+  const response = await res.json()
+  if (!res.ok) {
+    const memoryReceipt = parseMemoryReceipt(response?.memoryReceipt)
+    if (typeof response?.message === 'string') return { message: response.message, memoryReceipt }
+    throw new Error(`openswarm writing-partner ${res.status}`)
+  }
+  return { ...response, memoryReceipt: parseMemoryReceipt(response?.memoryReceipt) }
 }
 
 export default function App() {
@@ -644,8 +653,8 @@ export default function App() {
       try {
         const projectContext = buildFreshProjectContext(openSwarmMessage)
         const voiceProfile = loadCompletedVoiceProfile()
-        const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext, voiceProfile })
-        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)'))
+        const response = await postOpenSwarmWritingPartner({ projectId: activeFolderProjectId ?? undefined, message: openSwarmMessage, projectContext, voiceProfile })
+        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)', { memoryReceipt: response.memoryReceipt }))
       } catch {
         project.addMessage(
           'writingPartner',
@@ -681,6 +690,7 @@ export default function App() {
 
       if (capabilityKind === 'research_world_context' && personaId === 'zoe') {
         const response = await postPersonaCapability({
+          projectId: activeFolderProjectId ?? undefined,
           personaId: 'zoe',
           taskKind: 'research_world_context',
           message: messageToSend,
@@ -712,14 +722,14 @@ export default function App() {
         surface,
       })
       const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
-      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
+      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Morgan'))
     } finally {
       setWpLoading(false)
     }
-  }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
+  }, [activeFolderProjectId, buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
   // Room proposal adoption (D7): applies the field via the same document path
   // the writer uses. Deliberately NOT routed through onContentPatch — adopted
@@ -753,7 +763,7 @@ export default function App() {
       })
       const response = await postWPChat({ projectId: project.activeProjectId!, personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
-      project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
+      project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
@@ -788,6 +798,7 @@ export default function App() {
       case 'synopsis':
         return (
           <SynopsisTab
+            projectId={activeFolderProjectId ?? undefined}
             document={project.state.documents.synopsis}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -803,6 +814,7 @@ export default function App() {
       case 'outline':
         return (
           <OutlineTab
+            projectId={activeFolderProjectId ?? undefined}
             document={project.state.documents.outline}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -818,6 +830,7 @@ export default function App() {
       case 'treatment':
         return (
           <TreatmentTab
+            projectId={activeFolderProjectId ?? undefined}
             document={project.state.documents.treatment}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}

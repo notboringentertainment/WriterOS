@@ -86,21 +86,25 @@ export async function runCaseyDigest(input: {
     const parsed = JSON.parse(match[0]) as { lane_notes?: unknown; writer_rapport?: unknown; flag?: unknown };
 
     if (typeof parsed.lane_notes === 'string' && parsed.lane_notes.trim()) {
+      const finalizedLaneNotes = finalizeAgentMemoryText(parsed.lane_notes, projectMemory);
       await store.writeBlock({
         projectId,
         agentId: CASEY_ID,
         label: 'lane_notes',
-        value: finalizeAgentMemoryText(parsed.lane_notes, projectMemory).text.slice(0, LANE_NOTES_CAP),
+        value: finalizedLaneNotes.text.slice(0, LANE_NOTES_CAP),
+        memoryReceipt: finalizedLaneNotes.receipt,
         updatedBy: 'digest',
         charCap: LANE_NOTES_CAP,
       });
     }
     if (typeof parsed.writer_rapport === 'string' && parsed.writer_rapport.trim()) {
+      const finalizedRapport = finalizeAgentMemoryText(parsed.writer_rapport, projectMemory);
       await store.writeBlock({
         projectId,
         agentId: CASEY_ID,
         label: 'writer_rapport',
-        value: finalizeAgentMemoryText(parsed.writer_rapport, projectMemory).text.slice(0, WRITER_RAPPORT_CAP),
+        value: finalizedRapport.text.slice(0, WRITER_RAPPORT_CAP),
+        memoryReceipt: finalizedRapport.receipt,
         updatedBy: 'digest',
         charCap: WRITER_RAPPORT_CAP,
       });

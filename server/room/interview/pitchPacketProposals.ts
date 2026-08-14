@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { createModelProvider, type ModelProvider } from '../../ai/modelProvider'
+import {
+  finalizeAgentMemoryValue,
+  type AgentMemoryContext,
+  type MemoryReceipt,
+} from '../../projectMemory/agentContext'
 
 export const PITCH_PACKET_PROPOSAL_SYSTEM_PROMPT = `You propose only missing scalar fields for a Pitch Packet.
 Ground every proposal in the supplied project documents, Meeting seed, and banked answers. Do not invent unsupported plot facts.
@@ -20,18 +25,25 @@ function extractJsonObject(raw: string): unknown {
 
 export async function generatePitchPacketProposals(
   groundedProjectContext: unknown,
+  projectMemory: AgentMemoryContext,
   provider: ModelProvider = createModelProvider(),
-): Promise<{ proposals: PitchPacketProposals; unavailable: boolean }> {
-  if (!provider.isConfigured()) return { proposals: {}, unavailable: true }
+): Promise<{ proposals: PitchPacketProposals; unavailable: boolean; memoryReceipt: MemoryReceipt }> {
+  const empty = () => finalizeAgentMemoryValue<PitchPacketProposals>({}, projectMemory)
+  if (!provider.isConfigured()) {
+    const finalized = empty()
+    return { proposals: finalized.value, unavailable: true, memoryReceipt: finalized.receipt }
+  }
   try {
     const raw = await provider.generateResponse({
-      systemPrompt: PITCH_PACKET_PROPOSAL_SYSTEM_PROMPT,
+      systemPrompt: [PITCH_PACKET_PROPOSAL_SYSTEM_PROMPT, projectMemory.prompt].filter(Boolean).join('\n\n'),
       messages: [{ role: 'user', content: JSON.stringify(groundedProjectContext) }],
       temperature: 0.2,
       maxTokens: 900,
     })
-    return { proposals: PitchPacketProposalSchema.parse(extractJsonObject(raw)), unavailable: false }
+    const finalized = finalizeAgentMemoryValue(PitchPacketProposalSchema.parse(extractJsonObject(raw)), projectMemory)
+    return { proposals: finalized.value, unavailable: false, memoryReceipt: finalized.receipt }
   } catch {
-    return { proposals: {}, unavailable: true }
+    const finalized = empty()
+    return { proposals: finalized.value, unavailable: true, memoryReceipt: finalized.receipt }
   }
 }

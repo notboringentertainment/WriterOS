@@ -123,6 +123,74 @@ describe('project memory agent context boundary', () => {
     })
   })
 
+  it('normalizes supplied citations across brackets, whitespace, parentheses, bare text, and case', async () => {
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(memoryContext()) },
+      'project-1',
+      { message: 'harbor' },
+    )
+    const bare = visibleCitation.slice(1, -1)
+    const invented = 'M-FFFF-0066006F006F'
+
+    const finalized = finalizeAgentMemoryText(
+      `A [ ${bare.toLowerCase()} ], B (${bare}), C ${bare}; invented (${invented}). Keep M-16 road and [M-note].`,
+      prepared,
+    )
+
+    expect(finalized.text).toBe(
+      `A ${visibleCitation}, B ${visibleCitation}, C ${visibleCitation}; invented . Keep M-16 road and [M-note].`,
+    )
+    expect(finalized.receipt.citations).toEqual([{
+      id: visibleCitation,
+      workflow: 'writeros',
+      sourceUri: 'writeros://documents/story-bible#harbor',
+    }])
+  })
+
+  it.each([
+    '/Users/writer/Private/ending.md',
+    '~/secret/ending.md',
+    'C:\\Users\\writer\\ending.md',
+    '\\\\server\\share\\ending.md',
+    'file:///private/var/ending.md',
+    'private/project/memory.jsonl',
+    '.writeros/memory/ledger.jsonl',
+    'draft.md\n/private/forged',
+  ])('redacts unsafe source URI %s consistently from prompt and receipt', async unsafeSourceUri => {
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: unsafeSourceUri },
+    }
+    context.citationMap = {
+      [visibleCitation]: { ...context.activeCanon[0].source },
+      [hiddenCitation]: context.citationMap[hiddenCitation],
+    }
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+    const finalized = finalizeAgentMemoryText(visibleCitation, prepared)
+
+    expect(prepared.prompt).not.toContain(unsafeSourceUri)
+    expect(finalized.receipt.citations[0].sourceUri).toMatch(/^redacted-source:[0-9a-f]{24}$/)
+    expect(finalized.receipt.citations[0].sourceUri).not.toContain('ending')
+  })
+
+  it('preserves safe workflow-relative and opaque source URIs', async () => {
+    const context = memoryContext()
+    context.activeCanon[0] = {
+      ...context.activeCanon[0],
+      source: { ...context.activeCanon[0].source, sourceUri: 'story-wayfinder:atoms/atoms.jsonl#atom=decision-1' },
+    }
+    context.citationMap = { [visibleCitation]: context.activeCanon[0].source }
+    const prepared = await buildAgentMemoryContext(
+      { context: vi.fn().mockResolvedValue(context) }, 'project-1', { message: 'harbor' },
+    )
+
+    expect(finalizeAgentMemoryText(visibleCitation, prepared).receipt.citations[0].sourceUri)
+      .toBe('story-wayfinder:atoms/atoms.jsonl#atom=decision-1')
+  })
+
   it('preserves browser-only behavior as disabled without calling a provider', async () => {
     const prepared = await buildAgentMemoryContext(null, undefined, { message: 'hello' })
     expect(prepared.prompt).toBe('')
@@ -439,6 +507,36 @@ describe('all HTTP agent path parity', () => {
       expect(response.json.message).toBe(`OpenSwarm grounded ${visibleCitation}; invented .`)
       expect(response.json.memoryReceipt.revision).toBe(17)
       expect(response.json.memoryReceipt.citations).toHaveLength(1)
+    } finally { server.close() }
+  })
+
+  it('keeps the exact built receipt on OpenSwarm upstream and composition soft failures', async () => {
+    const provider = { context: vi.fn().mockResolvedValue(memoryContext()) }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('upstream unavailable', { status: 503 })))
+    const { server, port } = await startApp(provider)
+    try {
+      const upstreamFailure = await postHttpJson(port, '/api/openswarm/writing-partner', {
+        projectId: 'project-1', message: 'Review the harbor.',
+        projectContext: buildProjectContext(defaultProjectState()),
+      })
+      expect(upstreamFailure.status).toBe(502)
+      expect(upstreamFailure.json.memoryReceipt).toEqual({
+        revision: 17, status: 'available', citations: [], conflictIds: ['conflict-visible'],
+      })
+
+      vi.spyOn(modelProvider, 'createModelProvider').mockReturnValue({
+        name: 'test', model: 'test-model', isConfigured: () => true,
+        generateResponse: vi.fn().mockResolvedValue('not valid composition JSON'),
+      } as never)
+      const composeFailure = await postHttpJson(port, '/api/compose-document', {
+        projectId: 'project-1', surface: 'outline', format: 'feature',
+        content: syntheticOutlineFeature, identity: { title: 'Harbor', genre: 'Drama' },
+      })
+      expect(composeFailure.status).toBe(422)
+      expect(composeFailure.json.memoryReceipt).toEqual({
+        revision: 17, status: 'available', citations: [], conflictIds: ['conflict-visible'],
+      })
+      expect(provider.context).toHaveBeenCalledTimes(2)
     } finally { server.close() }
   })
 

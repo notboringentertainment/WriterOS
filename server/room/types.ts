@@ -25,6 +25,7 @@ export interface MemoryBlockRow {
   char_cap: number;
   updated_by: string | null;
   updated_at: string;
+  memory_receipt?: MemoryReceipt | null;
 }
 
 export type RoomEventKind =
@@ -65,6 +66,7 @@ export interface ProposalRow {
   question_id?: string | null;
   origin?: ProposalOrigin | null;
   created_at: string;
+  memory_receipt?: MemoryReceipt | null;
 }
 
 export type LedgerAction = 'spoke' | 'proposed' | 'passed' | 'digested' | 'errored';

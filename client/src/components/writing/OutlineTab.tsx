@@ -19,10 +19,13 @@ import { requestOutlineCompose } from '../../lib/composeClient'
 import { OutlineEditView } from './outline/OutlineEditView'
 import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
 interface OutlineTabProps {
+  projectId?: string
   document: AuthoredDocumentState<OutlineDocumentContent>
   projectFormat?: ProjectFormat
   identity: ComposeIdentity
@@ -36,6 +39,7 @@ interface OutlineTabProps {
 }
 
 export function OutlineTab({
+  projectId,
   document,
   projectFormat = 'feature',
   identity,
@@ -50,6 +54,7 @@ export function OutlineTab({
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
@@ -62,10 +67,12 @@ export function OutlineTab({
     setComposeError(null)
     try {
       const result = await requestOutlineCompose({
+        projectId,
         content: document.content,
         format: activeFormat,
         identity,
       })
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed(result.composed)
       } else {
@@ -77,7 +84,7 @@ export function OutlineTab({
       isComposingRef.current = false
       setIsComposing(false)
     }
-  }, [document.content, activeFormat, identity, onComposed])
+  }, [projectId, document.content, activeFormat, identity, onComposed])
 
   useEffect(() => {
     if (activeFormat === 'series' && document.content.episodes.length === 0) {
@@ -169,6 +176,8 @@ export function OutlineTab({
           onCompose={handleCompose}
         />
       )}
+
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
 
       <ClearOutlineDialog
         open={clearDialogOpen}

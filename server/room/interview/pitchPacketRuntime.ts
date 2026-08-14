@@ -6,6 +6,13 @@ import * as auditContextRuntime from './auditContext'
 import * as packetStore from './pitchPacketStore'
 import { generatePitchPacketProposals } from './pitchPacketProposals'
 import { emitMeetingTrace } from './trace'
+import {
+  buildAgentMemoryContext,
+  ProjectMemoryAgentUnavailableError,
+  type MemoryReceipt,
+  type ProjectMemoryProvider,
+} from '../../projectMemory/agentContext'
+import { RoomMemoryError } from '../memoryContract'
 
 type Now = () => string
 const nowIso: Now = () => new Date().toISOString()
@@ -39,8 +46,22 @@ function applyUnapprovedProposals(packet: PitchPacket, proposals: Record<string,
 
 export async function createPitchPacketDraft(input: {
   projectId: string; sessionId: string; documents: ProjectDocuments; projectMeta?: { title?: string }; now?: Now
-}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean }> {
+  memoryProvider?: ProjectMemoryProvider | null
+}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
   const documents = ProjectDocumentsSchema.parse(input.documents)
+  let projectMemory
+  try {
+    projectMemory = await buildAgentMemoryContext(input.memoryProvider ?? null, input.projectId, {
+      message: input.projectMeta?.title?.trim() || 'Create a Pitch Packet draft.',
+      surface: 'pitch-packet',
+      personaId: 'writingPartner',
+    })
+  } catch (error) {
+    if (error instanceof ProjectMemoryAgentUnavailableError) {
+      throw new RoomMemoryError('Project memory is unavailable and needs repair.')
+    }
+    throw error
+  }
   const session = await interviewStore.getInterviewSession(input.sessionId)
   if (!session) throw new Error('Interview session not found.')
   requireSessionProject(session, input.projectId)
@@ -59,11 +80,14 @@ export async function createPitchPacketDraft(input: {
   emitMeetingTrace({ type: 'meeting.packet.composed', projectId: input.projectId, sessionId: input.sessionId, directionRevision: directionSnapshot.revision })
   const groundedProjectContext = { documents, seed: session.seed_text, bankedAnswers: session.answers, activeMeetingDirection: context.activeDecisions }
   emitMeetingTrace({ type: 'meeting.packet.proposal_started', projectId: input.projectId, sessionId: input.sessionId })
-  const generated = await generatePitchPacketProposals(groundedProjectContext)
+  const generated = await generatePitchPacketProposals(groundedProjectContext, projectMemory)
   packet = applyUnapprovedProposals(packet, generated.proposals)
   emitMeetingTrace({ type: generated.unavailable ? 'meeting.packet.proposal_failed' : 'meeting.packet.proposal_completed', projectId: input.projectId, sessionId: input.sessionId })
-  const row = await packetStore.createPitchPacketDraft({ projectId: input.projectId, sessionId: input.sessionId, packet, directionRevision: directionSnapshot.revision })
-  return { row, proposalUnavailable: generated.unavailable }
+  const row = await packetStore.createPitchPacketDraft({
+    projectId: input.projectId, sessionId: input.sessionId, packet,
+    directionRevision: directionSnapshot.revision, memoryReceipt: generated.memoryReceipt,
+  })
+  return { row, proposalUnavailable: generated.unavailable, memoryReceipt: generated.memoryReceipt }
 }
 
 export async function savePitchPacketDraft(input: { projectId: string; sessionId: string; packetId: string; packet: unknown }): Promise<packetStore.PitchPacketRow> {

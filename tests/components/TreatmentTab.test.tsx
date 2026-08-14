@@ -373,6 +373,7 @@ describe('TreatmentTab — Document view composition', () => {
     }))
     return (
       <TreatmentTab
+        projectId="folder-treatment-1"
         document={doc}
         projectFormat="feature"
         identity={identity}
@@ -397,6 +398,22 @@ describe('TreatmentTab — Document view composition', () => {
     await waitFor(() => expect(screen.getByText(/Mara Voss dives a drowned city/)).toBeInTheDocument())
     const [, options] = fetchMock.mock.calls[0]
     expect(JSON.parse(options.body).surface).toBe('treatment')
+    expect(JSON.parse(options.body).projectId).toBe('folder-treatment-1')
+  })
+
+  it('discloses disabled project memory after composition', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        composed: cleanComposed(),
+        memoryReceipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+      }),
+    }))
+
+    render(<DocumentHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this treatment/i }))
+
+    expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is in flight', async () => {

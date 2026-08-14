@@ -252,7 +252,7 @@ describe('buildMemoryContext', () => {
     }))
 
     expect(() => buildMemoryContext(snapshot(oversizedCanon), { message: 'opening' }))
-      .toThrowError('canon_context_too_large: active canon contains 64200 characters; maximum is 64000')
+      .toThrowError(/canon_context_too_large: active canon context contains \d+ rendered characters; maximum is 64000/)
 
     try {
       buildMemoryContext(snapshot(oversizedCanon), { message: 'opening' })
@@ -261,6 +261,19 @@ describe('buildMemoryContext', () => {
       expect(error).toBeInstanceOf(ProjectMemoryRetrievalError)
       expect(error).toMatchObject({ code: 'canon_context_too_large' })
     }
+  })
+
+  it('refuses canon whose IDs and citation rendering exceed the bound even when claims are tiny', () => {
+    const oversizedIdentityCanon = Array.from({ length: 1_000 }, (_, index) => record({
+      id: `${String(index).padStart(4, '0')}-${'i'.repeat(500)}`,
+      kind: 'canon',
+      status: 'active',
+      claim: 'Bound truth.',
+      source: source({ sourceId: `canon-source-${index}`, sourceUri: `canon/${index}` }),
+    }))
+
+    expect(() => buildMemoryContext(snapshot(oversizedIdentityCanon), { message: 'opening' }))
+      .toThrowError(/canon_context_too_large/)
   })
 
   it('renders the canonical JSON object and literal spoiler-free Markdown by default', async () => {

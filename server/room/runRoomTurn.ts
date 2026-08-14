@@ -80,7 +80,7 @@ export async function runRoomTurn(input: {
   const userMessage = buildTurnUserMessage({ channel, event });
   const channelAuthors = new Set(channel.map((m) => m.author));
 
-  const toolset = makeRoomToolset({ projectId, agentId, recorder, locksText, channelAuthors });
+  const toolset = makeRoomToolset({ projectId, agentId, recorder, locksText, channelAuthors, projectMemory });
 
   broadcast(projectId, { type: 'turn_started', agentId, turnId });
 

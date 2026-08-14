@@ -163,6 +163,7 @@ export async function writeBlock(input: {
   value: string;
   updatedBy: string;
   charCap?: number;
+  memoryReceipt?: import('../../shared/schema').MemoryReceipt;
 }): Promise<{ ok: true; nearCap: boolean } | { ok: false; reason: string }> {
   const db = getRoomDb();
   const existing = await db
@@ -194,6 +195,7 @@ export async function writeBlock(input: {
         char_cap: cap,
         updated_by: input.updatedBy,
         updated_at: new Date().toISOString(),
+        memory_receipt: input.memoryReceipt ?? null,
       },
       { onConflict: 'project_id,agent_id,label' },
     );
@@ -259,6 +261,7 @@ export async function insertProposal(input: {
   sessionId?: string;
   questionId?: string;
   origin?: ProposalOrigin;
+  memoryReceipt?: import('../../shared/schema').MemoryReceipt;
 }): Promise<ProposalRow> {
   const insert: Record<string, unknown> = {
     project_id: input.projectId,
@@ -273,6 +276,7 @@ export async function insertProposal(input: {
   if (input.sessionId !== undefined) insert.session_id = input.sessionId;
   if (input.questionId !== undefined) insert.question_id = input.questionId;
   if (input.origin !== undefined) insert.origin = input.origin;
+  if (input.memoryReceipt !== undefined) insert.memory_receipt = input.memoryReceipt;
 
   const res = await getRoomDb()
     .from('proposals')

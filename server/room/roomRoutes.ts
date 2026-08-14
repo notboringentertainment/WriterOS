@@ -65,6 +65,7 @@ function handleInterviewError(res: Response, error: unknown): void {
 
 function handlePitchPacketError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Pitch Packet action failed.';
+  if (error instanceof RoomMemoryError) { res.status(503).json({ message: 'Project memory is unavailable and needs repair.' }); return; }
   if (error instanceof Error && error.name === 'ZodError') { res.status(400).json({ message: 'Pitch Packet data is invalid.' }); return; }
   if (message.includes('not found')) { res.status(404).json({ message }); return; }
   if (message.includes('cannot be approved') || message.includes('Only a draft') || message.includes('must be approved')) {
@@ -457,6 +458,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       res.json(await pitchPacketRuntime.createPitchPacketDraft({
         projectId: projectIdOf(req), sessionId: String(req.params.sessionId), documents: req.body?.documents,
         projectMeta: { title: typeof req.body?.projectMeta?.title === 'string' ? req.body.projectMeta.title : undefined },
+        memoryProvider,
       }));
     } catch (error) { handlePitchPacketError(res, error); }
   });

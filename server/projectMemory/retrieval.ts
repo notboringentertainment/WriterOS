@@ -5,6 +5,7 @@ import type {
   ProjectMemoryRecord,
   ProjectMemorySnapshot,
 } from '../../shared/projectMemory'
+import { renderMemoryContextMarkdown } from './renderContext'
 
 const MAX_RELEVANT_RECORDS = 12
 const MAX_RELEVANT_CHARACTERS = 16_000
@@ -239,6 +240,37 @@ function conflictTouchesRecordIds(
   return recordIds.has(conflict.leftRecordId) || recordIds.has(conflict.rightRecordId)
 }
 
+function assertCanonContextFits(
+  projectId: string,
+  revision: number,
+  activeCanon: readonly ProjectMemoryRecord[],
+  conflicts: readonly ProjectMemoryConflict[],
+  spoilerConflictIds: readonly string[],
+): void {
+  const labels = citationLabelsForRecords(activeCanon)
+  const context: MemoryContextPackage = {
+    projectId,
+    revision,
+    activeCanon: [...activeCanon],
+    relevant: [],
+    conflicts: [...conflicts],
+    spoilerConflictIds: [...spoilerConflictIds],
+    citationMap: Object.fromEntries(activeCanon.map(record => [
+      labels.get(record.id) as string,
+      record.source,
+    ])),
+  }
+  const jsonCharacters = JSON.stringify(context).length
+  const markdownCharacters = renderMemoryContextMarkdown(context).length
+  const measuredCharacters = Math.max(jsonCharacters, markdownCharacters)
+  if (measuredCharacters > MAX_ACTIVE_CANON_CHARACTERS) {
+    throw new ProjectMemoryRetrievalError(
+      'canon_context_too_large',
+      `active canon context contains ${measuredCharacters} rendered characters; maximum is ${MAX_ACTIVE_CANON_CHARACTERS}`,
+    )
+  }
+}
+
 export function buildMemoryContext(
   snapshot: ProjectMemorySnapshot,
   query: MemoryQuery,
@@ -251,16 +283,6 @@ export function buildMemoryContext(
     ))
     .sort((left, right) => compareCodePoints(left.id, right.id))
     .map(record => contextRecordProjection(record, false))
-  const activeCanonCharacters = activeCanon.reduce(
-    (total, record) => total + record.claim.length,
-    0,
-  )
-  if (activeCanonCharacters > MAX_ACTIVE_CANON_CHARACTERS) {
-    throw new ProjectMemoryRetrievalError(
-      'canon_context_too_large',
-      `active canon contains ${activeCanonCharacters} characters; maximum is ${MAX_ACTIVE_CANON_CHARACTERS}`,
-    )
-  }
   const activeCanonIds = new Set(activeCanon.map(record => record.id))
   const openConflicts = snapshot.conflicts
     .filter(conflict => conflict.status === 'open')
@@ -272,6 +294,16 @@ export function buildMemoryContext(
   )
   const spoilerRecordIds = new Set(
     snapshot.records.filter(record => record.spoiler).map(record => record.id),
+  )
+  const canonConflicts = openConflicts.filter(conflict => canonDrivenConflictIds.has(conflict.id))
+  assertCanonContextFits(
+    snapshot.projectId,
+    snapshot.revision,
+    activeCanon,
+    canonConflicts,
+    canonConflicts
+      .filter(conflict => spoilerRecordIds.has(conflict.leftRecordId) || spoilerRecordIds.has(conflict.rightRecordId))
+      .map(conflict => conflict.id),
   )
   const queryTokens = queryTokenSets(query)
   const rankedRelevant = snapshot.records

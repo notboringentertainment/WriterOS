@@ -33,6 +33,7 @@ import {
   finalizeAgentMemoryText,
   finalizeAgentMemoryValue,
   type AgentMemoryContext,
+  type MemoryReceipt,
   type ProjectMemoryProvider,
 } from "./projectMemory/agentContext";
 
@@ -1112,6 +1113,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
 
   // OpenSwarm Writing Partner bridge — explicit opt-in, separate from /api/wp-chat
   app.post("/api/openswarm/writing-partner", async (req, res) => {
+    let failureMemoryReceipt: MemoryReceipt | undefined;
     try {
       const data = openSwarmWritingPartnerSchema.parse(req.body);
       const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
@@ -1120,6 +1122,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
         personaId: 'writingPartner',
         currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
       });
+      failureMemoryReceipt = finalizeAgentMemoryText('', memory).receipt;
       const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
       const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const controller = new AbortController();
@@ -1150,6 +1153,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
         return res.status(502).json({
           error: "OpenSwarm request failed",
           message: "OpenSwarm is reachable, but Writing Partner could not complete the request.",
+          memoryReceipt: failureMemoryReceipt,
         });
       }
 
@@ -1159,6 +1163,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
         return res.status(502).json({
           error: "OpenSwarm returned an error",
           message: "OpenSwarm Writing Partner returned an error.",
+          memoryReceipt: failureMemoryReceipt,
         });
       }
 
@@ -1183,6 +1188,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
       res.status(502).json({
         error: "Failed to reach OpenSwarm",
         message: "Start OpenSwarm's FastAPI server on port 8080, then try again.",
+        ...(failureMemoryReceipt ? { memoryReceipt: failureMemoryReceipt } : {}),
       });
     }
   });
@@ -1228,12 +1234,14 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
   });
 
   app.post("/api/compose-document", async (req, res) => {
+    let failureMemoryReceipt: MemoryReceipt | undefined;
     try {
       const data = ComposeDocumentRequestSchema.parse(req.body);
       const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
         message: `${data.identity.title} ${data.identity.genre}`,
         surface: data.surface,
       });
+      failureMemoryReceipt = finalizeAgentMemoryText('', memory).receipt;
       const result = data.surface === "treatment"
         ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
         : data.surface === "synopsis"
@@ -1241,7 +1249,10 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
           : await composeOutline({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt });
       if (!result.ok) {
         console.error("compose-document soft-fail:", result.reason);
-        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
+        return res.status(422).json({
+          error: "compose_failed", message: "WriterOS could not compose this document right now.",
+          reason: "compose_failed", memoryReceipt: failureMemoryReceipt,
+        });
       }
       const finalized = finalizeAgentMemoryValue(result.composed, memory);
       res.json({ composed: finalized.value, memoryReceipt: finalized.receipt });
@@ -1254,7 +1265,10 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
         return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });
       }
       console.error("compose-document route error:", error instanceof Error ? error.message : error);
-      res.status(502).json({ error: "compose_error", message: "WriterOS could not compose this document right now." });
+      res.status(502).json({
+        error: "compose_error", message: "WriterOS could not compose this document right now.",
+        ...(failureMemoryReceipt ? { memoryReceipt: failureMemoryReceipt } : {}),
+      });
     }
   });
 

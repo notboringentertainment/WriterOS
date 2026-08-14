@@ -21,8 +21,11 @@ import {
   TREATMENT_PROSE_FIELDS as PROSE_FIELDS,
   TREATMENT_VISUAL_FIELDS as VISUAL_FIELDS,
 } from '../../lib/treatmentDeck'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 interface TreatmentTabProps {
+  projectId?: string
   document: AuthoredDocumentState<TreatmentDocumentContent>
   projectFormat?: ProjectFormat
   // Optional so existing Edit View tests keep compiling (Synopsis build-reality delta).
@@ -87,6 +90,7 @@ function hasTreatmentAnswers(content: TreatmentDocumentContent): boolean {
 }
 
 export function TreatmentTab({
+  projectId,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -104,6 +108,7 @@ export function TreatmentTab({
 
   const [isComposing, setIsComposing] = React.useState(false)
   const [composeError, setComposeError] = React.useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = React.useState<MemoryReceipt | undefined>()
   // The double-submit guard lives here in the tab handler, not in the compose client.
   const isComposingRef = React.useRef(false)
 
@@ -113,7 +118,8 @@ export function TreatmentTab({
     setIsComposing(true)
     setComposeError(null)
     try {
-      const result = await requestTreatmentCompose({ content, format: activeFormat, identity })
+      const result = await requestTreatmentCompose({ projectId, content, format: activeFormat, identity })
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
       } else {
@@ -125,7 +131,7 @@ export function TreatmentTab({
       isComposingRef.current = false
       setIsComposing(false)
     }
-  }, [content, activeFormat, identity, onComposed])
+  }, [projectId, content, activeFormat, identity, onComposed])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {
@@ -520,6 +526,7 @@ export function TreatmentTab({
           onCompose={handleCompose}
         />
       )}
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
     </div>
   )
 }

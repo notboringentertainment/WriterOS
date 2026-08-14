@@ -1,5 +1,6 @@
 import React, { useId, useState } from 'react'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 interface CapabilityReceiptChipProps {
   receipt: CapabilityReceipt
@@ -94,6 +95,7 @@ function CapabilityReceiptInspector({
       <div style={styles.metaLine}>
         {STATUS_LABELS[receipt.status]} · {formatDuration(receipt.durationMs)}
       </div>
+      <MemoryReceiptDisclosure receipt={receipt.memory} />
 
       <div style={styles.section}>
         <span style={styles.sectionLabel}>Context</span>

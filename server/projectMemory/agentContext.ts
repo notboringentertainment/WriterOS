@@ -1,5 +1,6 @@
 import type { ProjectLibraryStore } from '../projectLibrary/store'
 import { ProjectLibraryStoreError } from '../projectLibrary/store'
+import { createHash } from 'node:crypto'
 import type {
   MemoryContextPackage,
   MemorySource,
@@ -40,7 +41,7 @@ const DISABLED_RECEIPT: MemoryReceipt = {
   conflictIds: [],
 }
 
-const MEMORY_CITATION_PATTERN = /\[M-[0-9A-F]{4}-[0-9A-F]+\]/giu
+const MEMORY_CITATION_PATTERN = /(?<![\p{L}\p{N}-])(?:\[\s*(M-[0-9A-F]{4}-[0-9A-F]+)\s*\]|\(\s*(M-[0-9A-F]{4}-[0-9A-F]+)\s*\)|(M-[0-9A-F]{4}-[0-9A-F]+))(?![\p{L}\p{N}-])/giu
 
 const MEMORY_AUTHORITY_RULES = `PROJECT MEMORY AUTHORITY RULES:
 - Active canon is binding context. Never silently contradict or replace it.
@@ -55,6 +56,35 @@ function disabledContext(): AgentMemoryContext {
     prompt: '',
     receipt: { ...DISABLED_RECEIPT, citations: [], conflictIds: [] },
     allowedCitations: new Map(),
+  }
+}
+
+function safeSourceUri(sourceUri: string): string {
+  const normalized = sourceUri.normalize('NFKC')
+  const pathPart = normalized.split(/[?#]/, 1)[0]
+  const unsafe = /[\u0000-\u001F\u007F]/u.test(normalized)
+    || /^(?:\/|~|\\|file:)/iu.test(normalized)
+    || /^[A-Z]:[\\/]/iu.test(normalized)
+    || /^(?:\.\/)*(?:private|\.writeros)(?:\/|$)/iu.test(pathPart)
+    || normalized.includes('\\')
+    || pathPart.split('/').includes('..')
+  if (!unsafe) return normalized
+  const digest = createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 24)
+  return `redacted-source:${digest}`
+}
+
+function sanitizeContextSources(context: MemoryContextPackage): MemoryContextPackage {
+  const sanitizeSource = (source: MemorySource): MemorySource => ({
+    ...source,
+    sourceUri: safeSourceUri(source.sourceUri),
+  })
+  return {
+    ...context,
+    activeCanon: context.activeCanon.map(record => ({ ...record, source: sanitizeSource(record.source) })),
+    relevant: context.relevant.map(record => ({ ...record, source: sanitizeSource(record.source) })),
+    citationMap: Object.fromEntries(
+      Object.entries(context.citationMap).map(([label, source]) => [label, sanitizeSource(source)]),
+    ),
   }
 }
 
@@ -134,9 +164,10 @@ export async function buildAgentMemoryContext(
   }
   if (context.projectId !== projectId) throw new ProjectMemoryAgentUnavailableError()
 
-  const { allowedCitations, conflictIds } = visibleContextParts(context)
+  const safeContext = sanitizeContextSources(context)
+  const { allowedCitations, conflictIds } = visibleContextParts(safeContext)
   return {
-    prompt: `${MEMORY_AUTHORITY_RULES}\n\n<project_memory_data>\n${renderMemoryContextMarkdown(context)}</project_memory_data>`,
+    prompt: `${MEMORY_AUTHORITY_RULES}\n\n<project_memory_data>\n${renderMemoryContextMarkdown(safeContext)}</project_memory_data>`,
     receipt: {
       revision: context.revision,
       status: 'available',
@@ -156,8 +187,8 @@ export function finalizeAgentMemoryText(
   }
 
   const citedIds = new Set<string>()
-  const filtered = text.replace(MEMORY_CITATION_PATTERN, citation => {
-    const normalized = citation.toUpperCase()
+  const filtered = text.replace(MEMORY_CITATION_PATTERN, (_citation, bracketed, parenthesized, bare) => {
+    const normalized = `[${String(bracketed ?? parenthesized ?? bare).toUpperCase()}]`
     if (!context.allowedCitations.has(normalized)) return ''
     citedIds.add(normalized)
     return normalized

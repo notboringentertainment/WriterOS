@@ -51,8 +51,9 @@ describe('runCaseyDigest', () => {
     }
     storeMock.getPrivateBlocks.mockResolvedValue([])
     storeMock.listRecentMessages.mockResolvedValue([])
+    storeMock.writeBlock.mockResolvedValue({ ok: true, nearCap: false })
     sendStreamingMessageMock.mockResolvedValue({
-      content: [{ type: 'text', text: '{"flag":"A continuity risk."}' }],
+      content: [{ type: 'text', text: '{"lane_notes":"Remember the continuity risk.","flag":"A continuity risk."}' }],
     })
     storeMock.insertMessage.mockResolvedValue({ id: 'm1' })
 
@@ -61,6 +62,10 @@ describe('runCaseyDigest', () => {
     expect(memoryProvider.context).toHaveBeenCalledTimes(1)
     expect(sendStreamingMessageMock.mock.calls[0][0].system).toContain('<project_memory_data>')
     expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      memoryReceipt: expect.objectContaining({ revision: 29, status: 'available' }),
+    }))
+    expect(storeMock.writeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'lane_notes',
       memoryReceipt: expect.objectContaining({ revision: 29, status: 'available' }),
     }))
   })
