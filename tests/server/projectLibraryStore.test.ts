@@ -224,6 +224,35 @@ describe('project package write lock', () => {
     await successor.release()
   })
 
+  it('recovers a truncated final legacy record before the next framed record', async () => {
+    const root = await makeTemporaryDirectory()
+    const projectId = makeStoredProject().id
+    const lockPath = packageLockPath(root, projectId)
+    await writeFile(lockPath, `${JSON.stringify({
+      kind: 'release',
+      token: 'already-released',
+      createdAt: '2026-05-01T10:00:00.000Z',
+    })}\n{"kind":"claim","token":"crash-tail`, 'utf8')
+
+    const successor = await acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 100 })
+    await successor.release()
+  })
+
+  it('rejects a malformed complete legacy record inside the journal', async () => {
+    const root = await makeTemporaryDirectory()
+    const projectId = makeStoredProject().id
+    const lockPath = packageLockPath(root, projectId)
+    const validResolution = JSON.stringify({
+      kind: 'release',
+      token: 'already-released',
+      createdAt: '2026-05-01T10:00:00.000Z',
+    })
+    await writeFile(lockPath, `${validResolution}\n{"kind":"claim",not-json}\n${validResolution}\n`, 'utf8')
+
+    await expect(acquirePackageWriteLock({ workspaceRoot: root, projectId, timeoutMs: 100 }))
+      .rejects.toMatchObject({ code: 'lock-corrupt' })
+  })
+
   it('rejects a malformed complete framed journal record', async () => {
     const root = await makeTemporaryDirectory()
     const projectId = makeStoredProject().id
@@ -414,6 +443,61 @@ describe('server project library store', () => {
     expect(read.ok && read.project.updatedAt).toBe(changed.updatedAt)
   })
 
+  it('keeps readProject available while a save owns the package snapshot', async () => {
+    const root = await makeTemporaryDirectory()
+    const project = makeStoredProject()
+    await writeSerializedPackage(root, 'The Salt Line (8f4e2c9a).writeros', project)
+    let snapshotReached!: () => void
+    const atSnapshot = new Promise<void>(resolve => {
+      snapshotReached = resolve
+    })
+    let allowSave!: () => void
+    const saveMayContinue = new Promise<void>(resolve => {
+      allowSave = resolve
+    })
+    let readerTriedLock!: () => void
+    const readerAtLock = new Promise<void>(resolve => {
+      readerTriedLock = resolve
+    })
+    let snapshotActive = false
+    const store = await createProjectLibraryStore(root, {
+      packageLockTestHooks: {
+        beforeJournalOpen: async () => {
+          if (snapshotActive) readerTriedLock()
+        },
+      },
+      fileOperations: {
+        afterPackageSnapshot: async () => {
+          snapshotActive = true
+          snapshotReached()
+          await saveMayContinue
+        },
+      },
+    })
+    await store.listProjects()
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+    const save = store.writeProject(changed)
+    await atSnapshot
+
+    const readOutcome = store.readProject(project.id).then(result => ({
+      status: 'resolved' as const,
+      result,
+    }), error => ({
+      status: 'rejected' as const,
+      error,
+    }))
+    await Promise.race([readerAtLock, readOutcome])
+    snapshotActive = false
+    allowSave()
+    await save
+    const outcome = await readOutcome
+
+    expect(outcome.status).toBe('resolved')
+    if (outcome.status !== 'resolved') throw outcome.error
+    expect(outcome.result.ok && outcome.result.project.updatedAt).toBe(changed.updatedAt)
+  })
+
   it('resolves the renamed live package only after a writer-first save releases the lock', async () => {
     const root = await makeTemporaryDirectory()
     const project = makeStoredProject()
@@ -582,6 +666,36 @@ describe('server project library store', () => {
     expect((await readdir(root)).filter(name => (
       name.startsWith('.writeros-stage-') || name.startsWith('.writeros-backup-')
     ))).toEqual([])
+  })
+
+  it('restores the live package and primary error when staging cleanup also fails', async () => {
+    const root = await makeTemporaryDirectory()
+    const project = makeStoredProject()
+    const packageName = 'The Salt Line (8f4e2c9a).writeros'
+    const packagePath = await writeSerializedPackage(root, packageName, project)
+    const manifestPath = path.join(packagePath, 'project.json')
+    const before = await readFile(manifestPath, 'utf8')
+    const realRm = rm
+    const store = await createProjectLibraryStore(root, {
+      fileOperations: {
+        afterPackageSnapshot: async () => {
+          throw Object.assign(new Error('simulated transaction failure'), { code: 'EIO' })
+        },
+        rm: async (target, options) => {
+          if (path.basename(target).startsWith('.writeros-stage-')) {
+            throw Object.assign(new Error('simulated staging cleanup failure'), { code: 'EIO' })
+          }
+          await realRm(target, options)
+        },
+      },
+    })
+    const changed = makeStoredProject()
+    changed.updatedAt += 5_000
+
+    const outcome = await store.writeProject(changed).then(() => null, error => error as Error)
+
+    expect(outcome?.message).toBe('simulated transaction failure')
+    expect(await readFile(manifestPath, 'utf8')).toBe(before)
   })
 
   it('preserves the transaction error when lock release also fails', async () => {

@@ -199,11 +199,21 @@ async function appendLockRecord(
 
 function parseJournalRecords(raw: string): PackageLockRecord[] {
   const records: PackageLockRecord[] = []
-  for (const line of raw.split('\n').filter(Boolean)) {
+  const lines = raw.split('\n')
+  const isCrashTailBeforeFrame = (lineIndex: number) => {
+    const nextLine = lines[lineIndex + 1]
+    return typeof nextLine === 'string' && parseFramedLockRecord(nextLine) !== null
+  }
+
+  for (const [lineIndex, line] of lines.entries()) {
+    if (!line) continue
     if (line.startsWith(LOCK_FRAME_PREFIX)) {
       // A write can crash anywhere before its suffix. The next append begins
       // with a newline, isolating those bytes from the next complete frame.
-      if (!line.endsWith(LOCK_FRAME_SUFFIX)) continue
+      if (!line.endsWith(LOCK_FRAME_SUFFIX)) {
+        if (isCrashTailBeforeFrame(lineIndex)) continue
+        throw corruptLockError()
+      }
       const framed = parseFramedLockRecord(line)
       if (!framed) throw corruptLockError()
       records.push(framed)
@@ -216,6 +226,7 @@ function parseJournalRecords(raw: string): PackageLockRecord[] {
       continue
     }
 
+    if (isCrashTailBeforeFrame(lineIndex)) continue
     throw corruptLockError()
   }
   return records

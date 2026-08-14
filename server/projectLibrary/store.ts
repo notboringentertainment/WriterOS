@@ -406,8 +406,29 @@ export async function createProjectLibraryStore(
       return assertSafeExistingPath(rootPath, existing.packagePath)
     },
     async readProject(projectId) {
-      const existing = await findProject(projectId)
-      return readWriterOSProjectPackage(await readPackageFiles(rootPath, existing.packagePath))
+      const packageWriteLock = await acquirePackageWriteLock({
+        workspaceRoot: rootPath,
+        projectId,
+        testHooks: options.packageLockTestHooks,
+      })
+      let readFailed = false
+      try {
+        await scanProjects()
+        const existing = projectPaths.get(projectId)
+        if (!existing) {
+          throw new ProjectLibraryStoreError('WriterOS project was not found.', 404, 'not-found')
+        }
+        return readWriterOSProjectPackage(await readPackageFiles(rootPath, existing.packagePath))
+      } catch (error) {
+        readFailed = true
+        throw error
+      } finally {
+        try {
+          await packageWriteLock.release()
+        } catch (releaseError) {
+          if (!readFailed) throw releaseError
+        }
+      }
     },
     async writeProject(project) {
       if (!WRITEROS_PROJECT_ID_PATTERN.test(project.id)) {
@@ -444,6 +465,8 @@ export async function createProjectLibraryStore(
           : null
         let backupCreated = false
         let committed = false
+        let transactionFailed = false
+        let transactionError: unknown
 
         try {
           if (originalPath && backupPath) {
@@ -479,13 +502,32 @@ export async function createProjectLibraryStore(
             }
             backupCreated = false
           }
+        } catch (error) {
+          transactionFailed = true
+          transactionError = error
         } finally {
-          await fileOperations.rm(stagingPath, { recursive: true, force: true })
+          let finalizationFailed = false
+          let finalizationError: unknown
           if (!committed && backupCreated && backupPath && originalPath) {
-            const originalExists = await lstat(originalPath).then(() => true, () => false)
-            if (!originalExists) await safeRename(backupPath, originalPath)
+            try {
+              const originalExists = await lstat(originalPath).then(() => true, () => false)
+              if (!originalExists) await safeRename(backupPath, originalPath)
+            } catch (error) {
+              finalizationFailed = true
+              finalizationError = error
+            }
           }
+          try {
+            await fileOperations.rm(stagingPath, { recursive: true, force: true })
+          } catch (error) {
+            if (!finalizationFailed) {
+              finalizationFailed = true
+              finalizationError = error
+            }
+          }
+          if (!transactionFailed && finalizationFailed) throw finalizationError
         }
+        if (transactionFailed) throw transactionError
 
         projectPaths.delete(project.id)
         projectPaths.set(project.id, { packageName, packagePath: destinationPath })
