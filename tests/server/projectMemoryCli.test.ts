@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
-import { projectMemoryStore } from '../../server/projectMemory/store'
+import { createProjectMemoryStore, projectMemoryStore } from '../../server/projectMemory/store'
 
 const temporaryRoots: string[] = []
 
@@ -405,6 +405,88 @@ describe('project memory CLI', () => {
       revision: 1,
       records: [{ claim: 'The first record becomes durable.' }],
     })
+  })
+
+  it('reconciles a first import record that was appended before projection failure', async () => {
+    const projectId = 'cli-post-append-import-project'
+    const { root, projectPath } = await createProject(projectId)
+    const sourceRoot = await mkdtemp(path.join(root, 'buzz-post-append-source-'))
+    let projectionFailures = 0
+    const failingStore = createProjectMemoryStore({
+      testHooks: {
+        beforeProjectionWrite: async (_projectPath, snapshot) => {
+          if (snapshot.revision === 1 && projectionFailures === 0) {
+            projectionFailures += 1
+            throw Object.assign(new Error('forced projection failure'), { code: 'EIO' })
+          }
+        },
+      },
+    })
+    const preview = {
+      source: 'buzz',
+      projectId,
+      records: [{
+        projectId,
+        dedupeKey: 'post-append-first',
+        kind: 'development',
+        requestedStatus: 'active',
+        claim: 'The ledger append survives a projection failure.',
+        source: {
+          workflow: 'buzz',
+          sourceId: 'post-append-first',
+          sourceUri: 'buzz://record/post-append-first',
+          sourceHash: 'post-append-first-hash',
+          capturedAt: '2026-08-02T12:00:00.000Z',
+          approval: 'none',
+        },
+      }],
+      warnings: [],
+      duplicates: 0,
+    }
+    const cliModulePath = '../../server/projectMemory/cli.ts'
+    const cliModule = await import(cliModulePath).catch(() => undefined)
+    const firstStderr: string[] = []
+    const retryStdout: string[] = []
+    const retryStderr: string[] = []
+    const command = [
+      'import',
+      '--source', 'buzz',
+      '--from', sourceRoot,
+      '--project', projectPath,
+      '--apply',
+    ]
+    const dependencies = { importPreview: async () => preview, memoryStore: failingStore }
+
+    const first = await cliModule?.runProjectMemoryCli?.(command, {
+      stdout: () => undefined,
+      stderr: (value: string) => firstStderr.push(value),
+    }, dependencies)
+    const retry = await cliModule?.runProjectMemoryCli?.(command, {
+      stdout: (value: string) => retryStdout.push(value),
+      stderr: (value: string) => retryStderr.push(value),
+    }, dependencies)
+    const durable = await failingStore.readSnapshot(projectPath)
+
+    expect(first).toBe(3)
+    expect(projectionFailures).toBe(1)
+    expect(JSON.parse(firstStderr.join(''))).toEqual({
+      error: 'import-partial',
+      appliedCount: 1,
+      lastRevision: 1,
+      retry: 'Retry the same import with --apply; previously applied records are idempotent.',
+    })
+    expect(durable).toMatchObject({
+      revision: 1,
+      records: [{ claim: 'The ledger append survives a projection failure.' }],
+    })
+    expect(retry).toBe(0)
+    expect(retryStderr).toEqual([])
+    expect(JSON.parse(retryStdout.join(''))).toMatchObject({
+      applied: 0,
+      duplicates: 1,
+      revision: 1,
+    })
+    expect(firstStderr.join('')).not.toContain(root)
   })
 
   it('rejects a symbolic-link import source without invoking an adapter or leaking its path', async () => {

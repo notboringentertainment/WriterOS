@@ -63,6 +63,10 @@ export class ProjectMemoryStoreError extends Error {
 export interface ProjectMemoryStore {
   readSnapshot(projectPath: string): Promise<ProjectMemorySnapshot>
   publish(projectPath: string, input: PublishMemoryInput): Promise<PublishResult>
+  reconcilePublication(
+    projectPath: string,
+    input: PublishMemoryInput,
+  ): Promise<ProjectMemoryPublicationReconciliation>
   applyAction(
     projectPath: string,
     action: ProjectMemoryAction,
@@ -73,6 +77,7 @@ export interface ProjectMemoryStore {
 
 export interface ProjectMemoryStoreTestHooks {
   writeLedgerChunk?(handle: FileHandle, buffer: Buffer, offset: number): Promise<number>
+  beforeProjectionWrite?(projectPath: string, snapshot: ProjectMemorySnapshot): Promise<void>
 }
 
 export interface ProjectMemoryStoreOptions {
@@ -86,7 +91,18 @@ interface ReplayResult {
     dedupeKey: string
     sourceHash: string
     recordId: string
+    eventId: string
+    eventRevision: number
   }>
+}
+
+export interface ProjectMemoryPublicationReconciliation {
+  snapshot: ProjectMemorySnapshot
+  publication?: {
+    eventId: string
+    eventRevision: number
+    record: ProjectMemoryRecord
+  }
 }
 
 function isNodeError(error: unknown, code: string): boolean {
@@ -307,6 +323,8 @@ function applyEvent(
       dedupeKey: event.dedupeKey,
       sourceHash: event.record.source.sourceHash,
       recordId: event.record.id,
+      eventId: event.id,
+      eventRevision: event.revision,
     })
   } else if (event.type === 'promoted') {
     let mutation: PromotionMutation
@@ -534,7 +552,12 @@ function snapshotJson(snapshot: ProjectMemorySnapshot): string {
   return `${JSON.stringify(snapshot, null, 2)}\n`
 }
 
-async function writeProjections(projectPath: string, snapshot: ProjectMemorySnapshot): Promise<void> {
+async function writeProjections(
+  projectPath: string,
+  snapshot: ProjectMemorySnapshot,
+  testHooks?: ProjectMemoryStoreTestHooks,
+): Promise<void> {
+  await testHooks?.beforeProjectionWrite?.(projectPath, snapshot)
   const memoryPath = path.join(projectPath, MEMORY_DIRECTORY)
   await atomicReplace(path.join(memoryPath, SNAPSHOT_FILE), snapshotJson(snapshot))
   await atomicReplace(path.join(memoryPath, CANON_FILE), renderCanonProjection(snapshot))
@@ -901,7 +924,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         if (!await projectionsMatch(projectPath, replayed.snapshot)) {
-          await writeProjections(projectPath, replayed.snapshot)
+          await writeProjections(projectPath, replayed.snapshot, options.testHooks)
         }
         return replayed.snapshot
       })
@@ -934,7 +957,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         if (duplicate) {
           const record = requireRecord(replayed.snapshot, duplicate.recordId)
           if (!await projectionsMatch(projectPath, replayed.snapshot)) {
-            await writeProjections(projectPath, replayed.snapshot)
+            await writeProjections(projectPath, replayed.snapshot, options.testHooks)
           }
           return { published: false, record, snapshot: replayed.snapshot }
         }
@@ -942,8 +965,37 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const event = createPublicationEvent(replayed.snapshot, input)
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
-        await writeProjections(projectPath, next.snapshot)
+        await writeProjections(projectPath, next.snapshot, options.testHooks)
         return { published: true, record: event.record, snapshot: next.snapshot }
+      })
+    },
+
+    async reconcilePublication(projectPath, rawInput) {
+      const parsed = PublishMemoryInputSchema.safeParse(rawInput)
+      if (!parsed.success) {
+        throw new ProjectMemoryStoreError(parsed.error.issues[0]?.message ?? 'Invalid memory publication.', 'invalid-input')
+      }
+      const input = parsed.data
+      return withProjectLock(projectPath, async projectId => {
+        if (input.projectId !== projectId) {
+          throw new ProjectMemoryStoreError('Publication projectId does not match the locked project.', 'project-mismatch')
+        }
+        const ledgerPath = await ensureLedger(projectPath)
+        const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
+        const publication = replayed.publications.find(candidate => (
+          candidate.dedupeKey === input.dedupeKey
+          && candidate.sourceHash === input.source.sourceHash
+        ))
+        return {
+          snapshot: replayed.snapshot,
+          ...(publication === undefined ? {} : {
+            publication: {
+              eventId: publication.eventId,
+              eventRevision: publication.eventRevision,
+              record: requireRecord(replayed.snapshot, publication.recordId),
+            },
+          }),
+        }
       })
     },
 
@@ -964,7 +1016,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const event = createActionEvent(replayed.snapshot, parsed.data)
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
-        await writeProjections(projectPath, next.snapshot)
+        await writeProjections(projectPath, next.snapshot, options.testHooks)
         return next.snapshot
       })
     },
@@ -973,7 +1025,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
-        await writeProjections(projectPath, replayed.snapshot)
+        await writeProjections(projectPath, replayed.snapshot, options.testHooks)
         return replayed.snapshot
       })
     },

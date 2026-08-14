@@ -1,4 +1,4 @@
-import { lstat, realpath } from 'node:fs/promises'
+import { lstat, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 export class UnsafeProjectMemoryPathError extends Error {
@@ -59,14 +59,27 @@ async function captureComponents(absolutePath: string): Promise<PathComponentIde
   return identities
 }
 
-function assertExpectedKind(
+function matchesExpectedKind(
   kind: ExpectedPathKind,
   stats: Awaited<ReturnType<typeof lstat>>,
-): void {
-  const matches = kind === 'directory' ? stats.isDirectory() : stats.isFile()
-  if (!matches || stats.isSymbolicLink()) {
-    throw new UnsafeProjectMemoryPathError(`The path must identify a real ${kind}.`)
+): boolean {
+  return kind === 'directory' ? stats.isDirectory() : stats.isFile()
+}
+
+async function assertExpectedKind(absolutePath: string, kind: ExpectedPathKind): Promise<void> {
+  const stats = await lstat(absolutePath)
+  if (stats.isSymbolicLink()) {
+    const componentIndex = componentsFor(absolutePath).length - 1
+    if (
+      await isAllowedPlatformRootAlias(absolutePath, componentIndex)
+      && matchesExpectedKind(kind, await stat(absolutePath))
+    ) {
+      return
+    }
+  } else if (matchesExpectedKind(kind, stats)) {
+    return
   }
+  throw new UnsafeProjectMemoryPathError(`The path must identify a real ${kind}.`)
 }
 
 /**
@@ -79,7 +92,7 @@ export async function guardExistingPath(
 ): Promise<SafeExistingPath> {
   const absolutePath = path.resolve(inputPath)
   const identities = await captureComponents(absolutePath)
-  assertExpectedKind(kind, await lstat(absolutePath))
+  await assertExpectedKind(absolutePath, kind)
   const canonicalPath = await realpath(absolutePath)
 
   return {
@@ -100,7 +113,7 @@ export async function guardExistingPath(
       ) {
         throw new UnsafeProjectMemoryPathError('The path changed during the operation.')
       }
-      assertExpectedKind(kind, await lstat(absolutePath))
+      await assertExpectedKind(absolutePath, kind)
     },
   }
 }

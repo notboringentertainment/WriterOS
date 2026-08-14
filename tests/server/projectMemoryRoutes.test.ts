@@ -245,6 +245,109 @@ describe('project memory HTTP routes', () => {
     }
   })
 
+  it('secures empty-id memory prefixes and returns safe parser and method errors', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const routeConfig: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const port = await startMemoryApp(routeConfig, store)
+    const malformed = '{"claim":'
+    const authorized = {
+      Origin: 'http://127.0.0.1:5177',
+      'X-WriterOS-Session': 'route-session',
+    }
+
+    const canonicalUnauthenticated = await requestRaw(port, '/api/projects//memory/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const legacyMissingToken = await requestRaw(port, '/api/project-memory//actions', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://127.0.0.1:5177',
+        'Content-Type': 'application/json',
+      },
+      body: malformed,
+    })
+    const canonicalForeignOrigin = await requestRaw(port, '/api/projects//memory/actions', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://evil.example',
+        'X-WriterOS-Session': 'route-session',
+        'Content-Type': 'application/json',
+      },
+      body: malformed,
+    })
+    const authenticatedEmptyId = await requestRaw(port, '/api/projects//memory/actions', {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const oversized = await requestRaw(port, '/api/projects/opaque-project/memory/actions', {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'x'.repeat(10 * 1024 * 1024) }),
+    })
+    const unsupportedMethod = await requestRaw(port, '/api/projects/opaque-project/memory/actions', {
+      method: 'PATCH',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const unknownEndpoint = await requestRaw(port, '/api/project-memory/opaque-project/unknown', {
+      method: 'POST',
+      headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: malformed,
+    })
+    const unrelated = await requestRaw(port, '/api/projects/not-a-memory-prefix', { method: 'GET' })
+
+    expect(canonicalUnauthenticated.status).toBe(403)
+    expect(legacyMissingToken.status).toBe(401)
+    expect(canonicalForeignOrigin.status).toBe(403)
+    expect(authenticatedEmptyId.status).toBe(400)
+    expect(JSON.parse(authenticatedEmptyId.text)).toEqual({
+      error: 'invalid-project-id',
+      message: 'Project memory requires a valid project id.',
+    })
+    expect(oversized.status).toBe(413)
+    expect(JSON.parse(oversized.text)).toEqual({
+      error: 'payload-too-large',
+      message: 'Project memory request body exceeds the allowed size.',
+    })
+    expect(unsupportedMethod.status).toBe(405)
+    expect(JSON.parse(unsupportedMethod.text)).toEqual({
+      error: 'method-not-allowed',
+      message: 'Project memory request method is not allowed.',
+    })
+    expect(unknownEndpoint.status).toBe(404)
+    expect(JSON.parse(unknownEndpoint.text)).toEqual({
+      error: 'not-found',
+      message: 'Project memory endpoint was not found.',
+    })
+    expect(unrelated.status).toBe(404)
+
+    for (const response of [
+      canonicalUnauthenticated,
+      legacyMissingToken,
+      canonicalForeignOrigin,
+      authenticatedEmptyId,
+      oversized,
+      unsupportedMethod,
+      unknownEndpoint,
+    ]) {
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.text).not.toContain(root)
+      expect(response.text).not.toContain('Error')
+      expect(response.text).not.toContain('<!DOCTYPE')
+    }
+  })
+
   it('rejects missing origin, wrong origin, and missing session token before project lookup', async () => {
     const port = await startApp()
 

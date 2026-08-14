@@ -394,6 +394,32 @@ describe('append-only project memory store', () => {
     expect((await readFile(path.join(projectPath, 'memory', 'ledger.jsonl'), 'utf8')).trim().split('\n')).toHaveLength(1)
   })
 
+  it('reconciles only the exact publication identity and not an unrelated event', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const unrelatedInput = publishInput({
+      dedupeKey: 'writeros:unrelated',
+      kind: 'development',
+      claim: 'An unrelated publication advances the ledger.',
+      source: source({ sourceId: 'unrelated', sourceHash: 'sha256:unrelated' }),
+    })
+    const unrelated = await store.publish(projectPath, unrelatedInput)
+
+    const missing = await store.reconcilePublication(projectPath, publishInput({ kind: 'development' }))
+    const exact = await store.reconcilePublication(projectPath, unrelatedInput)
+
+    expect(missing).toMatchObject({ snapshot: { revision: 1 } })
+    expect(missing.publication).toBeUndefined()
+    expect(exact).toMatchObject({
+      snapshot: { revision: 1 },
+      publication: {
+        eventRevision: 1,
+        record: { id: unrelated.record.id, claim: 'An unrelated publication advances the ledger.' },
+      },
+    })
+    expect(exact.publication?.eventId).toMatch(/^event_/)
+  })
+
   it('creates an immutable new record and revision when a source hash changes', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()

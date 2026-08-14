@@ -31,8 +31,8 @@ const PROJECT_MEMORY_PREFIXES = [
 ] as const
 
 const PROJECT_MEMORY_SECURITY_MOUNTS = [
-  { mount: '/api/project-memory', path: /^\/[^/]+(?:\/|$)/ },
-  { mount: '/api/projects', path: /^\/[^/]+\/memory(?:\/|$)/ },
+  '/api/project-memory',
+  '/api/projects',
 ] as const
 
 const PROJECT_MEMORY_ROUTE_PATHS = {
@@ -128,8 +128,46 @@ function routeError(res: Response, error: unknown) {
 }
 
 function isProjectMemoryPath(requestPath: string): boolean {
-  return /^\/api\/project-memory\/[^/]+(?:\/|$)/.test(requestPath)
-    || /^\/api\/projects\/[^/]+\/memory(?:\/|$)/.test(requestPath)
+  return /^\/api\/project-memory\/[^/]*(?:\/|$)/.test(requestPath)
+    || /^\/api\/projects\/[^/]*\/memory(?:\/|$)/.test(requestPath)
+}
+
+function encodedProjectIdForProjectMemoryPath(requestPath: string): string | undefined {
+  return requestPath.match(/^\/api\/project-memory\/([^/]*)(?:\/|$)/)?.[1]
+    ?? requestPath.match(/^\/api\/projects\/([^/]*)\/memory(?:\/|$)/)?.[1]
+}
+
+function expectedMethodForProjectMemoryPath(requestPath: string): 'GET' | 'POST' | undefined {
+  const match = requestPath.match(
+    /^\/api\/project-memory\/[^/]+\/(snapshot|context|actions|analyze)\/?$/,
+  ) ?? requestPath.match(
+    /^\/api\/projects\/[^/]+\/memory\/(snapshot|context|actions|analyze)\/?$/,
+  )
+  if (!match) return undefined
+  return match[1] === 'snapshot' || match[1] === 'context' ? 'GET' : 'POST'
+}
+
+function continueSupportedProjectMemoryRequest(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  requestPath = req.path,
+) {
+  const expectedMethod = expectedMethodForProjectMemoryPath(requestPath)
+  if (expectedMethod === undefined) {
+    return res.status(404).json({
+      error: 'not-found',
+      message: 'Project memory endpoint was not found.',
+    })
+  }
+  if (req.method !== expectedMethod) {
+    res.setHeader('Allow', expectedMethod)
+    return res.status(405).json({
+      error: 'method-not-allowed',
+      message: 'Project memory request method is not allowed.',
+    })
+  }
+  return next()
 }
 
 export function registerProjectMemorySecurityBoundary(
@@ -138,12 +176,13 @@ export function registerProjectMemorySecurityBoundary(
 ): void {
   const requireSameOrigin = sameOrigin(config, 'Project memory')
   const requireSession = authenticated(config, 'Project memory')
-  for (const boundary of PROJECT_MEMORY_SECURITY_MOUNTS) {
-    app.use(boundary.mount, (req, res, next) => {
-      if (!boundary.path.test(req.path)) return next()
+  for (const mount of PROJECT_MEMORY_SECURITY_MOUNTS) {
+    app.use(mount, (req, res, next) => {
+      const requestPath = req.originalUrl.split('?')[0] ?? req.path
+      if (!isProjectMemoryPath(requestPath)) return next()
       res.setHeader('Cache-Control', 'no-store')
       return requireSameOrigin(req, res, () => requireSession(req, res, () => {
-        const encodedProjectId = req.path.split('/')[1] ?? ''
+        const encodedProjectId = encodedProjectIdForProjectMemoryPath(requestPath) ?? ''
         let projectId: string
         try {
           projectId = decodeURIComponent(encodedProjectId)
@@ -159,7 +198,7 @@ export function registerProjectMemorySecurityBoundary(
             message: 'Project memory requires a valid project id.',
           })
         }
-        return next()
+        return continueSupportedProjectMemoryRequest(req, res, next, requestPath)
       }))
     })
   }
@@ -171,6 +210,18 @@ export function projectMemoryJsonErrorBoundary(
   res: Response,
   next: NextFunction,
 ) {
+  if (
+    isProjectMemoryPath(req.path)
+    && error !== null
+    && typeof error === 'object'
+    && 'status' in error
+    && error.status === 413
+  ) {
+    return res.status(413).json({
+      error: 'payload-too-large',
+      message: 'Project memory request body exceeds the allowed size.',
+    })
+  }
   if (
     isProjectMemoryPath(req.path)
     && error instanceof SyntaxError
@@ -311,5 +362,21 @@ export function registerProjectMemoryRoutes(
     } catch (error) {
       return routeError(res, error)
     }
+  })
+
+  app.use((req, res, next) => {
+    if (!isProjectMemoryPath(req.path)) return next()
+    const expectedMethod = expectedMethodForProjectMemoryPath(req.path)
+    if (expectedMethod !== undefined) {
+      res.setHeader('Allow', expectedMethod)
+      return res.status(405).json({
+        error: 'method-not-allowed',
+        message: 'Project memory request method is not allowed.',
+      })
+    }
+    return res.status(404).json({
+      error: 'not-found',
+      message: 'Project memory endpoint was not found.',
+    })
   })
 }

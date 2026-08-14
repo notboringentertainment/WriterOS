@@ -7,7 +7,7 @@ import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPacka
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
 import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
 import { renderMemoryContextMarkdown } from './renderContext'
-import { ProjectMemoryStoreError, projectMemoryStore } from './store'
+import { ProjectMemoryStoreError, projectMemoryStore, type ProjectMemoryStore } from './store'
 import type { MemoryContextPackage } from '../../shared/projectMemory'
 import { MemoryWorkflowSchema, PublishMemoryInputSchema, type PublishMemoryInput } from '../../shared/projectMemory'
 import { z } from 'zod'
@@ -40,6 +40,8 @@ export interface ProjectMemoryCliDependencies {
   beforePublishInputRead?(inputPath: string): Promise<void>
   /** @internal Deterministic project-directory swap injection for regression tests. */
   beforeLinkSourceLockedRead?(projectPath: string): Promise<void>
+  /** @internal Store injection for deterministic durability regression tests. */
+  memoryStore?: ProjectMemoryStore
 }
 
 const MAX_PUBLISH_INPUT_BYTES = 1_000_000
@@ -405,8 +407,9 @@ async function runImport(
   }
   const sourceGuard = await guardExistingPath(requiredValue(args, 'from'), 'directory')
   const sourceRoot = sourceGuard.path
+  const memoryStore = dependencies.memoryStore ?? projectMemoryStore
   await project.verify()
-  const snapshot = await projectMemoryStore.readSnapshot(projectPath)
+  const snapshot = await memoryStore.readSnapshot(projectPath)
   const rawPreview = await (dependencies.importPreview ?? loadImportPreview)({
     source,
     projectId: snapshot.projectId,
@@ -447,14 +450,29 @@ async function runImport(
   let applied = 0
   let idempotent = 0
   let revision = snapshot.revision
-  for (const [index, record] of parsed.data.records.entries()) {
+  for (const record of parsed.data.records) {
     let result
     try {
       await project.verify()
-      result = await projectMemoryStore.publish(projectPath, record)
-    } catch (error) {
-      if (index > 0) throw new CliImportPartialError(applied, revision)
-      throw error
+      result = await memoryStore.publish(projectPath, record)
+    } catch {
+      let lastRevision = revision
+      let durableApplied = 0
+      try {
+        await project.verify()
+        const reconciled = await memoryStore.reconcilePublication(projectPath, record)
+        lastRevision = reconciled.snapshot.revision
+        if (
+          reconciled.publication !== undefined
+          && reconciled.publication.eventRevision > revision
+        ) {
+          durableApplied = 1
+        }
+      } catch {
+        // The structured progress still reports the last revision known durable
+        // before this record when reconciliation itself is unavailable.
+      }
+      throw new CliImportPartialError(applied + durableApplied, lastRevision)
     }
     if (result.published) applied += 1
     else idempotent += 1
