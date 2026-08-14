@@ -6,7 +6,7 @@ import { UnsafeProjectMemoryPathError } from '../safePaths'
 import {
   buildImportCounts,
   promptInjectionLine,
-  readImportSourceText,
+  readImportSource,
   truncateImportText,
   type ImportPreview,
   type MemorySourceAdapter,
@@ -93,10 +93,12 @@ export const pitchStudioMemorySourceAdapter: MemorySourceAdapter = {
     const warnings: string[] = []
     let identifiedExports = 0
     for (const relativePath of await markdownFiles(sourceRoot)) {
-      const content = await readImportSourceText(path.join(sourceRoot, relativePath))
+      const sourceFile = await readImportSource(path.join(sourceRoot, relativePath))
+      const content = sourceFile.text
       const parsed = parseExport(content)
       const sourceHeader = parsed.headers.get('source')?.value ?? ''
-      if (!/^PitchStudio(?:\s|$)/i.test(sourceHeader) && !relativePath.includes('-pitchstudio-')) continue
+      const filenameMarker = path.posix.basename(relativePath).toLowerCase().includes('-pitchstudio-')
+      if (!/^PitchStudio(?:\s|$)/i.test(sourceHeader) && !filenameMarker) continue
       identifiedExports += 1
       const mode = parsed.headers.get('run_mode')
       if (mode?.value === 'scout') {
@@ -124,7 +126,7 @@ export const pitchStudioMemorySourceAdapter: MemorySourceAdapter = {
       if (decisions.length === 0) {
         warnings.push(`${relativePath}:1: no numbered PitchStudio decisions found`)
       }
-      const sourceHash = sha256(content)
+      const sourceHash = sourceFile.sourceHash
       const unsafeLine = promptInjectionLine(content)
       if (unsafeLine !== undefined) {
         warnings.push(`${relativePath}:${unsafeLine}: prompt-injection pattern detected; records imported as flagged candidates`)

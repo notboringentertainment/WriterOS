@@ -6,7 +6,7 @@ import { UnsafeProjectMemoryPathError } from '../safePaths'
 import {
   buildImportCounts,
   promptInjectionLine,
-  readImportSourceText,
+  readImportSource,
   truncateImportText,
   type ImportPreview,
   type MemorySourceAdapter,
@@ -119,10 +119,15 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         if (directory === 'assets') warnings.push('assets: absent (valid); no groundwork assets')
         else if (directory === 'tickets') warnings.push('tickets: absent (valid); no open tickets')
         else warnings.push('resolved: absent; no resolved tickets found')
+      } else if (listing.files.length === 0) {
+        if (directory === 'assets') warnings.push('assets: empty; no groundwork assets were included')
+        else if (directory === 'tickets') warnings.push('tickets: empty; no open tickets were included')
+        else warnings.push('resolved: empty; no resolved tickets were included')
       }
       for (const filename of listing.files) {
         const relativePath = path.posix.join(directory, filename)
-        const content = await readImportSourceText(path.join(sourceRoot, relativePath))
+        const sourceFile = await readImportSource(path.join(sourceRoot, relativePath))
+        const content = sourceFile.text
         const parsed = parseTicket(content)
         if (!parsed.title) {
           warnings.push(`${relativePath}:1: missing H1 title; record not imported`)
@@ -160,11 +165,21 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         const superseded = [...parsed.sections.entries()].find(([heading]) => (
           /^Superseded answer \(\d{4}-\d{2}-\d{2}\)$/.test(heading)
         ))
+        const nearSupersededHeadings = [...parsed.sections.keys()].filter(heading => (
+          heading !== superseded?.[0] && /^Superseded\s+answer\b/i.test(heading)
+        ))
         if (nearScopedHeading) {
           const line = content.replace(/\r\n?/g, '\n').split('\n')
             .findIndex(value => value === `## ${nearScopedHeading}`) + 1
           warnings.push(
             `${relativePath}:${line}: unrecognized scoped-out heading "${nearScopedHeading}"; imported as a development candidate`,
+          )
+        }
+        for (const nearSupersededHeading of nearSupersededHeadings) {
+          const line = content.replace(/\r\n?/g, '\n').split('\n')
+            .findIndex(value => value === `## ${nearSupersededHeading}`) + 1
+          warnings.push(
+            `${relativePath}:${line}: unrecognized superseded-answer heading "${nearSupersededHeading}"; history not imported`,
           )
         }
         if (unsafeLine !== undefined) {
@@ -202,7 +217,12 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             : answer || parsed.title
         if (!rawClaim) continue
         const claim = truncateImportText(rawClaim, 600)
-        if (claim !== rawClaim) warnings.push(`${relativePath}:1: claim truncated to 600 characters`)
+        const claimTruncated = claim !== rawClaim
+        if (claimTruncated) {
+          warnings.push(
+            `${relativePath}:1: claim truncated to 600 characters${activeCanon ? '; active canon withheld' : ''}`,
+          )
+        }
         const kind = scoped
           ? 'open_question'
           : nearScoped
@@ -212,21 +232,27 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
               : directory === 'tickets'
                 ? 'open_question'
                 : 'development'
-        const requestedStatus = scoped
-          || nearScoped
-          || unsafeLine !== undefined
-          || invalidTicketMetadata
-          || missingResolvedAnswer
-          ? 'candidate'
-          : 'active'
         const rawDetail = scoped
           ? `Scoped-out answer: ${scopedAnswer?.replace(/\s+/g, ' ').trim()}`
           : superseded
             ? `${superseded[0]}: ${superseded[1].replace(/\s+/g, ' ').trim()}`
             : undefined
         const detail = rawDetail === undefined ? undefined : truncateImportText(rawDetail, 8_000)
-        if (detail !== rawDetail) warnings.push(`${relativePath}:1: detail truncated to 8000 characters`)
-        const sourceHash = sha256(content)
+        const detailTruncated = detail !== rawDetail
+        if (detailTruncated) {
+          warnings.push(
+            `${relativePath}:1: detail truncated to 8000 characters${activeCanon ? '; active canon withheld' : ''}`,
+          )
+        }
+        const requestedStatus = scoped
+          || nearScoped
+          || unsafeLine !== undefined
+          || invalidTicketMetadata
+          || missingResolvedAnswer
+          || (activeCanon && (claimTruncated || detailTruncated))
+          ? 'candidate'
+          : 'active'
+        const sourceHash = sourceFile.sourceHash
         records.push({
           projectId,
           dedupeKey: `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}`)}`,
@@ -257,8 +283,11 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
 
     const atomsPath = path.join(sourceRoot, 'atoms', 'atoms.jsonl')
     let atomsContent: string | undefined
+    let atomsSourceHash: string | undefined
     try {
-      atomsContent = await readImportSourceText(atomsPath)
+      const sourceFile = await readImportSource(atomsPath)
+      atomsContent = sourceFile.text
+      atomsSourceHash = sourceFile.sourceHash
     } catch (error) {
       if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
     }
@@ -287,13 +316,16 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           continue
         }
         const rawClaim = typeof rawAtom.claim === 'string' ? rawAtom.claim.trim() : ''
-        const atomId = typeof rawAtom.id === 'string' ? rawAtom.id.trim() : ''
+        const rawAtomId = typeof rawAtom.id === 'string' ? rawAtom.id : ''
+        const atomId = rawAtomId.trim()
         if (!rawClaim || !atomId) {
           warnings.push(`atoms/atoms.jsonl:${lineNumber}: atom lacks id or claim; record not imported`)
           continue
         }
-        if (`atoms/atoms.jsonl:${atomId}`.length > 500) {
-          warnings.push(`atoms/atoms.jsonl:${lineNumber}: atom id exceeds the import boundary; record not imported`)
+        if (rawAtomId !== atomId || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(atomId)) {
+          warnings.push(
+            `atoms/atoms.jsonl:${lineNumber}: atom id is not a bounded opaque identifier; record not imported`,
+          )
           continue
         }
         const claim = truncateImportText(rawClaim, 600)
@@ -306,7 +338,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           )
         }
         const sourceId = `atoms/atoms.jsonl:${atomId}`
-        const sourceHash = sha256(rawLine)
+        const sourceHash = atomsSourceHash as string
         const unsafeLine = promptInjectionLine(rawLine)
         if (unsafeLine !== undefined) {
           warnings.push(

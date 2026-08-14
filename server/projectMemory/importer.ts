@@ -3,7 +3,8 @@ import type {
   ProjectMemoryImportCounts,
   PublishMemoryInput,
 } from '../../shared/projectMemory'
-import { constants } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { constants, type BigIntStats } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { guardExistingPath } from './safePaths'
 
@@ -31,16 +32,30 @@ export class ProjectMemoryImportInputError extends Error {
 
 const MAX_IMPORT_SOURCE_BYTES = 1_000_000
 
-export async function readImportSourceText(filePath: string): Promise<string> {
+function sameImportFileState(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.ctimeNs === right.ctimeNs
+    && left.mtimeNs === right.mtimeNs
+}
+
+export async function readImportSource(
+  filePath: string,
+  options: { afterRead?: () => Promise<void> } = {},
+): Promise<{
+  text: string
+  sourceHash: string
+}> {
   const source = await guardExistingPath(filePath, 'file')
-  const before = await lstat(source.path)
-  if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_IMPORT_SOURCE_BYTES) {
+  const before = await lstat(source.path, { bigint: true })
+  if (!before.isFile() || before.isSymbolicLink() || before.size > BigInt(MAX_IMPORT_SOURCE_BYTES)) {
     throw new ProjectMemoryImportInputError('Import source file is not a bounded regular file.')
   }
   const handle = await open(source.path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
-    const opened = await handle.stat()
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+    const opened = await handle.stat({ bigint: true })
+    if (!opened.isFile() || !sameImportFileState(opened, before)) {
       throw new ProjectMemoryImportInputError('Import source file changed while opening.')
     }
     const buffer = Buffer.alloc(MAX_IMPORT_SOURCE_BYTES + 1)
@@ -50,18 +65,32 @@ export async function readImportSourceText(filePath: string): Promise<string> {
       if (bytesRead === 0) break
       offset += bytesRead
     }
+    await options.afterRead?.()
     await source.verify()
-    const after = await handle.stat()
+    const after = await handle.stat({ bigint: true })
     if (
       !after.isFile()
-      || after.dev !== before.dev
-      || after.ino !== before.ino
+      || !sameImportFileState(after, opened)
+      || BigInt(offset) !== opened.size
+      || BigInt(offset) !== after.size
       || offset > MAX_IMPORT_SOURCE_BYTES
-      || after.size > MAX_IMPORT_SOURCE_BYTES
+      || after.size > BigInt(MAX_IMPORT_SOURCE_BYTES)
     ) {
       throw new ProjectMemoryImportInputError('Import source file is not stable and bounded.')
     }
-    return buffer.subarray(0, offset).toString('utf8')
+    const rawBytes = buffer.subarray(0, offset)
+    const sourceHash = createHash('sha256').update(rawBytes).digest('hex')
+    if (rawBytes.length >= 3 && rawBytes[0] === 0xef && rawBytes[1] === 0xbb && rawBytes[2] === 0xbf) {
+      throw new ProjectMemoryImportInputError('Import source file must not contain a UTF-8 BOM.')
+    }
+    try {
+      return {
+        text: new TextDecoder('utf-8', { fatal: true }).decode(rawBytes),
+        sourceHash,
+      }
+    } catch {
+      throw new ProjectMemoryImportInputError('Import source file is not valid UTF-8.')
+    }
   } finally {
     await handle.close()
   }

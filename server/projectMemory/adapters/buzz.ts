@@ -7,7 +7,7 @@ import {
   buildImportCounts,
   ProjectMemoryImportInputError,
   promptInjectionLine,
-  readImportSourceText,
+  readImportSource,
   truncateImportText,
   type ImportPreview,
   type MemorySourceAdapter,
@@ -82,10 +82,19 @@ async function statusDirectory(root: string, status: string): Promise<{
   }
 }
 
-function timestamp(value: string | undefined): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value ?? '')
-    ? `${value}T00:00:00.000Z`
-    : '1970-01-01T00:00:00.000Z'
+function timestamp(value: string | undefined): string | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '')
+  if (!match) return undefined
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) return undefined
+  return date.toISOString()
 }
 
 function parseEvidenceIds(value: string | undefined): {
@@ -123,10 +132,16 @@ export const buzzMemorySourceAdapter: MemorySourceAdapter = {
       }
       for (const filename of directory.files) {
         const relativePath = path.posix.join('atoms', status, filename)
-        const content = await readImportSourceText(path.join(sourceRoot, relativePath))
+        const sourceFile = await readImportSource(path.join(sourceRoot, relativePath))
+        const content = sourceFile.text
         const parsed = parseAtom(content)
         if (!parsed.title) {
           warnings.push(`${relativePath}:1: missing H1 title; record not imported`)
+          continue
+        }
+        const typeHeader = parsed.headers.get('type')
+        if (typeHeader?.value !== 'atom') {
+          warnings.push(`${relativePath}:${typeHeader?.line ?? 1}: type must be atom; record not imported`)
           continue
         }
         const sourceHeader = parsed.headers.get('source')
@@ -142,6 +157,32 @@ export const buzzMemorySourceAdapter: MemorySourceAdapter = {
         const headerStatus = parsed.headers.get('status')
         if (headerStatus?.value !== status) {
           warnings.push(`${relativePath}:${headerStatus?.line ?? 1}: status does not match directory; record not imported`)
+          continue
+        }
+        const createdHeader = parsed.headers.get('created')
+        const createdAt = timestamp(createdHeader?.value)
+        if (!createdAt) {
+          warnings.push(
+            `${relativePath}:${createdHeader?.line ?? 1}: created must be a valid YYYY-MM-DD date; record not imported`,
+          )
+          continue
+        }
+        const dateName = status === 'canon' ? 'canon-at' : status === 'rejected' ? 'rejected-at' : 'created'
+        const dateHeader = parsed.headers.get(dateName)
+        const capturedAt = status === 'provisional' ? createdAt : timestamp(dateHeader?.value)
+        if (!capturedAt) {
+          warnings.push(
+            `${relativePath}:${dateHeader?.line ?? 1}: ${dateName} must be a valid YYYY-MM-DD date; record not imported`,
+          )
+          continue
+        }
+        const evidenceHeader = parsed.headers.get('evidence')
+        const evidence = parseEvidenceIds(evidenceHeader?.value)
+        const evidenceLine = evidenceHeader?.line ?? 1
+        if (evidence.ids.length === 0) {
+          warnings.push(
+            `${relativePath}:${evidenceLine}: evidence requires at least one full Nostr event id; record not imported`,
+          )
           continue
         }
         const rawClaim = parsed.sections.get('Decision')?.replace(/\s+/g, ' ').trim()
@@ -160,9 +201,7 @@ export const buzzMemorySourceAdapter: MemorySourceAdapter = {
             `${relativePath}:${headerStatus?.line ?? 1}: Buzz canon imported as a candidate; Ben arbitration or promotion is required`,
           )
         }
-        const sourceHash = sha256(content)
-        const evidence = parseEvidenceIds(parsed.headers.get('evidence')?.value)
-        const evidenceLine = parsed.headers.get('evidence')?.line ?? 1
+        const sourceHash = sourceFile.sourceHash
         if (evidence.malformed) {
           warnings.push(`${relativePath}:${evidenceLine}: malformed Buzz evidence locator discarded`)
         }
@@ -183,10 +222,8 @@ export const buzzMemorySourceAdapter: MemorySourceAdapter = {
             sourceId: relativePath,
             sourceUri: `buzz:${linkedSourceId}/${relativePath}`,
             sourceHash,
-            capturedAt: timestamp(
-              parsed.headers.get(status === 'rejected' ? 'rejected-at' : status === 'canon' ? 'canon-at' : 'created')?.value,
-            ),
-            approval: status === 'canon' ? 'explicit' : 'none',
+            capturedAt,
+            approval: 'none',
           },
           evidence: evidence.ids.map(id => ({
             excerpt: 'Buzz evidence event.',

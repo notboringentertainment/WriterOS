@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -81,6 +82,58 @@ The harbor district is sealed after midnight.
     })
     expect(preview?.records[0]?.source.sourceHash).toMatch(/^[a-f0-9]{64}$/)
     expect(await readFile(path.join(root, relativePath), 'utf8')).toBe(ticket)
+  })
+
+  it('withholds active Wayfinder canon when bounding would omit part of the answer', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-faithful-canon-')
+    const omittedException = ' Except the rescue boat may cross.'
+    const answer = `${'The harbor is closed. '.repeat(31)}${omittedException}`
+    expect(answer.length).toBeGreaterThan(600)
+    await writeSource(root, 'resolved/long-answer.md', `# Set the harbor rule
+type: grill
+mode: hitl
+resolved: 2026-08-14
+
+## Answer
+${answer}
+`)
+    await writeSource(root, 'resolved/long-history.md', `# Preserve the harbor history
+type: sketch
+mode: hitl
+resolved: 2026-08-14
+
+## Superseded answer (2026-08-01)
+${'The earlier rule had an exception. '.repeat(260)}
+
+## Answer
+The harbor is closed after midnight.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-faithful-canon', sourceRoot: root,
+    })
+
+    expect(preview.records).toHaveLength(2)
+    expect(preview.records[0]).toMatchObject({
+      kind: 'canon',
+      requestedStatus: 'candidate',
+      source: { approval: 'explicit', authority: { ticketType: 'grill', mode: 'hitl' } },
+    })
+    expect(preview.records[0]?.claim).not.toContain(omittedException.trim())
+    expect(preview.records[1]).toMatchObject({
+      kind: 'canon',
+      requestedStatus: 'candidate',
+      source: { sourceId: 'resolved/long-history.md' },
+    })
+    expect(preview.records[1]?.detail).toHaveLength(8_000)
+    expect(preview.counts.activeCanon).toBe(0)
+    expect(preview.warnings).toContain(
+      'resolved/long-answer.md:1: claim truncated to 600 characters; active canon withheld',
+    )
+    expect(preview.warnings).toContain(
+      'resolved/long-history.md:1: detail truncated to 8000 characters; active canon withheld',
+    )
   })
 
   it('keeps AFK and homework answers as development while open tickets remain questions', async () => {
@@ -208,6 +261,35 @@ The clock is deliberately unresolved.
     expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 2, openQuestions: 2 })
   })
 
+  it('warns on near or malformed superseded-answer headings without treating them as history', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-near-superseded-')
+    await writeSource(root, 'tickets/near-history.md', `# Revisit the warning flag
+type: sketch
+mode: hitl
+created: 2026-08-14
+
+## Superseded Answer [2026-08-01]
+The old flag was red.
+
+## Question
+Which flag replaces the old warning?
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-wayfinder-near-superseded', sourceRoot: root,
+    })
+
+    expect(preview.records).toMatchObject([{
+      claim: 'Which flag replaces the old warning?',
+      kind: 'open_question',
+    }])
+    expect(preview.records[0]?.detail).toBeUndefined()
+    expect(preview.warnings).toContain(
+      'tickets/near-history.md:6: unrecognized superseded-answer heading "Superseded Answer [2026-08-01]"; history not imported',
+    )
+  })
+
   it('imports mapped legacy Wayfinder atoms conservatively and warns on every unmapped status', async () => {
     const root = await createSourceRoot('writeros-wayfinder-atoms-')
     await writeSource(root, 'Project Canon Note.md', '# Reference-only canon note\n')
@@ -294,6 +376,44 @@ The clock is deliberately unresolved.
       'atoms/atoms.jsonl:8: malformed JSON; record not imported',
     ])
     expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 2, openQuestions: 1 })
+  })
+
+  it('rejects path-like or private-shaped legacy atom ids without echoing them', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-opaque-ids-')
+    const rejectedIds = [
+      '/Users/example/private.md',
+      '~/private-note',
+      'C:\\Users\\example\\private.md',
+      '\\\\server\\share\\private.md',
+      '../secret',
+      'nested/id',
+      '.',
+      '..',
+      'private@example.com',
+      'bad\u0000id',
+      'bad\nid',
+      'x'.repeat(201),
+    ]
+    const atoms = [
+      ...rejectedIds.map(id => ({ id, claim: 'Private-shaped id must not escape.', canon_status: 'open' })),
+      { id: 'safe_atom-01.v2', claim: 'This opaque identifier is safe.', canon_status: 'open' },
+    ]
+    await writeSource(root, 'atoms/atoms.jsonl', atoms.map(atom => JSON.stringify(atom)).join('\n'))
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-wayfinder-opaque-ids', sourceRoot: root,
+    })
+
+    expect(preview.records.map(record => record.source.sourceId)).toEqual([
+      'atoms/atoms.jsonl:safe_atom-01.v2',
+    ])
+    for (const [index] of rejectedIds.entries()) {
+      expect(preview.warnings).toContain(
+        `atoms/atoms.jsonl:${index + 1}: atom id is not a bounded opaque identifier; record not imported`,
+      )
+    }
+    expect(preview.warnings.join('\n')).not.toMatch(/Users|example|server|secret|nested|private@|bad/)
   })
 
   it('rechecks all Wayfinder source text for prompt injection and withholds active authority', async () => {
@@ -444,7 +564,7 @@ Private discussion stays in Buzz and is not copied into the archive.
         sourceId: 'atoms/canon/harbor-signal.md',
         sourceUri: `buzz:${channelId}/atoms/canon/harbor-signal.md`,
         capturedAt: '2026-08-11T00:00:00.000Z',
-        approval: 'explicit',
+        approval: 'none',
       }),
     })])
     expect(preview.records[0]?.detail).toBeUndefined()
@@ -455,6 +575,144 @@ Private discussion stays in Buzz and is not copied into the archive.
       'atoms/rejected: absent (valid); no rejected workflow dependency',
     ])
     expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 1, conflicts: 0 })
+  })
+
+  it('excludes Buzz files whose required type header is missing or not atom', async () => {
+    const root = await createSourceRoot('writeros-buzz-type-')
+    const channelId = '710816de-f4b4-4cc8-854d-4b6db62bcce6'
+    for (const [filename, typeLine] of [
+      ['missing.md', ''],
+      ['wrong.md', 'type: decision\n'],
+    ]) {
+      await writeSource(root, `atoms/canon/${filename}`, `# Header validation
+${typeLine}source: room-session ${channelId}/session-type
+created: 2026-08-01
+status: canon
+evidence: [${'a'.repeat(64)}]
+canon-at: 2026-08-14
+
+## Decision
+Only actual Buzz atoms may import.
+`)
+    }
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'buzz', projectId: 'project-buzz-type', sourceRoot: root, linkedSourceId: channelId,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toEqual([
+      'atoms/canon/missing.md:1: type must be atom; record not imported',
+      'atoms/canon/wrong.md:2: type must be atom; record not imported',
+      'atoms/provisional: absent (valid); no provisional workflow dependency',
+      'atoms/rejected: absent (valid); no rejected workflow dependency',
+    ])
+  })
+
+  it('excludes Buzz atoms with missing or malformed required status dates', async () => {
+    const root = await createSourceRoot('writeros-buzz-dates-')
+    const channelId = 'cb14c07b-8594-49b0-be69-a189b7c848b4'
+    const evidence = 'b'.repeat(64)
+    await writeSource(root, 'atoms/canon/missing-date.md', `# Missing canon date
+type: atom
+source: room-session ${channelId}/session-date
+created: 2026-08-01
+status: canon
+evidence: [${evidence}]
+
+## Decision
+This cannot prove when promotion happened.
+`)
+    await writeSource(root, 'atoms/canon/malformed-date.md', `# Malformed canon date
+type: atom
+source: room-session ${channelId}/session-date
+created: 2026-08-01
+status: canon
+evidence: [${evidence}]
+canon-at: yesterday
+
+## Decision
+This cannot prove when promotion happened.
+`)
+    await writeSource(root, 'atoms/canon/missing-created.md', `# Missing creation date
+type: atom
+source: room-session ${channelId}/session-date
+status: canon
+evidence: [${evidence}]
+canon-at: 2026-08-14
+
+## Decision
+This cannot prove when extraction happened.
+`)
+    await writeSource(root, 'atoms/provisional/malformed-created.md', `# Malformed creation date
+type: atom
+source: room-session ${channelId}/session-date
+created: soon
+status: provisional
+evidence: [${evidence}]
+
+## Decision
+This cannot prove when extraction happened.
+`)
+    await writeSource(root, 'atoms/rejected/missing-date.md', `# Missing rejection date
+type: atom
+source: room-session ${channelId}/session-date
+created: 2026-08-01
+status: rejected
+evidence: [${evidence}]
+
+## Decision
+This cannot prove when rejection happened.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'buzz', projectId: 'project-buzz-dates', sourceRoot: root, linkedSourceId: channelId,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toEqual([
+      'atoms/canon/malformed-date.md:7: canon-at must be a valid YYYY-MM-DD date; record not imported',
+      'atoms/canon/missing-created.md:1: created must be a valid YYYY-MM-DD date; record not imported',
+      'atoms/canon/missing-date.md:1: canon-at must be a valid YYYY-MM-DD date; record not imported',
+      'atoms/provisional/malformed-created.md:4: created must be a valid YYYY-MM-DD date; record not imported',
+      'atoms/rejected/missing-date.md:1: rejected-at must be a valid YYYY-MM-DD date; record not imported',
+    ])
+  })
+
+  it('excludes Buzz atoms without at least one full opaque Nostr evidence id', async () => {
+    const root = await createSourceRoot('writeros-buzz-required-evidence-')
+    const channelId = 'e1f4f8ee-e854-4ac9-8adf-713df506d721'
+    for (const [filename, evidenceLine] of [
+      ['missing.md', ''],
+      ['invalid.md', 'evidence: [short-id, ../../private-event]\n'],
+    ]) {
+      await writeSource(root, `atoms/canon/${filename}`, `# Evidence validation
+type: atom
+source: room-session ${channelId}/session-evidence
+created: 2026-08-01
+status: canon
+${evidenceLine}canon-at: 2026-08-14
+
+## Decision
+Claims without resolvable locators stay out.
+`)
+    }
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'buzz', projectId: 'project-buzz-required-evidence', sourceRoot: root,
+      linkedSourceId: channelId,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toEqual([
+      'atoms/canon/invalid.md:6: evidence requires at least one full Nostr event id; record not imported',
+      'atoms/canon/missing.md:1: evidence requires at least one full Nostr event id; record not imported',
+      'atoms/provisional: absent (valid); no provisional workflow dependency',
+      'atoms/rejected: absent (valid); no rejected workflow dependency',
+    ])
   })
 
   it('deduplicates identical source records and returns byte-stable previews across runs', async () => {
@@ -585,6 +843,77 @@ ${'Z'.repeat(1_000_001)}
       projectId: 'project-oversized-source',
       sourceRoot: root,
     })).rejects.toMatchObject({ code: 'ERR_PROJECT_MEMORY_IMPORT_INPUT' })
+  })
+
+  it('rejects non-UTF-8 or BOM sources and hashes valid Unicode from its raw bytes', async () => {
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    for (const byte of [0x80, 0x81]) {
+      const root = await createSourceRoot(`writeros-import-invalid-utf8-${byte}-`)
+      await mkdir(path.join(root, 'resolved'))
+      await writeFile(path.join(root, 'resolved', 'invalid.md'), Buffer.from([byte]))
+
+      await expect(previewProjectMemoryImport({
+        source: 'wayfinder', projectId: `invalid-utf8-${byte}`, sourceRoot: root,
+      })).rejects.toMatchObject({ code: 'ERR_PROJECT_MEMORY_IMPORT_INPUT' })
+    }
+
+    const bomRoot = await createSourceRoot('writeros-import-utf8-bom-')
+    await mkdir(path.join(bomRoot, 'resolved'))
+    await writeFile(path.join(bomRoot, 'resolved', 'bom.md'), Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('# BOM ticket\ntype: grill\nmode: hitl\n\n## Answer\nAmbiguous BOM.\n'),
+    ]))
+    await expect(previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'utf8-bom', sourceRoot: bomRoot,
+    })).rejects.toMatchObject({ code: 'ERR_PROJECT_MEMORY_IMPORT_INPUT' })
+
+    const unicodeRoot = await createSourceRoot('writeros-import-unicode-hash-')
+    const unicodeBytes = Buffer.from(`# Unicode ticket
+type: grill
+mode: hitl
+resolved: 2026-08-14
+
+## Answer
+The café signal is ☕.
+`, 'utf8')
+    await mkdir(path.join(unicodeRoot, 'resolved'))
+    await writeFile(path.join(unicodeRoot, 'resolved', 'unicode.md'), unicodeBytes)
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'unicode-hash', sourceRoot: unicodeRoot,
+    })
+
+    expect(preview.records[0]?.source.sourceHash).toBe(
+      createHash('sha256').update(unicodeBytes).digest('hex'),
+    )
+  })
+
+  it('rejects shrink, same-size rewrite, and in-place mutation during a source read', async () => {
+    const { readImportSource } = await import('../../server/projectMemory/importer')
+    const original = Buffer.from('# Stable source\n\nThe harbor closes at midnight.\n')
+    const rewrites: Array<(filePath: string) => Promise<void>> = [
+      filePath => writeFile(filePath, original.subarray(0, original.length - 1)),
+      filePath => writeFile(filePath, Buffer.from(original.toString().replace('midnight', 'daybreak'))),
+      async filePath => {
+        const handle = await open(filePath, 'r+')
+        try {
+          await handle.write(Buffer.from('X'), 0, 1, 2)
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+      },
+    ]
+    expect(Buffer.from(original.toString().replace('midnight', 'daybreak')).length).toBe(original.length)
+
+    for (const [index, rewrite] of rewrites.entries()) {
+      const root = await createSourceRoot(`writeros-import-unstable-${index}-`)
+      const filePath = path.join(root, 'source.md')
+      await writeFile(filePath, original)
+
+      await expect(readImportSource(filePath, {
+        afterRead: () => rewrite(filePath),
+      })).rejects.toMatchObject({ code: 'ERR_PROJECT_MEMORY_IMPORT_INPUT' })
+    }
   })
 
   it('requires one exact linked Buzz channel across every atom provenance header', async () => {
@@ -813,6 +1142,25 @@ This material still matters for review.
     ])
   })
 
+  it('warns by category when expected Wayfinder directories exist but are empty', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-empty-directories-')
+    await Promise.all(['assets', 'resolved', 'tickets'].map(directory => (
+      mkdir(path.join(root, directory))
+    )))
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-wayfinder-empty-directories', sourceRoot: root,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toEqual([
+      'assets: empty; no groundwork assets were included',
+      'resolved: empty; no resolved tickets were included',
+      'tickets: empty; no open tickets were included',
+    ])
+  })
+
   it('preserves only bounded opaque Nostr event IDs from Buzz evidence headers', async () => {
     const root = await createSourceRoot('writeros-buzz-evidence-')
     const channelId = '5cc5fb55-1bf3-4e0c-bfe8-243236053148'
@@ -860,6 +1208,16 @@ The archive keeps locators, not event bodies.
   it('reports zero identified PitchStudio exports instead of returning silent empty success', async () => {
     const root = await createSourceRoot('writeros-pitchstudio-empty-')
     await writeSource(root, 'notes/ordinary.md', '# Ordinary project note\n\nNo export contract here.\n')
+    await writeSource(root, 'notes-pitchstudio-archive/ordinary.md', `---
+run_date: 2026-08-13
+run_mode: room
+incoming_frame: frame.md
+status: unratified
+---
+
+## Decisions made in this run
+1. A directory marker alone must not identify this file.
+`)
     const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
     const preview = await previewProjectMemoryImport({
       source: 'pitchstudio', projectId: 'project-pitchstudio-empty', sourceRoot: root,
