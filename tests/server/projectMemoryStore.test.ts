@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import {
   MemoryApprovalSchema,
   MemoryKindSchema,
   MemorySafetySchema,
+  MemorySourceSchema,
   MemoryStatusSchema,
   MemoryWorkflowSchema,
   ProjectMemoryActionSchema,
@@ -16,6 +17,7 @@ import {
   PublishMemoryInputSchema,
   RequestedMemoryStatusSchema,
   type MemorySource,
+  type ProjectMemorySnapshot,
   type PublishMemoryInput,
 } from '../../shared/projectMemory'
 import { acquirePackageWriteLock } from '../../server/projectLibrary/packageLock'
@@ -23,6 +25,10 @@ import {
   ProjectMemoryStoreError,
   createProjectMemoryStore,
 } from '../../server/projectMemory/store'
+import {
+  renderCanonProjection,
+  renderReviewProjection,
+} from '../../server/projectMemory/projections'
 
 const capturedAt = '2026-08-13T20:00:00.000Z'
 const temporaryRoots: string[] = []
@@ -50,6 +56,23 @@ async function makeProject(projectId = 'project-1') {
   return { workspaceRoot, projectPath, projectId }
 }
 
+async function appendLedgerLine(projectPath: string, event: unknown): Promise<void> {
+  const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+  const existing = await readFile(ledgerPath, 'utf8')
+  await writeFile(ledgerPath, `${existing}${JSON.stringify(event)}\n`, 'utf8')
+}
+
+function forgedEventBase(revision: number, type: string) {
+  return {
+    schemaVersion: 1,
+    id: `event-forged-${revision}`,
+    projectId: 'project-1',
+    revision,
+    occurredAt: capturedAt,
+    type,
+  }
+}
+
 function source(overrides: Partial<MemorySource> = {}): MemorySource {
   return {
     workflow: 'writeros',
@@ -60,6 +83,21 @@ function source(overrides: Partial<MemorySource> = {}): MemorySource {
     approval: 'none',
     ...overrides,
   }
+}
+
+function wayfinderSource(
+  ticketType: 'grill' | 'sketch' | 'homework',
+  mode: 'hitl' | 'afk',
+  overrides: Partial<MemorySource> = {},
+): MemorySource {
+  return {
+    ...source({
+      workflow: 'story-wayfinder',
+      approval: 'explicit',
+      ...overrides,
+    }),
+    authority: { ticketType, mode },
+  } as MemorySource
 }
 
 function publishInput(overrides: Partial<PublishMemoryInput> = {}): PublishMemoryInput {
@@ -177,9 +215,107 @@ describe('project memory schemas', () => {
       expectedRevision: 1,
     }).success).toBe(false)
   })
+
+  it.each([
+    ['grill', 'hitl'],
+    ['grill', 'afk'],
+    ['sketch', 'hitl'],
+    ['sketch', 'afk'],
+    ['homework', 'hitl'],
+    ['homework', 'afk'],
+  ] as const)('accepts typed Wayfinder authority metadata for %s/%s', (ticketType, mode) => {
+    expect(MemorySourceSchema.safeParse(wayfinderSource(ticketType, mode)).success).toBe(true)
+  })
+
+  it('rejects product names and unknown values in Wayfinder authority metadata', () => {
+    const invalidTicket = {
+      ...wayfinderSource('grill', 'hitl'),
+      authority: { ticketType: 'Bloodless', mode: 'hitl' },
+    }
+    const invalidMode = {
+      ...wayfinderSource('grill', 'hitl'),
+      authority: { ticketType: 'grill', mode: 'auto-win' },
+    }
+
+    expect(MemorySourceSchema.safeParse(invalidTicket).success).toBe(false)
+    expect(MemorySourceSchema.safeParse(invalidMode).success).toBe(false)
+  })
 })
 
 describe('append-only project memory store', () => {
+  it('renders record-controlled projection text as escaped single-line Markdown', () => {
+    const active = {
+      ...memoryRecord({
+        id: 'mem-1\n# Forged ID',
+        status: 'active',
+        claim: 'Trusted canon\n# Forged Heading\n- forged bullet',
+        detail: '1. Forged ordered item\n~~~\nDetail\n## Forged Detail\n> forged quote',
+        source: source({
+          approval: 'explicit',
+          sourceUri: 'documents/story.md\n# Forged Source\n- forged source bullet',
+        }),
+      }),
+    }
+    const candidate = {
+      ...active,
+      id: 'candidate-1',
+      status: 'candidate',
+      claim: 'Candidate\n# Forged Candidate',
+    }
+    const snapshot = {
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 7,
+      records: [active, candidate],
+      conflicts: [{
+        id: 'conflict-1\n# Forged Conflict ID',
+        leftRecordId: active.id,
+        rightRecordId: candidate.id,
+        reason: 'Mismatch\n# Forged Conflict\n- forged conflict bullet',
+        status: 'open',
+      }],
+    } as ProjectMemorySnapshot
+
+    expect(renderCanonProjection(snapshot)).toBe([
+      '# Project Canon',
+      '',
+      'Revision: 7',
+      '',
+      '## Trusted canon \\# Forged Heading \\- forged bullet',
+      '',
+      '- Memory ID: mem\\-1 \\# Forged ID',
+      '- Source: writeros · documents/story.md \\# Forged Source \\- forged source bullet',
+      `- Updated: ${capturedAt}`,
+      '',
+      '1\\. Forged ordered item \\~\\~\\~ Detail \\#\\# Forged Detail \\> forged quote',
+      '',
+    ].join('\n'))
+    expect(renderReviewProjection(snapshot)).toBe([
+      '# Project Memory Review',
+      '',
+      'Revision: 7',
+      '',
+      '# Candidates',
+      '',
+      '## Candidate \\# Forged Candidate',
+      '',
+      '- Memory ID: candidate\\-1',
+      '- Source: writeros · documents/story.md \\# Forged Source \\- forged source bullet',
+      `- Updated: ${capturedAt}`,
+      '',
+      '1\\. Forged ordered item \\~\\~\\~ Detail \\#\\# Forged Detail \\> forged quote',
+      '',
+      '# Open Conflicts',
+      '',
+      '## conflict\\-1 \\# Forged Conflict ID',
+      '',
+      '- Left: mem\\-1 \\# Forged ID',
+      '- Right: candidate\\-1',
+      '- Reason: Mismatch \\# Forged Conflict \\- forged conflict bullet',
+      '',
+    ].join('\n'))
+  })
+
   it('lazily initializes an empty ledger and all derived projections', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()
@@ -272,11 +408,9 @@ describe('append-only project memory store', () => {
     const approved = await store.publish(projectPath, publishInput({
       dedupeKey: 'wayfinder:resolved:ending',
       requestedStatus: 'active',
-      source: source({
-        workflow: 'story-wayfinder',
+      source: wayfinderSource('grill', 'hitl', {
         sourceId: 'resolved:ending',
         sourceHash: 'sha256:approved',
-        approval: 'explicit',
       }),
     }))
 
@@ -284,10 +418,40 @@ describe('append-only project memory store', () => {
     expect(approved.record.status).toBe('active')
   })
 
+  it('keeps AFK, homework, and untyped Wayfinder canon inactive', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+
+    const afk = await store.publish(projectPath, publishInput({
+      dedupeKey: 'wayfinder:afk:ending',
+      requestedStatus: 'active',
+      source: wayfinderSource('grill', 'afk', { sourceHash: 'sha256:afk' }),
+    }))
+    const homework = await store.publish(projectPath, publishInput({
+      dedupeKey: 'wayfinder:homework:ending',
+      requestedStatus: 'active',
+      source: wayfinderSource('homework', 'hitl', { sourceHash: 'sha256:homework' }),
+    }))
+    const untyped = await store.publish(projectPath, publishInput({
+      dedupeKey: 'wayfinder:untyped:ending',
+      requestedStatus: 'active',
+      source: source({
+        workflow: 'story-wayfinder',
+        approval: 'explicit',
+        sourceHash: 'sha256:untyped',
+      }),
+    }))
+
+    expect([afk.record.status, homework.record.status, untyped.record.status])
+      .toEqual(['candidate', 'candidate', 'candidate'])
+  })
+
   it('promotes an eligible candidate through an explicit revision-checked action', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()
-    const published = await store.publish(projectPath, publishInput())
+    const published = await store.publish(projectPath, publishInput({
+      source: source({ approval: 'explicit' }),
+    }))
 
     const snapshot = await store.applyAction(projectPath, {
       type: 'promote',
@@ -303,6 +467,38 @@ describe('append-only project memory store', () => {
       recordId: published.record.id,
       expectedRevision: 1,
     })).rejects.toMatchObject({ code: 'revision-conflict' })
+  })
+
+  it('requires explicit source approval before promotion and appends no rejected action', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const published = await store.publish(projectPath, publishInput())
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'promote',
+      recordId: published.record.id,
+      expectedRevision: 1,
+      supersedes: [],
+    })).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('does not promote AFK Wayfinder canon even with explicit source approval', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const published = await store.publish(projectPath, publishInput({
+      source: wayfinderSource('sketch', 'afk'),
+    }))
+
+    await expect(store.applyAction(projectPath, {
+      type: 'promote',
+      recordId: published.record.id,
+      expectedRevision: 1,
+      supersedes: [],
+    })).rejects.toMatchObject({ code: 'invalid-action' })
   })
 
   it('rejects a candidate without erasing its history', async () => {
@@ -463,6 +659,214 @@ describe('append-only project memory store', () => {
     ])
   })
 
+  it('does not let a document fact supersede active canon', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const canon = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:document:ending',
+      kind: 'document_fact',
+      source: source({ sourceId: 'document:ending', sourceHash: 'sha256:document' }),
+      supersedes: [canon.record.id],
+    }))).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('does not let canon supersede an active document fact', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const fact = await store.publish(projectPath, publishInput({
+      kind: 'document_fact',
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:replacement',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'canon:replacement', sourceHash: 'sha256:replacement', approval: 'explicit' }),
+      supersedes: [fact.record.id],
+    }))).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('does not promote canon by superseding an active document fact', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const fact = await store.publish(projectPath, publishInput({ kind: 'document_fact' }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'promote',
+      recordId: candidate.record.id,
+      expectedRevision: 2,
+      supersedes: [fact.record.id],
+    })).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('resolves canon versus document-fact conflicts without replacing either record class', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const canon = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const fact = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:document:ending',
+      kind: 'document_fact',
+      source: source({ sourceId: 'document:ending', sourceHash: 'sha256:document' }),
+      conflictsWith: [canon.record.id],
+    }))
+
+    const resolved = await store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId: fact.snapshot.conflicts[0].id,
+      expectedRevision: 2,
+      resolution: 'right',
+    })
+
+    expect(resolved.records.find(record => record.id === canon.record.id)?.status).toBe('active')
+    expect(resolved.records.find(record => record.id === fact.record.id)?.status).toBe('active')
+    expect(resolved.conflicts[0]).toMatchObject({ status: 'resolved', resolution: 'right' })
+  })
+
+  it('rejects flagged noncanon conflict winners before appending an action', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:decision:active',
+      kind: 'decision',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'decision:active', sourceHash: 'sha256:decision-active' }),
+    }))
+    const flagged = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:decision:flagged',
+      kind: 'decision',
+      safety: 'flagged',
+      source: source({ sourceId: 'decision:flagged', sourceHash: 'sha256:decision-flagged' }),
+      conflictsWith: [active.record.id],
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId: flagged.snapshot.conflicts[0].id,
+      expectedRevision: 2,
+      resolution: 'right',
+    })).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('blocks canon activation while the winner has another open conflict', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const left = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:left',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'canon:left', sourceHash: 'sha256:left', approval: 'explicit' }),
+    }))
+    const other = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:other',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'canon:other', sourceHash: 'sha256:other', approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [left.record.id, other.record.id],
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId: candidate.snapshot.conflicts[0].id,
+      expectedRevision: 3,
+      resolution: 'right',
+    })).rejects.toMatchObject({ code: 'unresolved-conflict' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('does not reactivate a rejected conflict endpoint', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [active.record.id],
+    }))
+    await store.applyAction(projectPath, {
+      type: 'reject',
+      recordId: candidate.record.id,
+      expectedRevision: 2,
+    })
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId: candidate.snapshot.conflicts[0].id,
+      expectedRevision: 3,
+      resolution: 'right',
+    })).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('does not reactivate a superseded conflict endpoint', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:active',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'canon:active', sourceHash: 'sha256:active', approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [active.record.id],
+    }))
+    await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:replacement',
+      requestedStatus: 'active',
+      source: source({ sourceId: 'canon:replacement', sourceHash: 'sha256:replacement', approval: 'explicit' }),
+      supersedes: [active.record.id],
+    }))
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const before = await readFile(ledgerPath, 'utf8')
+
+    await expect(store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId: candidate.snapshot.conflicts[0].id,
+      expectedRevision: 3,
+      resolution: 'left',
+    })).rejects.toMatchObject({ code: 'invalid-action' })
+
+    expect(await readFile(ledgerPath, 'utf8')).toBe(before)
+  })
+
   it('rebuilds an exact snapshot and projections from the canonical ledger', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()
@@ -522,6 +926,229 @@ describe('append-only project memory store', () => {
     })
   })
 
+  it('rejects a forged replay promotion of a noncanon record', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const decision = await store.publish(projectPath, publishInput({
+      kind: 'decision',
+    }))
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(2, 'promoted'),
+      recordId: decision.record.id,
+      supersededRecordIds: [],
+      resolvedConflictIds: [],
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 2,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
+  it('rejects a forged replay rejection of active canon', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const canon = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(2, 'rejected'),
+      recordId: canon.record.id,
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 2,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
+  it('rejects forged replay promotion that names an arbitrary conflict', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const candidate = await store.publish(projectPath, publishInput({
+      source: source({ approval: 'explicit' }),
+    }))
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(2, 'promoted'),
+      recordId: candidate.record.id,
+      supersededRecordIds: [],
+      resolvedConflictIds: ['conflict-unrelated'],
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 2,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
+  it('rejects forged replay promotion with a noncanonical duplicate mutation array', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [active.record.id],
+    }))
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(3, 'promoted'),
+      recordId: candidate.record.id,
+      supersededRecordIds: [active.record.id, active.record.id],
+      resolvedConflictIds: [candidate.snapshot.conflicts[0].id],
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 3,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
+  it.each(['active', 'rejected', 'superseded'] as const)(
+    'rejects forged replay reactivation of a %s canon record',
+    async priorStatus => {
+      const { projectPath } = await makeProject()
+      const store = createProjectMemoryStore()
+      let targetId: string
+      let nextRevision: number
+
+      if (priorStatus === 'active') {
+        const active = await store.publish(projectPath, publishInput({
+          requestedStatus: 'active',
+          source: source({ approval: 'explicit' }),
+        }))
+        targetId = active.record.id
+        nextRevision = 2
+      } else if (priorStatus === 'rejected') {
+        const candidate = await store.publish(projectPath, publishInput({
+          source: source({ approval: 'explicit' }),
+        }))
+        await store.applyAction(projectPath, {
+          type: 'reject',
+          recordId: candidate.record.id,
+          expectedRevision: 1,
+        })
+        targetId = candidate.record.id
+        nextRevision = 3
+      } else {
+        const active = await store.publish(projectPath, publishInput({
+          requestedStatus: 'active',
+          source: source({ approval: 'explicit' }),
+        }))
+        await store.publish(projectPath, publishInput({
+          dedupeKey: 'writeros:canon:replacement',
+          requestedStatus: 'active',
+          source: source({ sourceId: 'canon:replacement', sourceHash: 'sha256:replacement', approval: 'explicit' }),
+          supersedes: [active.record.id],
+        }))
+        targetId = active.record.id
+        nextRevision = 3
+      }
+
+      const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+      const projectionBefore = await readFile(snapshotPath, 'utf8')
+      await appendLedgerLine(projectPath, {
+        ...forgedEventBase(nextRevision, 'promoted'),
+        recordId: targetId,
+        supersededRecordIds: [],
+        resolvedConflictIds: [],
+      })
+
+      await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+        code: 'corrupt-ledger',
+        lineNumber: nextRevision,
+      })
+      expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+    },
+  )
+
+  it('rejects forged replay conflict arrays that mutate an unrelated record', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [active.record.id],
+    }))
+    const unrelated = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:development:unrelated',
+      kind: 'development',
+      source: source({ sourceId: 'development:unrelated', sourceHash: 'sha256:unrelated' }),
+    }))
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(4, 'conflict-resolved'),
+      conflictId: candidate.snapshot.conflicts[0].id,
+      resolution: 'right',
+      activatedRecordIds: [unrelated.record.id],
+      supersededRecordIds: [active.record.id],
+      rejectedRecordIds: [candidate.record.id],
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 4,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
+  it('rejects forged replay resolution of an already closed conflict', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const active = await store.publish(projectPath, publishInput({
+      requestedStatus: 'active',
+      source: source({ approval: 'explicit' }),
+    }))
+    const candidate = await store.publish(projectPath, publishInput({
+      dedupeKey: 'writeros:canon:candidate',
+      source: source({ sourceId: 'canon:candidate', sourceHash: 'sha256:candidate', approval: 'explicit' }),
+      conflictsWith: [active.record.id],
+    }))
+    const conflictId = candidate.snapshot.conflicts[0].id
+    await store.applyAction(projectPath, {
+      type: 'resolve-conflict',
+      conflictId,
+      expectedRevision: 2,
+      resolution: 'right',
+    })
+    const snapshotPath = path.join(projectPath, 'memory', 'snapshot.json')
+    const projectionBefore = await readFile(snapshotPath, 'utf8')
+    await appendLedgerLine(projectPath, {
+      ...forgedEventBase(4, 'conflict-resolved'),
+      conflictId,
+      resolution: 'not-conflict',
+      activatedRecordIds: [],
+      supersededRecordIds: [],
+      rejectedRecordIds: [],
+    })
+
+    await expect(store.readSnapshot(projectPath)).rejects.toMatchObject({
+      code: 'corrupt-ledger',
+      lineNumber: 4,
+    })
+    expect(await readFile(snapshotPath, 'utf8')).toBe(projectionBefore)
+  })
+
   it('appends the canonical event before attempting any derived projection replacement', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()
@@ -538,6 +1165,30 @@ describe('append-only project memory store', () => {
     const recovered = await store.readSnapshot(projectPath)
     expect(recovered).toMatchObject({ revision: 1 })
     expect(recovered.records[0].claim).toBe('Mara leaves the island alone.')
+  })
+
+  it('continues descriptor writes until a short-written ledger line is complete', async () => {
+    const { projectPath } = await makeProject()
+    let writeCount = 0
+    const store = createProjectMemoryStore({
+      testHooks: {
+        async writeLedgerChunk(handle: FileHandle, buffer: Buffer, offset: number) {
+          const length = Math.min(7, buffer.length - offset)
+          const result = await handle.write(buffer, offset, length)
+          writeCount += 1
+          return result.bytesWritten
+        },
+      },
+    })
+
+    const published = await store.publish(projectPath, publishInput({ kind: 'development' }))
+    const ledger = await readFile(path.join(projectPath, 'memory', 'ledger.jsonl'), 'utf8')
+
+    expect(writeCount).toBeGreaterThan(1)
+    expect(ledger.endsWith('\n')).toBe(true)
+    expect(ledger.trim().split('\n')).toHaveLength(1)
+    expect(JSON.parse(ledger).record.id).toBe(published.record.id)
+    await expect(store.readSnapshot(projectPath)).resolves.toEqual(published.snapshot)
   })
 
   it('holds the shared package lock across memory initialization and publication', async () => {

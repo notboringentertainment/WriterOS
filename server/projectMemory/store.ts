@@ -8,6 +8,7 @@ import {
   readdir,
   rename,
   rm,
+  type FileHandle,
 } from 'node:fs/promises'
 import path from 'node:path'
 import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPackage'
@@ -22,6 +23,7 @@ import {
   type ProjectMemoryEvent,
   type ProjectMemoryRecord,
   type ProjectMemorySnapshot,
+  type MemorySource,
   type PublishMemoryInput,
   type PublishResult,
 } from '../../shared/projectMemory'
@@ -64,6 +66,15 @@ export interface ProjectMemoryStore {
   rebuild(projectPath: string): Promise<ProjectMemorySnapshot>
 }
 
+export interface ProjectMemoryStoreTestHooks {
+  writeLedgerChunk?(handle: FileHandle, buffer: Buffer, offset: number): Promise<number>
+}
+
+export interface ProjectMemoryStoreOptions {
+  /** @internal Deterministic filesystem injection for regression tests. */
+  testHooks?: ProjectMemoryStoreTestHooks
+}
+
 interface ReplayResult {
   snapshot: ProjectMemorySnapshot
   publications: Array<{
@@ -85,6 +96,10 @@ function sameMembers(left: string[], right: string[]): boolean {
   const leftSet = new Set(left)
   const rightSet = new Set(right)
   return leftSet.size === rightSet.size && [...leftSet].every(value => rightSet.has(value))
+}
+
+function sameOrderedList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function stableId(prefix: string, parts: string[]): string {
@@ -213,6 +228,7 @@ function applyEvent(
 
   let records = [...state.snapshot.records]
   let conflicts = [...state.snapshot.conflicts]
+  const publications = [...state.publications]
   const knownRecord = (recordId: string) => records.some(record => record.id === recordId)
 
   if (event.type === 'published') {
@@ -239,6 +255,13 @@ function applyEvent(
       throw corruptLedger(lineNumber, 'duplicate idempotency event.')
     }
     if (knownRecord(event.record.id)) throw corruptLedger(lineNumber, `duplicate record ${event.record.id}.`)
+    let supersessionTargets: ProjectMemoryRecord[]
+    try {
+      supersessionTargets = event.supersededRecordIds.map(recordId => requireRecord(state.snapshot, recordId))
+      validateSupersessionTargets(event.record.kind, event.record.source, supersessionTargets)
+    } catch (error) {
+      throw corruptLedger(lineNumber, error instanceof Error ? error.message : String(error))
+    }
     for (const recordId of event.supersededRecordIds) {
       if (!knownRecord(recordId)) throw corruptLedger(lineNumber, `unknown superseded record ${recordId}.`)
       records = replaceRecord(records, recordId, record => ({
@@ -260,13 +283,24 @@ function applyEvent(
       }
       conflicts.push(conflict)
     }
-    state.publications.push({
+    publications.push({
       dedupeKey: event.dedupeKey,
       sourceHash: event.record.source.sourceHash,
       recordId: event.record.id,
     })
   } else if (event.type === 'promoted') {
-    if (!knownRecord(event.recordId)) throw corruptLedger(lineNumber, `unknown promoted record ${event.recordId}.`)
+    let mutation: PromotionMutation
+    try {
+      mutation = derivePromotionMutation(state.snapshot, event.recordId, event.supersededRecordIds)
+    } catch (error) {
+      throw corruptLedger(lineNumber, error instanceof Error ? error.message : String(error))
+    }
+    if (
+      !sameOrderedList(event.supersededRecordIds, mutation.targets.map(target => target.id))
+      || !sameOrderedList(event.resolvedConflictIds, mutation.resolvedConflictIds)
+    ) {
+      throw corruptLedger(lineNumber, 'promotion mutations do not match its eligible targets and open conflicts.')
+    }
     for (const recordId of event.supersededRecordIds) {
       if (!knownRecord(recordId)) throw corruptLedger(lineNumber, `unknown superseded record ${recordId}.`)
       records = replaceRecord(records, recordId, record => ({ ...record, status: 'superseded', updatedAt: event.occurredAt }))
@@ -283,11 +317,25 @@ function applyEvent(
       return { ...conflict, status: 'resolved', resolution }
     })
   } else if (event.type === 'rejected') {
-    if (!knownRecord(event.recordId)) throw corruptLedger(lineNumber, `unknown rejected record ${event.recordId}.`)
+    const rejected = state.snapshot.records.find(record => record.id === event.recordId)
+    if (!rejected || rejected.status !== 'candidate') {
+      throw corruptLedger(lineNumber, 'only a current candidate may be rejected.')
+    }
     records = replaceRecord(records, event.recordId, record => ({ ...record, status: 'rejected', updatedAt: event.occurredAt }))
   } else {
-    const conflict = conflicts.find(candidate => candidate.id === event.conflictId)
-    if (!conflict) throw corruptLedger(lineNumber, `unknown conflict ${event.conflictId}.`)
+    let mutation: ConflictResolutionMutation
+    try {
+      mutation = deriveConflictResolutionMutation(state.snapshot, event.conflictId, event.resolution)
+    } catch (error) {
+      throw corruptLedger(lineNumber, error instanceof Error ? error.message : String(error))
+    }
+    if (
+      !sameOrderedList(event.activatedRecordIds, mutation.activatedRecordIds)
+      || !sameOrderedList(event.supersededRecordIds, mutation.supersededRecordIds)
+      || !sameOrderedList(event.rejectedRecordIds, mutation.rejectedRecordIds)
+    ) {
+      throw corruptLedger(lineNumber, 'conflict resolution mutations do not match its open endpoints.')
+    }
     conflicts = conflicts.map(candidate => candidate.id === event.conflictId
       ? { ...candidate, status: 'resolved', resolution: event.resolution }
       : candidate)
@@ -320,7 +368,7 @@ function applyEvent(
     conflicts,
   })
   if (!snapshot.success) throw corruptLedger(lineNumber, snapshot.error.issues[0]?.message ?? 'invalid replay state.')
-  return { snapshot: snapshot.data, publications: state.publications }
+  return { snapshot: snapshot.data, publications }
 }
 
 async function replayLedger(ledgerPath: string, projectId: string): Promise<ReplayResult> {
@@ -356,15 +404,25 @@ async function replayLedger(ledgerPath: string, projectId: string): Promise<Repl
   return state
 }
 
-async function appendEvent(ledgerPath: string, event: ProjectMemoryEvent): Promise<void> {
+async function appendEvent(
+  ledgerPath: string,
+  event: ProjectMemoryEvent,
+  testHooks?: ProjectMemoryStoreTestHooks,
+): Promise<void> {
   const parsed = ProjectMemoryEventSchema.parse(event)
   await assertRegularFile(ledgerPath)
   const handle = await open(ledgerPath, constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW)
   try {
     const bytes = Buffer.from(`${JSON.stringify(parsed)}\n`, 'utf8')
-    const result = await handle.write(bytes, 0, bytes.length)
-    if (result.bytesWritten !== bytes.length) {
-      throw new ProjectMemoryStoreError('The memory event was only partially appended.', 'corrupt-ledger')
+    let offset = 0
+    while (offset < bytes.length) {
+      const bytesWritten = testHooks?.writeLedgerChunk
+        ? await testHooks.writeLedgerChunk(handle, bytes, offset)
+        : (await handle.write(bytes, offset, bytes.length - offset)).bytesWritten
+      if (!Number.isSafeInteger(bytesWritten) || bytesWritten <= 0 || bytesWritten > bytes.length - offset) {
+        throw new ProjectMemoryStoreError('The memory event write made no valid progress.', 'corrupt-ledger')
+      }
+      offset += bytesWritten
     }
     await handle.sync()
   } finally {
@@ -436,15 +494,178 @@ function requireSupersessionTargets(
   return unique(targetIds).map(targetId => requireRecord(snapshot, targetId))
 }
 
+function sameDocumentAnchor(source: MemorySource, record: ProjectMemoryRecord): boolean {
+  return record.source.workflow === source.workflow
+    && record.source.sourceId === source.sourceId
+    && record.source.sourceUri === source.sourceUri
+}
+
+function validateSupersessionTargets(
+  winnerKind: ProjectMemoryRecord['kind'],
+  winnerSource: MemorySource,
+  targets: ProjectMemoryRecord[],
+): void {
+  for (const target of targets) {
+    if (target.status !== 'active' || target.kind !== winnerKind) {
+      throw new ProjectMemoryStoreError(
+        'Supersession requires an active record of the same memory kind.',
+        'invalid-action',
+      )
+    }
+    if (winnerKind === 'document_fact' && !sameDocumentAnchor(winnerSource, target)) {
+      throw new ProjectMemoryStoreError(
+        'Document facts may supersede only the prior active fact at the same document anchor.',
+        'invalid-action',
+      )
+    }
+  }
+}
+
 function publicationStatus(input: ParsedPublishMemoryInput, hasUnresolvedConflict: boolean) {
   if (input.safety === 'flagged') return 'candidate' as const
   if (input.kind === 'document_fact') return 'active' as const
   if (input.requestedStatus === 'candidate') return 'candidate' as const
   if (input.kind !== 'canon') return 'active' as const
-  if (input.source.approval !== 'explicit' || input.safety !== 'clear' || hasUnresolvedConflict) {
+  if (!sourceCanActivateCanon(input.source) || input.safety !== 'clear' || hasUnresolvedConflict) {
     return 'candidate' as const
   }
   return 'active' as const
+}
+
+function sourceCanActivateCanon(source: MemorySource): boolean {
+  if (source.approval !== 'explicit') return false
+  if (source.workflow !== 'story-wayfinder') return true
+  return source.authority?.mode === 'hitl'
+    && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
+}
+
+function recordCanActivate(record: ProjectMemoryRecord): boolean {
+  if (record.status !== 'candidate' || record.safety !== 'clear') return false
+  return record.kind !== 'canon' || sourceCanActivateCanon(record.source)
+}
+
+function otherOpenConflicts(
+  snapshot: ProjectMemorySnapshot,
+  recordId: string,
+  excludedConflictIds: string[],
+): ProjectMemoryConflict[] {
+  return snapshot.conflicts.filter(conflict => (
+    conflict.status === 'open'
+    && !excludedConflictIds.includes(conflict.id)
+    && (conflict.leftRecordId === recordId || conflict.rightRecordId === recordId)
+  ))
+}
+
+interface PromotionMutation {
+  record: ProjectMemoryRecord
+  targets: ProjectMemoryRecord[]
+  resolvedConflictIds: string[]
+}
+
+function derivePromotionMutation(
+  snapshot: ProjectMemorySnapshot,
+  recordId: string,
+  supersedes: string[],
+): PromotionMutation {
+  const record = requireRecord(snapshot, recordId)
+  if (record.kind !== 'canon' || !recordCanActivate(record)) {
+    throw new ProjectMemoryStoreError(
+      'Only a clear, explicitly approved, authority-eligible canon candidate may be promoted.',
+      'invalid-action',
+    )
+  }
+  const targets = requireSupersessionTargets(snapshot, record.id, supersedes)
+  validateSupersessionTargets(record.kind, record.source, targets)
+  const targetIds = new Set(targets.map(target => target.id))
+  const openConflicts = snapshot.conflicts.filter(conflict => (
+    conflict.status === 'open'
+    && (conflict.leftRecordId === record.id || conflict.rightRecordId === record.id)
+  ))
+  const unresolved = openConflicts.filter(conflict => {
+    const otherId = conflict.leftRecordId === record.id ? conflict.rightRecordId : conflict.leftRecordId
+    return !targetIds.has(otherId)
+  })
+  if (unresolved.length > 0) {
+    throw new ProjectMemoryStoreError(
+      'Canon cannot be promoted while it has another unresolved conflict.',
+      'unresolved-conflict',
+    )
+  }
+  return { record, targets, resolvedConflictIds: openConflicts.map(conflict => conflict.id) }
+}
+
+interface ConflictResolutionMutation {
+  conflict: ProjectMemoryConflict
+  activatedRecordIds: string[]
+  supersededRecordIds: string[]
+  rejectedRecordIds: string[]
+}
+
+function deriveConflictResolutionMutation(
+  snapshot: ProjectMemorySnapshot,
+  conflictId: string,
+  resolution: ProjectMemoryConflict['resolution'],
+): ConflictResolutionMutation {
+  const conflict = snapshot.conflicts.find(candidate => candidate.id === conflictId)
+  if (!conflict) throw new ProjectMemoryStoreError(`Memory conflict ${conflictId} was not found.`, 'not-found')
+  if (conflict.status !== 'open' || resolution === undefined) {
+    throw new ProjectMemoryStoreError('Only an open conflict may be resolved.', 'invalid-action')
+  }
+  const left = requireRecord(snapshot, conflict.leftRecordId)
+  const right = requireRecord(snapshot, conflict.rightRecordId)
+  const mutation: ConflictResolutionMutation = {
+    conflict,
+    activatedRecordIds: [],
+    supersededRecordIds: [],
+    rejectedRecordIds: [],
+  }
+  if (resolution === 'not-conflict') return mutation
+
+  // Cross-class conflicts are informational. In particular, a document fact
+  // remains active and nonbinding and can neither replace nor be replaced by canon.
+  if (left.kind !== right.kind || left.kind === 'document_fact') return mutation
+
+  const ensureActivatable = (record: ProjectMemoryRecord) => {
+    if (record.status === 'active') return
+    if (!recordCanActivate(record)) {
+      throw new ProjectMemoryStoreError('The selected conflict record is not eligible for activation.', 'invalid-action')
+    }
+    if (otherOpenConflicts(snapshot, record.id, [conflict.id]).length > 0) {
+      throw new ProjectMemoryStoreError(
+        'The selected conflict record has another unresolved conflict.',
+        'unresolved-conflict',
+      )
+    }
+    mutation.activatedRecordIds.push(record.id)
+  }
+
+  if (resolution === 'both-valid') {
+    ensureActivatable(left)
+    ensureActivatable(right)
+    return mutation
+  }
+
+  const winner = resolution === 'left' ? left : right
+  const loser = resolution === 'left' ? right : left
+  if (winner.status === 'rejected' || winner.status === 'superseded') {
+    throw new ProjectMemoryStoreError('Rejected or superseded records cannot win a conflict.', 'invalid-action')
+  }
+  if (loser.status === 'rejected' || loser.status === 'superseded') {
+    throw new ProjectMemoryStoreError('A conflict with a stale endpoint cannot change authority.', 'invalid-action')
+  }
+  ensureActivatable(winner)
+  if (loser.status === 'active') {
+    if (winner.status !== 'candidate') {
+      throw new ProjectMemoryStoreError(
+        'Only an eligible candidate may supersede an active conflict record.',
+        'invalid-action',
+      )
+    }
+    mutation.supersededRecordIds.push(loser.id)
+  } else {
+    mutation.rejectedRecordIds.push(loser.id)
+  }
+  return mutation
 }
 
 function createPublicationEvent(
@@ -455,6 +676,7 @@ function createPublicationEvent(
   const occurredAt = new Date().toISOString()
   const recordId = stableId('mem', [input.projectId, input.dedupeKey, input.source.sourceHash])
   const explicitTargets = requireSupersessionTargets(snapshot, recordId, input.supersedes)
+  validateSupersessionTargets(input.kind, input.source, explicitTargets)
 
   let automaticDocumentTargets: ProjectMemoryRecord[] = []
   if (input.kind === 'document_fact') {
@@ -471,11 +693,15 @@ function createPublicationEvent(
     ...explicitTargets.map(record => record.id),
     ...automaticDocumentTargets.map(record => record.id),
   ])
-  const unresolvedTargets = unique(input.conflictsWith)
-    .filter(targetId => !supersededRecordIds.includes(targetId))
+  const potentiallyAppliedIds = publicationStatus(input, false) === 'active' ? supersededRecordIds : []
+  const canonUnresolvedTargets = unique(input.conflictsWith)
+    .filter(targetId => !potentiallyAppliedIds.includes(targetId))
     .map(targetId => requireRecord(snapshot, targetId))
-  const status = publicationStatus(input, unresolvedTargets.length > 0)
+  const status = publicationStatus(input, canonUnresolvedTargets.length > 0)
   const appliedSupersessionIds = status === 'active' ? supersededRecordIds : []
+  const unresolvedTargets = unique(input.conflictsWith)
+    .filter(targetId => !appliedSupersessionIds.includes(targetId))
+    .map(targetId => requireRecord(snapshot, targetId))
   const record: ProjectMemoryRecord = {
     id: recordId,
     projectId: input.projectId,
@@ -535,32 +761,13 @@ function createActionEvent(
   }
 
   if (action.type === 'promote') {
-    const record = requireRecord(snapshot, action.recordId)
-    if (
-      record.kind !== 'canon'
-      || record.status !== 'candidate'
-      || record.safety !== 'clear'
-    ) {
-      throw new ProjectMemoryStoreError('Only a clear canon candidate may be promoted.', 'invalid-action')
-    }
-    const targets = requireSupersessionTargets(snapshot, record.id, action.supersedes)
-    const openConflicts = snapshot.conflicts.filter(conflict => (
-      conflict.status === 'open'
-      && (conflict.leftRecordId === record.id || conflict.rightRecordId === record.id)
-    ))
-    const unresolved = openConflicts.filter(conflict => {
-      const otherId = conflict.leftRecordId === record.id ? conflict.rightRecordId : conflict.leftRecordId
-      return !targets.some(target => target.id === otherId)
-    })
-    if (unresolved.length > 0) {
-      throw new ProjectMemoryStoreError('Canon cannot be promoted while it has an unresolved conflict.', 'unresolved-conflict')
-    }
+    const mutation = derivePromotionMutation(snapshot, action.recordId, action.supersedes)
     return ProjectMemoryEventSchema.parse({
       ...base,
       type: 'promoted',
-      recordId: record.id,
-      supersededRecordIds: targets.map(target => target.id),
-      resolvedConflictIds: openConflicts.map(conflict => conflict.id),
+      recordId: mutation.record.id,
+      supersededRecordIds: mutation.targets.map(target => target.id),
+      resolvedConflictIds: mutation.resolvedConflictIds,
     })
   }
 
@@ -572,45 +779,19 @@ function createActionEvent(
     return ProjectMemoryEventSchema.parse({ ...base, type: 'rejected', recordId: record.id })
   }
 
-  const conflict = snapshot.conflicts.find(candidate => candidate.id === action.conflictId)
-  if (!conflict) throw new ProjectMemoryStoreError(`Memory conflict ${action.conflictId} was not found.`, 'not-found')
-  if (conflict.status !== 'open') {
-    throw new ProjectMemoryStoreError('Only an open conflict may be resolved.', 'invalid-action')
-  }
-  const left = requireRecord(snapshot, conflict.leftRecordId)
-  const right = requireRecord(snapshot, conflict.rightRecordId)
-  const activatedRecordIds: string[] = []
-  const supersededRecordIds: string[] = []
-  const rejectedRecordIds: string[] = []
-  if (action.resolution === 'left' || action.resolution === 'right') {
-    const winner = action.resolution === 'left' ? left : right
-    const loser = action.resolution === 'left' ? right : left
-    if (winner.kind === 'canon' && winner.safety !== 'clear') {
-      throw new ProjectMemoryStoreError('The selected canon record is not eligible for activation.', 'invalid-action')
-    }
-    activatedRecordIds.push(winner.id)
-    if (loser.status === 'active') supersededRecordIds.push(loser.id)
-    else rejectedRecordIds.push(loser.id)
-  } else if (action.resolution === 'both-valid') {
-    for (const record of [left, right]) {
-      if (record.kind === 'canon' && record.safety !== 'clear') {
-        throw new ProjectMemoryStoreError('Both canon records must be eligible before both can be active.', 'invalid-action')
-      }
-      activatedRecordIds.push(record.id)
-    }
-  }
+  const mutation = deriveConflictResolutionMutation(snapshot, action.conflictId, action.resolution)
   return ProjectMemoryEventSchema.parse({
     ...base,
     type: 'conflict-resolved',
-    conflictId: conflict.id,
+    conflictId: mutation.conflict.id,
     resolution: action.resolution,
-    activatedRecordIds,
-    supersededRecordIds,
-    rejectedRecordIds,
+    activatedRecordIds: mutation.activatedRecordIds,
+    supersededRecordIds: mutation.supersededRecordIds,
+    rejectedRecordIds: mutation.rejectedRecordIds,
   })
 }
 
-export function createProjectMemoryStore(): ProjectMemoryStore {
+export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}): ProjectMemoryStore {
   return {
     async readSnapshot(projectPath) {
       return withProjectLock(projectPath, async projectId => {
@@ -656,8 +837,8 @@ export function createProjectMemoryStore(): ProjectMemoryStore {
         }
 
         const event = createPublicationEvent(replayed.snapshot, input)
-        await appendEvent(ledgerPath, event)
         const next = applyEvent(replayed, event, event.revision)
+        await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot)
         return { published: true, record: event.record, snapshot: next.snapshot }
       })
@@ -672,8 +853,8 @@ export function createProjectMemoryStore(): ProjectMemoryStore {
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedger(ledgerPath, projectId)
         const event = createActionEvent(replayed.snapshot, parsed.data)
-        await appendEvent(ledgerPath, event)
         const next = applyEvent(replayed, event, event.revision)
+        await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot)
         return next.snapshot
       })

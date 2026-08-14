@@ -25,6 +25,8 @@ export const MemoryWorkflowSchema = z.enum([
 
 export const MemoryApprovalSchema = z.enum(['none', 'explicit'])
 export const MemorySafetySchema = z.enum(['clear', 'flagged'])
+export const WayfinderTicketTypeSchema = z.enum(['grill', 'sketch', 'homework'])
+export const WayfinderModeSchema = z.enum(['hitl', 'afk'])
 export const RequestedMemoryStatusSchema = z.enum(['candidate', 'active'])
 export const ProjectMemoryConflictStatusSchema = z.enum(['open', 'resolved'])
 export const ProjectMemoryConflictResolutionSchema = z.enum([
@@ -38,6 +40,11 @@ const TimestampSchema = z.string().datetime({ offset: true })
 const IdentifierSchema = z.string().min(1).max(500)
 const ReferenceListSchema = z.array(IdentifierSchema).max(100)
 
+export const WayfinderAuthoritySchema = z.object({
+  ticketType: WayfinderTicketTypeSchema,
+  mode: WayfinderModeSchema,
+}).strict()
+
 export const MemorySourceSchema = z.object({
   workflow: MemoryWorkflowSchema,
   sourceId: IdentifierSchema,
@@ -45,7 +52,23 @@ export const MemorySourceSchema = z.object({
   sourceHash: z.string().min(1).max(500),
   capturedAt: TimestampSchema,
   approval: MemoryApprovalSchema,
-}).strict()
+  authority: WayfinderAuthoritySchema.optional(),
+}).strict().superRefine((source, context) => {
+  if (source.authority !== undefined && source.workflow !== 'story-wayfinder') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['authority'],
+      message: 'Wayfinder authority metadata is valid only for Story Wayfinder sources.',
+    })
+  }
+})
+
+function sourceCanActivateCanon(source: z.infer<typeof MemorySourceSchema>): boolean {
+  if (source.approval !== 'explicit') return false
+  if (source.workflow !== 'story-wayfinder') return true
+  return source.authority?.mode === 'hitl'
+    && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
+}
 
 export const MemoryEvidenceSchema = z.object({
   excerpt: z.string().min(1).max(1_500),
@@ -74,6 +97,13 @@ export const ProjectMemoryRecordSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['status'],
       message: 'Safety-flagged memory cannot be active.',
+    })
+  }
+  if (record.kind === 'canon' && record.status === 'active' && !sourceCanActivateCanon(record.source)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['source'],
+      message: 'Active canon requires explicit eligible source authority.',
     })
   }
 })

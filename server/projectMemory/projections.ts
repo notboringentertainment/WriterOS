@@ -3,20 +3,28 @@ import type {
   ProjectMemorySnapshot,
 } from '../../shared/projectMemory'
 
+function escapedInline(value: string): string {
+  const normalized = value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/([\\`*_\[\]{}()<>#+>!|~\-])/g, '\\$1')
+  return normalized.replace(/^(\d{1,9})\./, '$1\\.')
+}
+
 function sourceLine(record: ProjectMemoryRecord): string {
-  return `${record.source.workflow} · ${record.source.sourceUri}`
+  return `${escapedInline(record.source.workflow)} · ${escapedInline(record.source.sourceUri)}`
 }
 
 function renderRecord(record: ProjectMemoryRecord): string[] {
   const lines = [
-    `## ${record.claim}`,
+    `## ${escapedInline(record.claim)}`,
     '',
-    `- Memory ID: \`${record.id}\``,
+    `- Memory ID: ${escapedInline(record.id)}`,
     `- Source: ${sourceLine(record)}`,
     `- Updated: ${record.updatedAt}`,
   ]
   if (record.spoiler) lines.push('- Spoiler: yes')
-  if (record.detail) lines.push('', record.detail)
+  if (record.detail) lines.push('', escapedInline(record.detail))
   return lines
 }
 
@@ -64,11 +72,11 @@ export function renderReviewProjection(snapshot: ProjectMemorySnapshot): string 
     lines.push('# Open Conflicts', '')
     for (const conflict of conflicts) {
       lines.push(
-        `## ${conflict.id}`,
+        `## ${escapedInline(conflict.id)}`,
         '',
-        `- Left: \`${conflict.leftRecordId}\``,
-        `- Right: \`${conflict.rightRecordId}\``,
-        `- Reason: ${conflict.reason}`,
+        `- Left: ${escapedInline(conflict.leftRecordId)}`,
+        `- Right: ${escapedInline(conflict.rightRecordId)}`,
+        `- Reason: ${escapedInline(conflict.reason)}`,
         '',
       )
     }
