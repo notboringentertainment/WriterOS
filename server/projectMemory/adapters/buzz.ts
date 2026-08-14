@@ -105,11 +105,19 @@ function parseEvidenceIds(value: string | undefined): {
   const match = /^\[([^\]]*)\]$/.exec(value ?? '')
   if (!match) return { ids: [], malformed: Boolean(value), truncated: false }
   const values = match[1].split(',').map(item => item.trim()).filter(Boolean)
-  const valid = values.filter(value => /^[a-f0-9]{64}$/i.test(value))
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!/^[a-f0-9]{64}$/i.test(value)) continue
+    const normalized = value.toLowerCase()
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    unique.push(normalized)
+  }
   return {
-    ids: valid.slice(0, 3),
-    malformed: valid.length !== values.length,
-    truncated: valid.length > 3,
+    ids: unique.slice(0, 3),
+    malformed: values.some(value => !/^[a-f0-9]{64}$/i.test(value)),
+    truncated: unique.length > 3,
   }
 }
 

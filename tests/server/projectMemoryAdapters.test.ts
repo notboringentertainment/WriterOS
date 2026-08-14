@@ -384,12 +384,15 @@ Which flag replaces the old warning?
       '/Users/example/private.md',
       '~/private-note',
       'C:\\Users\\example\\private.md',
+      'C:private-note',
       '\\\\server\\share\\private.md',
       '../secret',
       'nested/id',
+      'atom:..:secret',
       '.',
       '..',
       'private@example.com',
+      'https://private.example/file',
       'bad\u0000id',
       'bad\nid',
       'x'.repeat(201),
@@ -397,6 +400,7 @@ Which flag replaces the old warning?
     const atoms = [
       ...rejectedIds.map(id => ({ id, claim: 'Private-shaped id must not escape.', canon_status: 'open' })),
       { id: 'safe_atom-01.v2', claim: 'This opaque identifier is safe.', canon_status: 'open' },
+      { id: 'atom:decision:01', claim: 'This colon identifier is safe.', canon_status: 'open' },
     ]
     await writeSource(root, 'atoms/atoms.jsonl', atoms.map(atom => JSON.stringify(atom)).join('\n'))
     const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
@@ -407,6 +411,7 @@ Which flag replaces the old warning?
 
     expect(preview.records.map(record => record.source.sourceId)).toEqual([
       'atoms/atoms.jsonl:safe_atom-01.v2',
+      'atoms/atoms.jsonl:atom:decision:01',
     ])
     for (const [index] of rejectedIds.entries()) {
       expect(preview.warnings).toContain(
@@ -738,6 +743,50 @@ Claims without resolvable locators stay out.
     expect(first.duplicates).toBe(1)
     expect(first.counts).toMatchObject({ candidates: 1, duplicates: 1 })
     expect(first.records[0]?.dedupeKey).toMatch(/^import:story-wayfinder:[a-f0-9]{64}$/)
+  })
+
+  it('hashes legacy atom line content and rejects divergent versions of one opaque id', async () => {
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const conflictingRoot = await createSourceRoot('writeros-import-conflicting-atoms-')
+    const firstVersion = JSON.stringify({
+      id: 'shared-atom', claim: 'The ferry leaves at dawn.', canon_status: 'open',
+    })
+    const secondVersion = JSON.stringify({
+      id: 'shared-atom', claim: 'The ferry leaves at dusk.', canon_status: 'open',
+    })
+    await writeSource(conflictingRoot, 'atoms/atoms.jsonl', `${firstVersion}\n${secondVersion}\n`)
+
+    let conflict: unknown
+    try {
+      await previewProjectMemoryImport({
+        source: 'wayfinder', projectId: 'project-conflicting-atoms', sourceRoot: conflictingRoot,
+      })
+    } catch (error) {
+      conflict = error
+    }
+    expect(conflict).toMatchObject({ code: 'ERR_PROJECT_MEMORY_IMPORT_INPUT' })
+    expect(String((conflict as Error | undefined)?.message)).toBe(
+      'atoms/atoms.jsonl lines 1 and 2 contain conflicting versions of one atom id.',
+    )
+    expect(String((conflict as Error | undefined)?.message)).not.toMatch(/shared-atom|dawn|dusk/)
+
+    const unicodeAtom = JSON.stringify({
+      id: 'unicode-atom', claim: 'The café signal is ☕.', canon_status: 'open',
+    })
+    const expectedLineHash = createHash('sha256').update(Buffer.from(unicodeAtom, 'utf8')).digest('hex')
+    const hashes: string[] = []
+    for (const [name, lineEnding] of [['lf', '\n'], ['crlf', '\r\n']] as const) {
+      const root = await createSourceRoot(`writeros-import-${name}-atom-`)
+      await writeSource(root, 'atoms/atoms.jsonl', `${unicodeAtom}${lineEnding}${unicodeAtom}${lineEnding}`)
+      const preview = await previewProjectMemoryImport({
+        source: 'wayfinder', projectId: `project-${name}-atom`, sourceRoot: root,
+      })
+      expect(preview.records).toHaveLength(1)
+      expect(preview.duplicates).toBe(1)
+      expect(preview.records[0]?.claim).toBe('The café signal is ☕.')
+      hashes.push(preview.records[0]?.source.sourceHash ?? '')
+    }
+    expect(hashes).toEqual([expectedLineHash, expectedLineHash])
   })
 
   it('rejects nested symbolic links instead of reading through a source-root escape', async () => {
@@ -1189,6 +1238,41 @@ The archive keeps locators, not event bodies.
     expect(preview.warnings).toContain(
       'atoms/canon/evidence.md:6: malformed Buzz evidence locator discarded',
     )
+  })
+
+  it('normalizes and deduplicates Buzz evidence before applying the three-locator cap', async () => {
+    const root = await createSourceRoot('writeros-buzz-evidence-dedupe-')
+    const channelId = 'afca5da6-d85c-4e28-bf2e-8b61a526b4ac'
+    const firstUpper = 'A'.repeat(64)
+    const first = 'a'.repeat(64)
+    const second = 'b'.repeat(64)
+    const third = 'c'.repeat(64)
+    const fourth = 'd'.repeat(64)
+    await writeSource(root, 'atoms/canon/dedupe.md', `# Evidence dedupe
+type: atom
+source: room-session ${channelId}/session-07
+created: 2026-08-01
+status: canon
+evidence: [${firstUpper}, ${first}, ${second}, ${third}, ${fourth}]
+canon-at: 2026-08-14
+
+## Decision
+Evidence identity is case-insensitive hexadecimal.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'buzz', projectId: 'project-buzz-evidence-dedupe', sourceRoot: root,
+      linkedSourceId: channelId,
+    })
+
+    expect(preview.records[0]?.evidence?.map(item => item.locator)).toEqual([
+      `nostr-event:${first}`,
+      `nostr-event:${second}`,
+      `nostr-event:${third}`,
+    ])
+    expect(preview.warnings).toContain('atoms/canon/dedupe.md:6: Buzz evidence locators limited to 3')
+    expect(preview.warnings.some(warning => warning.includes('malformed Buzz evidence'))).toBe(false)
   })
 
   it('warns when a legacy atoms file exists but contributes no included records', async () => {

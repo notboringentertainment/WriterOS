@@ -5,6 +5,7 @@ import type { PublishMemoryInput } from '../../../shared/projectMemory'
 import { UnsafeProjectMemoryPathError } from '../safePaths'
 import {
   buildImportCounts,
+  ProjectMemoryImportInputError,
   promptInjectionLine,
   readImportSource,
   truncateImportText,
@@ -88,6 +89,13 @@ async function listMarkdown(directory: string): Promise<{ exists: boolean; files
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isSafeLegacyAtomId(value: string): boolean {
+  if (value !== value.trim() || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) return false
+  if (/[\/\\\u0000-\u001f\u007f]/.test(value) || value.startsWith('~')) return false
+  if (/^[A-Za-z]:/.test(value) || /^(?:file|https?|smb):/i.test(value)) return false
+  return !value.split(':').some(segment => segment === '.' || segment === '..')
 }
 
 async function rootMetadata(sourceRoot: string): Promise<{ canonNotes: string[]; hasToDelete: boolean }> {
@@ -283,17 +291,16 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
 
     const atomsPath = path.join(sourceRoot, 'atoms', 'atoms.jsonl')
     let atomsContent: string | undefined
-    let atomsSourceHash: string | undefined
     try {
       const sourceFile = await readImportSource(atomsPath)
       atomsContent = sourceFile.text
-      atomsSourceHash = sourceFile.sourceHash
     } catch (error) {
       if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
     }
     if (atomsContent !== undefined) {
       const recordsBeforeAtoms = records.length
-      const lines = atomsContent.replace(/\r\n?/g, '\n').split('\n')
+      const lines = atomsContent.split(/\r\n|\n|\r/)
+      const atomVersions = new Map<string, { sourceHash: string; claim: string; line: number }>()
       for (const [index, rawLine] of lines.entries()) {
         const lineNumber = index + 1
         if (!rawLine.trim()) continue
@@ -322,12 +329,24 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           warnings.push(`atoms/atoms.jsonl:${lineNumber}: atom lacks id or claim; record not imported`)
           continue
         }
-        if (rawAtomId !== atomId || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(atomId)) {
+        if (!isSafeLegacyAtomId(rawAtomId)) {
           warnings.push(
             `atoms/atoms.jsonl:${lineNumber}: atom id is not a bounded opaque identifier; record not imported`,
           )
           continue
         }
+        const sourceId = `atoms/atoms.jsonl:${atomId}`
+        const sourceHash = createHash('sha256').update(Buffer.from(rawLine, 'utf8')).digest('hex')
+        const existingVersion = atomVersions.get(sourceId)
+        if (
+          existingVersion
+          && (existingVersion.sourceHash !== sourceHash || existingVersion.claim !== rawClaim)
+        ) {
+          throw new ProjectMemoryImportInputError(
+            `atoms/atoms.jsonl lines ${existingVersion.line} and ${lineNumber} contain conflicting versions of one atom id.`,
+          )
+        }
+        if (!existingVersion) atomVersions.set(sourceId, { sourceHash, claim: rawClaim, line: lineNumber })
         const claim = truncateImportText(rawClaim, 600)
         if (claim !== rawClaim) {
           warnings.push(`atoms/atoms.jsonl:${lineNumber}: claim truncated to 600 characters`)
@@ -337,8 +356,6 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             `atoms/atoms.jsonl:${lineNumber}: canon-ratified lacks verifiable hitl grill/sketch authority; imported as a candidate`,
           )
         }
-        const sourceId = `atoms/atoms.jsonl:${atomId}`
-        const sourceHash = atomsSourceHash as string
         const unsafeLine = promptInjectionLine(rawLine)
         if (unsafeLine !== undefined) {
           warnings.push(
