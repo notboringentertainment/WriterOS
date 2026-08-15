@@ -7,7 +7,9 @@ import { createProjectMemoryStore, type ProjectMemoryStore } from '../../server/
 import {
   detectDocumentChanges,
   observeWriterOSSave,
+  processQueueItem,
   readAnalysisQueue,
+  type AnalysisQueueItem,
 } from '../../server/projectMemory/writerOSObserver'
 
 const capturedAt = '2026-08-13T20:00:00.000Z'
@@ -369,58 +371,58 @@ describe('observeWriterOSSave', () => {
     expect(facts.find(record => record.claim === 'The hero refuses to return home.')?.status).toBe('active')
   })
 
-  it('is idempotent when the same underlying content is re-analyzed with different model wording (fix: sourceHash keys off content, not model output)', async () => {
+  it('is idempotent at the store level when the same source content is re-analyzed with different model wording (fix: sourceHash keys off content, not model output)', async () => {
+    // Drives the EXACT path a Task-9 manual retry will take: the same
+    // AnalysisQueueItem (same sourceId + contentHash, so the same
+    // dedupeKey + sourceHash) processed twice with two differently-worded,
+    // schema-valid model responses. observeWriterOSSave's own enqueue
+    // short-circuit (fix #5) intentionally prevents a second *save* of
+    // byte-identical content from ever reaching the model at all, so
+    // exercising the store's dedupeKey+sourceHash no-op check for real
+    // requires calling processQueueItem directly, twice, rather than going
+    // through two observeWriterOSSave calls (which would never invoke the
+    // second model response in the first place).
     const { projectPath, projectId } = await makeProjectPackage('project-observer-9')
     const memoryStore = createProjectMemoryStore()
-    const contentA = '{"logline":"A hero returns home."}'
-    const contentB = '{"logline":"A villain plots revenge."}'
+    const [change] = detectDocumentChanges({}, { 'documents/synopsis.json': '{"logline":"A hero returns home."}' })
+    const item: AnalysisQueueItem = {
+      id: 'test-item-idempotency',
+      surface: change.surface,
+      sourceId: change.sourceId,
+      sourceUri: change.sourceUri,
+      contentHash: change.contentHash,
+      priorText: change.priorText,
+      currentText: change.currentText,
+      status: 'pending',
+      createdAt: capturedAt,
+      updatedAt: capturedAt,
+    }
 
-    await observeWriterOSSave({
-      projectId,
-      projectPath,
-      priorFiles: { 'documents/synopsis.json': '{"logline":""}' },
-      currentFiles: { 'documents/synopsis.json': contentA },
-    }, {
-      memoryStore,
-      provider: providerFromCalls(async () => analysisJson([{
-        kind: 'document_fact', claim: 'The hero returns home.', tags: ['logline'], entities: [],
-        evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
-      }])),
-    })
-    await waitForQueueSettled(projectPath)
+    await processQueueItem(memoryStore, providerFromCalls(async () => analysisJson([{
+      kind: 'document_fact', claim: 'The hero returns home.', tags: ['logline'], entities: [],
+      evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
+    }])), projectPath, projectId, item)
 
-    // Move away, then revert to byte-identical content — a fresh diff is
-    // detected (so this really re-runs analysis), but the analyzed content
-    // itself is byte-identical to the first run.
-    await observeWriterOSSave({
-      projectId,
-      projectPath,
-      priorFiles: { 'documents/synopsis.json': contentA },
-      currentFiles: { 'documents/synopsis.json': contentB },
-    }, { memoryStore, provider: providerFromCalls(async () => analysisJson([])) })
-    await waitForQueueSettled(projectPath)
+    let snapshot = await memoryStore.readSnapshot(projectPath)
+    let facts = snapshot.records.filter(record => record.kind === 'document_fact')
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ status: 'active', claim: 'The hero returns home.' })
 
-    await observeWriterOSSave({
-      projectId,
-      projectPath,
-      priorFiles: { 'documents/synopsis.json': contentB },
-      currentFiles: { 'documents/synopsis.json': contentA },
-    }, {
-      memoryStore,
-      // Differently-worded than the first run's model output, but the same
-      // fact about byte-identical content.
-      provider: providerFromCalls(async () => analysisJson([{
-        kind: 'document_fact', claim: 'The protagonist heads home again.', tags: ['logline'], entities: [],
-        evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
-      }])),
-    })
-    await waitForQueueSettled(projectPath)
+    // Same item — same sourceId + contentHash — processed again with a
+    // differently-worded response for the same topic (same tags, so the
+    // same stable field-path anchor). This must reach store.publish and be
+    // rejected as a duplicate via dedupeKey + sourceHash, not accepted as a
+    // fresh or superseding record.
+    await processQueueItem(memoryStore, providerFromCalls(async () => analysisJson([{
+      kind: 'document_fact', claim: 'The protagonist heads home again.', tags: ['logline'], entities: [],
+      evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
+    }])), projectPath, projectId, item)
 
-    const snapshot = await memoryStore.readSnapshot(projectPath)
-    const facts = snapshot.records.filter(record => record.kind === 'document_fact')
-    // Only the FIRST run's record exists — the third run's differently
-    // worded claim over identical content was a dedupe no-op, not a new
-    // active record and not a supersession.
+    snapshot = await memoryStore.readSnapshot(projectPath)
+    facts = snapshot.records.filter(record => record.kind === 'document_fact')
+    // Only the FIRST call's record exists — the second call's differently
+    // worded claim over the identical source content was a store-level
+    // dedupe no-op, not a new active record and not a supersession.
     expect(facts).toHaveLength(1)
     expect(facts[0]).toMatchObject({ status: 'active', claim: 'The hero returns home.' })
   })

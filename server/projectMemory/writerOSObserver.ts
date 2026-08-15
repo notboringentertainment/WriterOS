@@ -368,7 +368,13 @@ function updateQueueItemIfSameContent(
   ))
 }
 
-async function processQueueItem(
+/**
+ * Analyze and publish one queue item. Exported so tests (and Task 9's
+ * manual retry) can drive a specific item through the exact production
+ * publish path directly, rather than only through the enqueue/short-circuit
+ * machinery in observeWriterOSSave.
+ */
+export async function processQueueItem(
   memoryStore: ProjectMemoryStore,
   provider: ModelProvider,
   projectPath: string,
