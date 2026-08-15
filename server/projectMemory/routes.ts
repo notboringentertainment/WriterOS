@@ -19,6 +19,8 @@ import {
   type ProjectMemoryAnalysisResult,
   type ProjectMemorySnapshot,
 } from '../../shared/projectMemory'
+import { readAnalysisQueue, processQueueItem, type AnalysisQueueItem } from './writerOSObserver'
+import { createModelProvider, type ModelProvider } from '../ai/modelProvider'
 
 export type ProjectMemoryAnalyzeHandler = (input: {
   projectId: string
@@ -42,6 +44,33 @@ const PROJECT_MEMORY_ROUTE_PATHS = {
   actions: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/actions`),
   analyze: PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analyze`),
 } as const
+
+// Task 9: the Memory surface's "pending / failed WriterOS analysis" list and
+// its per-item manual retry. Deliberately NOT part of
+// PROJECT_MEMORY_ROUTE_PATHS / classifyProjectMemoryPath — those feed the
+// same-origin+session mount-level boundary, JSON-parser gating, and
+// method-not-allowed catch-all covered by tests/server/projectMemoryRoutes.test.ts
+// for the Task 5 endpoint set, and none of that hardening changes here. These
+// two routes get their own explicit requireSameOrigin/requireSession guards
+// below (the same factories the boundary uses), so they are equally
+// protected without touching that shared classification surface.
+const ANALYSIS_QUEUE_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue`)
+const ANALYSIS_RETRY_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue/:itemId/retry`)
+
+/** Never exposes priorText/currentText — the queue keeps up to 20k characters
+ * of document/scene content per item purely for re-analysis; the Memory
+ * surface only needs enough to identify and retry an item. */
+function summarizeQueueItem(item: AnalysisQueueItem) {
+  return {
+    id: item.id,
+    surface: item.surface,
+    sourceUri: item.sourceUri,
+    status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }
+}
 
 const trustedProjectMemoryParserErrors = new WeakSet<object>()
 
@@ -202,11 +231,26 @@ function classifyProjectMemoryPath(
     : endpointSegments.length === 2 && endpointSegments[1] === ''
       ? endpointSegments[0]?.toLowerCase()
       : undefined
+  // Task 9's analysis-queue retry is the one project-memory endpoint with a
+  // sub-resource id in its path (.../analysis-queue/:itemId/retry), so it
+  // cannot be recognized by the single-segment `endpoint` check above. This
+  // is purely additive alongside it: `endpoint` and its two existing
+  // branches are unchanged, so every previously-classified shape (including
+  // its trailing-slash handling) still resolves exactly as before.
+  const isAnalysisRetryPath = (
+    endpointSegments.length === 3 || (endpointSegments.length === 4 && endpointSegments[3] === '')
+  )
+    && endpointSegments[0]?.toLowerCase() === 'analysis-queue'
+    && endpointSegments[2]?.toLowerCase() === 'retry'
   const expectedMethod = endpoint === 'snapshot' || endpoint === 'context'
     ? 'GET'
     : endpoint === 'actions' || endpoint === 'analyze'
       ? 'POST'
-      : undefined
+      : endpoint === 'analysis-queue'
+        ? 'GET'
+        : isAnalysisRetryPath
+          ? 'POST'
+          : undefined
   return { encodedProjectId, expectedMethod }
 }
 
@@ -358,9 +402,17 @@ export function registerProjectMemoryRoutes(
   projectLibraryStore: ProjectLibraryStore | null,
   memoryStore: ProjectMemoryStore = projectMemoryStore,
   analyze?: ProjectMemoryAnalyzeHandler,
+  analysisProvider?: ModelProvider,
 ): void {
   const requireSameOrigin = sameOrigin(config, 'Project memory')
   const requireSession = authenticated(config, 'Project memory')
+  // Resolved lazily, only inside the retry handler below — never at
+  // registration time. Other tests assert that closed/unrelated endpoints
+  // never construct a model provider as a side effect of the app simply
+  // starting up; constructing one eagerly here would violate that even
+  // though ModelProvider construction itself is cheap (no key validation
+  // happens until generateResponse is actually called).
+  const getAnalysisProvider = () => analysisProvider ?? createModelProvider()
 
   registerProjectMemorySecurityBoundary(app, config)
 
@@ -475,6 +527,50 @@ export function registerProjectMemoryRoutes(
         error: 'analysis-unavailable',
         message: 'Project memory analysis is unavailable.',
       })
+    } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
+  // Task 9: list pending/failed WriterOS document-analysis items (Task 8's
+  // memory/analysis-queue.json) for the Memory surface.
+  app.get(ANALYSIS_QUEUE_ROUTE_PATHS, requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const projectId = validatedProjectId(req.params.projectId)
+      const projectPath = await libraryStore(config, projectLibraryStore)
+        .resolveProjectPackagePath(projectId)
+      const items = await readAnalysisQueue(projectPath)
+      return res.json({
+        items: items
+          .filter(item => item.status === 'pending' || item.status === 'failed')
+          .map(summarizeQueueItem),
+      })
+    } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
+  // Task 9: explicit, per-item manual retry of a failed analysis item. There
+  // is no automatic retry anywhere (see writerOSObserver.ts) — this is the
+  // only way a failed item ever gets reprocessed.
+  app.post(ANALYSIS_RETRY_ROUTE_PATHS, requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const projectId = validatedProjectId(req.params.projectId)
+      const itemId = req.params.itemId
+      const projectPath = await libraryStore(config, projectLibraryStore)
+        .resolveProjectPackagePath(projectId)
+      const items = await readAnalysisQueue(projectPath)
+      const item = items.find(entry => entry.id === itemId)
+      if (!item) {
+        return res.status(404).json({ error: 'not-found', message: 'Analysis queue item was not found.' })
+      }
+      if (item.status !== 'failed') {
+        return res.status(409).json({ error: 'not-retryable', message: 'Only failed analysis items can be retried.' })
+      }
+      await processQueueItem(memoryStore, getAnalysisProvider(), projectPath, projectId, item)
+      const refreshedItems = await readAnalysisQueue(projectPath)
+      const refreshed = refreshedItems.find(entry => entry.id === itemId)
+      return res.json({ item: refreshed ? summarizeQueueItem(refreshed) : null })
     } catch (error) {
       return routeError(res, error)
     }

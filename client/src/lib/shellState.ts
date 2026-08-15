@@ -6,7 +6,7 @@ export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'ru
 // Full-bleed identity ritual takeovers: writer-level (Voice Profile) and
 // project-level (Project Meeting). Checked before homeActive when rendering, so
 // closing a ritual restores whatever surface was underneath.
-export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | null
+export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | 'memory' | null
 
 export function useShellState() {
   const [homeActive, setHomeActive] = useState(true)

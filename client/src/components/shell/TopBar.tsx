@@ -35,6 +35,7 @@ interface TopBarProps {
   voiceProfileOpen: boolean
   ritual?: ActiveRitual
   onProjectMeeting?: () => void
+  onOpenMemory?: () => void
 }
 
 export function TopBar({
@@ -57,6 +58,7 @@ export function TopBar({
   voiceProfileOpen,
   ritual = null,
   onProjectMeeting,
+  onOpenMemory,
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -231,6 +233,17 @@ export function TopBar({
             onClick={onProjectMeeting}
           >
             Project Meeting
+          </button>
+        )}
+        {onOpenMemory && !homeActive && (
+          <button
+            type="button"
+            aria-label="Memory"
+            aria-pressed={ritual === 'memory'}
+            style={{ ...styles.cmdK, ...(ritual === 'memory' ? styles.voiceActive : {}) }}
+            onClick={onOpenMemory}
+          >
+            Memory
           </button>
         )}
         <button

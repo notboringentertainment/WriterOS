@@ -1,20 +1,13 @@
-import React from 'react'
-import type { MemoryReceipt } from '@shared/schema'
+// Thin compatibility wrapper: every existing "receipt below the agent
+// response" call site (LeftRail, RoomChannel, ProjectMeetingPage, Outline/
+// Synopsis/Treatment tabs, PitchPacketReview) already renders this component.
+// Task 9 upgrades the receipt itself (expandable citations, conflict
+// disclosure) in client/src/components/memory/MemoryReceipt.tsx; delegating
+// here means every one of those surfaces gets the upgrade without touching
+// each call site individually.
+import type { MemoryReceipt as MemoryReceiptData } from '@shared/schema'
+import { MemoryReceipt } from '../memory/MemoryReceipt'
 
-export function MemoryReceiptDisclosure({ receipt }: { receipt?: MemoryReceipt }) {
-  if (!receipt) return null
-  const label = receipt.status === 'disabled'
-    ? 'Project memory disabled'
-    : `Project memory revision ${receipt.revision}`
-  return <span role="status" style={styles.disclosure}>{label}</span>
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  disclosure: {
-    display: 'block',
-    marginTop: 8,
-    color: 'var(--fg-subtle)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 10,
-  },
+export function MemoryReceiptDisclosure({ receipt }: { receipt?: MemoryReceiptData }) {
+  return <MemoryReceipt receipt={receipt} />
 }

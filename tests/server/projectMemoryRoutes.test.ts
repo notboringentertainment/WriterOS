@@ -5,7 +5,7 @@ import { mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { deflateSync, gzipSync } from 'node:zlib'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { registerRoutes } from '../../server/routes'
 import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
@@ -20,6 +20,8 @@ import {
   registerProjectMemorySecurityBoundary,
 } from '../../server/projectMemory/routes'
 import { projectMemoryStore, type ProjectMemoryStore } from '../../server/projectMemory/store'
+import { observeWriterOSSave, readAnalysisQueue } from '../../server/projectMemory/writerOSObserver'
+import type { ModelProvider } from '../../server/ai/modelProvider'
 
 const servers: Server[] = []
 const temporaryRoots: string[] = []
@@ -46,6 +48,7 @@ async function startMemoryApp(
   analyze?: (input: any) => Promise<unknown>,
   memoryStore: ProjectMemoryStore = projectMemoryStore,
   globalParserCalls?: { json: number; urlencoded: number },
+  provider?: ModelProvider,
 ) {
   const app = express()
   registerProjectMemorySecurityBoundary(app, config)
@@ -62,7 +65,7 @@ async function startMemoryApp(
   }))
   app.use(projectMemoryJsonErrorBoundary)
   const register = registerProjectMemoryRoutes as (...args: any[]) => void
-  register(app, config, store, memoryStore, analyze)
+  register(app, config, store, memoryStore, analyze, provider)
   app.post('/test-unrelated-form-parser', (req, res) => res.json({ body: req.body }))
   app.post('/api/projects/:projectId/not-memory', (req, res) => res.json({ body: req.body }))
   const server = http.createServer(app)
@@ -1639,6 +1642,135 @@ describe('project memory HTTP routes', () => {
       message: 'WriterOS could not access project memory.',
     })
     expect(response.text).not.toContain(root)
+  })
+})
+
+function fakeModelProvider(handler: () => Promise<string>): ModelProvider {
+  return {
+    name: 'openai',
+    model: 'test-model',
+    isConfigured: () => true,
+    generateResponse: vi.fn(handler),
+  }
+}
+
+async function waitForQueueItemStatus(
+  projectPath: string,
+  status: 'done' | 'failed',
+  timeoutMs = 2_000,
+): Promise<void> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const items = await readAnalysisQueue(projectPath)
+    if (items.some(item => item.status === status)) return
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  throw new Error(`Timed out waiting for an analysis queue item to reach status "${status}".`)
+}
+
+describe('project memory analysis-queue routes (Task 9)', () => {
+  it('lists only the lean pending/failed shape and lets a failed item be retried', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'analysis-queue-project',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+
+    // Seed one failed item the same way a real WriterOS save would.
+    await observeWriterOSSave({
+      projectId: project.id,
+      projectPath,
+      priorFiles: null,
+      currentFiles: { 'documents/outline.json': JSON.stringify({ spine: { protagonist: 'A courier who never delivers' } }) },
+    }, {
+      memoryStore: projectMemoryStore,
+      provider: fakeModelProvider(async () => { throw new Error('model unavailable in test') }),
+    })
+    await waitForQueueItemStatus(projectPath, 'failed')
+
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store, undefined, projectMemoryStore, undefined, fakeModelProvider(async () => JSON.stringify({ records: [] })))
+    const authorized = { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' }
+
+    const unauthorized = await requestJson(port, `/api/project-memory/${project.id}/analysis-queue`, {
+      Origin: 'http://127.0.0.1:5177',
+    })
+    expect(unauthorized.status).toBe(401)
+
+    const listed = await requestJson(port, `/api/project-memory/${project.id}/analysis-queue`, authorized)
+    expect(listed.status).toBe(200)
+    expect(listed.json.items).toHaveLength(1)
+    const [item] = listed.json.items
+    expect(item).toMatchObject({ surface: 'outline', status: 'failed' })
+    expect(item.sourceUri).toContain('documents/outline.json')
+    expect(item.priorText).toBeUndefined()
+    expect(item.currentText).toBeUndefined()
+    expect(item.contentHash).toBeUndefined()
+
+    const retried = await postJson(port, `/api/project-memory/${project.id}/analysis-queue/${item.id}/retry`, {}, authorized)
+    expect(retried.status).toBe(200)
+    expect(retried.json.item).toMatchObject({ id: item.id, status: 'done' })
+
+    const afterRetry = await requestJson(port, `/api/project-memory/${project.id}/analysis-queue`, authorized)
+    expect(afterRetry.json.items).toHaveLength(0)
+  })
+
+  it('rejects retry for an unknown item id and for an item that is not failed', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'analysis-queue-project-2',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, store)
+    const authorized = { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' }
+
+    const missing = await postJson(port, `/api/project-memory/${project.id}/analysis-queue/does-not-exist/retry`, {}, authorized)
+    expect(missing.status).toBe(404)
+
+    // A never-processed, still-pending item cannot be retried (only failed items can).
+    await observeWriterOSSave({
+      projectId: project.id,
+      projectPath,
+      priorFiles: null,
+      currentFiles: { 'documents/outline.json': JSON.stringify({ spine: { protagonist: 'Someone waiting on a slow analyzer' } }) },
+    }, {
+      memoryStore: projectMemoryStore,
+      provider: fakeModelProvider(() => new Promise(() => {})), // never resolves — item stays "processing"
+    })
+    let pendingId: string | undefined
+    for (let attempt = 0; attempt < 50 && !pendingId; attempt += 1) {
+      const items = await readAnalysisQueue(projectPath)
+      pendingId = items.find(item => item.status === 'pending' || item.status === 'processing')?.id
+      if (!pendingId) await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    expect(pendingId).toBeDefined()
+
+    const notRetryable = await postJson(port, `/api/project-memory/${project.id}/analysis-queue/${pendingId}/retry`, {}, authorized)
+    expect(notRetryable.status).toBe(409)
+    expect(notRetryable.json).toEqual({ error: 'not-retryable', message: 'Only failed analysis items can be retried.' })
   })
 })
 

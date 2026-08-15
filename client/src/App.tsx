@@ -3,7 +3,16 @@ import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
 import { useWriterOSProjectLibrary } from './lib/useWriterOSProjectLibrary'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
-import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import {
+  parseMention,
+  parseOpenSwarmCommand,
+  buildProjectContext,
+  formatWritingPartnerSpeaker,
+  countRelevantMemoryConflicts,
+} from './lib/wpRouting'
+import { useProjectMemory } from './lib/useProjectMemory'
+import { MemorySurface } from './components/memory/MemorySurface'
+import { MemoryConflictBanner } from './components/memory/MemoryConflictCard'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -174,6 +183,12 @@ export default function App() {
   const activeAgentProjectKey = activeFolderProjectId
     ? `folder:${activeFolderProjectId}`
     : `browser:${project.activeProjectId ?? ''}`
+  // Drives the Memory surface and inline conflict banners (Task 9). A
+  // browser-only project (no activeFolderProjectId) has nowhere durable to
+  // keep a shared memory ledger, so the hook reports browserOnly instead of
+  // fetching.
+  const projectMemory = useProjectMemory(activeFolderProjectId ?? undefined, activeAgentProjectKey)
+  const openMemorySurface = useCallback(() => shellState.openRitual('memory'), [shellState.openRitual])
   const activeAgentProjectKeyRef = useRef(activeAgentProjectKey)
   const wpRequestGenerationRef = useRef(0)
   activeAgentProjectKeyRef.current = activeAgentProjectKey
@@ -901,11 +916,29 @@ export default function App() {
 
     if (shellState.ritual === 'projectMeeting' && project.activeProjectId) {
       return (
-        <ProjectMeetingPage
-          projectId={project.activeProjectId}
+        <div style={styles.centerColumn}>
+          <MemoryConflictBanner
+            conflictCount={countRelevantMemoryConflicts(projectMemory.snapshot, 'project-meeting')}
+            onOpenMemory={openMemorySurface}
+          />
+          <div style={styles.flexFill}>
+            <ProjectMeetingPage
+              projectId={project.activeProjectId}
+              projectScopeKey={activeAgentProjectKey}
+              projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+              documents={project.state.documents}
+              onExit={shellState.closeRitual}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    if (shellState.ritual === 'memory') {
+      return (
+        <MemorySurface
+          projectId={activeFolderProjectId ?? undefined}
           projectScopeKey={activeAgentProjectKey}
-          projectTitle={getDisplayProjectTitle(project.state.meta.title)}
-          documents={project.state.documents}
           onExit={shellState.closeRitual}
         />
       )
@@ -961,44 +994,52 @@ export default function App() {
     }
 
     const activeSurface = renderActiveSurface()
+    // Independent, mutually-exclusive workflow families (writeros document
+    // surfaces vs. writeros-room), so summing their relevant-conflict counts
+    // cannot double-count a single conflict.
+    const workspaceConflictCount = countRelevantMemoryConflicts(projectMemory.snapshot, shellState.activeTab)
+      + (shellState.writersRoomActive ? countRelevantMemoryConflicts(projectMemory.snapshot, 'writers-room') : 0)
 
     return (
-      <div style={styles.surfaceWithWritersRoom}>
-        <div style={styles.activeSurfacePane}>
-          {activeSurface}
+      <div style={styles.centerColumn}>
+        <MemoryConflictBanner conflictCount={workspaceConflictCount} onOpenMemory={openMemorySurface} />
+        <div style={styles.surfaceWithWritersRoom}>
+          <div style={styles.activeSurfacePane}>
+            {activeSurface}
+          </div>
+          {shellState.writersRoomActive && (
+            <WritersRoom
+              mode="dock"
+              projectState={project.state}
+              onSendToSpecialist={handleSpecialistSend}
+              onClearTranscript={project.clearTranscript}
+              roomProps={
+                project.activeProjectId
+                  ? {
+                      projectId: project.activeProjectId,
+                      projectScopeKey: activeAgentProjectKey,
+                      characterNames: project.state.documents.storyBible.content.characters
+                        .map((c) => c.name)
+                        .filter(Boolean),
+                      characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
+                        id: c.id,
+                        name: c.name,
+                        want: c.want,
+                        need: c.need,
+                        flaw: c.flaw,
+                        secret: c.secret,
+                        arc: c.arc,
+                      })),
+                      surfaceAwareness: buildSurfaceAwareness(shellState.activeTab, project.state),
+                      locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
+                      onAdoptProposal: handleAdoptRoomProposal,
+                      onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
+                    }
+                  : undefined
+              }
+            />
+          )}
         </div>
-        {shellState.writersRoomActive && (
-          <WritersRoom
-            mode="dock"
-            projectState={project.state}
-            onSendToSpecialist={handleSpecialistSend}
-            onClearTranscript={project.clearTranscript}
-            roomProps={
-              project.activeProjectId
-                ? {
-                    projectId: project.activeProjectId,
-                    projectScopeKey: activeAgentProjectKey,
-                    characterNames: project.state.documents.storyBible.content.characters
-                      .map((c) => c.name)
-                      .filter(Boolean),
-                    characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
-                      id: c.id,
-                      name: c.name,
-                      want: c.want,
-                      need: c.need,
-                      flaw: c.flaw,
-                      secret: c.secret,
-                      arc: c.arc,
-                    })),
-                    surfaceAwareness: buildSurfaceAwareness(shellState.activeTab, project.state),
-                    locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
-                    onAdoptProposal: handleAdoptRoomProposal,
-                    onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
-                  }
-                : undefined
-            }
-          />
-        )}
       </div>
     )
   }
@@ -1039,8 +1080,20 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  surfaceWithWritersRoom: {
+  centerColumn: {
     height: '100%',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto',
+  },
+  surfaceWithWritersRoom: {
+    flex: 1,
     minHeight: 0,
     display: 'flex',
     overflow: 'hidden',

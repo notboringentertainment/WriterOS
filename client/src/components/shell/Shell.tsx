@@ -174,6 +174,7 @@ export function Shell({
           voiceProfileOpen={voiceProfileOpen}
           ritual={ritual}
           onProjectMeeting={activeProjectId ? () => openRitual('projectMeeting') : undefined}
+          onOpenMemory={activeProjectId ? () => openRitual('memory') : undefined}
         />
       )}
       <div style={styles.body}>

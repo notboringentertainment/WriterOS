@@ -1,0 +1,215 @@
+// Client hook for the WriterOS Memory surface and inline conflict banners
+// (Task 9). Wraps client/src/lib/projectMemoryApi.ts (Task 5) with the same
+// scope-generation guarding used by Room/Meeting/document-tab hooks
+// (useProjectRequestGeneration.ts), plus the small additional
+// analysis-queue/retry surface this task needs that Task 5's client did not
+// expose. `projectId` must be the folder-backed project id — a project that
+// only lives in browser storage has nowhere durable to keep a memory ledger,
+// so this hook reports `browserOnly` instead of ever attempting a fetch.
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ProjectMemoryAction, ProjectMemorySnapshot } from '@shared/projectMemory'
+import { createProjectMemoryApi, ProjectMemoryApiError } from './projectMemoryApi'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from './useProjectRequestGeneration'
+
+export const BROWSER_ONLY_MEMORY_MESSAGE = 'Shared project memory requires project folder storage.'
+
+/** Lean wire shape for a pending/failed WriterOS analysis item — never carries
+ * the underlying document text the server keeps for re-analysis. */
+export interface MemoryAnalysisQueueEntry {
+  id: string
+  surface: string
+  sourceUri: string
+  status: 'pending' | 'failed'
+  error?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProjectMemoryActionResult =
+  | { ok: true }
+  | { ok: false; conflict: boolean; message: string }
+
+export type RetryAnalysisResult =
+  | { ok: true }
+  | { ok: false; message: string }
+
+export interface UseProjectMemoryResult {
+  /** True when there is no folder-backed project id to attach memory to. */
+  browserOnly: boolean
+  browserOnlyMessage: string
+  loading: boolean
+  error: string | null
+  snapshot: ProjectMemorySnapshot | undefined
+  analysisQueue: MemoryAnalysisQueueEntry[]
+  refresh: () => Promise<void>
+  runAction: (action: ProjectMemoryAction) => Promise<ProjectMemoryActionResult>
+  retryAnalysis: (itemId: string) => Promise<RetryAnalysisResult>
+}
+
+type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+interface ProjectLibraryBootstrapBody {
+  enabled?: unknown
+  sessionToken?: unknown
+}
+
+async function bootstrapMemorySessionToken(fetchImpl: FetchLike): Promise<string | null> {
+  try {
+    const response = await fetchImpl('/api/project-library/bootstrap', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return null
+    const body = await response.json() as ProjectLibraryBootstrapBody
+    return body.enabled === true && typeof body.sessionToken === 'string' ? body.sessionToken : null
+  } catch {
+    return null
+  }
+}
+
+const SESSION_UNAVAILABLE_MESSAGE = 'WriterOS could not verify this session for project memory.'
+
+export function useProjectMemory(
+  projectId: string | undefined,
+  projectScopeKey?: string,
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+): UseProjectMemoryResult {
+  const effectiveScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  const beginRequest = useProjectRequestGeneration(effectiveScopeKey)
+  const [snapshot, setSnapshot] = useState<ProjectMemorySnapshot>()
+  const [analysisQueue, setAnalysisQueue] = useState<MemoryAnalysisQueueEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sessionTokenRef = useRef<Promise<string | null> | null>(null)
+
+  const getSessionToken = useCallback(async (): Promise<string | null> => {
+    if (!sessionTokenRef.current) {
+      sessionTokenRef.current = bootstrapMemorySessionToken(fetchImpl)
+    }
+    const token = await sessionTokenRef.current
+    // Do not cache a failure: a transient bootstrap failure should not
+    // permanently strand the surface in the "session unavailable" state for
+    // the rest of this scope's lifetime — the next action/refresh retries it.
+    if (!token) sessionTokenRef.current = null
+    return token
+  }, [fetchImpl])
+
+  const memoryPath = useCallback(
+    (id: string, suffix: string) => `/api/project-memory/${encodeURIComponent(id)}/${suffix}`,
+    [],
+  )
+
+  const fetchAnalysisQueue = useCallback(async (id: string, token: string): Promise<MemoryAnalysisQueueEntry[]> => {
+    const response = await fetchImpl(memoryPath(id, 'analysis-queue'), {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-WriterOS-Session': token },
+    })
+    if (!response.ok) throw new Error('WriterOS could not load pending analysis.')
+    const body = await response.json() as { items?: unknown }
+    return Array.isArray(body.items) ? body.items as MemoryAnalysisQueueEntry[] : []
+  }, [fetchImpl, memoryPath])
+
+  const load = useCallback(async () => {
+    if (!projectId) return
+    const requestIsCurrent = beginRequest()
+    setLoading(true)
+    setError(null)
+    try {
+      const token = await getSessionToken()
+      if (!requestIsCurrent()) return
+      if (!token) {
+        setError(SESSION_UNAVAILABLE_MESSAGE)
+        return
+      }
+      const api = createProjectMemoryApi(token, fetchImpl)
+      const [nextSnapshot, nextQueue] = await Promise.all([
+        api.snapshot(projectId),
+        fetchAnalysisQueue(projectId, token),
+      ])
+      if (!requestIsCurrent()) return
+      setSnapshot(nextSnapshot)
+      setAnalysisQueue(nextQueue)
+    } catch (caught) {
+      if (!requestIsCurrent()) return
+      setError(caught instanceof ProjectMemoryApiError ? caught.message : 'WriterOS could not load project memory.')
+    } finally {
+      if (requestIsCurrent()) setLoading(false)
+    }
+  }, [projectId, beginRequest, getSessionToken, fetchImpl, fetchAnalysisQueue])
+
+  useEffect(() => {
+    sessionTokenRef.current = null
+    setSnapshot(undefined)
+    setAnalysisQueue([])
+    setError(null)
+    setLoading(false)
+    if (projectId) void load()
+    // Reset/reload only on scope change, mirroring OutlineTab/SynopsisTab's
+    // MemoryReceipt reset-on-scope-change effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveScopeKey])
+
+  const runAction = useCallback(async (action: ProjectMemoryAction): Promise<ProjectMemoryActionResult> => {
+    if (!projectId) return { ok: false, conflict: false, message: BROWSER_ONLY_MEMORY_MESSAGE }
+    try {
+      const token = await getSessionToken()
+      if (!token) return { ok: false, conflict: false, message: SESSION_UNAVAILABLE_MESSAGE }
+      const api = createProjectMemoryApi(token, fetchImpl)
+      const nextSnapshot = await api.action(projectId, action)
+      setSnapshot(nextSnapshot)
+      return { ok: true }
+    } catch (caught) {
+      if (caught instanceof ProjectMemoryApiError && caught.statusCode === 409) {
+        // Revision moved under us — refresh and re-present rather than
+        // silently retrying the same action against stale state.
+        await load()
+        return {
+          ok: false,
+          conflict: true,
+          message: 'Project memory changed since this loaded. Refreshed — review and try again.',
+        }
+      }
+      return {
+        ok: false,
+        conflict: false,
+        message: caught instanceof ProjectMemoryApiError ? caught.message : 'WriterOS could not update project memory.',
+      }
+    }
+  }, [projectId, getSessionToken, fetchImpl, load])
+
+  const retryAnalysis = useCallback(async (itemId: string): Promise<RetryAnalysisResult> => {
+    if (!projectId) return { ok: false, message: BROWSER_ONLY_MEMORY_MESSAGE }
+    try {
+      const token = await getSessionToken()
+      if (!token) return { ok: false, message: SESSION_UNAVAILABLE_MESSAGE }
+      const response = await fetchImpl(memoryPath(projectId, `analysis-queue/${encodeURIComponent(itemId)}/retry`), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'X-WriterOS-Session': token },
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: unknown }
+        return {
+          ok: false,
+          message: typeof body.message === 'string' ? body.message : 'WriterOS could not retry this analysis.',
+        }
+      }
+      await load()
+      return { ok: true }
+    } catch {
+      return { ok: false, message: 'WriterOS could not retry this analysis.' }
+    }
+  }, [projectId, getSessionToken, fetchImpl, memoryPath, load])
+
+  return {
+    browserOnly: !projectId,
+    browserOnlyMessage: BROWSER_ONLY_MEMORY_MESSAGE,
+    loading,
+    error,
+    snapshot,
+    analysisQueue,
+    refresh: load,
+    runAction,
+    retryAnalysis,
+  }
+}

@@ -4,6 +4,7 @@ import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectForma
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import type { WorkspaceLocation } from '@shared/workspaceLocation'
+import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '@shared/projectMemory'
 import { documentStoryBibleToLegacy, normalizeOutlineContent } from './documentMigration'
 import {
   buildScriptIndex,
@@ -135,6 +136,59 @@ export function parseOpenSwarmCommand(text: string): string | null {
 }
 
 export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'treatment' | 'story-bible'
+
+// Surfaces a project-memory conflict banner can appear on (Task 9). Every
+// ActiveTab plus the two room-adjacent surfaces that are not writing tabs.
+export type MemorySurfaceKey = ActiveTab | 'writers-room' | 'project-meeting'
+
+// WriterOS document capture (writerOSObserver.ts) anchors each record's
+// source.sourceUri at the project-package-relative document path (see
+// WRITEROS_DOCUMENT_PATHS / WRITEROS_SCRIPT_HTML_PATH in projectPackage.ts).
+// Mirrored here as plain string literals to avoid a client surface importing
+// server-only capture modules just to classify a record's originating tab.
+const WRITEROS_MEMORY_SURFACE_URI_PREFIXES: Record<ActiveTab, string> = {
+  synopsis: 'documents/synopsis.json',
+  outline: 'documents/outline.json',
+  treatment: 'documents/treatment.json',
+  'story-bible': 'documents/story-bible.json',
+  script: 'script/script.writeros.html',
+}
+
+/**
+ * Whether a project-memory record is relevant to a given writing/room
+ * surface, for the purpose of showing an inline conflict banner. Room and
+ * Project Meeting both write through the shared `writeros-room` workflow
+ * (roomBridge.ts) with no further per-surface distinction, so a
+ * `writeros-room` record is treated as relevant to both.
+ */
+export function isMemoryRecordRelevantToSurface(
+  record: Pick<ProjectMemoryRecord, 'source'>,
+  surface: MemorySurfaceKey,
+): boolean {
+  if (record.source.workflow === 'writeros-room') {
+    return surface === 'writers-room' || surface === 'project-meeting'
+  }
+  if (record.source.workflow !== 'writeros') return false
+  if (surface === 'writers-room' || surface === 'project-meeting') return false
+  const prefix = WRITEROS_MEMORY_SURFACE_URI_PREFIXES[surface]
+  return record.source.sourceUri.startsWith(prefix)
+}
+
+/** Count of open conflicts touching a surface, for its inline conflict banner. */
+export function countRelevantMemoryConflicts(
+  snapshot: Pick<ProjectMemorySnapshot, 'records' | 'conflicts'> | undefined,
+  surface: MemorySurfaceKey,
+): number {
+  if (!snapshot) return 0
+  const recordsById = new Map(snapshot.records.map(record => [record.id, record]))
+  return snapshot.conflicts.filter(conflict => {
+    if (conflict.status !== 'open') return false
+    const left = recordsById.get(conflict.leftRecordId)
+    const right = recordsById.get(conflict.rightRecordId)
+    return (left && isMemoryRecordRelevantToSurface(left, surface))
+      || (right && isMemoryRecordRelevantToSurface(right, surface))
+  }).length
+}
 
 const ZOE_SECTIONS = new Set(['world', 'rules'])
 const STORY_BIBLE_CASEY_INTENT_RE = /\b(character|protagonist|antagonist|hero|villain|state of mind|psychology|psychological|psyche|mental|emotion|emotional|motivation|motivated|motivate|motivates|motive|want|need|wound|flaw|arc|backstory|trauma|fear|desire|guilt|grief|relationship|theme|thematic|tone|voice)\b/i
