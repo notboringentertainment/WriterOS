@@ -530,24 +530,28 @@ export function legacyToDocuments(state: ProjectState, now: NowFn = () => new Da
   return {
     synopsis: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'prose',
       updatedAt: ts,
       content: synopsisLegacyToContent(state.synopsis),
     },
     outline: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'beat_sheet_save_the_cat',
       updatedAt: ts,
       content: outlineLegacyToContent(state.outline),
     },
     treatment: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'three_act_prose',
       updatedAt: ts,
       content: treatmentLegacyToContent(),
     },
     storyBible: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'development',
       updatedAt: ts,
       content: storyBibleLegacyToContent(state.storyBible),

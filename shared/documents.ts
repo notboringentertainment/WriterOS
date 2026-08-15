@@ -537,6 +537,12 @@ export type DocumentViewPreferences = z.infer<typeof DocumentViewPreferencesSche
 export function AuthoredDocumentStateSchema<TContent extends z.ZodTypeAny>(content: TContent) {
   return z.object({
     version: z.number().int().nonnegative(),
+    // Per-save counter (Task 10), distinct from `version` above: `version` is
+    // a schema version pinned to DOCUMENT_SCHEMA_VERSION and participates in
+    // migration logic, while `revision` bumps on every save so a memory-
+    // grounded patch's `baseVersion` can detect a stale target. Defaults to 0
+    // so documents saved before this field existed still parse.
+    revision: z.number().int().nonnegative().default(0),
     mode: z.string(),
     updatedAt: z.string(),
     content,
@@ -553,6 +559,9 @@ export function AuthoredDocumentStateSchema<TContent extends z.ZodTypeAny>(conte
 
 export interface AuthoredDocumentState<TContent> {
   version: number
+  /** Per-save counter, incremented once per document setter call. See the
+   * schema comment above for why this is not the same field as `version`. */
+  revision: number
   mode: string
   updatedAt: string
   content: TContent
@@ -586,24 +595,28 @@ export function createEmptyDocuments(now: () => string = () => new Date().toISOS
   return {
     synopsis: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'prose',
       updatedAt: ts,
       content: createEmptySynopsisContent(),
     },
     outline: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'beat_sheet_save_the_cat',
       updatedAt: ts,
       content: createEmptyOutlineContent(),
     },
     treatment: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'three_act_prose',
       updatedAt: ts,
       content: createEmptyTreatmentContent(),
     },
     storyBible: {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'development',
       updatedAt: ts,
       content: createEmptyStoryBibleContent(),

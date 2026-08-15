@@ -25,6 +25,7 @@ function makeDocument(
 ): AuthoredDocumentState<TreatmentDocumentContent> {
   return {
     version: DOCUMENT_SCHEMA_VERSION,
+    revision: 0,
     mode: 'three_act_prose',
     updatedAt: new Date('2026-05-20').toISOString(),
     content: {

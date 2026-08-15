@@ -22,6 +22,7 @@ function makeDocument(
 ): AuthoredDocumentState<SynopsisDocumentContent> {
   return {
     version: 1,
+    revision: 0,
     mode: 'prose',
     updatedAt: new Date('2025-01-15').toISOString(),
     content: {

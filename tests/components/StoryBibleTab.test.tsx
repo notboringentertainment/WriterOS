@@ -13,6 +13,7 @@ function makeDocument(
 ): AuthoredDocumentState<StoryBibleDocumentContent> {
   return {
     version: 1,
+    revision: 0,
     mode: 'development',
     updatedAt: new Date('2026-05-18T12:00:00.000Z').toISOString(),
     content: {

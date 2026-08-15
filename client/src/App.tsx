@@ -13,6 +13,14 @@ import {
 import { useProjectMemory } from './lib/useProjectMemory'
 import { MemorySurface } from './components/memory/MemorySurface'
 import { MemoryConflictBanner } from './components/memory/MemoryConflictCard'
+import { MemoryPatchPreview } from './components/memory/MemoryPatchPreview'
+import {
+  applyMemoryGroundedPatch,
+  parsePatchProposal,
+  shouldRequestDocumentPatch,
+  surfaceForActiveTab,
+} from './lib/memoryPatch'
+import type { MemoryGroundedPatchProposal } from '@shared/memoryPatches'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -88,7 +96,7 @@ async function postWPChat(body: {
   projectContext: ReturnType<typeof buildProjectContext>
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
   voiceProfile?: VoiceProfileDocument
-}): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt }> {
+}): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt; patchProposal?: MemoryGroundedPatchProposal }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -96,7 +104,15 @@ async function postWPChat(body: {
   })
   if (!res.ok) throw new Error(`wp-chat ${res.status}`)
   const response = await res.json()
-  return { ...response, memoryReceipt: parseMemoryReceipt(response?.memoryReceipt) }
+  return {
+    ...response,
+    memoryReceipt: parseMemoryReceipt(response?.memoryReceipt),
+    // Task 10: a wp-chat response may carry an optional memory-grounded
+    // document patch alongside its receipt. parsePatchProposal never throws
+    // and drops anything malformed or whose content fails the surface's own
+    // schema, so a bad/absent field here is indistinguishable from "no patch".
+    patchProposal: parsePatchProposal(response?.patch),
+  }
 }
 
 async function postOpenSwarmWritingPartner(body: {
@@ -206,6 +222,51 @@ export default function App() {
     wpRequestGenerationRef.current += 1
     setWpLoading(false)
   }, [activeAgentProjectKey])
+
+  // Task 10: the single pending memory-grounded document patch preview, if
+  // any. Inline above the surface it targets (like the MemoryConflictBanner
+  // above it), never a modal. Cleared on project switch so a suggestion from
+  // one project can never surface — or get applied — against another.
+  const [pendingPatchProposal, setPendingPatchProposal] = useState<MemoryGroundedPatchProposal | null>(null)
+  const [patchApplyError, setPatchApplyError] = useState<string | null>(null)
+  const [applyingPatch, setApplyingPatch] = useState(false)
+  useEffect(() => {
+    setPendingPatchProposal(null)
+    setPatchApplyError(null)
+    setApplyingPatch(false)
+  }, [activeAgentProjectKey])
+
+  const handleApplyPatch = useCallback(() => {
+    if (!pendingPatchProposal) return
+    setApplyingPatch(true)
+    const result = applyMemoryGroundedPatch(pendingPatchProposal.patch, project.state.documents, {
+      synopsis: project.setSynopsisDocument,
+      outline: project.setOutlineDocument,
+      treatment: project.setTreatmentDocument,
+      storyBible: project.setStoryBibleDocument,
+    })
+    setApplyingPatch(false)
+    if (!result.ok) {
+      setPatchApplyError(result.message)
+      return
+    }
+    setPatchApplyError(null)
+    setPendingPatchProposal(null)
+  }, [pendingPatchProposal, project])
+
+  // "Keep as suggestion" and "Dismiss" both close the preview without
+  // applying — neither ever touches the document or project memory. Task 10
+  // scope is the preview/apply mechanics; a durable list a writer could
+  // revisit later is future work, not built here.
+  const handleKeepPatchAsSuggestion = useCallback(() => {
+    setPendingPatchProposal(null)
+    setPatchApplyError(null)
+  }, [])
+
+  const handleDismissPatch = useCallback(() => {
+    setPendingPatchProposal(null)
+    setPatchApplyError(null)
+  }, [])
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
     rawHtml: project.state.script.rawHtml,
     scenes: project.state.script.scenes,
@@ -768,6 +829,18 @@ export default function App() {
       const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       if (!requestIsCurrent()) return
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
+      // Plan ruling: never show a patch the writer did not, in effect, ask
+      // for. Whatever the backend decided to send back, only surface it when
+      // the message that produced it was itself a fill/rewrite/apply/revise
+      // request AND the patch targets the surface the writer is looking at.
+      if (
+        response.patchProposal
+        && shouldRequestDocumentPatch(messageToSend)
+        && surfaceForActiveTab(shellState.activeTab) === response.patchProposal.patch.surface
+      ) {
+        setPendingPatchProposal(response.patchProposal)
+        setPatchApplyError(null)
+      }
     } catch (error) {
       if (isAbortError(error) || !requestIsCurrent()) return
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Morgan'))
@@ -1009,9 +1082,26 @@ export default function App() {
     const workspaceConflictCount = countRelevantMemoryConflicts(projectMemory.snapshot, shellState.activeTab)
       + (shellState.writersRoomActive ? countRelevantMemoryConflicts(projectMemory.snapshot, 'writers-room') : 0)
 
+    const patchProposalForActiveTab = pendingPatchProposal && surfaceForActiveTab(shellState.activeTab) === pendingPatchProposal.patch.surface
+      ? pendingPatchProposal
+      : null
+
     return (
       <div style={styles.centerColumn}>
         <MemoryConflictBanner conflictCount={workspaceConflictCount} onOpenMemory={openMemorySurface} />
+        {patchProposalForActiveTab && (
+          <MemoryPatchPreview
+            patch={patchProposalForActiveTab.patch}
+            rationale={patchProposalForActiveTab.rationale}
+            canonConflicts={patchProposalForActiveTab.canonConflicts}
+            citations={patchProposalForActiveTab.citations}
+            applying={applyingPatch}
+            applyError={patchApplyError}
+            onApply={handleApplyPatch}
+            onKeepAsSuggestion={handleKeepPatchAsSuggestion}
+            onDismiss={handleDismissPatch}
+          />
+        )}
         <div style={styles.surfaceWithWritersRoom}>
           <div style={styles.activeSurfacePane}>
             {activeSurface}

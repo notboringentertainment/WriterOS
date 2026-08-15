@@ -173,6 +173,7 @@ export function useProjectState() {
           ...s.documents,
           synopsis: {
             version: DOCUMENT_SCHEMA_VERSION,
+            revision: 0,
             mode: 'prose' as const,
             updatedAt: ts,
             content,
@@ -190,6 +191,7 @@ export function useProjectState() {
         const prevUpdatedAt = new Date(s.documents.synopsis.updatedAt).getTime()
         const nextSynopsisDoc = {
           ...s.documents.synopsis,
+          revision: s.documents.synopsis.revision + 1,
           updatedAt: new Date(Math.max(Date.now(), prevUpdatedAt + 1)).toISOString(),
           content: nextContent,
         }
@@ -212,6 +214,7 @@ export function useProjectState() {
         const nextContent = updater(s.documents.storyBible.content)
         const nextStoryBibleDoc = {
           ...s.documents.storyBible,
+          revision: s.documents.storyBible.revision + 1,
           updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
           content: {
             ...nextContent,
@@ -263,6 +266,7 @@ export function useProjectState() {
       )
       const nextStoryBibleDoc = {
         ...s.documents.storyBible,
+        revision: s.documents.storyBible.revision + 1,
         updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
         content: {
           ...mergedContent,
@@ -313,6 +317,7 @@ export function useProjectState() {
       }
       const nextOutlineDoc = {
         ...s.documents.outline,
+        revision: s.documents.outline.revision + 1,
         updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
         content: mergeOutlineLegacyIntoContent(s.documents.outline.content, outline),
       }
@@ -334,6 +339,7 @@ export function useProjectState() {
         const nextContent = updater(normalizeOutlineContent(s.documents.outline.content))
         const nextOutlineDoc = {
           ...s.documents.outline,
+          revision: s.documents.outline.revision + 1,
           updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
           content: nextContent,
         }
@@ -400,6 +406,7 @@ export function useProjectState() {
         const nextContent = updater(s.documents.treatment.content)
         const nextTreatmentDoc = {
           ...s.documents.treatment,
+          revision: s.documents.treatment.revision + 1,
           updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
           content: {
             ...nextContent,
@@ -447,6 +454,7 @@ export function useProjectState() {
       content.header.format = format
       const nextTreatmentDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
+        revision: 0,
         mode: 'three_act_prose' as const,
         updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
         content,
@@ -515,6 +523,7 @@ export function useProjectState() {
           : empty
       const nextOutlineDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
+        revision: 0,
         mode: 'beat_sheet_save_the_cat' as const,
         updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
         content,
@@ -634,6 +643,7 @@ export function useProjectState() {
       content.cover.format = format
       const nextStoryBibleDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
+        revision: 0,
         mode: 'development' as const,
         updatedAt: nextTimestampAfter(s.documents.storyBible.updatedAt),
         content,
