@@ -25,6 +25,32 @@ import { MemoryWorkflowSchema, type MemorySource } from './projectMemory'
 export const STRUCTURED_DOCUMENT_SURFACES = ['synopsis', 'outline', 'treatment', 'storyBible'] as const
 export type StructuredDocumentSurface = (typeof STRUCTURED_DOCUMENT_SURFACES)[number]
 
+// Plan ruling: "Generate a patch only when the user asks to fill, rewrite,
+// apply, or revise the current surface — never unprompted." Shared so the
+// server (deciding whether to spend a model call generating a patch) and the
+// client (deciding whether to trust/display one that came back) enforce the
+// identical rule rather than two regexes drifting apart.
+const PATCH_TRIGGER_PATTERN = /\b(fill|re-?write|apply|revise)\b/i
+
+export function shouldRequestDocumentPatch(userMessage: string): boolean {
+  return PATCH_TRIGGER_PATTERN.test(userMessage)
+}
+
+// shared/surfaceAwareness.ts's SurfaceIdSchema ('outline' | 'synopsis' |
+// 'treatment' | 'story-bible') is the "current surface" the writer is on;
+// this maps it onto the structured-document surface it corresponds to.
+// 'story-bible' -> 'storyBible' is the only non-identity mapping.
+const SURFACE_ID_TO_STRUCTURED_DOCUMENT_SURFACE: Record<string, StructuredDocumentSurface | undefined> = {
+  synopsis: 'synopsis',
+  outline: 'outline',
+  treatment: 'treatment',
+  'story-bible': 'storyBible',
+}
+
+export function structuredDocumentSurfaceFromSurfaceId(surfaceId: string): StructuredDocumentSurface | undefined {
+  return SURFACE_ID_TO_STRUCTURED_DOCUMENT_SURFACE[surfaceId]
+}
+
 /** Verbatim patch shape from the plan. `baseVersion` refers to the document's
  * `revision` counter (shared/documents.ts), not its schema `version`. */
 export interface MemoryGroundedPatch {
@@ -86,6 +112,23 @@ export const MemoryGroundedPatchProposalSchema = z.object({
   canonConflicts: z.array(z.string()),
   citations: z.array(MemoryGroundedPatchCitationSchema),
 })
+
+/**
+ * Outcome of one server-side attempt to generate a patch for the current
+ * message. `not-requested` covers every case where generation was never
+ * attempted (no fill/rewrite/apply/revise intent, no matching structured
+ * surface, no folder-backed project to read a revision from) — this is the
+ * normal, silent case and is never surfaced as a failure. `failed` is an
+ * attempt that was made and produced nothing usable (provider error, invalid
+ * JSON, or content that failed the exact surface schema after the bounded
+ * retry) — plan ruling: this must be visible in the response payload rather
+ * than silently dropped, even though the chat response itself still
+ * succeeds.
+ */
+export type MemoryGroundedPatchAttempt =
+  | { status: 'generated'; proposal: MemoryGroundedPatchProposal }
+  | { status: 'not-requested' }
+  | { status: 'failed'; reason: string }
 
 const SURFACE_CONTENT_SCHEMAS = {
   synopsis: SynopsisDocumentContentSchema,

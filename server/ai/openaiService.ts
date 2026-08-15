@@ -4,9 +4,15 @@ import type { VoiceProfileDocument } from "@shared/voiceProfile";
 import { renderSurfaceAwareness } from "@shared/surfaceAwarenessPrompt";
 import type { PersonaCapabilitySynthesisInput, PersonaCapabilitySynthesisResult } from "../persona-capability/runPersonaTask";
 import { buildPersonaCapabilityFallbackMessage } from "../persona-capability/fallback";
-import { createModelProvider, type ModelMessage } from "./modelProvider";
+import { createModelProvider, type ModelMessage, type ModelProvider } from "./modelProvider";
 import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps, type RunDebug } from "./morganRuntime";
 import type { AgentMemoryContext } from '../projectMemory/agentContext';
+import {
+  filterMemoryGroundedPatchProposal,
+  validateMemoryGroundedPatch,
+  type MemoryGroundedPatchAttempt,
+  type StructuredDocumentSurface,
+} from "@shared/memoryPatches";
 
 const SYNTHESIS_QUESTION_LABELS: Record<string, string> = {
   q1: 'First creative impulse (character / image / question / dialogue)',
@@ -961,7 +967,129 @@ IMPORTANT: Respond with JSON in this format:
     }
 }
 
+// Structured-document patches (Task 10). One bounded retry, JSON mode via the
+// existing ModelProvider, parseJsonObject + Zod for parsing/validation — same
+// shape as server/compose/composeDocument.ts's callComposeModel, but
+// validating against the exact surface content schema
+// (shared/memoryPatches.ts) instead of the composer's block schema.
+const STRUCTURED_DOCUMENT_PATCH_MAX_TOKENS = 4000;
+const STRUCTURED_DOCUMENT_PATCH_RETRY_ATTEMPTS = 2;
+
+const STRUCTURED_DOCUMENT_PATCH_SURFACE_LABELS: Record<StructuredDocumentSurface, string> = {
+  synopsis: 'Synopsis',
+  outline: 'Outline',
+  treatment: 'Treatment',
+  storyBible: 'Story Bible',
+};
+
+export function buildStructuredDocumentPatchSystemPrompt(
+  surface: StructuredDocumentSurface,
+  agentMemory?: AgentMemoryContext,
+): string {
+  return `You are a WriterOS writing partner. The writer has explicitly asked you to fill, rewrite, apply changes to, or revise the ${STRUCTURED_DOCUMENT_PATCH_SURFACE_LABELS[surface]} document they are currently looking at. Propose a complete rewrite of that document's content.
+
+RULES:
+- "proposedContent" must be a complete JSON object in exactly the same shape (same keys, same nesting, same array/object structure) as CURRENT CONTENT below — not a partial diff. Copy every field you are not asked to change EXACTLY as given in CURRENT CONTENT; only change what the writer's request calls for.
+- "changedPaths" must list every field path you actually changed, dot-notation for nested fields and bracket-index for array items (e.g. "logline.text", "characters[0].arc").
+- "memoryIds" must list only canonical memory citation ids in the exact form "[M-XXXX-...]" that literally appear in the supplied project memory context below, for any claim your rewrite is grounded in. Never invent one; leave the list empty if none apply.
+- "canonConflicts" must name, in plain language, anything your proposed content contradicts in the active canon supplied below. Naming a conflict does not block the proposal and does not resolve it — the writer decides what happens next. Leave the list empty if there is no conflict.
+- "rationale" is one to three sentences explaining what you changed and why.
+- Never fabricate facts not supported by the current content, the writer's message, or the supplied project memory.
+
+${agentMemory?.prompt || ''}
+
+Respond with ONLY a JSON object, no prose, no markdown fences, in exactly this shape:
+{
+  "proposedContent": { "...": "same shape as CURRENT CONTENT" },
+  "changedPaths": ["<field path>"],
+  "memoryIds": ["<canonical citation id>"],
+  "canonConflicts": ["<plain-language conflict>"],
+  "rationale": "<1-3 sentences>"
+}`;
+}
+
+export function buildStructuredDocumentPatchUserPrompt(
+  surface: StructuredDocumentSurface,
+  currentContent: unknown,
+  userMessage: string,
+): string {
+  return `CURRENT CONTENT for ${STRUCTURED_DOCUMENT_PATCH_SURFACE_LABELS[surface]}:\n${JSON.stringify(currentContent, null, 2)}\n\nWRITER'S REQUEST:\n${userMessage}`;
+}
+
+export interface StructuredDocumentPatchArgs {
+  surface: StructuredDocumentSurface;
+  currentContent: unknown;
+  /** The document's revision at the moment this request was built — never
+   * model-supplied, so a hallucinated baseVersion can never slip through. */
+  baseVersion: number;
+  userMessage: string;
+  agentMemory: AgentMemoryContext;
+  /** Test seam, mirrors server/compose/index.ts's composeOutline/etc. */
+  provider?: ModelProvider;
+}
+
 export class OpenAIService {
+  async generateStructuredDocumentPatch(args: StructuredDocumentPatchArgs): Promise<MemoryGroundedPatchAttempt> {
+    const provider = args.provider ?? createModelProvider();
+    const systemPrompt = buildStructuredDocumentPatchSystemPrompt(args.surface, args.agentMemory);
+    const userPrompt = buildStructuredDocumentPatchUserPrompt(args.surface, args.currentContent, args.userMessage);
+
+    let lastReason = 'unknown';
+    for (let attempt = 0; attempt < STRUCTURED_DOCUMENT_PATCH_RETRY_ATTEMPTS; attempt += 1) {
+      let raw: string;
+      try {
+        raw = await provider.generateResponse({
+          systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          temperature: 0.2,
+          maxTokens: STRUCTURED_DOCUMENT_PATCH_MAX_TOKENS,
+        });
+      } catch (error) {
+        lastReason = error instanceof Error ? error.message : 'provider error';
+        continue;
+      }
+
+      let parsedJson: Record<string, unknown>;
+      try {
+        parsedJson = parseJsonObject(raw);
+      } catch {
+        lastReason = 'invalid model JSON';
+        continue;
+      }
+
+      const candidatePatch = {
+        kind: 'structured-document' as const,
+        surface: args.surface,
+        baseVersion: args.baseVersion,
+        proposedContent: parsedJson.proposedContent,
+        changedPaths: Array.isArray(parsedJson.changedPaths)
+          ? parsedJson.changedPaths.filter((value): value is string => typeof value === 'string')
+          : [],
+        memoryIds: Array.isArray(parsedJson.memoryIds)
+          ? parsedJson.memoryIds.filter((value): value is string => typeof value === 'string')
+          : [],
+      };
+
+      const validated = validateMemoryGroundedPatch(candidatePatch);
+      if (!validated.ok) {
+        lastReason = validated.message;
+        continue;
+      }
+
+      const rationale = typeof parsedJson.rationale === 'string' ? parsedJson.rationale : '';
+      const canonConflicts = Array.isArray(parsedJson.canonConflicts)
+        ? parsedJson.canonConflicts.filter((value): value is string => typeof value === 'string')
+        : [];
+
+      const proposal = filterMemoryGroundedPatchProposal(
+        { patch: validated.patch, rationale, canonConflicts, citations: [] },
+        args.agentMemory.allowedCitations,
+      );
+      return { status: 'generated', proposal };
+    }
+    return { status: 'failed', reason: lastReason };
+  }
+
   async generatePersonaResponse(
     persona: Persona,
     userMessage: string,

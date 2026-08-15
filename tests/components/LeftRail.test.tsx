@@ -171,4 +171,63 @@ describe('LeftRail', () => {
     expect(screen.getByText('Morgan (@Zoe)')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /world-context research receipt/i })).toHaveTextContent('Research · 1 source · completed')
   })
+
+  // Task 10 continuation: "Keep as suggestion" leaves a reachable chip on the
+  // message; Dismiss leaves nothing. LeftRail only knows the id of a kept
+  // message (App.tsx owns whether that id is set at all), so reachability
+  // vs. dismissed is exactly "chip present for that id" vs. "no chip
+  // anywhere" — proven directly at this prop boundary.
+  describe('kept memory-grounded patch suggestion chip', () => {
+    const transcript: TranscriptMessage[] = [
+      makeMsg({ id: 'assistant-1', role: 'assistant', content: 'Here is a revised logline.', speaker: 'Sam' }),
+    ]
+
+    it('renders a reopenable chip on the message a suggestion was kept on', () => {
+      const onReopenPatchSuggestion = vi.fn()
+      render(
+        <LeftRail
+          {...defaultProps}
+          open={true}
+          transcript={transcript}
+          keptPatchMessageId="assistant-1"
+          onReopenPatchSuggestion={onReopenPatchSuggestion}
+        />
+      )
+
+      const chip = screen.getByRole('button', { name: /suggested update kept/i })
+      expect(chip).toBeInTheDocument()
+
+      fireEvent.click(chip)
+      expect(onReopenPatchSuggestion).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders no chip when nothing was kept (the Dismiss outcome)', () => {
+      const onReopenPatchSuggestion = vi.fn()
+      render(
+        <LeftRail
+          {...defaultProps}
+          open={true}
+          transcript={transcript}
+          keptPatchMessageId={null}
+          onReopenPatchSuggestion={onReopenPatchSuggestion}
+        />
+      )
+
+      expect(screen.queryByRole('button', { name: /suggested update kept/i })).not.toBeInTheDocument()
+    })
+
+    it('renders no chip when the kept id does not match any message on screen', () => {
+      render(
+        <LeftRail
+          {...defaultProps}
+          open={true}
+          transcript={transcript}
+          keptPatchMessageId="some-other-message"
+          onReopenPatchSuggestion={vi.fn()}
+        />
+      )
+
+      expect(screen.queryByRole('button', { name: /suggested update kept/i })).not.toBeInTheDocument()
+    })
+  })
 })

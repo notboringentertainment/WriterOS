@@ -75,9 +75,13 @@ function makeMessage(
   role: 'user' | 'assistant',
   content: string,
   speaker: string,
-  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt } = {}
+  // `id` lets a caller know a message's id before it lands in the transcript
+  // (Task 10: so a patch proposal arriving with this response can be tied to
+  // this exact message for the "kept as suggestion" chip).
+  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt; id?: string } = {}
 ): TranscriptMessage {
-  return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...options }
+  const { id, ...rest } = options
+  return { id: id ?? crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...rest }
 }
 
 function historyFromTranscript(transcript: TranscriptMessage[]) {
@@ -223,23 +227,33 @@ export default function App() {
     setWpLoading(false)
   }, [activeAgentProjectKey])
 
-  // Task 10: the single pending memory-grounded document patch preview, if
-  // any. Inline above the surface it targets (like the MemoryConflictBanner
-  // above it), never a modal. Cleared on project switch so a suggestion from
-  // one project can never surface — or get applied — against another.
-  const [pendingPatchProposal, setPendingPatchProposal] = useState<MemoryGroundedPatchProposal | null>(null)
+  // Task 10: the single memory-grounded document patch attached to the most
+  // recent qualifying response, if any, and what the writer has done with it.
+  // 'previewing' renders the full MemoryPatchPreview banner inline above the
+  // surface it targets (like the MemoryConflictBanner above it), never a
+  // modal. 'kept' collapses that banner to a small chip on the transcript
+  // message that proposed it (messageId) — reachable for the rest of this
+  // session, not durable across sessions or projects (no store; plan
+  // ruling). Dismiss clears this state outright rather than moving to
+  // 'kept'. Cleared on project switch so a suggestion from one project can
+  // never surface — or get applied — against another.
+  const [activePatchProposal, setActivePatchProposal] = useState<{
+    proposal: MemoryGroundedPatchProposal
+    messageId: string
+    mode: 'previewing' | 'kept'
+  } | null>(null)
   const [patchApplyError, setPatchApplyError] = useState<string | null>(null)
   const [applyingPatch, setApplyingPatch] = useState(false)
   useEffect(() => {
-    setPendingPatchProposal(null)
+    setActivePatchProposal(null)
     setPatchApplyError(null)
     setApplyingPatch(false)
   }, [activeAgentProjectKey])
 
   const handleApplyPatch = useCallback(() => {
-    if (!pendingPatchProposal) return
+    if (!activePatchProposal) return
     setApplyingPatch(true)
-    const result = applyMemoryGroundedPatch(pendingPatchProposal.patch, project.state.documents, {
+    const result = applyMemoryGroundedPatch(activePatchProposal.proposal.patch, project.state.documents, {
       synopsis: project.setSynopsisDocument,
       outline: project.setOutlineDocument,
       treatment: project.setTreatmentDocument,
@@ -251,20 +265,25 @@ export default function App() {
       return
     }
     setPatchApplyError(null)
-    setPendingPatchProposal(null)
-  }, [pendingPatchProposal, project])
+    setActivePatchProposal(null)
+  }, [activePatchProposal, project])
 
-  // "Keep as suggestion" and "Dismiss" both close the preview without
-  // applying — neither ever touches the document or project memory. Task 10
-  // scope is the preview/apply mechanics; a durable list a writer could
-  // revisit later is future work, not built here.
+  // Keeps the same proposal but collapses it to a chip on its message (see
+  // keptPatchMessageId / handleReopenPatchSuggestion below) instead of
+  // discarding it — the behavioral difference from Dismiss. Neither ever
+  // touches the document or project memory.
   const handleKeepPatchAsSuggestion = useCallback(() => {
-    setPendingPatchProposal(null)
+    setActivePatchProposal(current => (current ? { ...current, mode: 'kept' } : current))
     setPatchApplyError(null)
   }, [])
 
   const handleDismissPatch = useCallback(() => {
-    setPendingPatchProposal(null)
+    setActivePatchProposal(null)
+    setPatchApplyError(null)
+  }, [])
+
+  const handleReopenPatchSuggestion = useCallback(() => {
+    setActivePatchProposal(current => (current ? { ...current, mode: 'previewing' } : current))
     setPatchApplyError(null)
   }, [])
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
@@ -828,7 +847,8 @@ export default function App() {
       })
       const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       if (!requestIsCurrent()) return
-      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
+      const assistantMessageId = crypto.randomUUID()
+      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt, id: assistantMessageId }))
       // Plan ruling: never show a patch the writer did not, in effect, ask
       // for. Whatever the backend decided to send back, only surface it when
       // the message that produced it was itself a fill/rewrite/apply/revise
@@ -838,7 +858,7 @@ export default function App() {
         && shouldRequestDocumentPatch(messageToSend)
         && surfaceForActiveTab(shellState.activeTab) === response.patchProposal.patch.surface
       ) {
-        setPendingPatchProposal(response.patchProposal)
+        setActivePatchProposal({ proposal: response.patchProposal, messageId: assistantMessageId, mode: 'previewing' })
         setPatchApplyError(null)
       }
     } catch (error) {
@@ -1082,8 +1102,9 @@ export default function App() {
     const workspaceConflictCount = countRelevantMemoryConflicts(projectMemory.snapshot, shellState.activeTab)
       + (shellState.writersRoomActive ? countRelevantMemoryConflicts(projectMemory.snapshot, 'writers-room') : 0)
 
-    const patchProposalForActiveTab = pendingPatchProposal && surfaceForActiveTab(shellState.activeTab) === pendingPatchProposal.patch.surface
-      ? pendingPatchProposal
+    const patchProposalForActiveTab = activePatchProposal?.mode === 'previewing'
+      && surfaceForActiveTab(shellState.activeTab) === activePatchProposal.proposal.patch.surface
+      ? activePatchProposal.proposal
       : null
 
     return (
@@ -1148,6 +1169,8 @@ export default function App() {
     loading: wpLoading,
     onSend: handleWPSend,
     onClearTranscript: () => project.clearTranscript('writingPartner'),
+    keptPatchMessageId: activePatchProposal?.mode === 'kept' ? activePatchProposal.messageId : null,
+    onReopenPatchSuggestion: handleReopenPatchSuggestion,
   }
 
   const leftZone = useMemo(

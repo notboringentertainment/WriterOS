@@ -14,6 +14,7 @@ import type {
 } from '@shared/documents'
 import {
   MemoryGroundedPatchProposalSchema,
+  shouldRequestDocumentPatch,
   validateMemoryGroundedPatch,
   type MemoryGroundedPatch,
   type MemoryGroundedPatchProposal,
@@ -21,16 +22,12 @@ import {
 } from '@shared/memoryPatches'
 
 // Plan ruling: "Generate a patch only when the user asks to fill, rewrite,
-// apply, or revise the current surface — never unprompted." The actual
-// decision to ask the agent for a patch happens server-side (out of this
-// task's scope); this is the client's own belt-and-suspenders check so a
-// patch never gets displayed off the back of an unrelated message, no matter
-// what a future server sends back.
-const PATCH_TRIGGER_PATTERN = /\b(fill|re-?write|apply|revise)\b/i
-
-export function shouldRequestDocumentPatch(userMessage: string): boolean {
-  return PATCH_TRIGGER_PATTERN.test(userMessage)
-}
+// apply, or revise the current surface — never unprompted." The server now
+// enforces this before ever calling the model (server/routes.ts
+// attemptStructuredDocumentPatch); re-exported here so the client applies the
+// identical rule as its own belt-and-suspenders check before ever displaying
+// a patch that came back, rather than trusting the server unconditionally.
+export { shouldRequestDocumentPatch }
 
 const ACTIVE_TAB_TO_SURFACE: Record<string, StructuredDocumentSurface | undefined> = {
   synopsis: 'synopsis',

@@ -40,6 +40,8 @@ interface RailProps {
   loading: boolean
   onSend: (text: string) => void
   onClearTranscript?: () => void
+  keptPatchMessageId?: string | null
+  onReopenPatchSuggestion?: () => void
 }
 
 interface ShellProps {

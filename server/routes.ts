@@ -16,8 +16,15 @@ import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
-import { createProjectLibraryStore } from "./projectLibrary/store";
+import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
+import {
+  shouldRequestDocumentPatch,
+  structuredDocumentSurfaceFromSurfaceId,
+  type MemoryGroundedPatchAttempt,
+  type MemoryGroundedPatchProposal,
+} from "@shared/memoryPatches";
+import type { SurfaceAwareness } from "@shared/surfaceAwareness";
 import {
   createNonProjectMemoryBodyParser,
   createProjectMemoryJsonParser,
@@ -896,6 +903,58 @@ function personaResponseBody(response: PersonaResponse, memory: AgentMemoryConte
   return body;
 }
 
+// Task 10: gates and orchestrates one memory-grounded structured-document
+// patch attempt alongside a wp-chat response — same "attach it next to the
+// response" shape as personaResponseBody attaches a MemoryReceipt. Never
+// throws: every failure mode (no folder-backed project, no matching surface,
+// no intent, an unreadable package) degrades to 'not-requested', which is the
+// normal/silent case, not a visible failure.
+async function attemptStructuredDocumentPatch(input: {
+  projectId: string;
+  message: string;
+  surfaceAwareness: SurfaceAwareness | undefined;
+  memory: AgentMemoryContext;
+  projectLibraryStore: ProjectLibraryStore | null;
+}): Promise<MemoryGroundedPatchAttempt> {
+  if (!input.projectLibraryStore) return { status: 'not-requested' };
+  // Plan ruling: only on an explicit fill/rewrite/apply/revise ask, never for
+  // script (surfaceAwareness only models the four structured-document
+  // surfaces — script always reports { kind: 'none' }, see
+  // shared/surfaceAwareness.ts), and never unprompted.
+  if (!shouldRequestDocumentPatch(input.message)) return { status: 'not-requested' };
+  if (input.surfaceAwareness?.kind !== 'intake') return { status: 'not-requested' };
+  const surface = structuredDocumentSurfaceFromSurfaceId(input.surfaceAwareness.surface);
+  if (!surface) return { status: 'not-requested' };
+
+  let read;
+  try {
+    read = await input.projectLibraryStore.readProject(input.projectId);
+  } catch {
+    // Not found (browser-only project, stale id) or any other read error —
+    // there is no authoritative document/revision to propose a patch
+    // against, so this is simply inapplicable, not a failure to surface.
+    return { status: 'not-requested' };
+  }
+  if (!read.ok) return { status: 'not-requested' };
+
+  const document = read.project.state.documents[surface];
+  return openaiService.generateStructuredDocumentPatch({
+    surface,
+    currentContent: document.content,
+    baseVersion: document.revision,
+    userMessage: input.message,
+    agentMemory: input.memory,
+  });
+}
+
+function patchAttemptResponseFields(
+  attempt: MemoryGroundedPatchAttempt,
+): { patch?: MemoryGroundedPatchProposal; patchFailure?: { reason: string } } {
+  if (attempt.status === 'generated') return { patch: attempt.proposal };
+  if (attempt.status === 'failed') return { patchFailure: { reason: attempt.reason } };
+  return {};
+}
+
 export interface RegisterRoutesOptions {
   projectMemoryProvider?: ProjectMemoryProvider | null;
 }
@@ -1088,17 +1147,29 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
         decisions: [],
       };
 
-      const response = await openaiService.generatePersonaResponse(
-        persona,
-        data.message,
-        userProfile,
-        storyMemory,
-        data.conversationHistory,
-        data.voiceProfile,
-        memory,
-      );
+      // Runs alongside the main chat call, not after it: patch generation
+      // reads its own document snapshot and never depends on the persona
+      // reply, so there is no reason to serialize them.
+      const [response, patchAttempt] = await Promise.all([
+        openaiService.generatePersonaResponse(
+          persona,
+          data.message,
+          userProfile,
+          storyMemory,
+          data.conversationHistory,
+          data.voiceProfile,
+          memory,
+        ),
+        attemptStructuredDocumentPatch({
+          projectId: data.projectId,
+          message: data.message,
+          surfaceAwareness: data.projectContext.surface,
+          memory,
+          projectLibraryStore,
+        }),
+      ]);
 
-      res.json(personaResponseBody(response, memory));
+      res.json({ ...personaResponseBody(response, memory), ...patchAttemptResponseFields(patchAttempt) });
     } catch (error) {
       if (error instanceof ProjectMemoryAgentUnavailableError) {
         return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
