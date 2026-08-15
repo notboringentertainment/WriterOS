@@ -8,6 +8,8 @@ import { buildBankPreview, buildPendingMeetingDecisions, type BankPreview, type 
 import { checkInterviewExport, renderPitchStudioSeedExport } from './exportCheck';
 import { DOMAIN_BY_TRIGGER, projectConceptSeedWithDirection } from './conceptSeedProjection';
 import { emitMeetingTrace } from './trace';
+import { foldMeetingDecisions } from './meetingDecisions';
+import { listMeetingDecisions } from './meetingDecisionsStore';
 import { getQuestionById, QUESTION_BANK, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
 import type { InterviewCursor, InterviewMode, InterviewSessionRow, MeetingBankSnapshot, MeetingRecapItem } from './types';
@@ -19,6 +21,7 @@ import {
   type MemoryReceipt,
   type ProjectMemoryProvider,
 } from '../../projectMemory/agentContext';
+import { bridgeMeetingBankToMemory, type RoomMemoryBridgeOutcome } from '../../projectMemory/roomBridge';
 import { RoomMemoryError } from '../memoryContract';
 
 export interface InterviewStatus {
@@ -53,6 +56,10 @@ export interface InterviewBankResult {
   preview: BankPreview;
   directionDiff?: DirectionDiffEntry[];
   directionRevision?: number;
+  // Best-effort project-memory mirror of the bank. The Supabase commit above
+  // is already durable and authoritative — this only reports whether the
+  // ledger mirror kept up, never whether the bank itself succeeded.
+  memorySync: RoomMemoryBridgeOutcome;
 }
 
 export interface InterviewExportResult {
@@ -495,13 +502,42 @@ export async function previewBankFinal(input: { sessionId: string; projectId: st
   return { preview: plan.preview, finalValues: plan.finalValues, directionDiff: plan.directionDiff, directionRevision: plan.directionRevision, pendingDecisions: plan.pendingDecisions };
 }
 
+// Best-effort mirror of the current banked room state into project memory.
+// The Supabase bank commit is already durable and authoritative by the time
+// this runs; a failure here never re-throws — it only downgrades the
+// reported memorySync status so callers can surface "banked, memory sync
+// pending" and Task 9's manual retry can reconcile later from that durable
+// source (meeting_decisions + shared blocks are keyed by immutable ids, so
+// re-running this is always idempotent).
+async function syncBankedMemory(projectId: string): Promise<RoomMemoryBridgeOutcome> {
+  try {
+    const [conceptSeed, storyLocks, openQuestions, decisionRows] = await Promise.all([
+      roomStore.getSharedBlockValue(projectId, 'concept_seed'),
+      roomStore.getSharedBlockValue(projectId, 'story_locks'),
+      roomStore.getSharedBlockValue(projectId, 'open_questions'),
+      listMeetingDecisions(projectId),
+    ]);
+    const activeDecisions = foldMeetingDecisions(decisionRows).entries;
+    return await bridgeMeetingBankToMemory({
+      projectId,
+      conceptSeed: conceptSeed ?? '',
+      storyLocks: storyLocks ?? '',
+      openQuestions: openQuestions ?? '',
+      decisions: activeDecisions,
+    });
+  } catch {
+    return { status: 'pending', publishedCount: 0, message: 'banked, memory sync pending' };
+  }
+}
+
 export async function bankInterview(input: { sessionId: string; projectId: string; mutability?: Record<string, Mutability>; operations?: readonly MeetingRevisionInput[] }): Promise<InterviewBankResult> {
   const session = await interviewStore.getInterviewSession(input.sessionId);
   if (!session) throw new Error(`Interview session ${input.sessionId} not found.`);
   assertSessionProject(session.project_id, input.projectId);
   if (session.state === 'banked' || session.state === 'exported') {
     const preview = await previewBank({ ...input, mutability: session.bank_snapshot?.applied_classifications ?? input.mutability ?? {} });
-    return { session, preview };
+    const memorySync = await syncBankedMemory(session.project_id);
+    return { session, preview, memorySync };
   }
   if (session.state !== 'readback') throw new Error('Only readback sessions can be banked.');
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -527,10 +563,12 @@ export async function bankInterview(input: { sessionId: string; projectId: strin
       if (!refreshed) throw new Error('Bank completed but the canonical session could not be reloaded.');
       if (rpc.data === 'already_banked') {
         const storedPreview = await previewBank({ ...input, mutability: refreshed.bank_snapshot?.applied_classifications ?? {} });
-        return { session: refreshed, preview: storedPreview };
+        const memorySync = await syncBankedMemory(session.project_id);
+        return { session: refreshed, preview: storedPreview, memorySync };
       }
       emitMeetingTrace({ type: 'meeting.ledger.bank_committed', projectId: session.project_id, sessionId: session.id, pendingCount: plan.pendingDecisions.length });
-      return { session: refreshed, preview: plan.preview, directionDiff: plan.directionDiff, directionRevision: plan.directionRevision };
+      const memorySync = await syncBankedMemory(session.project_id);
+      return { session: refreshed, preview: plan.preview, directionDiff: plan.directionDiff, directionRevision: plan.directionRevision, memorySync };
     }
     const conflict = ['locks_conflict', 'projection_conflict', 'direction_conflict'].find((name) => rpc.error?.message.includes(name));
     if (!conflict) {

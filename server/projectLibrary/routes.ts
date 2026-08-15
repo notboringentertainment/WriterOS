@@ -2,6 +2,7 @@ import type { Express, Response } from 'express'
 import { z } from 'zod'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
+import { serializeWriterOSProjectPackage } from '../../client/src/lib/projectPackage'
 import { SaveProjectRequestSchema } from '../../shared/projectLibraryApi'
 import type { ProjectLibraryConfig } from './config'
 import { authenticated, sameOrigin } from './security'
@@ -9,6 +10,7 @@ import {
   ProjectLibraryStoreError,
   type ProjectLibraryStore,
 } from './store'
+import { observeWriterOSSave } from '../projectMemory/writerOSObserver'
 
 function dataStore(config: ProjectLibraryConfig, store: ProjectLibraryStore | null): ProjectLibraryStore {
   if (!config.enabled || !store) {
@@ -80,7 +82,39 @@ export function registerProjectLibraryRoutes(
         ...data.project,
         state: migrateState(data.project.state),
       }
-      const ref = await dataStore(config, store).writeProject(project)
+      const activeStore = dataStore(config, store)
+
+      // Best-effort "before" snapshot for the WriterOS memory observer. A new
+      // project (or a read failure) simply means there is nothing prior to
+      // diff against — it must never block or fail the save itself.
+      let priorFiles: Record<string, string | undefined> | null = null
+      try {
+        const priorRead = await activeStore.readProject(project.id)
+        if (priorRead.ok) priorFiles = serializeWriterOSProjectPackage(priorRead.project).files
+      } catch (error) {
+        if (!(error instanceof ProjectLibraryStoreError) || error.code !== 'not-found') {
+          console.warn('[project-library] prior read for memory observer failed:', error instanceof Error ? error.message : error)
+        }
+      }
+
+      const ref = await activeStore.writeProject(project)
+
+      // Diff + queue happens after the save succeeds but before the response
+      // returns; the LLM analysis itself runs afterwards in the background
+      // and can never fail this save (see server/projectMemory/writerOSObserver.ts).
+      // Only edits to an already-existing package are diffed — the empty
+      // scaffold produced at project creation has nothing prior to compare
+      // against and nothing worth analyzing yet.
+      if (priorFiles !== null) {
+        try {
+          const currentFiles = serializeWriterOSProjectPackage(project).files
+          const projectPath = await activeStore.resolveProjectPackagePath(project.id)
+          await observeWriterOSSave({ projectId: project.id, projectPath, priorFiles, currentFiles })
+        } catch (error) {
+          console.warn('[project-library] WriterOS memory observer failed:', error instanceof Error ? error.message : error)
+        }
+      }
+
       return res.json({ ref })
     } catch (error) {
       return routeError(res, error)
