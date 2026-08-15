@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { loadProjectLibraryConfig } from '../projectLibrary/config'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../projectLibrary/store'
 import { parseOpenQuestionsBlock } from '../room/interview/banking'
+import { foldMeetingDecisions } from '../room/interview/meetingDecisions'
 import type { MeetingDecisionRow } from '../room/interview/types'
 import { SHARED_BLOCK_CONTRACT } from '../room/memoryContract'
 import type { MemoryKind, MemorySource, PublishMemoryInput, ProjectMemoryRecord } from '../../shared/projectMemory'
@@ -267,6 +268,59 @@ export async function bridgeRoomStateToMemory(
 
 // ---- adopted Meeting decisions -> decisions or canon -------------------------
 
+async function activeRoomRecordsByIds(
+  memoryStore: ProjectMemoryStore,
+  projectPath: string,
+  ids: readonly string[],
+): Promise<ProjectMemoryRecord[]> {
+  if (ids.length === 0) return []
+  const snapshot = await memoryStore.readSnapshot(projectPath)
+  const idSet = new Set(ids)
+  return snapshot.records.filter(record => (
+    record.status === 'active'
+    && record.source.workflow === ROOM_WORKFLOW
+    && idSet.has(record.source.sourceId)
+  ))
+}
+
+// The store only allows a record to supersede another of the identical
+// kind (server/projectMemory/store.ts validateSupersessionTargets), so a
+// kind change (a decision downgraded from locked -> leaning) or an outright
+// retraction can never be folded into a successor row's own publish — there
+// may be no successor content at all, and even when there is, its kind may
+// differ from the stale mirror's kind. Both cases retire the stale mirror
+// with its own same-kind stub instead.
+async function retireRoomMirror(
+  memoryStore: ProjectMemoryStore,
+  projectPath: string,
+  projectId: string,
+  stale: ProjectMemoryRecord,
+  reason: 'Reclassified' | 'Retracted',
+  capturedAt: string,
+): Promise<boolean> {
+  const publishInput: PublishMemoryInput = {
+    projectId,
+    dedupeKey: `writeros-room:meeting-decision-retired:${stale.id}`,
+    kind: stale.kind,
+    requestedStatus: 'active',
+    claim: truncate(`${reason}: ${stale.claim}`, 600),
+    tags: stale.tags,
+    entities: [],
+    source: roomSource(
+      `${stale.source.sourceId}:retired`,
+      `${stale.source.sourceUri}:retired`,
+      contentHash(`${reason}:${stale.id}`),
+      capturedAt,
+    ),
+    evidence: [{ excerpt: truncate(`${reason}: ${stale.claim}`, 1_500) }],
+    safety: 'clear',
+    spoiler: false,
+    supersedes: [stale.id],
+  }
+  const result = await memoryStore.publish(projectPath, publishInput)
+  return result.published
+}
+
 export async function bridgeMeetingDecisionsToMemory(
   input: { projectId: string; decisions: readonly MeetingDecisionRow[] },
   deps: RoomMemoryBridgeDeps = {},
@@ -277,22 +331,39 @@ export async function bridgeMeetingDecisionsToMemory(
     const projectPath = await resolveProjectPath(input.projectId)
     if (!projectPath) return { status: 'disabled', publishedCount: 0 }
 
+    const capturedAt = new Date().toISOString()
+    // Fold internally rather than accepting an already-folded active set:
+    // the bridge needs to see every row, including retracted/superseded
+    // ones, so it can retire their previously-bridged mirrors below.
+    const { entries: activeEntries } = foldMeetingDecisions(input.decisions)
+    const activeIds = new Set(activeEntries.map(row => row.id))
+    const contentBearingIds = new Set(
+      input.decisions.filter(row => 'statement' in row.content).map(row => row.id),
+    )
+    // A content-bearing id that no longer appears in the active direction
+    // was retracted or reclassified away by some row's targets (the
+    // retracting/reclassifying row itself need not carry replacement
+    // content — e.g. a bare 'retract' op). It still needs its own
+    // previously-bridged mirror retired.
+    const deactivatedIds = new Set(
+      input.decisions.flatMap(row => row.targets).filter(id => contentBearingIds.has(id) && !activeIds.has(id)),
+    )
+    const retiredSourceIds = new Set<string>()
     let publishedCount = 0
-    for (const row of input.decisions) {
+
+    for (const row of activeEntries) {
       if (!('statement' in row.content) || !row.content.statement.trim()) continue
       // locked decisions are binding -> explicit canon; leaning/open stay
       // nonbinding decisions per the room's own classification.
       const kind: MemoryKind = row.content.mutability === 'locked' ? 'canon' : 'decision'
-      const snapshot = await memoryStore.readSnapshot(projectPath)
-      const supersedes = row.targets
-        .map(targetId => snapshot.records.find(record => (
-          record.status === 'active'
-          && record.kind === kind
-          && record.source.workflow === ROOM_WORKFLOW
-          && record.source.sourceId === targetId
-        )))
-        .filter((record): record is ProjectMemoryRecord => Boolean(record))
-        .map(record => record.id)
+      // Match prior mirrors by immutable source id alone, not by kind — a
+      // reclassification changes kind between rows, and the prior mirror
+      // must still be found so it can be retired even when it cannot be
+      // superseded directly.
+      const priorMirrors = await activeRoomRecordsByIds(memoryStore, projectPath, row.targets)
+      const sameKind = priorMirrors.filter(record => record.kind === kind)
+      const crossKind = priorMirrors.filter(record => record.kind !== kind)
+
       const hash = contentHash(JSON.stringify(row.content))
       const publishInput: PublishMemoryInput = {
         projectId: input.projectId,
@@ -306,11 +377,26 @@ export async function bridgeMeetingDecisionsToMemory(
         evidence: [{ excerpt: truncate(row.content.statement, 1_500) }],
         safety: 'clear',
         spoiler: false,
-        supersedes,
+        supersedes: sameKind.map(record => record.id),
       }
       const result = await memoryStore.publish(projectPath, publishInput)
       if (result.published) publishedCount += 1
+
+      for (const stale of [...sameKind, ...crossKind]) retiredSourceIds.add(stale.source.sourceId)
+      for (const stale of crossKind) {
+        const retired = await retireRoomMirror(memoryStore, projectPath, input.projectId, stale, 'Reclassified', capturedAt)
+        if (retired) publishedCount += 1
+      }
     }
+
+    for (const deactivatedId of deactivatedIds) {
+      if (retiredSourceIds.has(deactivatedId)) continue
+      const [stale] = await activeRoomRecordsByIds(memoryStore, projectPath, [deactivatedId])
+      if (!stale) continue
+      const retired = await retireRoomMirror(memoryStore, projectPath, input.projectId, stale, 'Retracted', capturedAt)
+      if (retired) publishedCount += 1
+    }
+
     return { status: 'synced', publishedCount }
   } catch (error) {
     return failureOutcome(error)
@@ -325,13 +411,19 @@ export async function bridgeMeetingBankToMemory(
     conceptSeed: string
     storyLocks: string
     openQuestions: string
+    projectState?: string
     decisions: readonly MeetingDecisionRow[]
   },
   deps: RoomMemoryBridgeDeps = {},
 ): Promise<RoomMemoryBridgeOutcome> {
   const results = await Promise.all([
     bridgeStoryLocksToMemory({ projectId: input.projectId, storyLocksValue: input.storyLocks }, deps),
-    bridgeRoomStateToMemory({ projectId: input.projectId, conceptSeed: input.conceptSeed, openQuestions: input.openQuestions }, deps),
+    bridgeRoomStateToMemory({
+      projectId: input.projectId,
+      conceptSeed: input.conceptSeed,
+      projectState: input.projectState,
+      openQuestions: input.openQuestions,
+    }, deps),
     bridgeMeetingDecisionsToMemory({ projectId: input.projectId, decisions: input.decisions }, deps),
   ])
   const publishedCount = results.reduce((sum, result) => sum + result.publishedCount, 0)

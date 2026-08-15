@@ -327,4 +327,147 @@ describe('observeWriterOSSave', () => {
     expect(provider.generateResponse).not.toHaveBeenCalled()
     expect(await readAnalysisQueue(projectPath)).toEqual([])
   })
+
+  it('supersedes a stale document_fact at the same stable field path when the fact is rewritten (fix: anchor by tags/entities, not claim wording)', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('project-observer-8')
+    const memoryStore = createProjectMemoryStore()
+
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': '{"logline":""}' },
+      currentFiles: { 'documents/synopsis.json': '{"logline":"A hero returns home."}' },
+    }, {
+      memoryStore,
+      provider: providerFromCalls(async () => analysisJson([{
+        kind: 'document_fact', claim: 'The hero returns home.', tags: ['logline'], entities: [],
+        evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
+      }])),
+    })
+    await waitForQueueSettled(projectPath)
+
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': '{"logline":"A hero returns home."}' },
+      currentFiles: { 'documents/synopsis.json': '{"logline":"The hero refuses to return home."}' },
+    }, {
+      memoryStore,
+      provider: providerFromCalls(async () => analysisJson([{
+        // Same topic (same tags), reworded claim: this must replace the
+        // prior fact at the same anchor, not sit active beside it.
+        kind: 'document_fact', claim: 'The hero refuses to return home.', tags: ['logline'], entities: [],
+        evidenceExcerpt: 'The hero refuses to return home.', conflictsWith: [], safety: 'clear',
+      }])),
+    })
+    await waitForQueueSettled(projectPath)
+
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    const facts = snapshot.records.filter(record => record.kind === 'document_fact')
+    expect(facts).toHaveLength(2)
+    expect(facts.find(record => record.claim === 'The hero returns home.')?.status).toBe('superseded')
+    expect(facts.find(record => record.claim === 'The hero refuses to return home.')?.status).toBe('active')
+  })
+
+  it('is idempotent when the same underlying content is re-analyzed with different model wording (fix: sourceHash keys off content, not model output)', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('project-observer-9')
+    const memoryStore = createProjectMemoryStore()
+    const contentA = '{"logline":"A hero returns home."}'
+    const contentB = '{"logline":"A villain plots revenge."}'
+
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': '{"logline":""}' },
+      currentFiles: { 'documents/synopsis.json': contentA },
+    }, {
+      memoryStore,
+      provider: providerFromCalls(async () => analysisJson([{
+        kind: 'document_fact', claim: 'The hero returns home.', tags: ['logline'], entities: [],
+        evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
+      }])),
+    })
+    await waitForQueueSettled(projectPath)
+
+    // Move away, then revert to byte-identical content — a fresh diff is
+    // detected (so this really re-runs analysis), but the analyzed content
+    // itself is byte-identical to the first run.
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': contentA },
+      currentFiles: { 'documents/synopsis.json': contentB },
+    }, { memoryStore, provider: providerFromCalls(async () => analysisJson([])) })
+    await waitForQueueSettled(projectPath)
+
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': contentB },
+      currentFiles: { 'documents/synopsis.json': contentA },
+    }, {
+      memoryStore,
+      // Differently-worded than the first run's model output, but the same
+      // fact about byte-identical content.
+      provider: providerFromCalls(async () => analysisJson([{
+        kind: 'document_fact', claim: 'The protagonist heads home again.', tags: ['logline'], entities: [],
+        evidenceExcerpt: 'A hero returns home.', conflictsWith: [], safety: 'clear',
+      }])),
+    })
+    await waitForQueueSettled(projectPath)
+
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    const facts = snapshot.records.filter(record => record.kind === 'document_fact')
+    // Only the FIRST run's record exists — the third run's differently
+    // worded claim over identical content was a dedupe no-op, not a new
+    // active record and not a supersession.
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ status: 'active', claim: 'The hero returns home.' })
+  })
+
+  it('does not lose a save that lands for the same anchor while an earlier analysis is still in flight (fix: content-hash-scoped queue ids)', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('project-observer-10')
+    const memoryStore = createProjectMemoryStore()
+    const gateA = deferred<string>()
+
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': '{"a":1}' },
+      currentFiles: { 'documents/synopsis.json': '{"a":2}' },
+    }, { memoryStore, provider: providerFromCalls(async () => gateA.promise) })
+
+    // A second, genuinely different save for the SAME document lands before
+    // the first analysis has resolved.
+    await observeWriterOSSave({
+      projectId,
+      projectPath,
+      priorFiles: { 'documents/synopsis.json': '{"a":2}' },
+      currentFiles: { 'documents/synopsis.json': '{"a":3}' },
+    }, {
+      memoryStore,
+      provider: providerFromCalls(async () => analysisJson([{
+        kind: 'document_fact', claim: 'B content fact.', tags: ['b'], entities: [],
+        evidenceExcerpt: 'b', conflictsWith: [], safety: 'clear',
+      }])),
+    })
+
+    // Both changes must be tracked as distinct, durable queue entries — the
+    // second save must never silently overwrite the in-flight first one.
+    const inFlight = await readAnalysisQueue(projectPath)
+    expect(inFlight).toHaveLength(2)
+    expect(new Set(inFlight.map(item => item.id)).size).toBe(2)
+
+    gateA.resolve(analysisJson([{
+      kind: 'document_fact', claim: 'A content fact.', tags: ['a'], entities: [],
+      evidenceExcerpt: 'a', conflictsWith: [], safety: 'clear',
+    }]))
+    await waitForQueueSettled(projectPath)
+
+    const settled = await readAnalysisQueue(projectPath)
+    expect(settled.every(item => item.status === 'done')).toBe(true)
+
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    expect(snapshot.records.map(record => record.claim).sort()).toEqual(['A content fact.', 'B content fact.'])
+  })
 })

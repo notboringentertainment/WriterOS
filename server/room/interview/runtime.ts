@@ -8,7 +8,6 @@ import { buildBankPreview, buildPendingMeetingDecisions, type BankPreview, type 
 import { checkInterviewExport, renderPitchStudioSeedExport } from './exportCheck';
 import { DOMAIN_BY_TRIGGER, projectConceptSeedWithDirection } from './conceptSeedProjection';
 import { emitMeetingTrace } from './trace';
-import { foldMeetingDecisions } from './meetingDecisions';
 import { listMeetingDecisions } from './meetingDecisionsStore';
 import { getQuestionById, QUESTION_BANK, selectQuestionsForAudit, type QuestionBankRow } from './questionBank';
 import { advanceInterviewCursor, initialInterviewCursor, pauseInterviewSessionState, resumeInterviewSessionState } from './stateMachine';
@@ -511,19 +510,23 @@ export async function previewBankFinal(input: { sessionId: string; projectId: st
 // re-running this is always idempotent).
 async function syncBankedMemory(projectId: string): Promise<RoomMemoryBridgeOutcome> {
   try {
-    const [conceptSeed, storyLocks, openQuestions, decisionRows] = await Promise.all([
+    const [conceptSeed, storyLocks, openQuestions, projectState, decisionRows] = await Promise.all([
       roomStore.getSharedBlockValue(projectId, 'concept_seed'),
       roomStore.getSharedBlockValue(projectId, 'story_locks'),
       roomStore.getSharedBlockValue(projectId, 'open_questions'),
+      roomStore.getSharedBlockValue(projectId, 'project_state'),
       listMeetingDecisions(projectId),
     ]);
-    const activeDecisions = foldMeetingDecisions(decisionRows).entries;
+    // Pass every decision row, not just the currently-active fold — the
+    // bridge itself needs to see retracted/reclassified rows so it can
+    // retire their previously-bridged mirrors (see roomBridge.ts).
     return await bridgeMeetingBankToMemory({
       projectId,
       conceptSeed: conceptSeed ?? '',
       storyLocks: storyLocks ?? '',
       openQuestions: openQuestions ?? '',
-      decisions: activeDecisions,
+      projectState: projectState ?? undefined,
+      decisions: decisionRows,
     });
   } catch {
     return { status: 'pending', publishedCount: 0, message: 'banked, memory sync pending' };

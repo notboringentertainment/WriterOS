@@ -212,6 +212,59 @@ describe('bridgeMeetingDecisionsToMemory', () => {
     }, { memoryStore, resolveProjectPath: async () => projectPath })
     expect(outcome).toEqual({ status: 'synced', publishedCount: 0 })
   })
+
+  it('retires a locked decision mirror on reclassification to leaning (fix: match prior mirrors by id, not by the new kind)', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('room-bridge-project-9')
+    const memoryStore = createProjectMemoryStore()
+    const deps = { memoryStore, resolveProjectPath: async () => projectPath }
+    const original = decisionRow({
+      id: 'decision-reclass-1',
+      content: { statement: 'The ending is fixed.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' },
+    })
+    const downgraded = decisionRow({
+      id: 'decision-reclass-2',
+      content: { statement: 'The ending is now flexible.', mutability: 'leaning', originMarker: '[SEED]', disposition: 'field_mapped' },
+      targets: ['decision-reclass-1'],
+    })
+
+    await bridgeMeetingDecisionsToMemory({ projectId, decisions: [original] }, deps)
+    const outcome = await bridgeMeetingDecisionsToMemory({ projectId, decisions: [original, downgraded] }, deps)
+    expect(outcome.status).toBe('synced')
+
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    // The prior locked claim must not be left active just because the new
+    // row's kind ('decision') no longer matches its own kind ('canon').
+    expect(snapshot.records.some(record => (
+      record.kind === 'canon' && record.status === 'active' && record.claim === 'The ending is fixed.'
+    ))).toBe(false)
+    expect(snapshot.records.some(record => (
+      record.kind === 'canon' && record.status === 'superseded' && record.claim === 'The ending is fixed.'
+    ))).toBe(true)
+    expect(snapshot.records.find(record => record.kind === 'decision' && record.status === 'active'))
+      .toMatchObject({ claim: 'The ending is now flexible.' })
+  })
+
+  it('retires a previously-bridged mirror on an outright retraction with no replacement content', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('room-bridge-project-10')
+    const memoryStore = createProjectMemoryStore()
+    const deps = { memoryStore, resolveProjectPath: async () => projectPath }
+    const original = decisionRow({
+      id: 'decision-retract-1',
+      content: { statement: 'The sidekick dies.', mutability: 'locked', originMarker: '[SEED]', disposition: 'field_mapped' },
+    })
+    const retraction = decisionRow({ id: 'decision-retract-2', op: 'retract', content: {}, targets: ['decision-retract-1'] })
+
+    await bridgeMeetingDecisionsToMemory({ projectId, decisions: [original] }, deps)
+    const outcome = await bridgeMeetingDecisionsToMemory({ projectId, decisions: [original, retraction] }, deps)
+    expect(outcome.status).toBe('synced')
+    expect(outcome.publishedCount).toBe(1)
+
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    expect(snapshot.records.some(record => (
+      record.kind === 'canon' && record.status === 'active' && record.claim === 'The sidekick dies.'
+    ))).toBe(false)
+    expect(snapshot.records.some(record => record.claim.startsWith('Retracted:'))).toBe(true)
+  })
 })
 
 describe('bridgeMeetingBankToMemory', () => {
@@ -230,6 +283,26 @@ describe('bridgeMeetingBankToMemory', () => {
     expect(outcome.publishedCount).toBe(4)
     const snapshot = await memoryStore.readSnapshot(projectPath)
     expect(snapshot.records.map(record => record.kind).sort()).toEqual(['canon', 'canon', 'development', 'open_question'])
+  })
+
+  it('bridges project_state alongside concept_seed as development (fix: project_state was previously never threaded through)', async () => {
+    const { projectPath, projectId } = await makeProjectPackage('room-bridge-project-11')
+    const memoryStore = createProjectMemoryStore()
+    const outcome = await bridgeMeetingBankToMemory({
+      projectId,
+      conceptSeed: 'A noir about a lighthouse keeper.',
+      projectState: 'Currently drafting Act 2.',
+      storyLocks: SENTINEL_LOCKS,
+      openQuestions: 'Nothing delegated — writer holds all intent.',
+      decisions: [],
+    }, { memoryStore, resolveProjectPath: async () => projectPath })
+
+    expect(outcome.status).toBe('synced')
+    const snapshot = await memoryStore.readSnapshot(projectPath)
+    const development = snapshot.records.filter(record => record.kind === 'development')
+    expect(development.map(record => record.detail)).toEqual(
+      expect.arrayContaining(['A noir about a lighthouse keeper.', 'Currently drafting Act 2.']),
+    )
   })
 
   it('reports "banked, memory sync pending" without throwing when a sub-bridge fails', async () => {

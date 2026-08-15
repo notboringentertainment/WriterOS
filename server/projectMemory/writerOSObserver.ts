@@ -200,8 +200,12 @@ export async function readAnalysisQueue(projectPath: string): Promise<AnalysisQu
   return readQueueFile(projectPath)
 }
 
-function queueItemId(sourceId: string): string {
-  return `analysis_${stableHash(sourceId).slice(0, 32)}`
+// Identity includes the content hash, not just the anchor: a save landing
+// while an earlier analysis of the SAME anchor is still in flight describes
+// genuinely different content and must get its own queue entry rather than
+// overwrite the in-flight one out from under it (see enqueuePendingItems).
+function queueItemId(sourceId: string, contentHash: string): string {
+  return `analysis_${stableHash(`${sourceId}::${contentHash}`).slice(0, 32)}`
 }
 
 async function enqueuePendingItems(
@@ -216,7 +220,17 @@ async function enqueuePendingItems(
     const byId = new Map(existing.map(item => [item.id, item]))
     const queued: AnalysisQueueItem[] = []
     for (const change of changes) {
-      const id = queueItemId(change.sourceId)
+      const id = queueItemId(change.sourceId, change.contentHash)
+      const existingItem = byId.get(id)
+      // Since the id is content-hash-scoped, a collision here can only be
+      // the exact same content re-arriving. If it is already
+      // processing/done/failed, leave it alone rather than resetting it
+      // back to 'pending' underneath an in-flight or already-terminal run —
+      // there is nothing new to analyze either way.
+      if (existingItem && existingItem.status !== 'pending') {
+        queued.push(existingItem)
+        continue
+      }
       const item: AnalysisQueueItem = {
         id,
         surface: change.surface,
@@ -226,7 +240,7 @@ async function enqueuePendingItems(
         priorText: change.priorText === null ? null : truncate(change.priorText, MAX_STORED_TEXT_LENGTH),
         currentText: truncate(change.currentText, MAX_STORED_TEXT_LENGTH),
         status: 'pending',
-        createdAt: byId.get(id)?.createdAt ?? now,
+        createdAt: existingItem?.createdAt ?? now,
         updatedAt: now,
       }
       byId.set(id, item)
@@ -265,8 +279,26 @@ function chainSerially(projectId: string, task: () => Promise<void>): void {
   projectProcessingChains.set(projectId, next)
 }
 
-function claimHashOf(claim: string): string {
-  return stableHash(claim).slice(0, 16)
+/**
+ * A stable field-path anchor for one analyzer claim, scoped to its document
+ * change unit and kind. Deliberately NOT derived from the claim's own
+ * wording: the store auto-supersedes an active document_fact only when its
+ * (workflow, sourceId, sourceUri) anchor matches exactly, so a reworded
+ * restatement of the same fact must land at the SAME anchor to replace it
+ * rather than accumulate as a second stale-but-active fact. tags/entities
+ * are the model's own stable topic labels for a claim and are far less
+ * likely to drift across a re-analysis than the claim sentence itself; the
+ * record's position is used only as a last-resort tiebreaker when the model
+ * supplied neither (kept distinct per record, never reused as a shared
+ * topic key, so two untagged claims cannot collide with each other).
+ */
+function stableFieldPath(record: MemoryAnalysisRecord, index: number): string {
+  const topic = [...record.tags, ...record.entities]
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join('+')
+  return topic || `untagged-${index}`
 }
 
 async function publishAnalysisRecord(
@@ -275,15 +307,18 @@ async function publishAnalysisRecord(
   projectId: string,
   item: AnalysisQueueItem,
   record: MemoryAnalysisRecord,
+  index: number,
   knownRecordIds: ReadonlySet<string>,
 ): Promise<boolean> {
   const kind: MemoryKind = record.kind
-  const claimHash = claimHashOf(record.claim)
-  const anchorSourceId = `${item.sourceId}::${claimHash}`
+  const fieldPath = stableFieldPath(record, index)
+  const anchorSourceId = `${item.sourceId}::${kind}::${fieldPath}`
   const capturedAt = new Date().toISOString()
   const conflictsWith = record.conflictsWith.filter(id => knownRecordIds.has(id))
   const input: PublishMemoryInput = {
     projectId,
+    // The dedupeKey lives entirely off the stable anchor, never off the
+    // model's own output — see stableFieldPath above.
     dedupeKey: `writeros:${item.surface}:${anchorSourceId}`,
     kind,
     // document_fact always lands active regardless of requestedStatus (per
@@ -299,8 +334,12 @@ async function publishAnalysisRecord(
     source: {
       workflow: 'writeros',
       sourceId: anchorSourceId,
-      sourceUri: `${item.sourceUri}::${claimHash}`,
-      sourceHash: stableHash(record),
+      sourceUri: `${item.sourceUri}::${kind}::${fieldPath}`,
+      // The hash of the underlying document/scene content that was
+      // analyzed, NOT a hash of the model's own (nondeterministic) output.
+      // Idempotency (dedupeKey + sourceHash) must be reproducible on a
+      // Task-9 retry of unchanged content regardless of wording drift.
+      sourceHash: item.contentHash,
       capturedAt,
       approval: 'none',
     },
@@ -313,6 +352,22 @@ async function publishAnalysisRecord(
   return result.published
 }
 
+// Belt-and-suspenders on top of the content-hash-scoped id: only ever stamp
+// a status transition onto the item if its on-disk contentHash still
+// matches the one this run started analyzing. With ids now scoped by
+// content hash this should always hold, but a status write must never be
+// allowed to land on an entry that turned out to describe different content.
+function updateQueueItemIfSameContent(
+  projectPath: string,
+  projectId: string,
+  item: AnalysisQueueItem,
+  apply: (current: AnalysisQueueItem) => AnalysisQueueItem,
+): Promise<void> {
+  return updateQueueItem(projectPath, projectId, item.id, current => (
+    current.contentHash === item.contentHash ? apply(current) : current
+  ))
+}
+
 async function processQueueItem(
   memoryStore: ProjectMemoryStore,
   provider: ModelProvider,
@@ -320,7 +375,7 @@ async function processQueueItem(
   projectId: string,
   item: AnalysisQueueItem,
 ): Promise<void> {
-  await updateQueueItem(projectPath, projectId, item.id, current => ({
+  await updateQueueItemIfSameContent(projectPath, projectId, item, current => ({
     ...current,
     status: 'processing',
     updatedAt: new Date().toISOString(),
@@ -342,12 +397,12 @@ async function processQueueItem(
     })
 
     let publishedCount = 0
-    for (const record of analysis.records) {
-      const published = await publishAnalysisRecord(memoryStore, projectPath, projectId, item, record, knownRecordIds)
+    for (const [index, record] of analysis.records.entries()) {
+      const published = await publishAnalysisRecord(memoryStore, projectPath, projectId, item, record, index, knownRecordIds)
       if (published) publishedCount += 1
     }
 
-    await updateQueueItem(projectPath, projectId, item.id, current => ({
+    await updateQueueItemIfSameContent(projectPath, projectId, item, current => ({
       ...current,
       status: 'done',
       publishedCount,
@@ -358,7 +413,7 @@ async function processQueueItem(
     // other unexpected error are both just surfaced by message — the queue
     // item itself is the durable, queryable "failed" signal either way.
     const message = error instanceof Error ? error.message : 'WriterOS memory analysis failed'
-    await updateQueueItem(projectPath, projectId, item.id, current => ({
+    await updateQueueItemIfSameContent(projectPath, projectId, item, current => ({
       ...current,
       status: 'failed',
       error: message,
