@@ -46,14 +46,20 @@ const PROJECT_MEMORY_ROUTE_PATHS = {
 } as const
 
 // Task 9: the Memory surface's "pending / failed WriterOS analysis" list and
-// its per-item manual retry. Deliberately NOT part of
-// PROJECT_MEMORY_ROUTE_PATHS / classifyProjectMemoryPath — those feed the
-// same-origin+session mount-level boundary, JSON-parser gating, and
-// method-not-allowed catch-all covered by tests/server/projectMemoryRoutes.test.ts
-// for the Task 5 endpoint set, and none of that hardening changes here. These
-// two routes get their own explicit requireSameOrigin/requireSession guards
-// below (the same factories the boundary uses), so they are equally
-// protected without touching that shared classification surface.
+// its per-item manual retry. These are kept as their own path arrays (rather
+// than folded into PROJECT_MEMORY_ROUTE_PATHS) only because Express needs
+// concrete path strings to register app.get/app.post against — they ARE
+// still part of the same classified, hardened surface: classifyProjectMemoryPath
+// below gained two additive branches (isAnalysisRetryPath, and an
+// 'analysis-queue' arm on the existing `endpoint` check) that recognize these
+// exact shapes, so both routes go through the identical mount-level
+// same-origin+session boundary, JSON-parser gating, and method-not-allowed/404
+// catch-all that PROJECT_MEMORY_ROUTE_PATHS's endpoints get — see
+// registerProjectMemorySecurityBoundary and tests/server/projectMemoryRoutes.test.ts's
+// "project memory analysis-queue routes" coverage. The two `app.get`/`app.post`
+// calls below additionally apply requireSameOrigin/requireSession directly,
+// exactly mirroring how every other endpoint in this function already
+// double-guards itself on top of the mount-level boundary.
 const ANALYSIS_QUEUE_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue`)
 const ANALYSIS_RETRY_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue/:itemId/retry`)
 

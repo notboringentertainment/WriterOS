@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemorySurface } from '../../client/src/components/memory/MemorySurface'
+import { useProjectMemory } from '../../client/src/lib/useProjectMemory'
+import { countRelevantMemoryConflicts } from '../../client/src/lib/wpRouting'
 import type { ProjectMemoryConflict, ProjectMemoryRecord, ProjectMemorySnapshot } from '@shared/projectMemory'
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -9,6 +11,42 @@ function jsonResponse(status: number, body: unknown): Response {
     status,
     json: async () => body,
   } as Response
+}
+
+type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+// Mirrors how App.tsx actually wires this up: ONE `useProjectMemory` instance
+// owned above MemorySurface, passed down as a prop — never a second,
+// independent instance created inside MemorySurface itself. This is the
+// regression the fix (Finding 1) targets: with two independent instances, an
+// action taken in the surface would never be visible to anything else
+// reading the "other" hook's state (e.g. an App-level conflict banner).
+function Harness({ projectId, fetchImpl, onExit }: { projectId?: string; fetchImpl: FetchImpl; onExit: () => void }) {
+  const memory = useProjectMemory(projectId, undefined, fetchImpl)
+  return <MemorySurface memory={memory} onExit={onExit} />
+}
+
+// Renders a stand-in "banner" (the same read App.tsx's MemoryConflictBanner
+// does: countRelevantMemoryConflicts over the shared snapshot) next to
+// MemorySurface, both fed by the SAME hook instance, to prove an action taken
+// in the surface is visible there immediately — no separate refresh needed.
+function HarnessWithBanner({
+  projectId,
+  fetchImpl,
+  onExit,
+}: {
+  projectId?: string
+  fetchImpl: FetchImpl
+  onExit: () => void
+}) {
+  const memory = useProjectMemory(projectId, undefined, fetchImpl)
+  const conflictCount = countRelevantMemoryConflicts(memory.snapshot, 'outline')
+  return (
+    <div>
+      <div data-testid="banner-count">{conflictCount}</div>
+      <MemorySurface memory={memory} onExit={onExit} />
+    </div>
+  )
 }
 
 function makeRecord(overrides: Partial<ProjectMemoryRecord> & Pick<ProjectMemoryRecord, 'id' | 'claim'>): ProjectMemoryRecord {
@@ -153,6 +191,31 @@ const openConflict: ProjectMemoryConflict = {
   status: 'open',
 }
 
+// A conflict where the left side is flagged, to exercise the store's
+// safety === 'clear' activation requirement on the conflict-resolution UI.
+const flaggedConflictLeft = makeRecord({
+  id: 'rec-flagged-conflict-left',
+  claim: 'A flagged claim about the boat schedule.',
+  kind: 'development',
+  status: 'candidate',
+  safety: 'flagged',
+})
+
+const flaggedConflictRight = makeRecord({
+  id: 'rec-flagged-conflict-right',
+  claim: 'A clear claim about the boat schedule.',
+  kind: 'development',
+  status: 'candidate',
+})
+
+const flaggedConflict: ProjectMemoryConflict = {
+  id: 'conflict-flagged',
+  leftRecordId: flaggedConflictLeft.id,
+  rightRecordId: flaggedConflictRight.id,
+  reason: 'These two claims disagree about the boat schedule.',
+  status: 'open',
+}
+
 function baseSnapshot(overrides: Partial<ProjectMemorySnapshot> = {}): ProjectMemorySnapshot {
   return {
     schemaVersion: 1,
@@ -171,7 +234,7 @@ afterEach(() => {
 describe('MemorySurface', () => {
   it('shows the exact browser-only message and never fetches when there is no folder project id', async () => {
     const fetchImpl = vi.fn()
-    render(<MemorySurface onExit={vi.fn()} fetchImpl={fetchImpl} />)
+    render(<Harness onExit={vi.fn()} fetchImpl={fetchImpl} />)
 
     expect(await screen.findByText('Shared project memory requires project folder storage.')).toBeInTheDocument()
     expect(fetchImpl).not.toHaveBeenCalled()
@@ -180,7 +243,7 @@ describe('MemorySurface', () => {
 
   it('loads the snapshot and shows all five views, defaulting to Canon with active canon only', async () => {
     const stub = createMemoryFetchStub({ snapshot: baseSnapshot() })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(['Canon', 'Review', 'Developed', 'Open Questions', 'Sources and History'])
@@ -200,7 +263,7 @@ describe('MemorySurface', () => {
     const stub = createMemoryFetchStub({
       snapshot: baseSnapshot({ records: [supersedingRecord, superseded, canonCandidate, developmentCandidate, flaggedCandidate, spoilerCanon, openQuestion] }),
     })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Sources and History' }))
 
@@ -219,7 +282,7 @@ describe('MemorySurface', () => {
 
   it('marks flagged records visibly and never offers promoting them, while still offering reject', async () => {
     const stub = createMemoryFetchStub({ snapshot: baseSnapshot() })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     const row = (await screen.findByText(flaggedCandidate.claim)).closest('article') as HTMLElement
@@ -230,7 +293,7 @@ describe('MemorySurface', () => {
 
   it('keeps spoiler records visible with a Spoiler badge rather than hiding them', async () => {
     const stub = createMemoryFetchStub({ snapshot: baseSnapshot() })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     const row = (await screen.findByText(spoilerCanon.claim)).closest('article') as HTMLElement
     expect(within(row).getByText('Spoiler')).toBeInTheDocument()
@@ -255,7 +318,7 @@ describe('MemorySurface', () => {
         return { status: 200, body: { snapshot: next } }
       },
     })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     const row = (await screen.findByText(developmentCandidate.claim)).closest('article') as HTMLElement
@@ -269,7 +332,7 @@ describe('MemorySurface', () => {
     const onAction = vi.fn(() => undefined)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const stub = createMemoryFetchStub({ snapshot: baseSnapshot(), onAction })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     const replaceSelect = await screen.findByLabelText(`Canon to replace with "${canonCandidate.claim}"`)
@@ -305,13 +368,71 @@ describe('MemorySurface', () => {
         return { status: 200, body: { snapshot: baseSnapshot({ revision: 6, conflicts: [{ ...openConflict, status: 'resolved', resolution: 'not-conflict' }] }) } }
       },
     })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     expect(await screen.findByText(openConflict.reason)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'False positive' }))
 
     await waitFor(() => expect(stub.calls.some(call => call.url.endsWith('/actions'))).toBe(true))
+  })
+
+  it('requires confirmation before a conflict resolution supersedes active canon, and skips it when nothing active is superseded', async () => {
+    const onAction = vi.fn(() => undefined)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const stub = createMemoryFetchStub({ snapshot: baseSnapshot(), onAction })
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
+    await screen.findByText(openConflict.reason)
+
+    // Keep left: the loser (right = canonCandidate) is only a candidate, not
+    // active — nothing gets superseded, so no confirmation should appear.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep left' }))
+    await waitFor(() => expect(stub.calls.some(call => call.url.endsWith('/actions'))).toBe(true))
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(stub.calls.find(call => call.url.endsWith('/actions'))?.body).toEqual({
+      type: 'resolve-conflict',
+      conflictId: openConflict.id,
+      expectedRevision: 5,
+      resolution: 'left',
+    })
+
+    stub.calls.length = 0
+    onAction.mockClear()
+
+    // Keep right: the loser (left = activeCanon) IS active — this would
+    // supersede it, so it must be confirmed first.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep right' }))
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(stub.calls.some(call => call.url.endsWith('/actions'))).toBe(false)
+
+    confirmSpy.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Keep right' }))
+    await waitFor(() => expect(stub.calls.some(call => call.url.endsWith('/actions'))).toBe(true))
+    expect(stub.calls.find(call => call.url.endsWith('/actions'))?.body).toEqual({
+      type: 'resolve-conflict',
+      conflictId: openConflict.id,
+      expectedRevision: 5,
+      resolution: 'right',
+    })
+  })
+
+  it('marks a flagged side of a conflict and disables the actions the store would reject', async () => {
+    const stub = createMemoryFetchStub({
+      snapshot: baseSnapshot({ records: [...baseSnapshot().records, flaggedConflictLeft, flaggedConflictRight], conflicts: [openConflict, flaggedConflict] }),
+    })
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
+    const card = (await screen.findByText(flaggedConflict.reason)).closest('article') as HTMLElement
+
+    expect(within(card).getByText('Flagged')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Keep left' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Both valid' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Keep right' })).toBeEnabled()
+    expect(within(card).getByRole('button', { name: 'False positive' })).toBeEnabled()
+    expect(within(card).getByText(/Left is flagged/)).toBeInTheDocument()
   })
 
   it('shows failed WriterOS analysis with a per-item retry action, and clears it once retried', async () => {
@@ -340,7 +461,7 @@ describe('MemorySurface', () => {
       return jsonResponse(404, { error: 'not-found' })
     })
 
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     expect(await screen.findByText(/model unavailable/)).toBeInTheDocument()
@@ -359,7 +480,7 @@ describe('MemorySurface', () => {
         return { status: 409, body: { error: 'revision-conflict', message: 'Project memory changed. Refresh and try again.' } }
       },
     })
-    render(<MemorySurface projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
     const row = (await screen.findByText(developmentCandidate.claim)).closest('article') as HTMLElement
@@ -370,5 +491,24 @@ describe('MemorySurface', () => {
 
     const snapshotCalls = stub.calls.filter(call => call.method === 'GET' && call.url.endsWith('/snapshot'))
     expect(snapshotCalls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('keeps a shared conflict-count readout (e.g. an App-level banner) in sync with an action taken in this surface — no separate refresh needed', async () => {
+    const stub = createMemoryFetchStub({
+      snapshot: baseSnapshot(),
+      onAction: () => ({
+        status: 200,
+        body: { snapshot: baseSnapshot({ revision: 6, conflicts: [{ ...openConflict, status: 'resolved', resolution: 'not-conflict' }] }) },
+      }),
+    })
+    render(<HarnessWithBanner projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+
+    await screen.findByRole('tab', { name: 'Review' })
+    expect(await screen.findByTestId('banner-count')).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Review' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'False positive' }))
+
+    await waitFor(() => expect(screen.getByTestId('banner-count')).toHaveTextContent('0'))
   })
 })

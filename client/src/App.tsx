@@ -189,6 +189,16 @@ export default function App() {
   // fetching.
   const projectMemory = useProjectMemory(activeFolderProjectId ?? undefined, activeAgentProjectKey)
   const openMemorySurface = useCallback(() => shellState.openRitual('memory'), [shellState.openRitual])
+  // The hook above is a single, app-lifetime instance (never a second one
+  // inside MemorySurface) so that actions taken there update the exact same
+  // state the banners below read — no separate refresh handshake needed for
+  // that case. It only fetches on mount/scope change otherwise, so anything
+  // WriterOS's background analysis publishes after that point (Task 8) would
+  // sit unseen until the next project switch; refreshing on every Memory-open
+  // picks that up whenever the writer actually looks.
+  useEffect(() => {
+    if (shellState.ritual === 'memory') void projectMemory.refresh()
+  }, [shellState.ritual, projectMemory.refresh])
   const activeAgentProjectKeyRef = useRef(activeAgentProjectKey)
   const wpRequestGenerationRef = useRef(0)
   activeAgentProjectKeyRef.current = activeAgentProjectKey
@@ -937,8 +947,7 @@ export default function App() {
     if (shellState.ritual === 'memory') {
       return (
         <MemorySurface
-          projectId={activeFolderProjectId ?? undefined}
-          projectScopeKey={activeAgentProjectKey}
+          memory={projectMemory}
           onExit={shellState.closeRitual}
         />
       )

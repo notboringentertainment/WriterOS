@@ -69,10 +69,21 @@ async function bootstrapMemorySessionToken(fetchImpl: FetchLike): Promise<string
 
 const SESSION_UNAVAILABLE_MESSAGE = 'WriterOS could not verify this session for project memory.'
 
+// A stable module-level identity (unlike `globalThis.fetch.bind(globalThis)`
+// evaluated fresh as a default-parameter expression on every call), while
+// still resolving `globalThis.fetch` at call time rather than binding it
+// early — so a test's `vi.stubGlobal('fetch', ...)` is still honored. This
+// keeps every callback derived from `fetchImpl` (getSessionToken, load/
+// refresh, runAction, retryAnalysis) referentially stable across re-renders
+// when the caller omits the argument, which App.tsx's single lifted
+// `useProjectMemory` instance relies on to avoid effects re-firing on every
+// render.
+const DEFAULT_FETCH: FetchLike = (input, init) => globalThis.fetch(input, init)
+
 export function useProjectMemory(
   projectId: string | undefined,
   projectScopeKey?: string,
-  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  fetchImpl: FetchLike = DEFAULT_FETCH,
 ): UseProjectMemoryResult {
   const effectiveScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginRequest = useProjectRequestGeneration(effectiveScopeKey)

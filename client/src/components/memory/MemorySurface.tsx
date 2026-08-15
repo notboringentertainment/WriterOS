@@ -9,10 +9,7 @@ import type {
   ProjectMemoryConflict,
   ProjectMemoryRecord,
 } from '@shared/projectMemory'
-import {
-  useProjectMemory,
-  type MemoryAnalysisQueueEntry,
-} from '../../lib/useProjectMemory'
+import type { MemoryAnalysisQueueEntry, UseProjectMemoryResult } from '../../lib/useProjectMemory'
 import { MemoryConflictCard, type ProjectMemoryConflictResolution } from './MemoryConflictCard'
 
 export type MemoryView = 'canon' | 'review' | 'developed' | 'open-questions' | 'sources'
@@ -30,12 +27,15 @@ const VIEW_LABELS: Record<MemoryView, string> = {
 const DEVELOPED_KINDS: MemoryKind[] = ['development', 'decision']
 
 export interface MemorySurfaceProps {
-  /** Folder-backed project id. Undefined means the open project only has
-   * browser storage, which cannot hold a shared memory ledger. */
-  projectId?: string
-  projectScopeKey?: string
+  /**
+   * The single app-level `useProjectMemory` instance, owned and passed down
+   * by App.tsx — never a second independent instance here. Actions taken in
+   * this surface (promote/reject/resolve-conflict/retry) mutate this same
+   * object's state, so the App-level conflict banners re-render with the
+   * result immediately, without a separate refresh handshake.
+   */
+  memory: UseProjectMemoryResult
   onExit: () => void
-  fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 function recordsForView(records: ProjectMemoryRecord[], view: MemoryView): ProjectMemoryRecord[] {
@@ -200,8 +200,7 @@ function PendingAnalysisSection({ items, pendingId, onRetry }: PendingAnalysisSe
   )
 }
 
-export function MemorySurface({ projectId, projectScopeKey, onExit, fetchImpl }: MemorySurfaceProps) {
-  const memory = useProjectMemory(projectId, projectScopeKey, fetchImpl)
+export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
   const [view, setView] = useState<MemoryView>('canon')
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -250,6 +249,19 @@ export function MemorySurface({ projectId, projectScopeKey, onExit, fetchImpl }:
 
   async function handleResolveConflict(conflict: ProjectMemoryConflict, resolution: ProjectMemoryConflictResolution) {
     if (!snapshot) return
+    // Keep left/right can supersede the losing side (server/projectMemory/store.ts:
+    // deriveConflictResolutionMutation pushes an active loser onto
+    // supersededRecordIds). Both-valid and false-positive never supersede.
+    if (resolution === 'left' || resolution === 'right') {
+      const loserId = resolution === 'left' ? conflict.rightRecordId : conflict.leftRecordId
+      const loser = recordsById.get(loserId)
+      if (loser?.status === 'active') {
+        const confirmed = window.confirm(
+          `Keeping this side will supersede the current active canon${loser ? ` ("${loser.claim}")` : ''}. This cannot be undone.`,
+        )
+        if (!confirmed) return
+      }
+    }
     setPendingActionId(conflict.id)
     setActionError(null)
     const result = await memory.runAction({
