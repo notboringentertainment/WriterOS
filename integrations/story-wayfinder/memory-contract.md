@@ -7,7 +7,7 @@ after which he runs the manual harness gate described below before treating the 
 skill as live.
 
 **Target file:** `/Users/ben/.claude/skills/story-wayfinder/SKILL.md` (read in full on
-2026-08-15 to anchor the edits below; 179 lines, no YAML ticket fences — ticket and export
+2026-08-15 to anchor the edits below; 178 lines, no YAML ticket fences — ticket and export
 headers are bare `key: value` lines under an H1).
 
 ---
@@ -78,7 +78,7 @@ to talk to shared project memory around the edges of what it already does.
 
 ## 2. Proposed edits
 
-Five edits. Each is given as an exact **OLD** block (verbatim from the file as read on
+Four edits. Each is given as an exact **OLD** block (verbatim from the file as read on
 2026-08-15) and the **NEW** block that replaces it — apply with a literal find-and-replace
 so there is no renumbering ambiguity. Apply them in the order listed; each edit's OLD text
 is still present in the file when the edit before it has been applied (they touch

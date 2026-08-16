@@ -5,7 +5,7 @@ repository (`/Users/ben/Projects/PitchStudio/PATTERN.md`). WriterOS code does no
 not, write to that path. Ben reviews this contract and applies the edits by hand.
 
 **Target file:** `/Users/ben/Projects/PitchStudio/PATTERN.md` (read in full on 2026-08-15 to
-anchor the edits below; v2.1, 332 lines).
+anchor the edits below; v2.1, 331 lines).
 
 ---
 
@@ -21,8 +21,9 @@ Binding rules:
 1. **Exports are advisory, never canon — by construction, not by convention.** Every export
    PATTERN.md produces already opens with `status: unratified` in its required header (see
    PATTERN.md's Step 8 header block). This contract does not change that header or its
-   meaning; it makes explicit that `unratified` is a **permanent constant** PitchStudio
-   never flips, not a pending state PitchStudio will later mark ratified.
+   meaning; it makes explicit that `unratified` is a **permanent constant** on every
+   export this pattern produces — no `ratified` value exists anywhere in this schema,
+   and this contract adds none.
 2. **Canonization happens elsewhere, later, by a different actor.** PitchStudio has no
    promotion path of its own and this contract does not add one. If an export's decisions
    are to become canon, that happens through a **Wayfinder ratification ticket** worked
@@ -143,10 +144,11 @@ The departures section is what turns that pile into a checklist. `status: unrati
 is what stops the next session treating the document as canon before anyone agreed
 to it.
 
-**This export is advisory, never canon, by construction.** `status: unratified` is
-not a temporary state this pattern will later flip to `ratified` — it is a
-permanent constant on every export this pattern produces. PitchStudio has no
-promotion path of its own. If the export's decisions are to become canon, that
+**This export is advisory, never canon, by construction.** No `ratified` value
+exists anywhere in this schema. `status: unratified` is a permanent constant on
+every export this pattern produces — not a pending state waiting for a
+counterpart value that does not exist. PitchStudio has no promotion path of its
+own. If the export's decisions are to become canon, that
 happens later and elsewhere: a person opens a Wayfinder ratification ticket
 against this file, works it through Wayfinder's own resolve → contradiction
 check → close cycle, and only Wayfinder's publish step — never this export step —
