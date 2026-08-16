@@ -30,14 +30,21 @@ Binding rules:
    through Wayfinder's own resolve → contradiction check → close cycle (see
    `integrations/story-wayfinder/memory-contract.md`) — never by editing the export's
    `status` field, moving it into a canon path, or telling the producer a table ruling is
-   locked the moment Step 8 writes the file.
-3. **Retrieve context before Step 1, not after.** The seed fidelity gate in Step 1 already
-   asks whether the seed contradicts what's already decided; it should be asking against the
-   project's actual active canon, not only what's in the seed and the producer's head.
+   locked the moment Step 8 writes the file. Importing the export into shared project memory
+   (Edit D, below) does not change this: WriterOS's importer lands every PitchStudio record
+   as an advisory `decision`, never canon, regardless of the import.
+3. **Retrieve context before Step 1, not after — for Room and Deep runs only.** The seed
+   fidelity gate in Step 1 already asks whether the seed contradicts what's already decided;
+   it should be asking against the project's actual active canon, not only what's in the seed
+   and the producer's head. Scout runs Step 1's interview too, but never retrieves — this
+   rule does not extend into Scout, matching Scout's exemption from Step 8's export
+   requirement below (see also Edit A and the "No change to Scout's behavior" prerequisite).
 4. **The table brief carries active canon and unresolved conflicts.** Step 4's TABLE BRIEF
    already lists the story, the real forks, the critics' dissents, and Morgan's leans; this
    contract adds the project's active canon and open conflicts that the current draft
    touches, so the producer rules with the same ground truth the critics attacked against.
+   Step 4 does not run in Scout mode (Scout only runs Jesse sections 1–5 plus a Morgan
+   verdict), so this rule also does not extend into Scout.
 5. **Scout emits no export — already true, no PATTERN.md edit needed.** PATTERN.md's
    existing text already states this without qualification: "Scout never exports" (Run
    modes table) and "**The one exemption: Scout does not export.**" (Step 8). Reading the
@@ -57,12 +64,17 @@ Binding rules:
    `YYYY-MM-DD-pitchstudio-<slug>.md`, already satisfies the filename half of that rule, and
    the required header's `source: PitchStudio v2.1` line already satisfies the frontmatter
    half. No filename or header change is proposed.
+8. **The export is written back into shared project memory, not just left on disk.** Step 8
+   places the file at its fixed `notes/` address; that alone does not put it in front of
+   Wayfinder or Buzz sessions unless they happen to read this project's `notes/` directly.
+   Edit D adds one explicit write-back step, run after Step 8, so the export becomes visible
+   through shared project memory the same way Wayfinder's and Buzz's own material does.
 
 ---
 
 ## 2. Proposed edits
 
-Three edits, each as an exact **OLD** → **NEW** block from the file as read on 2026-08-15.
+Four edits, each as an exact **OLD** → **NEW** block from the file as read on 2026-08-15.
 
 ### Edit A — retrieve shared project memory before Step 1's work begins
 
@@ -81,7 +93,10 @@ NEW:
 ```
 ### Step 1 — Bank the seed + interview (unchanged from v1.2)
 
-**Retrieve shared project memory first, if the project has one.** Before creating
+**Retrieve shared project memory first, if the project has one — for Room and Deep
+runs.** Scout proceeds without this step: its output is disposable and it never
+declares a frame or exports (see the Scout exemption in Step 8), so there is
+nothing here for it to retrieve context into. For Room and Deep, before creating
 `concepts/<slug>.md`, run the project's shared memory context (WriterOS's
 `npm run memory -- context --project <project> --format markdown`, or the
 project's memory panel) and read its active canon and any open conflicts. Treat
@@ -158,12 +173,50 @@ is a recommendation with reasoning attached, exactly as advisory as anything
 else in this document.
 ```
 
+### Edit D — write the Step 8 export back into shared project memory
+
+**Anchor (the end of Step 8, immediately before the Kanban section):**
+
+OLD:
+```
+**Morgan owns Step 8.** Not Jesse — the export is a synthesis act, and the same voice
+that wrote the concept file writes the export from it. Morgan re-reads the concept
+file immediately before writing the export, same discipline as Step 6.
+
+## Kanban (slimmed)
+```
+
+NEW:
+```
+**Morgan owns Step 8.** Not Jesse — the export is a synthesis act, and the same voice
+that wrote the concept file writes the export from it. Morgan re-reads the concept
+file immediately before writing the export, same discipline as Step 6.
+
+**Write back to shared project memory, if the project has one.** After Step 8 writes
+the export file, import it into WriterOS's shared project memory so Wayfinder and
+Buzz sessions can see it without reading this tree directly. From a checkout of the
+WriterOS repo: `npm run memory -- import --source pitchstudio --from
+<project-root>/notes --project <path-to-.writeros> --dry-run`, review the preview,
+then re-run with `--apply` in place of `--dry-run`. WriterOS's importer enforces
+that PitchStudio material is never canon on import — every decision and departure
+record lands as an advisory `decision` record, never active canon, regardless of
+what this file's `status` header says — so running this step cannot itself canonize
+anything; it only makes the advisory material visible elsewhere. If no shared
+project memory exists for this project, skip this step; the export file at its
+fixed `notes/` address is still the complete, correct output of this pattern.
+
+## Kanban (slimmed)
+```
+
 ---
 
 ## 3. Rollback
 
 Reverse in any order (non-overlapping regions):
 
+- **Undo Edit D:** replace Edit D's NEW block with Edit D's OLD block (removes the "Write
+  back to shared project memory" paragraph, restoring the direct adjacency of "Morgan owns
+  Step 8" and "## Kanban (slimmed)").
 - **Undo Edit C:** replace Edit C's NEW block with Edit C's OLD block (deletes the
   "This export is advisory, never canon, by construction" paragraph).
 - **Undo Edit B:** replace Edit B's NEW block with Edit B's OLD block (removes the active
@@ -172,18 +225,19 @@ Reverse in any order (non-overlapping regions):
   "Retrieve shared project memory first" paragraph, restoring Step 1's heading as directly
   followed by "Create `concepts/<slug>.md`...").
 
-After all three are reverted, the file is byte-identical to the version read on 2026-08-15,
+After all four are reverted, the file is byte-identical to the version read on 2026-08-15,
 modulo any unrelated edits Ben makes independently.
 
 ---
 
 ## 4. Environment prerequisites
 
-- **WriterOS memory CLI reachable.** `npm run memory -- context` (from a checkout of the
-  WriterOS repo) must be runnable from wherever PitchStudio sessions execute shell commands,
-  for Edit A and Edit B to do anything. If it is not reachable, or the target project has no
-  WriterOS project home, Step 1 and Step 4 proceed exactly as PATTERN.md already specifies
-  today — retrieval is additive, not a new hard dependency.
+- **WriterOS memory CLI reachable.** `npm run memory -- context` (for Edit A and Edit B) and
+  `npm run memory -- import --source pitchstudio` (for Edit D), from a checkout of the
+  WriterOS repo, must be runnable from wherever PitchStudio sessions execute shell commands.
+  If it is not reachable, or the target project has no WriterOS project home, Step 1, Step 4,
+  and Step 8's write-back proceed exactly as PATTERN.md already specifies today — retrieval
+  and write-back are additive, not a new hard dependency.
 - **No change to `notes/` or the Step 8 filename convention.** This contract does not touch
   where the export is written or how it is named; WriterOS's import-side identification
   (frontmatter `source: PitchStudio…` or a `-pitchstudio-` filename infix) already matches

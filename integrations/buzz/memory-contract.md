@@ -38,16 +38,41 @@ Binding rules:
    as valid-and-empty rather than an error (`atoms/canon: absent; no Buzz canon atoms found`
    is a warning, not a failure). This is already implemented on the WriterOS side; no
    PLAN.md change is required for it. It is recorded here because it is the fact that makes
-   rule 3 below safe to state without qualification: a project that has only `atoms/canon/`
+   rule 5 below safe to state without qualification: a project that has only `atoms/canon/`
    populated (no `provisional/` or `rejected/` yet) is a normal, fully supported state.
-3. **Reuse the existing canon surfaces as native input — don't re-derive canon.** When
+3. **§11's atoms-win rule is scoped to inside Buzz; the WriterOS archive holds conflicts
+   open instead.** PLAN.md §11 says "on any conflict between an external record (wayfinder
+   workspace, notes/, memory) and canon atoms, atoms win" — that governs disputes an agent
+   in a Buzz session settles for itself while working. It does not extend into the WriterOS
+   shared archive. There, WriterOS's Buzz adapter always imports a Buzz atom as a
+   `requestedStatus: candidate` record (never automatically active canon, whatever its
+   `status:` header says in `atoms/`), pending Ben's promotion through the archive's own
+   review action. If that candidate conflicts with the archive's existing active canon, the
+   conflict stays **OPEN for Ben's arbitration** — it does not auto-supersede via §11's rule
+   or via import order, and this contract does not change that. This is a deliberate,
+   recorded deviation from §11 for the WriterOS side specifically, matching the product
+   contract's stated policy (`docs/product/unified-project-memory-prd.md` §4: "Buzz canon
+   conflicts remain open for Ben's arbitration. Buzz's native auto-win rule does not apply
+   inside WriterOS.") — pending Ben's explicit confirmation, since that policy is the
+   product's adopted default rather than something this contract itself decides.
+4. **Writing atoms back to the archive.** Bundle generation (rule 5 below) is Buzz-side
+   reading; it puts nothing into the WriterOS archive. To write this project's atoms into
+   shared project memory, from a checkout of the WriterOS repo, with the channel mapping
+   from rule 1 already set: `npm run memory -- import --source buzz --from
+   <buzz-project-root> --project <path-to-.writeros> --dry-run`, review the preview, then
+   re-run with `--apply` in place of `--dry-run`. This requires the linked `buzzChannelId`
+   on the target project to match the channel this project's atoms cite — WriterOS's
+   importer rejects any atom whose `room-session` provenance names a different channel.
+   Canon and provisional atoms import as candidate canon-kind records (rule 3); rejected
+   atoms import as development material, never canon.
+5. **Reuse the existing canon surfaces as native input — don't re-derive canon.** When
    generating a bundle for a downstream agent, pull from what already exists:
    `atom_extract.py canon-block` for the atom-level injection text, and
    `package/established-canon.md` for the narrative-form established canon, plus whatever
    archive material (traces, prior packages) is relevant to the specific request. Every
-   claim in the bundle keeps the evidence citation its source atom already carries — the
-   bundle asserts nothing its inputs don't already cite.
-4. **Generate only where atoms are locally readable; deliver manually.** `atoms/`, `traces/`,
+   claim in the bundle keeps a **full 64-hex vault event id** as its evidence citation — see
+   rule 7's note on `canon-block`'s truncated output.
+6. **Generate only where atoms are locally readable; deliver manually.** `atoms/`, `traces/`,
    and `package/` have no sync path today — only the L0 vault (raw relay events) rsyncs
    Studio → Air (`archiver/backup_pull.py`), and that rsync moves the full raw signed
    events, bodies included. The binding fact is a **residency** rule, not a payload rule:
@@ -60,10 +85,18 @@ Binding rules:
    handed to the requesting agent directly — paste, attach, or point at the path. There is
    no channel, no sync job, no automatic fetch, and no assumption that a bundle generated on
    one machine is available on another.
-5. **The bundle shows its own age.** Every generated `shared-project-memory.md` bundle
+7. **`canon-block`'s display output truncates evidence to 8-character prefixes — the bundle
+   requires full ids.** `atom_extract.py canon-block` truncates each evidence id to 8
+   characters for human-readable display (`atom_extract.py:206`, `e.strip()[:8]`) — confirmed
+   by running it. The vault policy is that locators travel, and a locator ambiguous enough to
+   need "use more characters" (`resolve.py`'s own ambiguity error, growing more likely as the
+   vault grows) is not a resolvable one, so the bundle does not carry 8-character prefixes:
+   each prefix is resolved to its full 64-hex event id via `resolve.py` before it goes in the
+   bundle — see the "Generating the bundle" procedure below for the exact step.
+8. **The bundle shows its own age.** Every generated `shared-project-memory.md` bundle
    carries a visible revision marker and generation timestamp at the top of the file, so a
    stale copy in someone's hands is identifiable at a glance rather than trusted implicitly.
-6. **Channel Canvas (kind `40100`) is a noted V2 path, not a V1 commitment.** The archiver
+9. **Channel Canvas (kind `40100`) is a noted V2 path, not a V1 commitment.** The archiver
    already captures Channel Canvas events (`archiver/README.md:134-137`, "Channel canvas =
    project-scoped canon home (kind 40100, `h`-tagged)... Archiver now captures kind 40100").
    That makes it the most likely native delivery surface for a future version, since it is
@@ -122,17 +155,56 @@ exactly once, through `project.json.sources.buzzChannelId` inside that project's
 Re-run only if the channel changes. Do not record this mapping anywhere in this
 tree — `project.json` is its one home.
 
+**Conflict arbitration in the WriterOS archive (deliberate deviation from §11 above,
+pending Ben's confirmation).** §11's "atoms win" rule governs disputes settled inside
+a Buzz session, between an external record (a wayfinder workspace, `notes/`, memory)
+and this project's own canon atoms. It does not extend into the WriterOS shared
+archive. There, a Buzz atom always imports as a candidate record — never
+automatically active canon, whatever its `status:` header says here — pending Ben's
+promotion through the archive's own review action. If that candidate conflicts with
+canon already active in the archive, the conflict stays **OPEN for Ben's
+arbitration**; it does not auto-supersede via §11's rule or via import order. This
+matches the WriterOS product contract's stated policy ("Buzz canon conflicts remain
+open for Ben's arbitration. Buzz's native auto-win rule does not apply inside
+WriterOS.") but is recorded here as a deviation from this file's own §11 because §11
+predates it and does not itself carry this scoping — Ben's explicit confirmation of
+this split is still pending.
+
+**Writing atoms back to the archive.** Generating a bundle (below) is reading only;
+it puts nothing into the WriterOS archive. To write this project's atoms in, with the
+channel mapping above already set, from a checkout of the WriterOS repo:
+
+    npm run memory -- import --source buzz --from <buzz-project-root> --project <path-to-.writeros> --dry-run
+
+review the preview, then re-run with `--apply` in place of `--dry-run`. This requires
+the linked `buzzChannelId` on the target project to match the channel this project's
+atoms cite — the import is rejected outright if an atom's `room-session` provenance
+names a different channel. Canon and provisional atoms import as candidate
+canon-kind records, held for Ben's promotion; rejected atoms import as development
+material, never canon. See "Conflict arbitration" above for what happens when an
+imported candidate conflicts with existing active canon.
+
 **Generating the bundle.** On the machine where `atoms/` is locally readable, reuse
 the existing canon surfaces rather than re-deriving canon:
 
-    atom_extract.py canon-block
+    cd ~/Projects/buzz-writers-room/archiver && .venv/bin/python atom_extract.py canon-block
 
 for the atom-level canon block, and `package/established-canon.md` (produced by
 the existing canon-ingest procedure) for the narrative-form established canon,
 together with whatever archive material (traces, prior packages) is relevant to
-the request. Write these into one cited file, `shared-project-memory.md`, in this
-project's `package/` directory. Every line keeps its evidence citation — nothing
-in the bundle may assert a claim the source material doesn't already cite.
+the request. `canon-block`'s own output truncates each evidence id to 8 characters
+for human display — before anything goes in the bundle, resolve every truncated id
+back to its full 64-hex form:
+
+    cd ~/Projects/buzz-writers-room/archiver && .venv/bin/python resolve.py <8-char-prefix>
+
+and take the `id` field from the printed event JSON. If `resolve.py` reports the
+prefix is ambiguous, that citation cannot go in the bundle as an 8-character prefix
+at all — resolve it fully or drop that line, never guess. Write the result into one
+cited file, `shared-project-memory.md`, in this project's `package/` directory.
+Every line keeps its evidence citation as a **full 64-hex vault event id** — nothing
+in the bundle may assert a claim the source material doesn't already cite, and
+nothing may cite evidence by a prefix short enough to be ambiguous.
 
 The bundle carries a visible **revision** (a monotonic counter, or the source
 atoms' latest `canon-at`/`created` date, whichever this project already tracks)
@@ -177,13 +249,18 @@ unrelated edits Ben makes independently.
 
 ## 4. Environment prerequisites
 
-- **Python archiver environment.** `atom_extract.py canon-block` requires the archiver's
-  environment (`archiver/.venv`) and its configured vault path
-  (`~/buzz-archive-backup/data`) to be available on the machine generating the bundle —
-  the Air, per rule 4 above, since that path is `backup_pull.py`'s destination for the
-  Studio → Air rsync, not a path the Studio itself populates.
-- **WriterOS memory CLI reachable** for the one-time `link-source` mapping — a checkout of
-  the WriterOS repo with `npm run memory` runnable.
+- **Python archiver environment, invoked directly — no shebang, not executable.**
+  `atom_extract.py` and `resolve.py` have no shebang line (both start with a docstring) and
+  are not marked executable (`-rw-r--r--`), so both must be invoked as
+  `.venv/bin/python <script> ...` from `~/Projects/buzz-writers-room/archiver` — confirmed
+  by running `canon-block` directly. `archiver/.venv/bin/python` exists (a symlink to
+  `python3.14`). Both scripts' configured vault path (`~/buzz-archive-backup/data`) must be
+  available on the machine generating the bundle — the Air, per rule 6 above, since that
+  path is `backup_pull.py`'s destination for the Studio → Air rsync, not a path the Studio
+  itself populates.
+- **WriterOS memory CLI reachable** for the one-time `link-source` mapping and for the
+  `import --source buzz` write-back (rule 4 above) — a checkout of the WriterOS repo with
+  `npm run memory` runnable.
 - **`atoms/canon/` need not be pre-populated.** Both `atom_extract.py` and WriterOS's Buzz
   adapter already tolerate an absent or empty `atoms/canon/` (or `provisional/`/`rejected/`)
   directory; a bundle generated before any atom exists is simply empty of atom-derived

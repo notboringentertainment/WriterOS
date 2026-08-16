@@ -206,7 +206,7 @@ NEW:
    - **Old decision holds:** revise the provisional answer with the writer until coherent, then step 3. If coherence can't be reached this session, leave the ticket open and claimed with the conflict noted under its Question — that still counts as this session's one ticket.
    - **New decision holds:** run the reopening procedure on the old ticket (below), then step 3.
 3. **Close.** Fill `resolved:`, move the file to `resolved/`, append the one-line gist to Decisions so far (prefixed "(groundwork)" for research/homework).
-4. **Publish to shared project memory**, if the project has one (see "Shared project memory" above). This runs only here — at or after Close — never between the contradiction check and Close.
+4. **Publish to shared project memory**, if the project has one (see "Shared project memory" above). This runs only here — at or after Close — never between the contradiction check and Close. From a checkout of the WriterOS repo, run `npm run memory -- import --source wayfinder --from <project-root>/wayfinder --project <path-to-.writeros> --dry-run`, review the preview, then re-run with `--apply` in place of `--dry-run` to publish. Import is idempotent: each record's dedupe key comes from its file path and content hash, so running it again after later tickets close only picks up what's newly resolved — already-published records no-op rather than duplicate. **Known limitation — split layout.** The adapter expects a project's ticket folders (`tickets/`, `resolved/`, `assets/`) and any legacy `atoms/atoms.jsonl` under one shared root passed via `--from`. A real Wayfinder project splits these — ticket folders live under `<project-root>/wayfinder/`, while `atoms/` sits at the project root — so one `--from` value cannot capture both today. An adapter fix to accept split roots is queued; until it lands, use `--from <project-root>/wayfinder` (captures tickets, resolved, and assets) as the default, and run a second import against `<project-root>` only if root-level legacy atoms need including. Say so plainly to the writer rather than silently skipping them.
 5. **Tend the map.** Graduate newly-sharp fog into tickets (create, then wire `blocked-by`), clearing each graduated patch from Not yet specified. Scope out anything revealed to sit beyond the destination. If the answer invalidates other open tickets, revise their Questions — never delete a ticket; a dead one gets scoped out so its history survives.
 ```
 
@@ -239,7 +239,7 @@ regions of the file):
   "Homework" bullet and the "## Fog, ticket, or out of scope" heading).
 
 After all four are reverted, the file is byte-identical to the version read on 2026-08-15
-(179 lines), modulo any unrelated edits Ben makes independently.
+(178 lines), modulo any unrelated edits Ben makes independently.
 
 ---
 
@@ -260,7 +260,9 @@ After all four are reverted, the file is byte-identical to the version read on 2
   `npm run memory -- import --source wayfinder` (from a checkout of the WriterOS repo) must
   be runnable from wherever a Wayfinder session executes shell commands, for the "Shared
   project memory" section to do anything. Where the CLI is unreachable, rule 8 above (ask,
-  don't fail silently) applies.
+  don't fail silently) applies. See Edit C's step 4 above for the exact command form and the
+  current split-layout limitation between a project's `wayfinder/` folder and its root
+  `atoms/` — an adapter fix for that split is queued but not yet landed.
 - **Local, non-cloud `.writeros` project home.** Publishing (`--apply`, not `--dry-run`)
   requires the project's package to live outside any cloud-synced folder. No new tooling is
   proposed to detect this automatically in V1 — the skill (and the writer) judge it by where
