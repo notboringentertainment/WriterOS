@@ -460,7 +460,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     color: 'var(--fg)',
-    borderColor: 'var(--border)',
+    // Full shorthand, not `borderColor`: overriding a shorthand with a
+    // longhand across rerenders triggers a React style warning, and
+    // server/vite.ts exits the dev server on any forwarded console.error.
+    border: '1px solid var(--border)',
     background: 'var(--surface-2)',
   },
   status: {
@@ -552,11 +555,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   spoilerBadge: {
     color: 'var(--wp-amber)',
-    borderColor: 'var(--wp-amber)',
+    border: '1px solid var(--wp-amber)',
   },
   flaggedBadge: {
     color: '#e05a5a',
-    borderColor: '#e05a5a',
+    border: '1px solid #e05a5a',
   },
   metaLine: {
     fontFamily: 'var(--font-mono)',
