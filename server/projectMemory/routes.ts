@@ -427,7 +427,7 @@ export function registerProjectMemoryRoutes(
       const projectId = validatedProjectId(req.params.projectId)
       const projectPath = await libraryStore(config, projectLibraryStore)
         .resolveProjectPackagePath(projectId)
-      const snapshot = await memoryStore.readSnapshot(projectPath)
+      const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
       if (snapshot.projectId !== projectId) {
         throw new ProjectLibraryStoreError(
           'URL project id does not match the WriterOS project package.',
@@ -447,7 +447,7 @@ export function registerProjectMemoryRoutes(
       const query = MemoryContextQuerySchema.parse(req.query)
       const projectPath = await libraryStore(config, projectLibraryStore)
         .resolveProjectPackagePath(projectId)
-      const snapshot = await memoryStore.readSnapshot(projectPath)
+      const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
       if (snapshot.projectId !== projectId) {
         throw new ProjectLibraryStoreError(
           'URL project id does not match the WriterOS project package.',
@@ -478,7 +478,7 @@ export function registerProjectMemoryRoutes(
       const projectId = validatedProjectId(req.params.projectId)
       const projectPath = await libraryStore(config, projectLibraryStore)
         .resolveProjectPackagePath(projectId)
-      const before = await memoryStore.readSnapshot(projectPath)
+      const before = await memoryStore.readSnapshot(projectPath, projectId)
       if (before.projectId !== projectId) {
         throw new ProjectLibraryStoreError(
           'URL project id does not match the WriterOS project package.',
@@ -506,7 +506,7 @@ export function registerProjectMemoryRoutes(
       const request = ProjectMemoryAnalysisRequestSchema.parse(req.body)
       const projectPath = await libraryStore(config, projectLibraryStore)
         .resolveProjectPackagePath(projectId)
-      const snapshot = await memoryStore.readSnapshot(projectPath)
+      const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
       if (snapshot.projectId !== projectId) {
         throw new ProjectLibraryStoreError(
           'URL project id does not match the WriterOS project package.',

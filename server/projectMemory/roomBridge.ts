@@ -100,10 +100,11 @@ function roomSource(sourceId: string, sourceUri: string, hash: string, capturedA
 async function priorActiveRoomRecord(
   memoryStore: ProjectMemoryStore,
   projectPath: string,
+  projectId: string,
   kind: MemoryKind,
   sourceId: string,
 ): Promise<ProjectMemoryRecord | undefined> {
-  const snapshot = await memoryStore.readSnapshot(projectPath)
+  const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
   return snapshot.records.find(record => (
     record.status === 'active'
     && record.kind === kind
@@ -137,7 +138,7 @@ export async function bridgeStoryLocksToMemory(
     const sourceId = 'story_locks'
     const capturedAt = input.capturedAt ?? new Date().toISOString()
     const hash = contentHash(input.storyLocksValue)
-    const prior = await priorActiveRoomRecord(memoryStore, projectPath, 'canon', sourceId)
+    const prior = await priorActiveRoomRecord(memoryStore, projectPath, input.projectId, 'canon', sourceId)
     const publishInput: PublishMemoryInput = {
       projectId: input.projectId,
       dedupeKey: `writeros-room:story_locks:${input.projectId}`,
@@ -177,7 +178,7 @@ async function bridgeDevelopmentBlock(
 ): Promise<number> {
   if (block.value === undefined || !isMeaningfulBlockValue(block.label, block.value)) return 0
   const hash = contentHash(block.value)
-  const prior = await priorActiveRoomRecord(memoryStore, projectPath, 'development', block.label)
+  const prior = await priorActiveRoomRecord(memoryStore, projectPath, projectId, 'development', block.label)
   const publishInput: PublishMemoryInput = {
     projectId,
     dedupeKey: `writeros-room:${block.label}:${projectId}`,
@@ -271,10 +272,11 @@ export async function bridgeRoomStateToMemory(
 async function activeRoomRecordsByIds(
   memoryStore: ProjectMemoryStore,
   projectPath: string,
+  projectId: string,
   ids: readonly string[],
 ): Promise<ProjectMemoryRecord[]> {
   if (ids.length === 0) return []
-  const snapshot = await memoryStore.readSnapshot(projectPath)
+  const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
   const idSet = new Set(ids)
   return snapshot.records.filter(record => (
     record.status === 'active'
@@ -360,7 +362,7 @@ export async function bridgeMeetingDecisionsToMemory(
       // reclassification changes kind between rows, and the prior mirror
       // must still be found so it can be retired even when it cannot be
       // superseded directly.
-      const priorMirrors = await activeRoomRecordsByIds(memoryStore, projectPath, row.targets)
+      const priorMirrors = await activeRoomRecordsByIds(memoryStore, projectPath, input.projectId, row.targets)
       const sameKind = priorMirrors.filter(record => record.kind === kind)
       const crossKind = priorMirrors.filter(record => record.kind !== kind)
 
@@ -391,7 +393,7 @@ export async function bridgeMeetingDecisionsToMemory(
 
     for (const deactivatedId of deactivatedIds) {
       if (retiredSourceIds.has(deactivatedId)) continue
-      const [stale] = await activeRoomRecordsByIds(memoryStore, projectPath, [deactivatedId])
+      const [stale] = await activeRoomRecordsByIds(memoryStore, projectPath, input.projectId, [deactivatedId])
       if (!stale) continue
       const retired = await retireRoomMirror(memoryStore, projectPath, input.projectId, stale, 'Retracted', capturedAt)
       if (retired) publishedCount += 1

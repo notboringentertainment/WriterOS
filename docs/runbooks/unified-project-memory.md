@@ -52,8 +52,11 @@ field matches what the CLI's `context` output reports.
 memory -- context`, or any agent turn — fails with a `corrupt-ledger` error,
 or the CLI exits with code `3`. An agent turn on any writing surface returns
 HTTP 503 with `{"error":"project-memory-unavailable","message":"Project
-memory is unavailable and needs repair."}` (see §5 in the corruption-drill
-sense — this section is the mirror-image "how do I find and fix it").
+memory is unavailable and needs repair."}` (this exact failure mode is
+proven end-to-end by the `corruption drills` tests in
+`tests/integration/unifiedProjectMemory.test.ts`; this section is the
+operator's manual mirror-image of that automated proof — "how do I find and
+fix it").
 
 **Why this needs care:** unlike the snapshot projections, `memory/ledger.jsonl`
 **is** the source of truth. Every event line replays in order (append-only);
@@ -135,10 +138,13 @@ and the retry, the CLI will refuse with "The project source linkage changed
 during import." — re-check `project.json.sources` and the source folder
 before retrying rather than forcing past that check.
 
-**Verify:** the retried command's final JSON output reports `applied: 0`
-duplicates for everything that was already durable, plus the previously
-un-applied records now applied. Cross-check with `npm run memory -- context
---project <path> --query "" --format json` for the expected record count.
+**Verify:** the retried command's final JSON output reports the two counts
+separately, per `server/projectMemory/cli.ts:540-546` — every record that
+was already durable from the interrupted first attempt is counted in
+`duplicates` (idempotent, not re-applied), while any record the interrupted
+run never durably published is now counted in `applied`. Cross-check with
+`npm run memory -- context --project <path> --query "" --format json` for
+the expected record count.
 
 ## 4. Revert a hand-reviewed external workflow edit
 
@@ -253,10 +259,13 @@ that's the growth behavior, not a bug you need to chase.
 ever successfully published is already durable in `memory/ledger.jsonl`
 (the actual source of truth), and `readAnalysisQueue` simply returns an empty
 list for a missing file (`server/projectMemory/writerOSObserver.ts`,
-`readQueueFile`'s catch-all). The next WriterOS save re-derives fresh queue
-entries for whatever changes next. **Do not** apply this same "just delete
-it" recovery to `memory/ledger.jsonl` — the ledger is not re-derivable from
-anything else; see §2 above instead.
+`readQueueFile`'s catch-all). Deleting the file also discards any items that
+were still `pending` or `failed` at the moment you delete it — those changes
+will **not** be re-analyzed; only the next document change queues fresh
+analysis. The next WriterOS save re-derives fresh queue entries for whatever
+changes next. **Do not** apply this same "just delete it" recovery to
+`memory/ledger.jsonl` — the ledger is not re-derivable from anything else;
+see §2 above instead.
 
 ## Note: script-selection patching is V1.1, not V1
 

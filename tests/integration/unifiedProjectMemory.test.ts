@@ -969,8 +969,8 @@ describe('outline patch preview/apply/save', () => {
 // ---------------------------------------------------------------------------
 
 describe('concurrency', () => {
-  it('a WriterOS save and a memory publish running concurrently lose no event and no workflow file', async () => {
-    const { projectId, projectPath, library } = await createFixtureProject('e2e-concurrency-project')
+  it('forces a memory publish into a WriterOS save\'s rename window and it still lands, losing no event or workflow file', async () => {
+    const { projectId, projectPath, library, workspaceRoot } = await createFixtureProject('e2e-concurrency-project')
     const read = await library.readProject(projectId)
     if (!read.ok) throw new Error('fixture project unexpectedly missing')
     const changed = {
@@ -999,10 +999,51 @@ describe('concurrency', () => {
       evidence: [{ excerpt: 'The harbor scene needs a rewrite pass.' }],
     }
 
-    const [, publishResult] = await Promise.all([
-      library.writeProject(changed),
-      projectMemoryStore.publish(projectPath, publishInput),
-    ])
+    // Force the interleave the pre-lock manifest read used to be vulnerable
+    // to: pause a WriterOS save exactly inside its rename window (the whole
+    // package directory renamed away to a backup — project.json is not just
+    // stale, it is briefly ABSENT), and only then start the memory publish,
+    // confirming its own lock attempt is reached before the save is allowed
+    // to continue past that window.
+    let snapshotReached!: () => void
+    const atSnapshot = new Promise<void>(resolve => { snapshotReached = resolve })
+    let allowSave!: () => void
+    const saveMayContinue = new Promise<void>(resolve => { allowSave = resolve })
+    let publishReachedLock!: () => void
+    const publishReachedLockPromise = new Promise<void>(resolve => { publishReachedLock = resolve })
+
+    const racingLibrary = await createProjectLibraryStore(workspaceRoot, {
+      fileOperations: {
+        afterPackageSnapshot: async () => {
+          snapshotReached()
+          await saveMayContinue
+        },
+      },
+    })
+    const racingMemoryStore = createProjectMemoryStore({
+      testHooks: {
+        packageLock: {
+          beforeJournalOpen: async () => { publishReachedLock() },
+        },
+      },
+    })
+
+    const save = racingLibrary.writeProject(changed)
+    await atSnapshot
+    // Prove the window is real: the package directory (and project.json
+    // with it) is genuinely gone right now, not merely stale.
+    await expect(readFile(path.join(projectPath, 'project.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const publishAttempt = racingMemoryStore.publish(projectPath, publishInput)
+    // Whichever happens first — the publish reaches its own package-lock
+    // attempt (the fixed behavior: it waits for the save's lock, since the
+    // vulnerable pre-lock manifest read was skipped), or the publish
+    // already rejected outright (the old, buggy behavior) — stop waiting
+    // and let the save proceed either way, so this never hangs.
+    await Promise.race([publishReachedLockPromise, publishAttempt.catch(() => undefined)])
+    allowSave()
+    const [publishResult] = await Promise.all([publishAttempt, save])
+
     expect(publishResult.published).toBe(true)
 
     const readBack = await library.readProject(projectId)
@@ -1015,7 +1056,9 @@ describe('concurrency', () => {
     // ledger survive the race intact and readable.
     await expect(readFile(path.join(projectPath, 'project.json'), 'utf8')).resolves.toContain(projectId)
     const ledgerText = await readFile(path.join(projectPath, 'memory', 'ledger.jsonl'), 'utf8')
-    expect(ledgerText.trim().split('\n').length).toBeGreaterThan(0)
+    const ledgerLines = ledgerText.trim().split('\n')
+    const lastEvent = JSON.parse(ledgerLines[ledgerLines.length - 1] ?? '{}')
+    expect(lastEvent.revision).toBe(snapshot.revision)
   })
 })
 

@@ -388,7 +388,7 @@ export async function processQueueItem(
   }))
 
   try {
-    const snapshot = await memoryStore.readSnapshot(projectPath)
+    const snapshot = await memoryStore.readSnapshot(projectPath, projectId)
     const activeCanon = snapshot.records
       .filter(record => record.kind === 'canon' && record.status === 'active')
       .map(record => ({ id: record.id, claim: record.claim }))

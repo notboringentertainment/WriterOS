@@ -27,7 +27,7 @@ import {
   type PublishMemoryInput,
   type PublishResult,
 } from '../../shared/projectMemory'
-import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
+import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from '../projectLibrary/packageLock'
 import { renderCanonProjection, renderReviewProjection } from './projections'
 
 const MEMORY_DIRECTORY = 'memory'
@@ -61,7 +61,15 @@ export class ProjectMemoryStoreError extends Error {
 }
 
 export interface ProjectMemoryStore {
-  readSnapshot(projectPath: string): Promise<ProjectMemorySnapshot>
+  /**
+   * `knownProjectId`: when the caller already knows the project id (e.g. a
+   * route resolved it from the URL, or a caller-supplied `input.projectId`),
+   * pass it so the lock can be acquired without a pre-lock read of
+   * `project.json` — the manifest is instead read and verified only after
+   * the lock is held, closing the race where a concurrent WriterOS save's
+   * rename window makes `project.json` briefly absent.
+   */
+  readSnapshot(projectPath: string, knownProjectId?: string): Promise<ProjectMemorySnapshot>
   publish(projectPath: string, input: PublishMemoryInput): Promise<PublishResult>
   reconcilePublication(
     projectPath: string,
@@ -78,6 +86,8 @@ export interface ProjectMemoryStore {
 export interface ProjectMemoryStoreTestHooks {
   writeLedgerChunk?(handle: FileHandle, buffer: Buffer, offset: number): Promise<number>
   beforeProjectionWrite?(projectPath: string, snapshot: ProjectMemorySnapshot): Promise<void>
+  /** @internal Deterministic package-lock race injection for regression tests. */
+  packageLock?: PackageWriteLockTestHooks
 }
 
 export interface ProjectMemoryStoreOptions {
@@ -165,40 +175,89 @@ function corruptLedger(lineNumber: number, detail: string): ProjectMemoryStoreEr
   )
 }
 
-async function readProjectId(projectPath: string): Promise<string> {
-  try {
-    const packageStats = await lstat(projectPath)
-    if (!packageStats.isDirectory() || packageStats.isSymbolicLink()) {
-      throw new ProjectMemoryStoreError('The WriterOS project path must be a real directory.', 'unsafe-path')
-    }
-    const raw = await readFile(path.join(projectPath, 'project.json'), 'utf8')
-    const parsed = WriterOSProjectManifestSchema.safeParse(JSON.parse(raw))
-    if (!parsed.success) {
-      throw new ProjectMemoryStoreError('project.json is not a valid WriterOS project manifest.', 'invalid-project')
-    }
-    return parsed.data.projectId
-  } catch (error) {
-    if (error instanceof ProjectMemoryStoreError) throw error
-    throw new ProjectMemoryStoreError(
-      `Unable to read the WriterOS project manifest: ${error instanceof Error ? error.message : String(error)}`,
-      'invalid-project',
-    )
+function wait(delayMs: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, delayMs))
+}
+
+// A concurrent WriterOS save moves the whole project directory aside to a
+// backup path for the middle of its rename choreography
+// (`ProjectLibraryStore.writeProject`), so a read of `project.json` that
+// lands in that window sees a plain ENOENT, not a real corruption. A caller
+// that doesn't already know the project id has no choice but to read it
+// before it can even attempt the package lock (which would otherwise
+// serialize against that same save) — so bound a few short retries on
+// ENOENT specifically, rather than failing on the very first unlucky read.
+const PROJECT_MANIFEST_READ_RETRY_ATTEMPTS = 3
+const PROJECT_MANIFEST_READ_RETRY_DELAY_MS = 50
+
+async function readProjectIdOnce(projectPath: string): Promise<string> {
+  const packageStats = await lstat(projectPath)
+  if (!packageStats.isDirectory() || packageStats.isSymbolicLink()) {
+    throw new ProjectMemoryStoreError('The WriterOS project path must be a real directory.', 'unsafe-path')
   }
+  const raw = await readFile(path.join(projectPath, 'project.json'), 'utf8')
+  const parsed = WriterOSProjectManifestSchema.safeParse(JSON.parse(raw))
+  if (!parsed.success) {
+    throw new ProjectMemoryStoreError('project.json is not a valid WriterOS project manifest.', 'invalid-project')
+  }
+  return parsed.data.projectId
+}
+
+async function readProjectId(
+  projectPath: string,
+  options: { retryOnMissing?: boolean } = {},
+): Promise<string> {
+  const attempts = options.retryOnMissing ? PROJECT_MANIFEST_READ_RETRY_ATTEMPTS : 1
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await readProjectIdOnce(projectPath)
+    } catch (error) {
+      lastError = error
+      if (attempt < attempts && isNodeError(error, 'ENOENT')) {
+        await wait(PROJECT_MANIFEST_READ_RETRY_DELAY_MS)
+        continue
+      }
+      break
+    }
+  }
+  if (lastError instanceof ProjectMemoryStoreError) throw lastError
+  throw new ProjectMemoryStoreError(
+    `Unable to read the WriterOS project manifest: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    'invalid-project',
+  )
 }
 
 async function withProjectLock<T>(
   projectPath: string,
   operation: (projectId: string) => Promise<T>,
+  knownProjectId?: string,
+  packageLockTestHooks?: PackageWriteLockTestHooks,
 ): Promise<T> {
-  const initialProjectId = await readProjectId(projectPath)
+  // When the caller already knows the project id, skip the pre-lock read
+  // entirely — that read is exactly what races a concurrent save's rename
+  // window. The manifest is still read and verified below, but only after
+  // the lock is held, by which point a well-behaved concurrent writer
+  // (which locks on the same project id before it ever touches the
+  // directory) cannot be mid-rename.
+  const initialProjectId = knownProjectId ?? await readProjectId(projectPath, { retryOnMissing: true })
   const lock = await acquirePackageWriteLock({
     workspaceRoot: path.dirname(projectPath),
     projectId: initialProjectId,
+    testHooks: packageLockTestHooks,
   })
   let primaryError: unknown
   try {
     const lockedProjectId = await readProjectId(projectPath)
-    if (lockedProjectId !== initialProjectId) {
+    // Only enforce this as a hard failure when `initialProjectId` came from
+    // our own pre-lock observation of this same file (no `knownProjectId`):
+    // there, a mismatch means project.json's identity genuinely changed
+    // while we were acquiring the lock. When the caller supplied
+    // `knownProjectId` instead, it is a hint used purely to key the lock —
+    // any identity mismatch against the real manifest is for the caller's
+    // own `operation` to decide how to report (several already do, with a
+    // more specific message than this generic one).
+    if (knownProjectId === undefined && lockedProjectId !== initialProjectId) {
       throw new ProjectMemoryStoreError('project.json changed identity while acquiring its package lock.', 'project-mismatch')
     }
     return await operation(lockedProjectId)
@@ -919,7 +978,7 @@ function createLegacyAuthorityMigrationEvent(
 
 export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}): ProjectMemoryStore {
   return {
-    async readSnapshot(projectPath) {
+    async readSnapshot(projectPath, knownProjectId) {
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
@@ -927,7 +986,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
           await writeProjections(projectPath, replayed.snapshot, options.testHooks)
         }
         return replayed.snapshot
-      })
+      }, knownProjectId, options.testHooks?.packageLock)
     },
 
     async publish(projectPath, rawInput) {
@@ -936,17 +995,13 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         throw new ProjectMemoryStoreError(parsed.error.issues[0]?.message ?? 'Invalid memory publication.', 'invalid-input')
       }
       const input = parsed.data
-      const manifestProjectId = await readProjectId(projectPath)
-      if (input.projectId !== manifestProjectId) {
-        throw new ProjectMemoryStoreError(
-          `Publication projectId ${input.projectId} does not match project.json projectId ${manifestProjectId}.`,
-          'project-mismatch',
-        )
-      }
 
       return withProjectLock(projectPath, async projectId => {
         if (input.projectId !== projectId) {
-          throw new ProjectMemoryStoreError('Publication projectId does not match the locked project.', 'project-mismatch')
+          throw new ProjectMemoryStoreError(
+            `Publication projectId ${input.projectId} does not match project.json projectId ${projectId}.`,
+            'project-mismatch',
+          )
         }
         const ledgerPath = await ensureLedger(projectPath)
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
@@ -967,7 +1022,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot, options.testHooks)
         return { published: true, record: event.record, snapshot: next.snapshot }
-      })
+      }, input.projectId, options.testHooks?.packageLock)
     },
 
     async reconcilePublication(projectPath, rawInput) {
@@ -996,7 +1051,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
             },
           }),
         }
-      })
+      }, input.projectId, options.testHooks?.packageLock)
     },
 
     async applyAction(projectPath, rawAction, expectedProjectId) {
@@ -1018,7 +1073,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot, options.testHooks)
         return next.snapshot
-      })
+      }, expectedProjectId, options.testHooks?.packageLock)
     },
 
     async rebuild(projectPath) {
@@ -1027,7 +1082,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         await writeProjections(projectPath, replayed.snapshot, options.testHooks)
         return replayed.snapshot
-      })
+      }, undefined, options.testHooks?.packageLock)
     },
   }
 }
