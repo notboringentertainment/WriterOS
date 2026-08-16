@@ -135,8 +135,9 @@ export const buzzMemorySourceAdapter: MemorySourceAdapter = {
         else warnings.push(`atoms/${status}: absent (valid); no ${status} workflow dependency`)
         continue
       }
-      if (status === 'canon' && directory.files.length === 0) {
-        warnings.push('atoms/canon: empty; no Buzz canon atoms found')
+      if (directory.files.length === 0) {
+        if (status === 'canon') warnings.push('atoms/canon: empty; no Buzz canon atoms found')
+        else warnings.push(`atoms/${status}: empty; no ${status} atoms were included`)
       }
       for (const filename of directory.files) {
         const relativePath = path.posix.join('atoms', status, filename)

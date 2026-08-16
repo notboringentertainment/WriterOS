@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readdir } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { PublishMemoryInput } from '../../../shared/projectMemory'
 import { UnsafeProjectMemoryPathError } from '../safePaths'
@@ -112,6 +112,52 @@ function isSafeLegacySourceLocator(value: string): boolean {
   return fragment === undefined || /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(fragment)
 }
 
+/**
+ * The real Wayfinder project splits tickets/resolved/assets under a
+ * `wayfinder/` subdirectory (with `atoms/atoms.jsonl` and the root Canon
+ * Note staying at the project root). Detect that layout and return the
+ * directory tickets should be read from; fall back to the flat layout
+ * (tickets/resolved/assets directly under sourceRoot) when there is none.
+ */
+async function ticketRoot(sourceRoot: string): Promise<string> {
+  const candidate = path.join(sourceRoot, 'wayfinder')
+  try {
+    const stats = await lstat(candidate)
+    if (stats.isSymbolicLink()) {
+      throw new UnsafeProjectMemoryPathError('The source contains a symbolic link.')
+    }
+    if (stats.isDirectory()) return candidate
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
+  }
+  return sourceRoot
+}
+
+/**
+ * A bounded, sentence-aware gist of `value` for display as a `claim`. Never
+ * used to decide authority — ratified canon must not be downgraded merely
+ * because its prose is long, so the full text always still lives in
+ * `detail`. Falls back to a hard cut at the budget when no sentence
+ * boundary is found within it.
+ */
+function deriveGist(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  const ellipsis = '…'
+  const budget = Math.max(0, maxLength - ellipsis.length)
+  const sentenceEnd = /[.!?](?=\s|$)/g
+  let lastBoundary = -1
+  let match: RegExpExecArray | null
+  while ((match = sentenceEnd.exec(value))) {
+    const boundary = match.index + 1
+    if (boundary >= budget) break
+    lastBoundary = boundary
+  }
+  const cut = lastBoundary > 0 ? lastBoundary : budget
+  let truncated = value.slice(0, cut).trimEnd()
+  if (/[\uD800-\uDBFF]$/.test(truncated)) truncated = truncated.slice(0, -1)
+  return `${truncated}${ellipsis}`
+}
+
 async function rootMetadata(sourceRoot: string): Promise<{ canonNotes: string[]; hasToDelete: boolean }> {
   const entries = await readdir(sourceRoot, { withFileTypes: true })
   if (entries.some(entry => entry.isSymbolicLink())) {
@@ -135,8 +181,9 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
     for (const filename of root.canonNotes) {
       warnings.push(`${filename}:1: root Canon Note is not included in V1 preview`)
     }
+    const ticketBase = await ticketRoot(sourceRoot)
     for (const directory of ['assets', 'resolved', 'tickets'] as const) {
-      const listing = await listMarkdown(path.join(sourceRoot, directory))
+      const listing = await listMarkdown(path.join(ticketBase, directory))
       if (!listing.exists) {
         if (directory === 'assets') warnings.push('assets: absent (valid); no groundwork assets')
         else if (directory === 'tickets') warnings.push('tickets: absent (valid); no open tickets')
@@ -148,7 +195,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
       }
       for (const filename of listing.files) {
         const relativePath = path.posix.join(directory, filename)
-        const sourceFile = await readImportSource(path.join(sourceRoot, relativePath))
+        const sourceFile = await readImportSource(path.join(ticketBase, directory, filename))
         const content = sourceFile.text
         const parsed = parseTicket(content)
         if (!parsed.title) {
@@ -238,13 +285,6 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             ? parsed.title
             : answer || parsed.title
         if (!rawClaim) continue
-        const claim = truncateImportText(rawClaim, 600)
-        const claimTruncated = claim !== rawClaim
-        if (claimTruncated) {
-          warnings.push(
-            `${relativePath}:1: claim truncated to 600 characters${activeCanon ? '; active canon withheld' : ''}`,
-          )
-        }
         const kind = scoped
           ? 'open_question'
           : nearScoped
@@ -254,24 +294,41 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
               : directory === 'tickets'
                 ? 'open_question'
                 : 'development'
+        // Ratified authority (activeCanon) must never be downgraded merely
+        // because its prose is long: a ≤600-char sentence-bounded gist
+        // stands in for `claim`, while the full answer is preserved in
+        // `detail` (still capped, but the cap never withholds canon status).
+        let claim: string
+        if (activeCanon && rawClaim.length > 600) {
+          claim = deriveGist(rawClaim, 600)
+          warnings.push(
+            `${relativePath}:1: claim shortened to a 600-character gist; full ratified answer preserved in detail`,
+          )
+        } else {
+          claim = truncateImportText(rawClaim, 600)
+          if (claim !== rawClaim) {
+            warnings.push(`${relativePath}:1: claim truncated to 600 characters`)
+          }
+        }
         const rawDetail = scoped
           ? `Scoped-out answer: ${scopedAnswer?.replace(/\s+/g, ' ').trim()}`
           : superseded
             ? `${superseded[0]}: ${superseded[1].replace(/\s+/g, ' ').trim()}`
-            : undefined
+            : activeCanon && claim !== rawClaim
+              ? rawClaim
+              : undefined
         const detail = rawDetail === undefined ? undefined : truncateImportText(rawDetail, 8_000)
         const detailTruncated = detail !== rawDetail
         if (detailTruncated) {
-          warnings.push(
-            `${relativePath}:1: detail truncated to 8000 characters${activeCanon ? '; active canon withheld' : ''}`,
-          )
+          warnings.push(activeCanon
+            ? `${relativePath}:1: full answer exceeds 8000 characters; detail truncated but active canon retained`
+            : `${relativePath}:1: detail truncated to 8000 characters`)
         }
         const requestedStatus = scoped
           || nearScoped
           || unsafeLine !== undefined
           || invalidTicketMetadata
           || missingResolvedAnswer
-          || (activeCanon && (claimTruncated || detailTruncated))
           ? 'candidate'
           : 'active'
         const sourceHash = sourceFile.sourceHash
