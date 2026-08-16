@@ -639,6 +639,58 @@ describe('append-only project memory store', () => {
     expect(await readFile(ledgerPath, 'utf8')).toBe(resumedLedger)
   })
 
+  it('skips legacy migration and projection repair under readSnapshot when a caller-supplied id disagrees with the locked manifest (stale index), but still performs it on a matching id', async () => {
+    const { projectPath, projectId } = await makeProject()
+    const store = createProjectMemoryStore()
+    await store.readSnapshot(projectPath)
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const canonPath = path.join(projectPath, 'memory', 'canon.md')
+    const reviewPath = path.join(projectPath, 'memory', 'review.md')
+    const legacyRecord = memoryRecord({
+      id: 'mem-legacy-wayfinder',
+      status: 'active',
+      source: source({
+        workflow: 'story-wayfinder',
+        sourceId: 'resolved:legacy-ending',
+        sourceHash: 'sha256:legacy-wayfinder',
+        approval: 'explicit',
+      }),
+    })
+    await writeFile(ledgerPath, `${JSON.stringify({
+      ...forgedEventBase(1, 'published'),
+      id: 'event-legacy-wayfinder',
+      dedupeKey: 'wayfinder:legacy:ending',
+      record: legacyRecord,
+      conflicts: [],
+      supersededRecordIds: [],
+    })}\n`, 'utf8')
+    const beforeLedger = await readFile(ledgerPath, 'utf8')
+    const beforeCanon = await readFile(canonPath, 'utf8')
+    const beforeReview = await readFile(reviewPath, 'utf8')
+
+    // A caller-supplied id that disagrees with project.json (e.g. a stale
+    // library index) must not run the legacy migration or projection
+    // repair under a lock keyed to the wrong id.
+    const mismatched = await store.readSnapshot(projectPath, 'stale-index-project-id')
+
+    expect(mismatched.projectId).toBe(projectId)
+    expect(mismatched.records[0]).toMatchObject({ id: 'mem-legacy-wayfinder', status: 'active' })
+    expect(await readFile(ledgerPath, 'utf8')).toBe(beforeLedger)
+    expect(await readFile(canonPath, 'utf8')).toBe(beforeCanon)
+    expect(await readFile(reviewPath, 'utf8')).toBe(beforeReview)
+
+    // Regression: a matching id still performs migration and projection
+    // repair exactly as before.
+    const migrated = await store.readSnapshot(projectPath, projectId)
+    expect(migrated.records[0]).toMatchObject({
+      id: 'mem-legacy-wayfinder',
+      status: 'candidate',
+      source: { authority: { verification: 'legacy-unverified' } },
+    })
+    expect(await readFile(ledgerPath, 'utf8')).not.toBe(beforeLedger)
+    expect(await readFile(reviewPath, 'utf8')).not.toBe(beforeReview)
+  })
+
   it('promotes an eligible candidate through an explicit revision-checked action', async () => {
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()

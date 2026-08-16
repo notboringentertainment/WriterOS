@@ -310,10 +310,19 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             warnings.push(`${relativePath}:1: claim truncated to 600 characters`)
           }
         }
+        const supersededText = superseded
+          ? `${superseded[0]}: ${superseded[1].replace(/\s+/g, ' ').trim()}`
+          : undefined
+        // When the current answer needed gisting (activeCanon, claim !==
+        // rawClaim) AND there is a superseded-answer section, the current
+        // full answer must survive in `detail` alongside the superseded
+        // text — never dropped in favor of history.
         const rawDetail = scoped
           ? `Scoped-out answer: ${scopedAnswer?.replace(/\s+/g, ' ').trim()}`
           : superseded
-            ? `${superseded[0]}: ${superseded[1].replace(/\s+/g, ' ').trim()}`
+            ? (activeCanon && claim !== rawClaim
+              ? `${rawClaim}\n\n${supersededText}`
+              : supersededText)
             : activeCanon && claim !== rawClaim
               ? rawClaim
               : undefined

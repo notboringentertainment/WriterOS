@@ -1,7 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express'
 import http, { type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdtemp, rename, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { deflateSync, gzipSync } from 'node:zlib'
 import path from 'node:path'
@@ -1309,6 +1309,88 @@ describe('project memory HTTP routes', () => {
       message: 'URL project id does not match the WriterOS project package.',
     })
     expect(response.text).not.toContain(projectPath)
+  })
+
+  it('does not mutate the ledger or projections when a stale library index disagrees with the resolved package identity', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-memory-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const project = {
+      id: 'manifest-project-id-stale',
+      createdAt: Date.parse('2026-08-01T12:00:00.000Z'),
+      updatedAt: Date.parse('2026-08-02T12:00:00.000Z'),
+      state: defaultProjectState(),
+    }
+    await store.writeProject(project)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+    await projectMemoryStore.readSnapshot(projectPath)
+    const ledgerPath = path.join(projectPath, 'memory', 'ledger.jsonl')
+    const canonPath = path.join(projectPath, 'memory', 'canon.md')
+    const reviewPath = path.join(projectPath, 'memory', 'review.md')
+    const legacyRecord = {
+      id: 'mem-legacy-wayfinder',
+      projectId: project.id,
+      kind: 'canon',
+      status: 'active',
+      claim: 'A generic legacy claim about the ending.',
+      tags: [],
+      entities: [],
+      source: {
+        workflow: 'story-wayfinder',
+        sourceId: 'resolved:legacy-ending',
+        sourceUri: 'documents/story-bible.json#ending',
+        sourceHash: 'sha256:legacy-wayfinder',
+        capturedAt: '2026-08-02T12:00:00.000Z',
+        approval: 'explicit',
+      },
+      evidence: [],
+      safety: 'clear',
+      spoiler: false,
+      supersedes: [],
+      createdAt: '2026-08-02T12:00:00.000Z',
+      updatedAt: '2026-08-02T12:00:00.000Z',
+    }
+    await writeFile(ledgerPath, `${JSON.stringify({
+      schemaVersion: 1,
+      id: 'event-legacy-wayfinder',
+      projectId: project.id,
+      revision: 1,
+      occurredAt: '2026-08-02T12:00:00.000Z',
+      type: 'published',
+      dedupeKey: 'wayfinder:legacy:ending',
+      record: legacyRecord,
+      conflicts: [],
+      supersededRecordIds: [],
+    })}\n`, 'utf8')
+    const beforeLedger = await readFile(ledgerPath, 'utf8')
+    const beforeCanon = await readFile(canonPath, 'utf8')
+    const beforeReview = await readFile(reviewPath, 'utf8')
+    const staleIndexStore: ProjectLibraryStore = {
+      ...store,
+      resolveProjectPackagePath: async () => projectPath,
+    }
+    const port = await startMemoryApp({
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }, staleIndexStore)
+
+    const response = await requestJson(
+      port,
+      '/api/project-memory/different-project-id/snapshot',
+      { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' },
+    )
+
+    expect(response.status).toBe(400)
+    expect(response.json).toEqual({
+      error: 'project-mismatch',
+      message: 'URL project id does not match the WriterOS project package.',
+    })
+    expect(await readFile(ledgerPath, 'utf8')).toBe(beforeLedger)
+    expect(await readFile(canonPath, 'utf8')).toBe(beforeCanon)
+    expect(await readFile(reviewPath, 'utf8')).toBe(beforeReview)
   })
 
   it('builds authenticated context through the shared retrieval contract', async () => {

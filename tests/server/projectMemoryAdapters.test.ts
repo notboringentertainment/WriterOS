@@ -174,6 +174,48 @@ ${longAnswer}
     expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0 })
   })
 
+  it('preserves the full current ratified answer alongside a superseded answer when the current answer also needs gisting', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-superseded-plus-long-')
+    const longAnswer = Array.from(
+      { length: 40 },
+      (_unused, index) => `Rule number ${index} holds until the harbor board revises it.`,
+    ).join(' ')
+    expect(longAnswer.length).toBeGreaterThanOrEqual(1500)
+    const supersededText = 'The harbor used to close at dusk before the board revised the rule.'
+    await writeSource(root, 'resolved/long-ratified-with-history.md', `# Lock the standing rule with history
+type: grill
+mode: hitl
+resolved: 2026-08-14
+
+## Superseded answer (2026-08-01)
+${supersededText}
+
+## Answer
+${longAnswer}
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-wayfinder-superseded-plus-long', sourceRoot: root,
+    })
+
+    expect(preview.records).toHaveLength(1)
+    const [record] = preview.records
+    expect(record).toMatchObject({ kind: 'canon', requestedStatus: 'active' })
+    expect(record?.claim.length).toBeLessThanOrEqual(600)
+    expect(record?.claim.endsWith('…')).toBe(true)
+    expect(longAnswer.startsWith(record?.claim.slice(0, -1).trimEnd() ?? ' ')).toBe(true)
+    expect(record?.detail).toContain(longAnswer)
+    expect(record?.detail).toContain(`Superseded answer (2026-08-01): ${supersededText}`)
+    expect(record?.detail?.indexOf(longAnswer)).toBeLessThan(
+      record?.detail?.indexOf('Superseded answer (2026-08-01)') ?? -1,
+    )
+    expect(preview.warnings).toContain(
+      'resolved/long-ratified-with-history.md:1: claim shortened to a 600-character gist; full ratified answer preserved in detail',
+    )
+    expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0 })
+  })
+
   it('keeps a ratified answer active even when it exceeds the 8000-character detail cap', async () => {
     const root = await createSourceRoot('writeros-wayfinder-oversized-ratified-')
     const longAnswer = Array.from(

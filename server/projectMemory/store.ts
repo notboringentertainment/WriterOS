@@ -981,6 +981,18 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
     async readSnapshot(projectPath, knownProjectId) {
       return withProjectLock(projectPath, async projectId => {
         const ledgerPath = await ensureLedger(projectPath)
+        if (knownProjectId !== undefined && projectId !== knownProjectId) {
+          // The caller's id disagrees with the package's true manifest id
+          // under lock (e.g. a stale library index). readSnapshot is not
+          // read-only in the matching-id case — replay can append a
+          // legacy-authority migration event and repair projections — but
+          // those writes must never run under a lock keyed to the wrong
+          // id, which would forfeit mutual exclusion against the package's
+          // real owner. Fall back to a read-only replay and let the
+          // caller's own id check surface its usual mismatch error.
+          const replayed = await replayLedger(ledgerPath, projectId)
+          return replayed.snapshot
+        }
         const replayed = await replayLedgerWithMigrations(ledgerPath, projectId, options.testHooks)
         if (!await projectionsMatch(projectPath, replayed.snapshot)) {
           await writeProjections(projectPath, replayed.snapshot, options.testHooks)
