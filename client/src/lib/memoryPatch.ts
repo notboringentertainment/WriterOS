@@ -76,7 +76,10 @@ export interface StructuredDocumentSetters {
   storyBible: (updater: (content: StoryBibleDocumentContent) => StoryBibleDocumentContent) => void
 }
 
-const STALE_PATCH_MESSAGE = 'This document changed since the suggestion was made. Refresh and try again.'
+// Review Important 4: "Refresh and try again" was advice that could never
+// work — refreshing does not regenerate the proposal, so a stale patch would
+// refuse forever with no way forward except asking the agent again.
+const STALE_PATCH_MESSAGE = 'This suggestion is out of date because the document changed — ask for a new version.'
 const INVALID_PATCH_MESSAGE = "The suggested content no longer matches this document's format."
 
 /**

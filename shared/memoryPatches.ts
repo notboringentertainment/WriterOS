@@ -30,10 +30,31 @@ export type StructuredDocumentSurface = (typeof STRUCTURED_DOCUMENT_SURFACES)[nu
 // server (deciding whether to spend a model call generating a patch) and the
 // client (deciding whether to trust/display one that came back) enforce the
 // identical rule rather than two regexes drifting apart.
+//
+// The verb alone is not enough (review Important 2): "Should I apply to that
+// fellowship?" has the verb but no request to touch a document at all, and
+// "Please rewrite this scene" on the Synopsis tab has the verb but is about
+// the script, not the surface the writer is looking at. Both halves are
+// required: a trigger verb AND a reference to the CURRENT structured
+// surface — either that surface's own name/synonym, or a generic
+// this/current-document deixis that can only mean "the document I'm on."
 const PATCH_TRIGGER_PATTERN = /\b(fill|re-?write|apply|revise)\b/i
 
-export function shouldRequestDocumentPatch(userMessage: string): boolean {
-  return PATCH_TRIGGER_PATTERN.test(userMessage)
+const SURFACE_NAME_PATTERNS: Record<StructuredDocumentSurface, RegExp> = {
+  synopsis: /\bsynopsis\b/i,
+  outline: /\b(outline|beat sheet)\b/i,
+  treatment: /\btreatment\b/i,
+  storyBible: /\bstory\s*bible\b/i,
+}
+
+// Deliberately narrow: "document"/"doc" only, never "page" or "scene" —
+// those name the script, not a structured document, and must not count as a
+// reference to the current surface (review Important 2's cross-surface case).
+const CURRENT_DOCUMENT_DEIXIS_PATTERN = /\b(this|the|current)\s+doc(ument)?\b/i
+
+export function shouldRequestDocumentPatch(userMessage: string, surface: StructuredDocumentSurface): boolean {
+  if (!PATCH_TRIGGER_PATTERN.test(userMessage)) return false
+  return SURFACE_NAME_PATTERNS[surface].test(userMessage) || CURRENT_DOCUMENT_DEIXIS_PATTERN.test(userMessage)
 }
 
 // shared/surfaceAwareness.ts's SurfaceIdSchema ('outline' | 'synopsis' |
@@ -191,4 +212,55 @@ export function filterMemoryGroundedPatchProposal(
     return { id, workflow: source.workflow, sourceUri: source.sourceUri }
   })
   return { ...proposal, patch: { ...proposal.patch, memoryIds }, citations }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function collectChangedPaths(before: unknown, after: unknown, path: string, into: string[]): void {
+  if (before === after) return
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const maxLength = Math.max(before.length, after.length)
+    for (let index = 0; index < maxLength; index += 1) {
+      const itemPath = `${path}[${index}]`
+      if (index >= before.length || index >= after.length) {
+        into.push(itemPath)
+        continue
+      }
+      collectChangedPaths(before[index], after[index], itemPath, into)
+    }
+    return
+  }
+
+  if (isPlainObject(before) && isPlainObject(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of keys) {
+      collectChangedPaths(before[key], after[key], path ? `${path}.${key}` : key, into)
+    }
+    return
+  }
+
+  // Primitive mismatch, or a type/shape mismatch (object vs array, present
+  // vs missing) — either way this exact path is where the two values first
+  // diverge, so it is reported as one changed leaf rather than walked
+  // further.
+  into.push(path || '(root)')
+}
+
+/**
+ * Derives `changedPaths` by actually diffing `before` (the document's
+ * current content) against `after` (the proposed content), dot-notation for
+ * object fields and bracket-index for array items (e.g. "logline.text",
+ * "characters[0].arc"). The model's own `changedPaths` claim is never
+ * trusted for this (review Important 3): Apply replaces the whole document
+ * with `proposedContent`, so an undeclared change the model made would
+ * otherwise preview as an innocuous two-line list and then apply anyway.
+ * Sorted for a stable, deterministic preview.
+ */
+export function diffChangedPaths(before: unknown, after: unknown): string[] {
+  const paths: string[] = []
+  collectChangedPaths(before, after, '', paths)
+  return paths.sort((left, right) => left.localeCompare(right))
 }

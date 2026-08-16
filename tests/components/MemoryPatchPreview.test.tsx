@@ -124,13 +124,13 @@ describe('MemoryPatchPreview', () => {
         rationale="R"
         canonConflicts={[]}
         citations={[]}
-        applyError="This document changed since the suggestion was made. Refresh and try again."
+        applyError="This suggestion is out of date because the document changed — ask for a new version."
         onApply={() => {}}
         onKeepAsSuggestion={() => {}}
         onDismiss={() => {}}
       />,
     )
-    expect(screen.getByRole('alert')).toHaveTextContent('This document changed since the suggestion was made.')
+    expect(screen.getByRole('alert')).toHaveTextContent('This suggestion is out of date because the document changed')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

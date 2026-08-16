@@ -8,8 +8,10 @@ import { createModelProvider, type ModelMessage, type ModelProvider } from "./mo
 import { runMorgan, buildReachInventory, renderReachContract, type RuntimeDeps, type RunDebug } from "./morganRuntime";
 import type { AgentMemoryContext } from '../projectMemory/agentContext';
 import {
+  diffChangedPaths,
   filterMemoryGroundedPatchProposal,
   validateMemoryGroundedPatch,
+  type MemoryGroundedPatch,
   type MemoryGroundedPatchAttempt,
   type StructuredDocumentSurface,
 } from "@shared/memoryPatches";
@@ -1062,6 +1064,9 @@ export class OpenAIService {
         surface: args.surface,
         baseVersion: args.baseVersion,
         proposedContent: parsedJson.proposedContent,
+        // The model's own changedPaths claim is discarded below in favor of
+        // a real diff (review Important 3) — still coerced to a string[]
+        // here only so the shape validates; its contents are never used.
         changedPaths: Array.isArray(parsedJson.changedPaths)
           ? parsedJson.changedPaths.filter((value): value is string => typeof value === 'string')
           : [],
@@ -1081,8 +1086,19 @@ export class OpenAIService {
         ? parsedJson.canonConflicts.filter((value): value is string => typeof value === 'string')
         : [];
 
+      // Never trust the model's own changedPaths claim (review Important 3):
+      // Apply replaces the entire document with proposedContent, so an
+      // undeclared change would otherwise preview as an innocent short list
+      // and then apply anyway. Diff currentContent against the now-validated
+      // proposedContent instead — this is what actually changes.
+      const derivedChangedPaths = diffChangedPaths(args.currentContent, validated.content);
+      const patchWithDerivedChangedPaths: MemoryGroundedPatch = {
+        ...validated.patch,
+        changedPaths: derivedChangedPaths,
+      };
+
       const proposal = filterMemoryGroundedPatchProposal(
-        { patch: validated.patch, rationale, canonConflicts, citations: [] },
+        { patch: patchWithDerivedChangedPaths, rationale, canonConflicts, citations: [] },
         args.agentMemory.allowedCitations,
       );
       return { status: 'generated', proposal };

@@ -8,7 +8,7 @@ import {
   normalizeTreatmentContent,
   outlineContentToTreatmentContent,
 } from './documentMigration'
-import { createEmptySeriesContent, type ProjectDocuments } from '@shared/documents'
+import { createEmptySeriesContent, type AuthoredDocumentState, type ProjectDocuments } from '@shared/documents'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import type { MemoryReceipt } from '@shared/schema'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
@@ -307,6 +307,25 @@ function syncTreatmentFormatMirror(
   }
 }
 
+// Every project saved before Task 10 has documents with no `revision` field
+// at all — the `version >= 3` branch above passes `rawDocuments` through
+// as-is, so `AuthoredDocumentStateSchema`'s `.default(0)` (which only fires
+// for a genuinely absent key at parse time) never gets a chance to run here;
+// this is a plain object hydrated from JSON, not a Zod parse. Left alone,
+// `revision` stays `undefined`, the first document setter computes
+// `undefined + 1 === NaN`, and `JSON.stringify` turns that into
+// `"revision": null` on save — which the schema's `.default(0)` also cannot
+// repair (it only substitutes for a missing key, never for an explicit
+// `null`), permanently corrupting the saved package. Normalizing here, once,
+// for every surface on every load closes that off regardless of how the
+// document arrived (missing key, `NaN` already, or a `null` from an earlier
+// corrupted save recovering on next migration).
+function withNormalizedRevision<TContent>(
+  doc: AuthoredDocumentState<TContent>,
+): AuthoredDocumentState<TContent> {
+  return Number.isFinite(doc.revision) ? doc : { ...doc, revision: 0 }
+}
+
 export function migrateState(raw: unknown): ProjectState {
   if (!raw || typeof raw !== 'object') return defaultProjectState()
   const obj = raw as Record<string, unknown>
@@ -377,10 +396,10 @@ export function migrateState(raw: unknown): ProjectState {
   }
   const rawMigratedDocuments = (state as Record<string, unknown>).documents as Partial<ProjectDocuments>
   const migratedDocuments: ProjectDocuments = {
-    synopsis: rawMigratedDocuments.synopsis ?? defaults.documents.synopsis,
-    outline: rawMigratedDocuments.outline ?? defaults.documents.outline,
-    treatment: rawMigratedDocuments.treatment ?? defaults.documents.treatment,
-    storyBible: rawMigratedDocuments.storyBible ?? defaults.documents.storyBible,
+    synopsis: withNormalizedRevision(rawMigratedDocuments.synopsis ?? defaults.documents.synopsis),
+    outline: withNormalizedRevision(rawMigratedDocuments.outline ?? defaults.documents.outline),
+    treatment: withNormalizedRevision(rawMigratedDocuments.treatment ?? defaults.documents.treatment),
+    storyBible: withNormalizedRevision(rawMigratedDocuments.storyBible ?? defaults.documents.storyBible),
   }
   const normalizedOutlineContent = normalizeOutlineContent(
     migratedDocuments.outline.content as Partial<ProjectDocuments['outline']['content']>,

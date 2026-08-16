@@ -91,12 +91,52 @@ describe('OpenAIService.generateStructuredDocumentPatch', () => {
     expect(result.proposal.patch.surface).toBe('synopsis')
     expect(result.proposal.patch.baseVersion).toBe(7)
     expect(result.proposal.patch.proposedContent).toEqual(proposedContent)
+    // changedPaths here is server-derived from the actual diff, not the
+    // model's claim above — it happens to agree in this fixture because only
+    // logline.text actually differs (see the dedicated undeclared-change
+    // test below for the case where it does not agree).
     expect(result.proposal.patch.changedPaths).toEqual(['logline.text'])
     // The invented id is dropped from both memoryIds and citations.
     expect(result.proposal.patch.memoryIds).toEqual(['[M-REAL-0001]'])
     expect(result.proposal.citations).toEqual([{ id: '[M-REAL-0001]', workflow: 'writeros', sourceUri: 'writeros://project/1' }])
     expect(result.proposal.rationale).toBe('Tightened the logline per the writer request.')
     expect(provider.generateResponse).toHaveBeenCalledTimes(1)
+  })
+
+  // Review Important 3: changedPaths must never be trusted from the model.
+  // Here the model declares only one changed path but the proposedContent it
+  // actually returned changed two fields — the derived list must show both,
+  // proving an undeclared change can never hide behind a short preview list.
+  it('derives changedPaths from an actual diff, surfacing an undeclared change the model never mentioned', async () => {
+    const currentContent = fixtureSynopsisContent()
+    const proposedContent = fixtureSynopsisContent({
+      logline: { text: 'Revised logline.', protagonist: 'Keeper', goal: 'protect the coast', obstacle: 'the stranger', stakes: 'the town', hook: 'told over one storm' },
+      prose: { opening: 'A silently rewritten opening.', escalation: 'Escalation.', middle: 'Middle.', climax: 'Climax.', resolution: 'Resolution.' },
+    })
+    const raw = JSON.stringify({
+      proposedContent,
+      // The model claims only the logline changed.
+      changedPaths: ['logline.text'],
+      memoryIds: [],
+      canonConflicts: [],
+      rationale: 'Tightened the logline.',
+    })
+    const provider = fakeProvider([raw])
+
+    const result = await service.generateStructuredDocumentPatch({
+      surface: 'synopsis',
+      currentContent,
+      baseVersion: 0,
+      userMessage: 'Please rewrite the synopsis logline.',
+      agentMemory: fakeAgentMemory(),
+      provider: provider as never,
+    })
+
+    expect(result.status).toBe('generated')
+    if (result.status !== 'generated') throw new Error('expected generated')
+    // Both actually-changed fields are present — not just the one the model
+    // declared.
+    expect(result.proposal.patch.changedPaths).toEqual(['logline.text', 'prose.opening'])
   })
 
   it('retries once on invalid JSON, then fails without a usable patch', async () => {
@@ -271,7 +311,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     const response = await postJson(port, {
       projectId: 'test-project',
       personaId: 'sam',
-      message: 'Please rewrite the logline for me.',
+      message: 'Please rewrite the synopsis logline for me.',
       projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
       conversationHistory: [],
     })
@@ -295,7 +335,106 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     expect(call.surface).toBe('synopsis')
     expect(call.baseVersion).toBe(5)
     expect(call.currentContent).toEqual(fixtureSynopsisContent())
-    expect(call.userMessage).toBe('Please rewrite the logline for me.')
+    expect(call.userMessage).toBe('Please rewrite the synopsis logline for me.')
+  })
+
+  // Review Important 4: the folder autosave is debounced (~600ms), so the
+  // package on disk can lag the writer's live browser state. Simulate that
+  // lag directly — disk still says revision 3 (and stale content) while the
+  // client's own in-memory state has already moved to revision 5 with newer
+  // content — and prove the server uses the CLIENT's snapshot, not the
+  // stale disk read, for both baseVersion and currentContent. Without the
+  // fix this would attribute baseVersion 3, and the writer's later Apply
+  // (compared against their real in-memory revision 5) would refuse as
+  // stale even though they made no edits after asking for the rewrite.
+  it('uses the client-supplied documentSnapshot instead of a lagging disk revision (debounce-lag case)', async () => {
+    const { root, state } = await seedFolderProject(3)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch').mockResolvedValue({
+      status: 'generated',
+      proposal: {
+        patch: {
+          kind: 'structured-document',
+          surface: 'synopsis',
+          baseVersion: 5,
+          proposedContent: fixtureSynopsisContent(),
+          changedPaths: [],
+          memoryIds: [],
+        },
+        rationale: 'R',
+        canonConflicts: [],
+        citations: [],
+      },
+    })
+
+    const liveContent = fixtureSynopsisContent({
+      logline: { text: 'A newer, unsaved logline.', protagonist: 'Keeper', goal: 'protect the coast', obstacle: 'the stranger', stakes: 'the town', hook: 'told over one storm' },
+    })
+
+    const port = await startApp()
+    const response = await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Please rewrite the synopsis logline for me.',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      documentSnapshot: { surface: 'synopsis', revision: 5, content: liveContent },
+      conversationHistory: [],
+    })
+
+    expect(response.status).toBe(200)
+    expect(patchSpy).toHaveBeenCalledTimes(1)
+    const call = patchSpy.mock.calls[0][0]
+    // Not 3 (the seeded disk revision) — the client's own in-memory revision.
+    expect(call.baseVersion).toBe(5)
+    // Not the seeded disk content — the client's own in-memory content.
+    expect(call.currentContent).toEqual(liveContent)
+  })
+
+  it('falls back to the disk revision/content when the documentSnapshot names a different surface than the current one', async () => {
+    const { root, state } = await seedFolderProject(5)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch').mockResolvedValue({
+      status: 'generated',
+      proposal: {
+        patch: {
+          kind: 'structured-document',
+          surface: 'synopsis',
+          baseVersion: 5,
+          proposedContent: fixtureSynopsisContent(),
+          changedPaths: [],
+          memoryIds: [],
+        },
+        rationale: 'R',
+        canonConflicts: [],
+        citations: [],
+      },
+    })
+
+    const port = await startApp()
+    await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Please rewrite the synopsis logline for me.',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      // Mismatched surface — must never be trusted for the synopsis request.
+      documentSnapshot: { surface: 'outline', revision: 999, content: { bogus: true } },
+      conversationHistory: [],
+    })
+
+    expect(patchSpy).toHaveBeenCalledTimes(1)
+    const call = patchSpy.mock.calls[0][0]
+    expect(call.baseVersion).toBe(5)
+    expect(call.currentContent).toEqual(fixtureSynopsisContent())
   })
 
   it('(b) a non-intent request yields no patch (and no failure marker) even with a matching folder-backed project and surface', async () => {
@@ -320,6 +459,60 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     expect(response.status).toBe(200)
     expect(response.json.patch).toBeUndefined()
     expect(response.json.patchFailure).toBeUndefined()
+    expect(patchSpy).not.toHaveBeenCalled()
+  })
+
+  // Review Important 2: a trigger verb with nothing to do with a document
+  // must not spend a model call, even while the writer is on a matching
+  // structured surface.
+  it('does not attempt a patch when a trigger verb appears with no document reference at all', async () => {
+    const { root, state } = await seedFolderProject(0)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch')
+
+    const port = await startApp()
+    const response = await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Should I apply to that fellowship?',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      conversationHistory: [],
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json.patch).toBeUndefined()
+    expect(patchSpy).not.toHaveBeenCalled()
+  })
+
+  // Review Important 2's cross-surface case: the writer is on the Synopsis
+  // tab (surfaceAwareness IS 'intake'/'synopsis'), but the message names the
+  // script ("this scene"), not the synopsis and not generic document deixis.
+  it('does not attempt a patch when the message names something other than the current surface', async () => {
+    const { root, state } = await seedFolderProject(0)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch')
+
+    const port = await startApp()
+    const response = await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Please rewrite this scene.',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      conversationHistory: [],
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.json.patch).toBeUndefined()
     expect(patchSpy).not.toHaveBeenCalled()
   })
 
@@ -364,7 +557,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     const response = await postJson(port, {
       projectId: 'test-project',
       personaId: 'sam',
-      message: 'Please rewrite the logline.',
+      message: 'Please rewrite the synopsis logline.',
       projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
       conversationHistory: [],
     })
@@ -391,7 +584,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     const response = await postJson(port, {
       projectId: 'browser-only-project',
       personaId: 'sam',
-      message: 'Please rewrite the logline.',
+      message: 'Please rewrite the synopsis logline.',
       projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
       conversationHistory: [],
     })

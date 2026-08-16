@@ -7,6 +7,7 @@ import {
   type TreatmentDocumentContent,
 } from '@shared/documents'
 import {
+  diffChangedPaths,
   filterMemoryGroundedPatchProposal,
   validateMemoryGroundedPatch,
   type MemoryGroundedPatch,
@@ -29,8 +30,8 @@ function makeSetters() {
   }
 }
 
-function makeSynopsisPatch(overrides: Partial<MemoryGroundedPatch> = {}): MemoryGroundedPatch {
-  const proposedContent: SynopsisDocumentContent = {
+function fixtureSynopsisContent(overrides: Partial<SynopsisDocumentContent> = {}): SynopsisDocumentContent {
+  return {
     header: { title: 'A Quiet Harbor', writer: 'W. Author', format: 'feature', genre: 'drama', targetRuntime: '95m', comps: [] },
     logline: { text: 'A lighthouse keeper confronts a stranger.', protagonist: 'Keeper', goal: 'protect the coast', obstacle: 'the stranger', stakes: 'the town', hook: 'told over one storm' },
     prose: { opening: 'Opening.', escalation: 'Escalation.', middle: 'Middle.', climax: 'Climax.', resolution: 'Resolution.' },
@@ -44,12 +45,16 @@ function makeSynopsisPatch(overrides: Partial<MemoryGroundedPatch> = {}): Memory
       toneMatchesProject: true,
       noUnnecessarySubplot: true,
     },
+    ...overrides,
   }
+}
+
+function makeSynopsisPatch(overrides: Partial<MemoryGroundedPatch> = {}): MemoryGroundedPatch {
   return {
     kind: 'structured-document',
     surface: 'synopsis',
     baseVersion: 0,
-    proposedContent,
+    proposedContent: fixtureSynopsisContent(),
     changedPaths: ['logline.text', 'prose.opening'],
     memoryIds: ['[M-ABCD-1234]'],
     ...overrides,
@@ -57,18 +62,42 @@ function makeSynopsisPatch(overrides: Partial<MemoryGroundedPatch> = {}): Memory
 }
 
 describe('shouldRequestDocumentPatch', () => {
-  it('returns true for fill/rewrite/apply/revise requests', () => {
-    expect(shouldRequestDocumentPatch('Can you fill in the synopsis for me?')).toBe(true)
-    expect(shouldRequestDocumentPatch('Please rewrite the opening paragraph.')).toBe(true)
-    expect(shouldRequestDocumentPatch('re-write this section')).toBe(true)
-    expect(shouldRequestDocumentPatch('Apply the notes from our last session.')).toBe(true)
-    expect(shouldRequestDocumentPatch('Revise the logline to raise the stakes.')).toBe(true)
+  it('returns true when a trigger verb names the current surface', () => {
+    expect(shouldRequestDocumentPatch('Can you fill in the synopsis for me?', 'synopsis')).toBe(true)
+    expect(shouldRequestDocumentPatch('Please rewrite the outline.', 'outline')).toBe(true)
+    expect(shouldRequestDocumentPatch('re-write this treatment', 'treatment')).toBe(true)
+    expect(shouldRequestDocumentPatch('Apply these notes to the story bible.', 'storyBible')).toBe(true)
+    expect(shouldRequestDocumentPatch('Revise the logline in this synopsis to raise the stakes.', 'synopsis')).toBe(true)
+  })
+
+  it('returns true when a trigger verb uses generic this/current-document deixis', () => {
+    expect(shouldRequestDocumentPatch('Please rewrite this document.', 'synopsis')).toBe(true)
+    expect(shouldRequestDocumentPatch('Can you fill in the current document?', 'outline')).toBe(true)
+    expect(shouldRequestDocumentPatch('Apply your notes to this doc.', 'treatment')).toBe(true)
   })
 
   it('returns false for messages that never ask for a fill/rewrite/apply/revise', () => {
-    expect(shouldRequestDocumentPatch('What do you think of this scene?')).toBe(false)
-    expect(shouldRequestDocumentPatch('Tell me about the protagonist.')).toBe(false)
-    expect(shouldRequestDocumentPatch('')).toBe(false)
+    expect(shouldRequestDocumentPatch('What do you think of this scene?', 'synopsis')).toBe(false)
+    expect(shouldRequestDocumentPatch('Tell me about the protagonist.', 'synopsis')).toBe(false)
+    expect(shouldRequestDocumentPatch('', 'synopsis')).toBe(false)
+  })
+
+  // Review Important 2: the verb alone is not enough. Both false-positive
+  // cases the review named, reproduced directly.
+  it('returns false when the verb is present but the message has nothing to do with a document', () => {
+    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'synopsis')).toBe(false)
+    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'outline')).toBe(false)
+  })
+
+  it('returns false when the verb targets a different surface than the current one (cross-surface)', () => {
+    // "Please rewrite this scene" on the Synopsis tab must not patch the
+    // synopsis — "scene" names the script, not the current structured
+    // surface, and is not document deixis.
+    expect(shouldRequestDocumentPatch('Please rewrite this scene.', 'synopsis')).toBe(false)
+    // Naming a DIFFERENT structured surface than the current one must also
+    // not trigger — the writer is on Synopsis but asked about the outline.
+    expect(shouldRequestDocumentPatch('Please rewrite the outline.', 'synopsis')).toBe(false)
+    expect(shouldRequestDocumentPatch('Revise the treatment.', 'outline')).toBe(false)
   })
 })
 
@@ -144,6 +173,42 @@ describe('validateMemoryGroundedPatch', () => {
     const result = validateMemoryGroundedPatch(makeSynopsisPatch({ proposedContent: { not: 'a synopsis' } }))
     expect(result.ok).toBe(false)
     expect(result.ok === false && result.error).toBe('invalid-content')
+  })
+})
+
+describe('diffChangedPaths', () => {
+  it('returns an empty list when nothing changed', () => {
+    const content = fixtureSynopsisContent()
+    expect(diffChangedPaths(content, fixtureSynopsisContent())).toEqual([])
+  })
+
+  it('reports a single changed leaf field with a dot-notation path', () => {
+    const before = fixtureSynopsisContent()
+    const after = fixtureSynopsisContent({
+      logline: { ...before.logline, text: 'A new logline.' },
+    })
+    expect(diffChangedPaths(before, after)).toEqual(['logline.text'])
+  })
+
+  it('reports every changed field, sorted, when more than one changes', () => {
+    const before = fixtureSynopsisContent()
+    const after = fixtureSynopsisContent({
+      logline: { ...before.logline, text: 'A new logline.' },
+      prose: { ...before.prose, opening: 'A new opening.' },
+    })
+    expect(diffChangedPaths(before, after)).toEqual(['logline.text', 'prose.opening'])
+  })
+
+  it('reports array-item changes with a bracket-index path', () => {
+    const before = { characters: [{ id: 'c1', arc: 'starts distrustful' }] }
+    const after = { characters: [{ id: 'c1', arc: 'learns to trust the team' }] }
+    expect(diffChangedPaths(before, after)).toEqual(['characters[0].arc'])
+  })
+
+  it('reports an added array item as its own changed path', () => {
+    const before = { characters: [{ id: 'c1', arc: 'a' }] }
+    const after = { characters: [{ id: 'c1', arc: 'a' }, { id: 'c2', arc: 'b' }] }
+    expect(diffChangedPaths(before, after)).toEqual(['characters[1]'])
   })
 })
 

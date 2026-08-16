@@ -19,10 +19,12 @@ import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
 import {
+  STRUCTURED_DOCUMENT_SURFACES,
   shouldRequestDocumentPatch,
   structuredDocumentSurfaceFromSurfaceId,
   type MemoryGroundedPatchAttempt,
   type MemoryGroundedPatchProposal,
+  type StructuredDocumentSurface,
 } from "@shared/memoryPatches";
 import type { SurfaceAwareness } from "@shared/surfaceAwareness";
 import {
@@ -416,6 +418,18 @@ const wpChatSchema = z.object({
   // must never break chat, so it degrades to undefined (no conditioning) instead of
   // failing the parse. Mirrors the `surface` safety rule.
   voiceProfile: voiceProfileDocumentSchema.optional().catch(undefined),
+  // Task 10 (review Important 4): the writer's own in-memory revision/content
+  // for whichever structured document they are currently on. A
+  // structured-document patch's baseVersion is built from this, not the
+  // folder-backed package on disk — the debounced autosave can lag the
+  // browser by up to its ~600ms debounce, which made every Apply refuse as
+  // stale even when the writer made no edits after asking for the rewrite.
+  // Malformed/absent degrades to undefined, same as voiceProfile/surface.
+  documentSnapshot: z.object({
+    surface: z.enum(STRUCTURED_DOCUMENT_SURFACES),
+    revision: z.number().int().nonnegative(),
+    content: z.unknown(),
+  }).optional().catch(undefined),
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
@@ -913,18 +927,22 @@ async function attemptStructuredDocumentPatch(input: {
   projectId: string;
   message: string;
   surfaceAwareness: SurfaceAwareness | undefined;
+  documentSnapshot?: { surface: StructuredDocumentSurface; revision: number; content: unknown };
   memory: AgentMemoryContext;
   projectLibraryStore: ProjectLibraryStore | null;
 }): Promise<MemoryGroundedPatchAttempt> {
   if (!input.projectLibraryStore) return { status: 'not-requested' };
-  // Plan ruling: only on an explicit fill/rewrite/apply/revise ask, never for
-  // script (surfaceAwareness only models the four structured-document
-  // surfaces — script always reports { kind: 'none' }, see
-  // shared/surfaceAwareness.ts), and never unprompted.
-  if (!shouldRequestDocumentPatch(input.message)) return { status: 'not-requested' };
+  // Plan ruling: only on an explicit fill/rewrite/apply/revise ask that names
+  // (or deictically means) the CURRENT structured surface — never for script
+  // (surfaceAwareness only models the four structured-document surfaces;
+  // script always reports { kind: 'none' }, see shared/surfaceAwareness.ts),
+  // and never unprompted. Surface must be resolved first: shouldRequestDocumentPatch
+  // needs to know which surface is "current" to judge whether the message
+  // actually refers to it.
   if (input.surfaceAwareness?.kind !== 'intake') return { status: 'not-requested' };
   const surface = structuredDocumentSurfaceFromSurfaceId(input.surfaceAwareness.surface);
   if (!surface) return { status: 'not-requested' };
+  if (!shouldRequestDocumentPatch(input.message, surface)) return { status: 'not-requested' };
 
   let read;
   try {
@@ -937,7 +955,18 @@ async function attemptStructuredDocumentPatch(input: {
   }
   if (!read.ok) return { status: 'not-requested' };
 
-  const document = read.project.state.documents[surface];
+  // Review Important 4: prefer the writer's own in-memory revision/content
+  // for this exact surface over the folder-backed package on disk. The
+  // package is written by a debounced autosave (~600ms) and so can lag the
+  // browser by a beat — reading it here would attribute baseVersion to a
+  // moment already behind the writer's live document, making the apply-time
+  // staleness check in client/src/lib/memoryPatch.ts fail even when the
+  // writer made no edits after asking for the rewrite. Only trust a snapshot
+  // whose own declared surface matches the one we just resolved; otherwise
+  // fall back to the disk read (older client, or a mismatched snapshot).
+  const document = input.documentSnapshot?.surface === surface
+    ? { content: input.documentSnapshot.content, revision: input.documentSnapshot.revision }
+    : read.project.state.documents[surface];
   return openaiService.generateStructuredDocumentPatch({
     surface,
     currentContent: document.content,
@@ -1164,6 +1193,11 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
           projectId: data.projectId,
           message: data.message,
           surfaceAwareness: data.projectContext.surface,
+          // Zod infers `content` as optional here (z.unknown() accepts a
+          // missing key, same quirk documented in shared/memoryPatches.ts);
+          // the object is either absent or has all three keys from the
+          // request body, so this cast is safe.
+          documentSnapshot: data.documentSnapshot as { surface: StructuredDocumentSurface; revision: number; content: unknown } | undefined,
           memory,
           projectLibraryStore,
         }),

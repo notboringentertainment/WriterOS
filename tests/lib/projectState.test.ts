@@ -9,7 +9,7 @@ import {
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import { legacyToDocuments } from '../../client/src/lib/documentMigration'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
-import { createEmptySeriesContent } from '../../shared/documents'
+import { createEmptySeriesContent, ProjectDocumentsSchema } from '../../shared/documents'
 
 describe('defaultProjectState', () => {
   it('has schemaVersion equal to CURRENT_SCHEMA_VERSION', () => {
@@ -387,6 +387,67 @@ describe('migrateState — legacy states hydrate documents', () => {
     expect(state.documents.outline.content).toEqual(fromLegacy.outline.content)
     expect(state.documents.storyBible.content).toEqual(fromLegacy.storyBible.content)
     expect(state.documents.treatment.content).toEqual(fromLegacy.treatment.content)
+  })
+
+  // Regression (review Critical 1): every project saved before Task 10 has
+  // `documents.*` with no `revision` key at all. The version>=3 branch of
+  // migrateState passes those documents through as a plain object (never a
+  // Zod parse), so nothing previously defaulted the missing field, and the
+  // first document setter's `revision + 1` computed `NaN` — which
+  // JSON.stringify turns into `"revision": null` on save, a value
+  // AuthoredDocumentStateSchema's `.default(0)` cannot repair (it only
+  // substitutes for an absent key, never for an explicit null), permanently
+  // corrupting the saved package.
+  it('normalizes a missing revision to 0 for all four documents on load (pre-Task-10 saved projects)', () => {
+    const state = defaultProjectState() as any
+    delete state.documents.synopsis.revision
+    delete state.documents.outline.revision
+    delete state.documents.treatment.revision
+    delete state.documents.storyBible.revision
+
+    const migrated = migrateState(state)
+
+    expect(migrated.documents.synopsis.revision).toBe(0)
+    expect(migrated.documents.outline.revision).toBe(0)
+    expect(migrated.documents.treatment.revision).toBe(0)
+    expect(migrated.documents.storyBible.revision).toBe(0)
+  })
+
+  it('normalizes an already-corrupted null or NaN revision back to 0 instead of perpetuating it', () => {
+    const state = defaultProjectState() as any
+    state.documents.synopsis.revision = null
+    state.documents.outline.revision = NaN
+
+    const migrated = migrateState(state)
+
+    expect(migrated.documents.synopsis.revision).toBe(0)
+    expect(migrated.documents.outline.revision).toBe(0)
+  })
+
+  it('a pre-revision project can be loaded, edited, serialized, and re-parsed by ProjectDocumentsSchema cleanly', () => {
+    const state = defaultProjectState() as any
+    delete state.documents.synopsis.revision
+
+    const migrated = migrateState(state)
+
+    // Simulate exactly what a document setter does (useProjectState.ts:
+    // `revision: s.documents.synopsis.revision + 1`).
+    const edited = {
+      ...migrated.documents,
+      synopsis: { ...migrated.documents.synopsis, revision: migrated.documents.synopsis.revision + 1 },
+    }
+    expect(edited.synopsis.revision).toBe(1)
+    expect(Number.isFinite(edited.synopsis.revision)).toBe(true)
+
+    // Round-trip through JSON — what both localStorage.setItem and the
+    // folder package writer do — and re-validate with the real schema. This
+    // is the exact chain the review proved corrupts a package: without the
+    // fix, `edited.synopsis.revision` would be NaN here, JSON would drop it
+    // to null, and this parse would fail the way
+    // readWriterOSProjectPackage's `invalid-document` rejection does.
+    const roundTripped = JSON.parse(JSON.stringify(edited))
+    const parsed = ProjectDocumentsSchema.safeParse(roundTripped)
+    expect(parsed.success).toBe(true)
   })
 })
 

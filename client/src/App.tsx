@@ -20,7 +20,7 @@ import {
   shouldRequestDocumentPatch,
   surfaceForActiveTab,
 } from './lib/memoryPatch'
-import type { MemoryGroundedPatchProposal } from '@shared/memoryPatches'
+import type { MemoryGroundedPatchProposal, StructuredDocumentSurface } from '@shared/memoryPatches'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -100,6 +100,12 @@ async function postWPChat(body: {
   projectContext: ReturnType<typeof buildProjectContext>
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
   voiceProfile?: VoiceProfileDocument
+  // Review Important 4: the writer's own in-memory revision/content for the
+  // surface they are currently on, sent so a structured-document patch's
+  // baseVersion reflects what the browser actually has right now — not a
+  // debounced folder autosave that can lag behind it, which made every Apply
+  // refuse as stale with advice ("Refresh") that could never fix it.
+  documentSnapshot?: { surface: StructuredDocumentSurface; revision: number; content: unknown }
 }): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt; patchProposal?: MemoryGroundedPatchProposal }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
@@ -845,18 +851,31 @@ export default function App() {
         storyBibleSection: shellState.storyBibleSection,
         surface,
       })
-      const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const currentSurface = surfaceForActiveTab(shellState.activeTab)
+      // Review Important 4: captured fresh, right before the request, so the
+      // server can use the browser's own current revision/content as
+      // baseVersion instead of a debounced folder autosave that can lag
+      // behind it.
+      const documentSnapshot = currentSurface
+        ? {
+            surface: currentSurface,
+            revision: project.state.documents[currentSurface].revision,
+            content: project.state.documents[currentSurface].content,
+          }
+        : undefined
+      const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile(), documentSnapshot })
       if (!requestIsCurrent()) return
       const assistantMessageId = crypto.randomUUID()
       project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt, id: assistantMessageId }))
       // Plan ruling: never show a patch the writer did not, in effect, ask
       // for. Whatever the backend decided to send back, only surface it when
-      // the message that produced it was itself a fill/rewrite/apply/revise
-      // request AND the patch targets the surface the writer is looking at.
+      // the message that produced it named/meant the surface the writer is
+      // looking at AND the patch targets that same surface.
       if (
         response.patchProposal
-        && shouldRequestDocumentPatch(messageToSend)
-        && surfaceForActiveTab(shellState.activeTab) === response.patchProposal.patch.surface
+        && currentSurface
+        && shouldRequestDocumentPatch(messageToSend, currentSurface)
+        && currentSurface === response.patchProposal.patch.surface
       ) {
         setActivePatchProposal({ proposal: response.patchProposal, messageId: assistantMessageId, mode: 'previewing' })
         setPatchApplyError(null)
