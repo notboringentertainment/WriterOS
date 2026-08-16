@@ -511,4 +511,36 @@ describe('MemorySurface', () => {
 
     await waitFor(() => expect(screen.getByTestId('banner-count')).toHaveTextContent('0'))
   })
+
+  it('renders views from a successful snapshot even when the analysis-queue fetch fails, with a section-level retry', async () => {
+    let queueCallCount = 0
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/project-library/bootstrap') return jsonResponse(200, { enabled: true, sessionToken: 'test-session-token' })
+      if (method === 'GET' && url.endsWith('/snapshot')) return jsonResponse(200, { snapshot: baseSnapshot() })
+      if (method === 'GET' && url.endsWith('/analysis-queue')) {
+        queueCallCount += 1
+        if (queueCallCount === 1) return jsonResponse(500, { error: 'analysis-queue-unavailable' })
+        return jsonResponse(200, { items: [] })
+      }
+      return jsonResponse(404, { error: 'not-found', message: 'unhandled test route' })
+    })
+
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={fetchImpl} />)
+
+    // The snapshot succeeded, so views render from it rather than being
+    // blanked by the generic full-surface error.
+    expect(await screen.findByText(activeCanon.claim)).toBeInTheDocument()
+    expect(screen.queryByText('WriterOS could not load project memory.')).not.toBeInTheDocument()
+
+    // The pending-analysis section carries its own inline error instead of
+    // (or in addition to) the generic one, with its own retry affordance.
+    fireEvent.click(screen.getByRole('tab', { name: 'Review' }))
+    expect(await screen.findByText('WriterOS could not load pending analysis.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading analysis' }))
+    await waitFor(() => expect(queueCallCount).toBe(2))
+    await waitFor(() => expect(screen.queryByText('WriterOS could not load pending analysis.')).not.toBeInTheDocument())
+  })
 })

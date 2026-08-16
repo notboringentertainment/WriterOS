@@ -173,13 +173,33 @@ interface PendingAnalysisSectionProps {
   items: MemoryAnalysisQueueEntry[]
   pendingId: string | null
   onRetry: (itemId: string) => void
+  /** Set when the analysis-queue fetch itself failed — isolated from the
+   * rest of the surface (Task: analysis-queue failure isolation), so this
+   * section carries its own notice and retry rather than the whole surface
+   * going blank. */
+  queueError?: string | null
+  queueRetrying?: boolean
+  onRetryQueue?: () => void
 }
 
-function PendingAnalysisSection({ items, pendingId, onRetry }: PendingAnalysisSectionProps) {
-  if (items.length === 0) return null
+function PendingAnalysisSection({ items, pendingId, onRetry, queueError, queueRetrying, onRetryQueue }: PendingAnalysisSectionProps) {
+  if (items.length === 0 && !queueError) return null
   return (
     <section aria-label="WriterOS analysis" style={styles.analysisSection}>
       <h3 style={styles.sectionTitle}>WriterOS analysis</h3>
+      {queueError && (
+        <div style={styles.analysisRow}>
+          <div style={styles.analysisError}>{queueError}</div>
+          <button
+            type="button"
+            disabled={queueRetrying}
+            style={styles.actionButton}
+            onClick={onRetryQueue}
+          >
+            Retry loading analysis
+          </button>
+        </div>
+      )}
       {items.map(item => (
         <div key={item.id} style={styles.analysisRow}>
           <div style={styles.metaLine}>{item.surface} · {item.status} · {item.sourceUri}</div>
@@ -204,6 +224,7 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
   const [view, setView] = useState<MemoryView>('canon')
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [retryingQueue, setRetryingQueue] = useState(false)
 
   const snapshot = memory.snapshot
   const allRecords = snapshot?.records ?? []
@@ -282,6 +303,12 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
     if (!result.ok) setActionError(result.message)
   }
 
+  async function handleRetryAnalysisQueue() {
+    setRetryingQueue(true)
+    await memory.refreshAnalysisQueue()
+    setRetryingQueue(false)
+  }
+
   return (
     <div style={styles.root}>
       <header style={styles.header}>
@@ -338,6 +365,9 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
                   items={memory.analysisQueue}
                   pendingId={pendingActionId}
                   onRetry={itemId => void handleRetryAnalysis(itemId)}
+                  queueError={memory.analysisQueueError}
+                  queueRetrying={retryingQueue}
+                  onRetryQueue={() => void handleRetryAnalysisQueue()}
                 />
               )}
 

@@ -40,10 +40,22 @@ export interface UseProjectMemoryResult {
   browserOnly: boolean
   browserOnlyMessage: string
   loading: boolean
+  /** Set only for a genuine snapshot failure — never for an analysis-queue
+   * failure alone, so a transient queue hiccup never blanks the rest of the
+   * surface (records/views render from a successfully loaded snapshot
+   * regardless of queue state). */
   error: string | null
   snapshot: ProjectMemorySnapshot | undefined
   analysisQueue: MemoryAnalysisQueueEntry[]
+  /** Set when the analysis-queue fetch itself failed (isolated from
+   * `error`/`snapshot`) so the pending-analysis section can show its own
+   * inline notice and section-level retry without disturbing the rest of
+   * the surface. */
+  analysisQueueError: string | null
   refresh: () => Promise<void>
+  /** Re-fetches only the analysis queue — the section-level retry for
+   * `analysisQueueError`, without re-fetching (or disturbing) the snapshot. */
+  refreshAnalysisQueue: () => Promise<void>
   runAction: (action: ProjectMemoryAction) => Promise<ProjectMemoryActionResult>
   retryAnalysis: (itemId: string) => Promise<RetryAnalysisResult>
 }
@@ -93,6 +105,7 @@ export function useProjectMemory(
   const [analysisQueue, setAnalysisQueue] = useState<MemoryAnalysisQueueEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [analysisQueueError, setAnalysisQueueError] = useState<string | null>(null)
   const sessionTokenRef = useRef<Promise<string | null> | null>(null)
 
   const getSessionToken = useCallback(async (): Promise<string | null> => {
@@ -122,11 +135,27 @@ export function useProjectMemory(
     return Array.isArray(body.items) ? body.items as MemoryAnalysisQueueEntry[] : []
   }, [fetchImpl, memoryPath])
 
+  // Never throws — a queue failure is reported through the return value so
+  // it can never reject the `Promise.all` in `load()` alongside the
+  // snapshot fetch (that coupling used to mean one transient queue failure
+  // discarded a perfectly good snapshot and blanked the whole surface).
+  const fetchAnalysisQueueSafely = useCallback(async (
+    id: string,
+    token: string,
+  ): Promise<{ ok: true; queue: MemoryAnalysisQueueEntry[] } | { ok: false; message: string }> => {
+    try {
+      return { ok: true, queue: await fetchAnalysisQueue(id, token) }
+    } catch (caught) {
+      return { ok: false, message: caught instanceof Error ? caught.message : 'WriterOS could not load pending analysis.' }
+    }
+  }, [fetchAnalysisQueue])
+
   const load = useCallback(async () => {
     if (!projectId) return
     const requestIsCurrent = beginRequest()
     setLoading(true)
     setError(null)
+    setAnalysisQueueError(null)
     try {
       const token = await getSessionToken()
       if (!requestIsCurrent()) return
@@ -135,26 +164,57 @@ export function useProjectMemory(
         return
       }
       const api = createProjectMemoryApi(token, fetchImpl)
-      const [nextSnapshot, nextQueue] = await Promise.all([
+      // Independent fetches: a snapshot failure still throws (caught below,
+      // as before — that is a genuine full-surface failure), but a queue
+      // failure never does, so it can never take the snapshot down with it.
+      const [nextSnapshot, queueResult] = await Promise.all([
         api.snapshot(projectId),
-        fetchAnalysisQueue(projectId, token),
+        fetchAnalysisQueueSafely(projectId, token),
       ])
       if (!requestIsCurrent()) return
       setSnapshot(nextSnapshot)
-      setAnalysisQueue(nextQueue)
+      if (queueResult.ok) {
+        setAnalysisQueue(queueResult.queue)
+        setAnalysisQueueError(null)
+      } else {
+        // Leave any previously loaded queue items in place rather than
+        // wiping them — this is a fetch hiccup, not evidence the queue is
+        // now empty.
+        setAnalysisQueueError(queueResult.message)
+      }
     } catch (caught) {
       if (!requestIsCurrent()) return
       setError(caught instanceof ProjectMemoryApiError ? caught.message : 'WriterOS could not load project memory.')
     } finally {
       if (requestIsCurrent()) setLoading(false)
     }
-  }, [projectId, beginRequest, getSessionToken, fetchImpl, fetchAnalysisQueue])
+  }, [projectId, beginRequest, getSessionToken, fetchImpl, fetchAnalysisQueueSafely])
+
+  // The pending-analysis section's own retry affordance for
+  // `analysisQueueError` — refetches only the queue, leaving the snapshot
+  // (and the rest of the surface) untouched.
+  const refreshAnalysisQueue = useCallback(async () => {
+    if (!projectId) return
+    const token = await getSessionToken()
+    if (!token) {
+      setAnalysisQueueError(SESSION_UNAVAILABLE_MESSAGE)
+      return
+    }
+    const result = await fetchAnalysisQueueSafely(projectId, token)
+    if (result.ok) {
+      setAnalysisQueue(result.queue)
+      setAnalysisQueueError(null)
+    } else {
+      setAnalysisQueueError(result.message)
+    }
+  }, [projectId, getSessionToken, fetchAnalysisQueueSafely])
 
   useEffect(() => {
     sessionTokenRef.current = null
     setSnapshot(undefined)
     setAnalysisQueue([])
     setError(null)
+    setAnalysisQueueError(null)
     setLoading(false)
     if (projectId) void load()
     // Reset/reload only on scope change, mirroring OutlineTab/SynopsisTab's
@@ -221,7 +281,9 @@ export function useProjectMemory(
     error,
     snapshot,
     analysisQueue,
+    analysisQueueError,
     refresh: load,
+    refreshAnalysisQueue,
     runAction,
     retryAnalysis,
   }
