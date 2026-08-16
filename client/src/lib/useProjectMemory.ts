@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ProjectMemoryAction, ProjectMemorySnapshot } from '@shared/projectMemory'
 import { createProjectMemoryApi, ProjectMemoryApiError } from './projectMemoryApi'
-import { useBoundProjectScopeKey, useProjectRequestGeneration } from './useProjectRequestGeneration'
+import { useBoundProjectScopeKey, useProjectRequestGeneration, useProjectScopeCurrent } from './useProjectRequestGeneration'
 
 export const BROWSER_ONLY_MEMORY_MESSAGE = 'Shared project memory requires project folder storage.'
 
@@ -101,6 +101,7 @@ export function useProjectMemory(
 ): UseProjectMemoryResult {
   const effectiveScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginRequest = useProjectRequestGeneration(effectiveScopeKey)
+  const scopeIsCurrent = useProjectScopeCurrent(effectiveScopeKey)
   const [snapshot, setSnapshot] = useState<ProjectMemorySnapshot>()
   const [analysisQueue, setAnalysisQueue] = useState<MemoryAnalysisQueueEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -196,18 +197,23 @@ export function useProjectMemory(
   const refreshAnalysisQueue = useCallback(async () => {
     if (!projectId) return
     const token = await getSessionToken()
+    // Scope-guarded (not generation-guarded, which would invalidate a
+    // concurrent load()): a retry result that lands after a project switch
+    // must never write the old project's queue state into the new scope.
+    if (!scopeIsCurrent()) return
     if (!token) {
       setAnalysisQueueError(SESSION_UNAVAILABLE_MESSAGE)
       return
     }
     const result = await fetchAnalysisQueueSafely(projectId, token)
+    if (!scopeIsCurrent()) return
     if (result.ok) {
       setAnalysisQueue(result.queue)
       setAnalysisQueueError(null)
     } else {
       setAnalysisQueueError(result.message)
     }
-  }, [projectId, getSessionToken, fetchAnalysisQueueSafely])
+  }, [projectId, getSessionToken, fetchAnalysisQueueSafely, scopeIsCurrent])
 
   useEffect(() => {
     sessionTokenRef.current = null

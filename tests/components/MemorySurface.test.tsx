@@ -514,11 +514,15 @@ describe('MemorySurface', () => {
 
   it('renders views from a successful snapshot even when the analysis-queue fetch fails, with a section-level retry', async () => {
     let queueCallCount = 0
+    let snapshotCallCount = 0
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
       if (url === '/api/project-library/bootstrap') return jsonResponse(200, { enabled: true, sessionToken: 'test-session-token' })
-      if (method === 'GET' && url.endsWith('/snapshot')) return jsonResponse(200, { snapshot: baseSnapshot() })
+      if (method === 'GET' && url.endsWith('/snapshot')) {
+        snapshotCallCount += 1
+        return jsonResponse(200, { snapshot: baseSnapshot() })
+      }
       if (method === 'GET' && url.endsWith('/analysis-queue')) {
         queueCallCount += 1
         if (queueCallCount === 1) return jsonResponse(500, { error: 'analysis-queue-unavailable' })
@@ -542,5 +546,69 @@ describe('MemorySurface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading analysis' }))
     await waitFor(() => expect(queueCallCount).toBe(2))
     await waitFor(() => expect(screen.queryByText('WriterOS could not load pending analysis.')).not.toBeInTheDocument())
+    // The section-level retry is queue-only: it must not have re-fetched the
+    // snapshot (a full reload here would pass the assertions above too).
+    expect(snapshotCallCount).toBe(1)
+  })
+
+  it('still shows the full-surface error (not record content) for a genuine snapshot failure', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/project-library/bootstrap') return jsonResponse(200, { enabled: true, sessionToken: 'test-session-token' })
+      if (method === 'GET' && url.endsWith('/snapshot')) return jsonResponse(500, { error: 'snapshot-unavailable' })
+      if (method === 'GET' && url.endsWith('/analysis-queue')) return jsonResponse(200, { items: [] })
+      return jsonResponse(404, { error: 'not-found', message: 'unhandled test route' })
+    })
+
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={fetchImpl} />)
+
+    expect(await screen.findByText('WriterOS could not access project memory.')).toBeInTheDocument()
+    expect(screen.queryByText(activeCanon.claim)).not.toBeInTheDocument()
+  })
+
+  it('ignores a section-level retry result that lands after switching projects', async () => {
+    let releaseRetry: (() => void) | undefined
+    const retryGate = new Promise<void>(resolve => { releaseRetry = resolve })
+    let projectOneQueueCalls = 0
+    let retryResolved = false
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/project-library/bootstrap') return jsonResponse(200, { enabled: true, sessionToken: 'test-session-token' })
+      if (method === 'GET' && url.endsWith('/snapshot')) return jsonResponse(200, { snapshot: baseSnapshot() })
+      if (method === 'GET' && url === '/api/project-memory/story-project-1/analysis-queue') {
+        projectOneQueueCalls += 1
+        // Initial load fails so the section retry affordance appears; the
+        // retry itself is held open until after the project switch.
+        if (projectOneQueueCalls === 1) return jsonResponse(500, { error: 'analysis-queue-unavailable' })
+        await retryGate
+        retryResolved = true
+        return jsonResponse(500, { error: 'analysis-queue-unavailable' })
+      }
+      if (method === 'GET' && url === '/api/project-memory/story-project-2/analysis-queue') {
+        return jsonResponse(200, { items: [] })
+      }
+      return jsonResponse(404, { error: 'not-found', message: 'unhandled test route' })
+    })
+
+    const view = render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={fetchImpl} />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
+    expect(await screen.findByText('WriterOS could not load pending analysis.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading analysis' }))
+    await waitFor(() => expect(projectOneQueueCalls).toBe(2))
+
+    // Switch projects while the old project's retry is still in flight, and
+    // let the new project settle with a clean queue.
+    view.rerender(<Harness projectId="story-project-2" onExit={vi.fn()} fetchImpl={fetchImpl} />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
+    await waitFor(() => expect(screen.queryByText('WriterOS could not load pending analysis.')).not.toBeInTheDocument())
+
+    // The old project's retry now completes with an error — it must not
+    // bleed into the new project's surface.
+    releaseRetry?.()
+    await waitFor(() => expect(retryResolved).toBe(true))
+    expect(screen.queryByText('WriterOS could not load pending analysis.')).not.toBeInTheDocument()
   })
 })
