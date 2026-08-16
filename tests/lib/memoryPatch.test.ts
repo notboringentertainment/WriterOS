@@ -12,6 +12,7 @@ import {
   validateMemoryGroundedPatch,
   type MemoryGroundedPatch,
   type MemoryGroundedPatchProposal,
+  type StructuredDocumentSurface,
 } from '@shared/memoryPatches'
 import type { MemorySource } from '@shared/projectMemory'
 import {
@@ -81,44 +82,67 @@ describe('shouldRequestDocumentPatch', () => {
     expect(shouldRequestDocumentPatch('Tell me about the protagonist.', 'synopsis')).toBe(false)
     expect(shouldRequestDocumentPatch('', 'synopsis')).toBe(false)
   })
+})
 
-  // Review Important 2: the verb alone is not enough. Both false-positive
-  // cases the review named, reproduced directly.
-  it('returns false when the verb is present but the message has nothing to do with a document', () => {
-    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'synopsis')).toBe(false)
-    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'outline')).toBe(false)
-  })
+// Review round 3: two prior incremental patches to the deixis handling each
+// closed one hole and opened another (round 1 over-blocked "rewrite this";
+// round 2 under-blocked "apply to it" and reopened the cross-surface hole
+// for bare deixis — "apply this note to the outline" on Synopsis passed).
+// Replaced with one bounded decision contract instead of a third patch:
+//
+//   1. Naming a DIFFERENT structured surface anywhere -> false, regardless
+//      of deixis (checked first, overrides everything below).
+//   2. Naming the CURRENT surface, or "this document"/"this doc" -> true.
+//   3. A bare "this"/"it" as the verb's own direct object (immediately
+//      after the verb, optionally with just the particle "in"/"up" after,
+//      nothing else but trailing punctuation) -> true.
+//   4. Everything else -> false.
+//
+// This is the exhaustive table the review specified as the minimum
+// required coverage, asserted verbatim.
+describe('shouldRequestDocumentPatch — bounded decision contract (review round 3)', () => {
+  const cases: Array<[message: string, surface: StructuredDocumentSurface, expected: boolean]> = [
+    // Rule 3: bare this/it as the verb's direct object.
+    ['rewrite this', 'synopsis', true],
+    ['revise it', 'treatment', true],
+    ['fill this in', 'outline', true],
+    // No trigger verb at all — "clean" is not in the verb set. Pins the verb
+    // boundary so rule 3's particle handling ("...in", "...up") is never
+    // mistaken for a reason "clean it up" should pass.
+    ['clean it up', 'synopsis', false],
+    // Verb present, but no "this"/"it" anywhere, and no surface named — the
+    // original false-positive.
+    ['Should I apply to that fellowship?', 'synopsis', false],
+    ['Should I apply to that fellowship?', 'outline', false],
+    // Verb present and "it" appears, but "it" is preceded by a preposition
+    // ("to it") rather than being the verb's direct object — the pronoun
+    // form of the same false-positive round 2 missed.
+    ['Should I apply to it?', 'synopsis', false],
+    ['Should I apply to it?', 'treatment', false],
+    // Bare "this" immediately follows the verb, but a different structured
+    // surface is named later in the sentence — rule 1 overrides rule 3
+    // regardless of the deixis. Round 2's reopened cross-surface hole.
+    ['apply this note to the outline', 'synopsis', false],
+    ['Please revise this for the treatment', 'synopsis', false],
+    // Bare "this" is immediately followed by another noun ("scene") — not
+    // a bare direct object, and "scene" also never names a structured
+    // surface, so this fails rule 3 on its own (not merely rule 1).
+    ['rewrite this scene', 'synopsis', false],
+    // Naming a different structured surface, no deixis involved at all.
+    ['Please rewrite the outline.', 'synopsis', false],
+    // Naming the CURRENT surface -> true (rule 2), same message that failed
+    // above only because the surface differed there.
+    ['rewrite the synopsis', 'synopsis', true],
+    // Generic "this document" deixis (rule 2) triggers for every structured
+    // surface, since no specific surface name is named at all.
+    ['apply the suggestion to this document', 'synopsis', true],
+    ['apply the suggestion to this document', 'outline', true],
+    ['apply the suggestion to this document', 'treatment', true],
+    ['apply the suggestion to this document', 'storyBible', true],
+  ]
 
-  it('returns false when the verb targets a different surface than the current one (cross-surface)', () => {
-    // "Please rewrite this scene" on the Synopsis tab must not patch the
-    // synopsis — "scene" names the script, not the current structured
-    // surface, and is not document deixis.
-    expect(shouldRequestDocumentPatch('Please rewrite this scene.', 'synopsis')).toBe(false)
-    // Naming a DIFFERENT structured surface than the current one must also
-    // not trigger — the writer is on Synopsis but asked about the outline.
-    expect(shouldRequestDocumentPatch('Please rewrite the outline.', 'synopsis')).toBe(false)
-    expect(shouldRequestDocumentPatch('Revise the treatment.', 'outline')).toBe(false)
-  })
-
-  // Review round 2 (Important, upgraded): requiring the literal word
-  // "document"/"doc" over-blocked the plan's primary interaction — typing
-  // "rewrite this" or "fill this in" while looking at the surface IS the
-  // ask the plan describes. Bare "this"/"it" now counts too, as long as it
-  // is not immediately followed by a noun naming something else.
-  it('returns true for a trigger verb with a bare this/it object naming nothing else', () => {
-    expect(shouldRequestDocumentPatch('rewrite this', 'synopsis')).toBe(true)
-    expect(shouldRequestDocumentPatch('fill this in', 'outline')).toBe(true)
-    expect(shouldRequestDocumentPatch('Please revise it.', 'treatment')).toBe(true)
-    expect(shouldRequestDocumentPatch('Can you apply that fix to it?', 'storyBible')).toBe(true)
-  })
-
-  it('keeps the false-positive case unchanged: no "this"/"it" means no bare deixis', () => {
-    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'synopsis')).toBe(false)
-  })
-
-  it('keeps the cross-surface case unchanged: "this scene" is not bare deixis to the document', () => {
-    expect(shouldRequestDocumentPatch('rewrite this scene', 'synopsis')).toBe(false)
-    expect(shouldRequestDocumentPatch('fill this scene in', 'outline')).toBe(false)
+  it.each(cases)('shouldRequestDocumentPatch(%j, %j) -> %s', (message, surface, expected) => {
+    expect(shouldRequestDocumentPatch(message, surface)).toBe(expected)
   })
 })
 

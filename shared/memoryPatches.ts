@@ -31,13 +31,26 @@ export type StructuredDocumentSurface = (typeof STRUCTURED_DOCUMENT_SURFACES)[nu
 // client (deciding whether to trust/display one that came back) enforce the
 // identical rule rather than two regexes drifting apart.
 //
-// The verb alone is not enough (review Important 2): "Should I apply to that
-// fellowship?" has the verb but no request to touch a document at all, and
-// "Please rewrite this scene" on the Synopsis tab has the verb but is about
-// the script, not the surface the writer is looking at. Both halves are
-// required: a trigger verb AND a reference to the CURRENT structured
-// surface — either that surface's own name/synonym, or a generic
-// this/current-document deixis that can only mean "the document I'm on."
+// Review round 3: two incremental patches to this function each closed one
+// hole and opened another (round 1's fix over-blocked "rewrite this"; round
+// 2's fix under-blocked "apply to it" and reopened the cross-surface hole for
+// bare deixis). Replaced with one bounded decision contract instead of a
+// third incremental patch, evaluated in order:
+//
+//   1. Naming a DIFFERENT structured surface anywhere overrides everything
+//      else, including deixis — "apply this note to the outline" on
+//      Synopsis is about the outline, full stop.
+//   2. Naming the CURRENT surface (or generic "this document"/"this doc"
+//      deixis) with the trigger verb present -> true.
+//   3. A bare "this"/"it" as the verb's own direct object -> true, but only
+//      when it is truly bare: the verb must be immediately followed by the
+//      deictic (optionally with just the particle "in"/"up" after —
+//      "fill this in", "clean it up"), and nothing else may follow except
+//      trailing punctuation. A preposition between the verb and the
+//      deictic ("apply to it") or another noun after it ("this note",
+//      "this scene") both fail this rule — a different surface being named
+//      later in the same sentence already failed at rule 1 regardless.
+//   4. Everything else -> false.
 const PATCH_TRIGGER_PATTERN = /\b(fill|re-?write|apply|revise)\b/i
 
 const SURFACE_NAME_PATTERNS: Record<StructuredDocumentSurface, RegExp> = {
@@ -49,32 +62,37 @@ const SURFACE_NAME_PATTERNS: Record<StructuredDocumentSurface, RegExp> = {
 
 // Deliberately narrow: "document"/"doc" only, never "page" or "scene" —
 // those name the script, not a structured document, and must not count as a
-// reference to the current surface (review Important 2's cross-surface case).
+// reference to the current surface (round 1's cross-surface case).
 const CURRENT_DOCUMENT_DEIXIS_PATTERN = /\b(this|the|current)\s+doc(ument)?\b/i
 
-// Review round 2 (Important, upgraded): the plan's trigger is "asks to
-// fill/rewrite/apply/revise the CURRENT structured surface" — typing
-// "rewrite this" or "fill this in" while looking at that surface IS that
-// ask, and requiring the literal word "document" over-blocked exactly the
-// interaction the plan describes. A bare "this"/"it" therefore also counts
-// as a reference to the current surface, UNLESS it is immediately followed
-// by a noun that names something else — most importantly the script
-// ("this scene", "this page", "this line", …), which must keep failing
-// (review's cross-surface case: "rewrite this scene" on Synopsis).
-// "Should I apply to that fellowship?" still fails on its own: it has
-// neither "this" nor "it" ("that fellowship" is not deixis to the document).
-const NON_DOCUMENT_DEICTIC_OBJECT_PATTERN = /\b(this|it)\s+(scene|page|line|shot|dialogue|script|screenplay)\b/i
-const BARE_DEIXIS_PATTERN = /\b(this|it)\b/i
+// Rule 3's bare-deixis pattern: the trigger verb, then only whitespace, then
+// "this"/"it", then optionally only the particle "in"/"up", then nothing
+// else but optional trailing punctuation/whitespace to the end of the
+// message. This structurally rules out both round-2 regressions in one
+// shape — a preposition between the verb and the deictic ("apply to it")
+// never matches `verb\s+(this|it)`, and a noun after the deictic ("this
+// note", "this scene") is never followed only by punctuation/end.
+const BARE_VERB_DEIXIS_OBJECT_PATTERN = /\b(?:fill|re-?write|apply|revise)\s+(?:this|it)\b(?:\s+(?:in|up)\b)?\s*[.!?]?\s*$/i
 
-function hasBareDocumentDeixis(userMessage: string): boolean {
-  return BARE_DEIXIS_PATTERN.test(userMessage) && !NON_DOCUMENT_DEICTIC_OBJECT_PATTERN.test(userMessage)
+function namesOtherStructuredSurface(userMessage: string, currentSurface: StructuredDocumentSurface): boolean {
+  return STRUCTURED_DOCUMENT_SURFACES.some(candidate => (
+    candidate !== currentSurface && SURFACE_NAME_PATTERNS[candidate].test(userMessage)
+  ))
 }
 
 export function shouldRequestDocumentPatch(userMessage: string, surface: StructuredDocumentSurface): boolean {
   if (!PATCH_TRIGGER_PATTERN.test(userMessage)) return false
-  return SURFACE_NAME_PATTERNS[surface].test(userMessage)
-    || CURRENT_DOCUMENT_DEIXIS_PATTERN.test(userMessage)
-    || hasBareDocumentDeixis(userMessage)
+
+  // Rule 1 — total override, checked before anything else.
+  if (namesOtherStructuredSurface(userMessage, surface)) return false
+
+  // Rule 2.
+  if (SURFACE_NAME_PATTERNS[surface].test(userMessage) || CURRENT_DOCUMENT_DEIXIS_PATTERN.test(userMessage)) {
+    return true
+  }
+
+  // Rule 3.
+  return BARE_VERB_DEIXIS_OBJECT_PATTERN.test(userMessage)
 }
 
 // shared/surfaceAwareness.ts's SurfaceIdSchema ('outline' | 'synopsis' |
