@@ -99,6 +99,27 @@ describe('shouldRequestDocumentPatch', () => {
     expect(shouldRequestDocumentPatch('Please rewrite the outline.', 'synopsis')).toBe(false)
     expect(shouldRequestDocumentPatch('Revise the treatment.', 'outline')).toBe(false)
   })
+
+  // Review round 2 (Important, upgraded): requiring the literal word
+  // "document"/"doc" over-blocked the plan's primary interaction — typing
+  // "rewrite this" or "fill this in" while looking at the surface IS the
+  // ask the plan describes. Bare "this"/"it" now counts too, as long as it
+  // is not immediately followed by a noun naming something else.
+  it('returns true for a trigger verb with a bare this/it object naming nothing else', () => {
+    expect(shouldRequestDocumentPatch('rewrite this', 'synopsis')).toBe(true)
+    expect(shouldRequestDocumentPatch('fill this in', 'outline')).toBe(true)
+    expect(shouldRequestDocumentPatch('Please revise it.', 'treatment')).toBe(true)
+    expect(shouldRequestDocumentPatch('Can you apply that fix to it?', 'storyBible')).toBe(true)
+  })
+
+  it('keeps the false-positive case unchanged: no "this"/"it" means no bare deixis', () => {
+    expect(shouldRequestDocumentPatch('Should I apply to that fellowship?', 'synopsis')).toBe(false)
+  })
+
+  it('keeps the cross-surface case unchanged: "this scene" is not bare deixis to the document', () => {
+    expect(shouldRequestDocumentPatch('rewrite this scene', 'synopsis')).toBe(false)
+    expect(shouldRequestDocumentPatch('fill this scene in', 'outline')).toBe(false)
+  })
 })
 
 describe('surfaceForActiveTab', () => {

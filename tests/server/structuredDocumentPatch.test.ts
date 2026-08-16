@@ -222,14 +222,19 @@ afterEach(async () => {
 
 async function startApp() {
   const app = express()
-  app.use(express.json())
+  // No outer express.json() here: registerRoutes wires up its own body
+  // parser at WRITEROS_JSON_BODY_LIMIT (10mb), matching production
+  // (server/index.ts calls registerRoutes with no extra parser in front of
+  // it). An outer express.json() here would default to express's 100kb
+  // limit and reject anything larger before registerRoutes' own parser (and
+  // this file's own oversized-content size-bound tests) ever see it.
   const server = await registerRoutes(app)
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return (server.address() as AddressInfo).port
 }
 
-function postJson(port: number, body: unknown): Promise<{ status: number; json: any }> {
+function postJson(port: number, body: unknown): Promise<{ status: number; json: any; text: string }> {
   const payload = JSON.stringify(body)
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -243,7 +248,16 @@ function postJson(port: number, body: unknown): Promise<{ status: number; json: 
       res.on('data', chunk => chunks.push(Buffer.from(chunk)))
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8')
-        resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : undefined })
+        // Never let a non-JSON error response (e.g. a stray 413/500 HTML
+        // page) hang the test forever inside an unhandled callback
+        // exception — resolve with json: undefined and the raw text instead.
+        let json: any
+        try {
+          json = text ? JSON.parse(text) : undefined
+        } catch {
+          json = undefined
+        }
+        resolve({ status: res.statusCode ?? 0, json, text })
       })
     })
     req.on('error', reject)
@@ -428,6 +442,111 @@ describe('/api/wp-chat structured-document patch attachment', () => {
       projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
       // Mismatched surface — must never be trusted for the synopsis request.
       documentSnapshot: { surface: 'outline', revision: 999, content: { bogus: true } },
+      conversationHistory: [],
+    })
+
+    expect(patchSpy).toHaveBeenCalledTimes(1)
+    const call = patchSpy.mock.calls[0][0]
+    expect(call.baseVersion).toBe(5)
+    expect(call.currentContent).toEqual(fixtureSynopsisContent())
+  })
+
+  // Review round 2 (Important): documentSnapshot.content is untrusted
+  // request input — previously currentContent always came off disk,
+  // guaranteed schema-valid by ProjectDocumentsSchema. A snapshot that fails
+  // the exact surface content schema must fall back to the disk read rather
+  // than reaching the model prompt unvalidated.
+  it('falls back to the disk revision/content when the documentSnapshot content fails the exact surface schema', async () => {
+    const { root, state } = await seedFolderProject(5)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch').mockResolvedValue({
+      status: 'generated',
+      proposal: {
+        patch: {
+          kind: 'structured-document',
+          surface: 'synopsis',
+          baseVersion: 5,
+          proposedContent: fixtureSynopsisContent(),
+          changedPaths: [],
+          memoryIds: [],
+        },
+        rationale: 'R',
+        canonConflicts: [],
+        citations: [],
+      },
+    })
+
+    const port = await startApp()
+    await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Please rewrite the synopsis logline for me.',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      // Right surface, but content that is not a valid synopsis at all.
+      documentSnapshot: { surface: 'synopsis', revision: 999, content: { not: 'a synopsis' } },
+      conversationHistory: [],
+    })
+
+    expect(patchSpy).toHaveBeenCalledTimes(1)
+    const call = patchSpy.mock.calls[0][0]
+    // Not 999 (the invalid snapshot's claimed revision) — the seeded disk revision.
+    expect(call.baseVersion).toBe(5)
+    expect(call.currentContent).toEqual(fixtureSynopsisContent())
+  })
+
+  // Review round 2 (Important): a schema-valid but implausibly huge snapshot
+  // (e.g. one field padded far past what a real document could be) must
+  // also fall back to disk rather than being trusted verbatim into the
+  // model prompt with no size bound beyond the blanket request body limit.
+  it('falls back to the disk revision/content when the documentSnapshot content is oversized', async () => {
+    const { root, state } = await seedFolderProject(5)
+    vi.stubEnv('WRITEROS_PROJECTS_ROOT', root)
+
+    vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Sam response.',
+      suggestions: [],
+    })
+    const patchSpy = vi.spyOn(OpenAIService.prototype, 'generateStructuredDocumentPatch').mockResolvedValue({
+      status: 'generated',
+      proposal: {
+        patch: {
+          kind: 'structured-document',
+          surface: 'synopsis',
+          baseVersion: 5,
+          proposedContent: fixtureSynopsisContent(),
+          changedPaths: [],
+          memoryIds: [],
+        },
+        rationale: 'R',
+        canonConflicts: [],
+        citations: [],
+      },
+    })
+
+    // Schema-valid shape (still a well-formed synopsis), but one field is
+    // padded to comfortably exceed the size bound.
+    const oversizedContent = fixtureSynopsisContent({
+      prose: {
+        opening: 'x'.repeat(250_000),
+        escalation: 'Escalation.',
+        middle: 'Middle.',
+        climax: 'Climax.',
+        resolution: 'Resolution.',
+      },
+    })
+
+    const port = await startApp()
+    await postJson(port, {
+      projectId: 'test-project',
+      personaId: 'sam',
+      message: 'Please rewrite the synopsis logline for me.',
+      projectContext: { ...buildProjectContext(state), surface: synopsisIntakeSurface },
+      documentSnapshot: { surface: 'synopsis', revision: 999, content: oversizedContent },
       conversationHistory: [],
     })
 

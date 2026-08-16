@@ -52,9 +52,29 @@ const SURFACE_NAME_PATTERNS: Record<StructuredDocumentSurface, RegExp> = {
 // reference to the current surface (review Important 2's cross-surface case).
 const CURRENT_DOCUMENT_DEIXIS_PATTERN = /\b(this|the|current)\s+doc(ument)?\b/i
 
+// Review round 2 (Important, upgraded): the plan's trigger is "asks to
+// fill/rewrite/apply/revise the CURRENT structured surface" — typing
+// "rewrite this" or "fill this in" while looking at that surface IS that
+// ask, and requiring the literal word "document" over-blocked exactly the
+// interaction the plan describes. A bare "this"/"it" therefore also counts
+// as a reference to the current surface, UNLESS it is immediately followed
+// by a noun that names something else — most importantly the script
+// ("this scene", "this page", "this line", …), which must keep failing
+// (review's cross-surface case: "rewrite this scene" on Synopsis).
+// "Should I apply to that fellowship?" still fails on its own: it has
+// neither "this" nor "it" ("that fellowship" is not deixis to the document).
+const NON_DOCUMENT_DEICTIC_OBJECT_PATTERN = /\b(this|it)\s+(scene|page|line|shot|dialogue|script|screenplay)\b/i
+const BARE_DEIXIS_PATTERN = /\b(this|it)\b/i
+
+function hasBareDocumentDeixis(userMessage: string): boolean {
+  return BARE_DEIXIS_PATTERN.test(userMessage) && !NON_DOCUMENT_DEICTIC_OBJECT_PATTERN.test(userMessage)
+}
+
 export function shouldRequestDocumentPatch(userMessage: string, surface: StructuredDocumentSurface): boolean {
   if (!PATCH_TRIGGER_PATTERN.test(userMessage)) return false
-  return SURFACE_NAME_PATTERNS[surface].test(userMessage) || CURRENT_DOCUMENT_DEIXIS_PATTERN.test(userMessage)
+  return SURFACE_NAME_PATTERNS[surface].test(userMessage)
+    || CURRENT_DOCUMENT_DEIXIS_PATTERN.test(userMessage)
+    || hasBareDocumentDeixis(userMessage)
 }
 
 // shared/surfaceAwareness.ts's SurfaceIdSchema ('outline' | 'synopsis' |
@@ -163,6 +183,21 @@ export interface StructuredDocumentSurfaceContent {
   outline: OutlineDocumentContent
   treatment: TreatmentDocumentContent
   storyBible: StoryBibleDocumentContent
+}
+
+/**
+ * Validates an arbitrary value against the exact content schema for one
+ * surface, without needing a whole `MemoryGroundedPatch` wrapper. Review
+ * round 2 (Important): the client-supplied `documentSnapshot.content` sent
+ * alongside a wp-chat request (server/routes.ts, for baseVersion/current-
+ * content skew — see Important 4 in the prior round) is untrusted input.
+ * Everywhere else `currentContent` came off disk, already guaranteed valid
+ * by `ProjectDocumentsSchema`; a snapshot from the request body carries no
+ * such guarantee, so the route boundary must check it with this before ever
+ * trusting it into a model prompt as "CURRENT CONTENT."
+ */
+export function isValidStructuredDocumentContent(surface: StructuredDocumentSurface, content: unknown): boolean {
+  return SURFACE_CONTENT_SCHEMAS[surface].safeParse(content).success
 }
 
 export type MemoryGroundedPatchValidationError = 'invalid-shape' | 'invalid-content'

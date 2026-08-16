@@ -20,6 +20,7 @@ import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLi
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
 import {
   STRUCTURED_DOCUMENT_SURFACES,
+  isValidStructuredDocumentContent,
   shouldRequestDocumentPatch,
   structuredDocumentSurfaceFromSurfaceId,
   type MemoryGroundedPatchAttempt,
@@ -917,6 +918,29 @@ function personaResponseBody(response: PersonaResponse, memory: AgentMemoryConte
   return body;
 }
 
+// Review round 2 (Important): documentSnapshot.content is untrusted request
+// input, unlike the disk-read document (already guaranteed valid by
+// ProjectDocumentsSchema). A generous but bounded cap on top of exact-schema
+// validation — full documents are text; ~200k characters comfortably covers
+// even a large treatment or story bible while refusing anything padded far
+// past what a real document could be.
+const MAX_DOCUMENT_SNAPSHOT_CONTENT_CHARS = 200_000;
+
+function isUsableDocumentSnapshot(
+  snapshot: { surface: StructuredDocumentSurface; revision: number; content: unknown } | undefined,
+  surface: StructuredDocumentSurface,
+): boolean {
+  if (!snapshot || snapshot.surface !== surface) return false;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(snapshot.content) ?? '';
+  } catch {
+    return false;
+  }
+  if (serialized.length === 0 || serialized.length > MAX_DOCUMENT_SNAPSHOT_CONTENT_CHARS) return false;
+  return isValidStructuredDocumentContent(surface, snapshot.content);
+}
+
 // Task 10: gates and orchestrates one memory-grounded structured-document
 // patch attempt alongside a wp-chat response — same "attach it next to the
 // response" shape as personaResponseBody attaches a MemoryReceipt. Never
@@ -961,11 +985,17 @@ async function attemptStructuredDocumentPatch(input: {
   // browser by a beat — reading it here would attribute baseVersion to a
   // moment already behind the writer's live document, making the apply-time
   // staleness check in client/src/lib/memoryPatch.ts fail even when the
-  // writer made no edits after asking for the rewrite. Only trust a snapshot
-  // whose own declared surface matches the one we just resolved; otherwise
-  // fall back to the disk read (older client, or a mismatched snapshot).
-  const document = input.documentSnapshot?.surface === surface
-    ? { content: input.documentSnapshot.content, revision: input.documentSnapshot.revision }
+  // writer made no edits after asking for the rewrite.
+  //
+  // Review round 2 (Important): unlike the disk read (already guaranteed
+  // schema-valid by ProjectDocumentsSchema), a snapshot is untrusted request
+  // input — isUsableDocumentSnapshot checks its declared surface matches the
+  // one we just resolved, its size is bounded, and its content validates
+  // against that exact surface's content schema. Any failure there falls
+  // back to the disk read (same path as "no snapshot sent") rather than
+  // erroring the chat or trusting unvalidated content into the model prompt.
+  const document = isUsableDocumentSnapshot(input.documentSnapshot, surface)
+    ? { content: input.documentSnapshot!.content, revision: input.documentSnapshot!.revision }
     : read.project.state.documents[surface];
   return openaiService.generateStructuredDocumentPatch({
     surface,
