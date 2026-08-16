@@ -24,7 +24,9 @@ function renderRecord(record: ProjectMemoryRecord): string[] {
     `- Updated: ${record.updatedAt}`,
   ]
   if (record.source.authority !== undefined && 'verification' in record.source.authority) {
-    lines.push('- Authority: legacy / unverified')
+    lines.push(record.source.authority.verification === 'writeros-promotion'
+      ? '- Authority: promoted in WriterOS review'
+      : '- Authority: legacy / unverified')
   }
   if (record.spoiler) lines.push('- Spoiler: yes')
   if (record.detail) lines.push('', escapedInline(record.detail))

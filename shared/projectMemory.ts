@@ -49,8 +49,17 @@ export const LegacyWayfinderAuthoritySchema = z.object({
   verification: z.literal('legacy-unverified'),
 }).strict()
 
+// Stamped by the store when a wayfinder-sourced canon candidate is activated
+// through an explicit promote action in review (Ben's 2026-08-16 ruling: the
+// promote itself is the human-in-the-loop ratification). Never publishable —
+// like the legacy marker, it can only be derived inside the store.
+export const PromotionWayfinderAuthoritySchema = z.object({
+  verification: z.literal('writeros-promotion'),
+}).strict()
+
 export const WayfinderAuthoritySchema = z.union([
   VerifiedWayfinderAuthoritySchema,
+  PromotionWayfinderAuthoritySchema,
   LegacyWayfinderAuthoritySchema,
 ])
 
@@ -75,9 +84,9 @@ export const MemorySourceSchema = z.object({
 function sourceCanActivateCanon(source: z.infer<typeof MemorySourceSchema>): boolean {
   if (source.approval !== 'explicit') return false
   if (source.workflow !== 'story-wayfinder') return true
-  return source.authority !== undefined
-    && 'mode' in source.authority
-    && source.authority.mode === 'hitl'
+  if (source.authority === undefined) return false
+  if ('verification' in source.authority) return source.authority.verification === 'writeros-promotion'
+  return source.authority.mode === 'hitl'
     && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
 }
 
@@ -178,11 +187,11 @@ export const PublishMemoryInputSchema = z.object({
       message: 'Safety-flagged memory cannot be requested as active.',
     })
   }
-  if (sourceHasLegacyUnverifiedAuthority(input.source)) {
+  if (input.source.authority !== undefined && 'verification' in input.source.authority) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['source', 'authority'],
-      message: 'Legacy-unverified authority is derived during ledger migration and cannot be published.',
+      message: 'Derived authority markers (legacy migration, review promotion) are stamped by the store and cannot be published.',
     })
   }
 })

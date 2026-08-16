@@ -405,6 +405,9 @@ function applyEvent(
     records = replaceRecord(records, event.recordId, record => ({
       ...record,
       status: 'active',
+      ...(needsPromotionAuthorityStamp(record.source) ? {
+        source: { ...record.source, authority: { verification: 'writeros-promotion' as const } },
+      } : {}),
       supersedes: unique([...record.supersedes, ...event.supersededRecordIds]),
       updatedAt: event.occurredAt,
     }))
@@ -697,10 +700,26 @@ function publicationStatus(input: ParsedPublishMemoryInput, hasUnresolvedConflic
 function sourceCanActivateCanon(source: MemorySource): boolean {
   if (source.approval !== 'explicit') return false
   if (source.workflow !== 'story-wayfinder') return true
-  return source.authority !== undefined
-    && 'mode' in source.authority
-    && source.authority.mode === 'hitl'
+  if (source.authority === undefined) return false
+  if ('verification' in source.authority) return source.authority.verification === 'writeros-promotion'
+  return source.authority.mode === 'hitl'
     && (source.authority.ticketType === 'grill' || source.authority.ticketType === 'sketch')
+}
+
+// A promote in review is itself the human-in-the-loop ratification (Ben's
+// 2026-08-16 ruling), so promotion does not require wayfinder ticket
+// authority — but it still requires the source's own explicit approval, so
+// unratified imports stay review-only. Wayfinder sources activated this way
+// get a store-stamped promotion marker (never publishable) so the record's
+// pedigree stays honest.
+function recordCanPromote(record: ProjectMemoryRecord): boolean {
+  return record.status === 'candidate'
+    && record.safety === 'clear'
+    && record.source.approval === 'explicit'
+}
+
+function needsPromotionAuthorityStamp(source: MemorySource): boolean {
+  return source.workflow === 'story-wayfinder' && !sourceCanActivateCanon(source)
 }
 
 function recordCanActivate(record: ProjectMemoryRecord): boolean {
@@ -732,9 +751,9 @@ function derivePromotionMutation(
   supersedes: string[],
 ): PromotionMutation {
   const record = requireRecord(snapshot, recordId)
-  if (record.kind !== 'canon' || !recordCanActivate(record)) {
+  if (record.kind !== 'canon' || !recordCanPromote(record)) {
     throw new ProjectMemoryStoreError(
-      'Only a clear, explicitly approved, authority-eligible canon candidate may be promoted.',
+      'Only a clear, explicitly approved canon candidate may be promoted.',
       'invalid-action',
     )
   }

@@ -547,13 +547,23 @@ describe('append-only project memory store', () => {
     await expect(store.readSnapshot(projectPath)).resolves.toEqual(migrated)
     expect(await readFile(ledgerPath, 'utf8')).toBe(firstLedger)
 
-    await expect(store.applyAction(projectPath, {
+    // Ben's 2026-08-16 ruling: an explicit promote in review re-ratifies a
+    // legacy-downgraded candidate (was: rejected). The legacy marker is
+    // replaced by the store's promotion stamp.
+    const promoted = await store.applyAction(projectPath, {
       type: 'promote',
       recordId: 'mem-legacy-wayfinder',
       expectedRevision: 2,
       supersedes: [],
-    })).rejects.toMatchObject({ code: 'invalid-action' })
-    expect(await readFile(ledgerPath, 'utf8')).toBe(firstLedger)
+    })
+    expect(promoted.records[0]).toMatchObject({
+      id: 'mem-legacy-wayfinder',
+      status: 'active',
+      source: { authority: { verification: 'writeros-promotion' } },
+    })
+    expect(await readFile(path.join(projectPath, 'memory', 'canon.md'), 'utf8'))
+      .toContain('Mara leaves the island alone.')
+    const ledgerAfterPromote = await readFile(ledgerPath, 'utf8')
 
     await expect(store.publish(projectPath, publishInput({
       dedupeKey: 'wayfinder:forged-legacy-marker',
@@ -568,7 +578,8 @@ describe('append-only project memory store', () => {
         authority: { verification: 'legacy-unverified' },
       } as MemorySource,
     }))).rejects.toMatchObject({ code: 'invalid-input' })
-    expect(await readFile(ledgerPath, 'utf8')).toBe(firstLedger)
+    // The rejected forgery must append nothing beyond the promote event above.
+    expect(await readFile(ledgerPath, 'utf8')).toBe(ledgerAfterPromote)
   })
 
   it('migrates 101 active legacy Wayfinder records in deterministic bounded batches', async () => {
@@ -731,19 +742,80 @@ describe('append-only project memory store', () => {
     expect(await readFile(ledgerPath, 'utf8')).toBe(before)
   })
 
-  it('does not promote AFK Wayfinder canon even with explicit source approval', async () => {
+  it('promotes an explicitly approved Wayfinder candidate without verified authority, stamping promotion authority', async () => {
+    // Ben's 2026-08-16 ruling: an explicit promote in review IS the
+    // human-in-the-loop ratification. Import stays strict (no auto-canon
+    // without verified hitl grill/sketch authority), but the review queue
+    // must not be a dead end for explicitly approved wayfinder sources.
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+    const published = await store.publish(projectPath, publishInput({
+      source: source({
+        workflow: 'story-wayfinder',
+        approval: 'explicit',
+        sourceHash: 'sha256:atom-like',
+      }),
+    }))
+    expect(published.record.status).toBe('candidate')
+
+    const snapshot = await store.applyAction(projectPath, {
+      type: 'promote',
+      recordId: published.record.id,
+      expectedRevision: 1,
+      supersedes: [],
+    })
+
+    expect(snapshot.records[0]).toMatchObject({
+      id: published.record.id,
+      status: 'active',
+      source: {
+        workflow: 'story-wayfinder',
+        approval: 'explicit',
+        authority: { verification: 'writeros-promotion' },
+      },
+    })
+    expect(await readFile(path.join(projectPath, 'memory', 'canon.md'), 'utf8'))
+      .toContain('Mara leaves the island alone.')
+    // Replay must reproduce the stamped record byte-for-byte.
+    await expect(store.readSnapshot(projectPath)).resolves.toEqual(snapshot)
+  })
+
+  it('promotes AFK Wayfinder canon with explicit source approval, stamping promotion authority', async () => {
+    // Flipped by Ben's 2026-08-16 ruling (was: reject). AFK ratification
+    // alone still cannot activate canon at import time, but a human promote
+    // in review supplies the missing in-the-loop step.
     const { projectPath } = await makeProject()
     const store = createProjectMemoryStore()
     const published = await store.publish(projectPath, publishInput({
       source: wayfinderSource('sketch', 'afk'),
     }))
+    expect(published.record.status).toBe('candidate')
 
-    await expect(store.applyAction(projectPath, {
+    const snapshot = await store.applyAction(projectPath, {
       type: 'promote',
       recordId: published.record.id,
       expectedRevision: 1,
       supersedes: [],
-    })).rejects.toMatchObject({ code: 'invalid-action' })
+    })
+
+    expect(snapshot.records[0]).toMatchObject({
+      status: 'active',
+      source: { authority: { verification: 'writeros-promotion' } },
+    })
+  })
+
+  it('rejects publishing a source that forges promotion authority', async () => {
+    const { projectPath } = await makeProject()
+    const store = createProjectMemoryStore()
+
+    await expect(store.publish(projectPath, publishInput({
+      dedupeKey: 'wayfinder:forged-promotion-marker',
+      requestedStatus: 'active',
+      source: {
+        ...source({ workflow: 'story-wayfinder', approval: 'explicit' }),
+        authority: { verification: 'writeros-promotion' },
+      } as MemorySource,
+    }))).rejects.toThrow()
   })
 
   it('rejects a candidate without erasing its history', async () => {
