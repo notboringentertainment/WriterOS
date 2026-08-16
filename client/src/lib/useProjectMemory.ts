@@ -3,9 +3,11 @@
 // scope-generation guarding used by Room/Meeting/document-tab hooks
 // (useProjectRequestGeneration.ts), plus the small additional
 // analysis-queue/retry surface this task needs that Task 5's client did not
-// expose. `projectId` must be the folder-backed project id — a project that
-// only lives in browser storage has nowhere durable to keep a memory ledger,
-// so this hook reports `browserOnly` instead of ever attempting a fetch.
+// expose. `projectId` must be the server-backed project id (WriterOS
+// project library, WRITEROS_PROJECTS_ROOT) — a project that only lives in
+// browser storage, including a browser File System Access folder project,
+// has nowhere durable (server-side) to keep a memory ledger, so this hook
+// reports `browserOnly` instead of ever attempting a fetch.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ProjectMemoryAction, ProjectMemorySnapshot } from '@shared/projectMemory'
 import { createProjectMemoryApi, ProjectMemoryApiError } from './projectMemoryApi'
@@ -67,7 +69,7 @@ async function bootstrapMemorySessionToken(fetchImpl: FetchLike): Promise<string
   }
 }
 
-const SESSION_UNAVAILABLE_MESSAGE = 'WriterOS could not verify this session for project memory.'
+const SESSION_UNAVAILABLE_MESSAGE = 'WriterOS could not verify this session for project memory. Check that the server project library is enabled (WRITEROS_PROJECTS_ROOT) and reload.'
 
 // A stable module-level identity (unlike `globalThis.fetch.bind(globalThis)`
 // evaluated fresh as a default-parameter expression on every call), while
