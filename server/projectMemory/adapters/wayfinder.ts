@@ -205,7 +205,13 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         const unsafeLine = promptInjectionLine(content)
         const ticketType = parsed.headers.get('type')
         const mode = parsed.headers.get('mode')
-        const verifiedType = ticketType === 'grill' || ticketType === 'sketch' || ticketType === 'homework'
+        // 'research' is a ticket type the skill defines; it is recognised here so it stops
+        // raising a false "unrecognized ticket type" warning. It still never reaches canon —
+        // activeCanon below admits only grill and sketch — so research stays groundwork.
+        const verifiedType = ticketType === 'grill'
+          || ticketType === 'sketch'
+          || ticketType === 'homework'
+          || ticketType === 'research'
           ? ticketType
           : undefined
         const verifiedMode = mode === 'hitl' || mode === 'afk' ? mode : undefined

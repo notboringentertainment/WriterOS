@@ -497,15 +497,41 @@ async function runImport(
   })) {
     throw new CliInputError('Wayfinder active canon lacks eligible ticket authority.')
   }
+  // A reopened wayfinder ticket republishes as an open question carrying its superseded
+  // answer. The canon it contests deliberately stays active — reopening is a supersession
+  // *proposal*, not a retraction — but without a link the canon reads as uncontested and an
+  // agent answering from active canon would restate a decision the writer has reopened.
+  // Link the two as a conflict so the reopening is visible wherever the canon is read.
+  const recordsToPublish = source === 'wayfinder'
+    ? parsed.data.records.map(record => {
+      if (record.kind !== 'open_question') return record
+      if (!record.detail?.startsWith('Superseded answer')) return record
+      // Match on the ticket filename, not the full source path: reopening moves the file
+      // from resolved/ back to tickets/, so the canon record and the reopened open question
+      // never share a sourceId.
+      const ticketFile = (value: string) => value.slice(value.lastIndexOf('/') + 1)
+      const reopenedFile = ticketFile(record.source.sourceId)
+      const contested = snapshot.records.filter(candidate => (
+        candidate.kind === 'canon'
+        && candidate.status === 'active'
+        && candidate.source.workflow === 'story-wayfinder'
+        && ticketFile(candidate.source.sourceId) === reopenedFile
+        && !record.conflictsWith.includes(candidate.id)
+      ))
+      if (contested.length === 0) return record
+      return { ...record, conflictsWith: [...record.conflictsWith, ...contested.map(c => c.id)] }
+    })
+    : parsed.data.records
+
   if (dryRun) {
-    io.stdout(`${JSON.stringify(parsed.data, null, 2)}\n`)
+    io.stdout(`${JSON.stringify({ ...parsed.data, records: recordsToPublish }, null, 2)}\n`)
     return 0
   }
 
   let applied = 0
   let idempotent = 0
   let revision = snapshot.revision
-  for (const record of parsed.data.records) {
+  for (const record of recordsToPublish) {
     let result
     try {
       await verifyImportManifest()

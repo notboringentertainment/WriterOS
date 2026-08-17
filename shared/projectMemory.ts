@@ -25,7 +25,7 @@ export const MemoryWorkflowSchema = z.enum([
 
 export const MemoryApprovalSchema = z.enum(['none', 'explicit'])
 export const MemorySafetySchema = z.enum(['clear', 'flagged'])
-export const WayfinderTicketTypeSchema = z.enum(['grill', 'sketch', 'homework'])
+export const WayfinderTicketTypeSchema = z.enum(['grill', 'sketch', 'homework', 'research'])
 export const WayfinderModeSchema = z.enum(['hitl', 'afk'])
 export const RequestedMemoryStatusSchema = z.enum(['candidate', 'active'])
 export const ProjectMemoryConflictStatusSchema = z.enum(['open', 'resolved'])
