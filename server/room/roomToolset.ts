@@ -16,6 +16,11 @@ import { checkProposalAgainstLocks } from './lockGate';
 import { broadcast } from './sseHub';
 import * as store from './store';
 import type { RoomMessageRow, RoomTurnRecorder } from './types';
+import {
+  finalizeAgentMemoryText,
+  finalizeAgentMemoryValue,
+  type AgentMemoryContext,
+} from '../projectMemory/agentContext';
 
 export const SPEAK_TOOL = 'speak';
 export const PROPOSE_TOOL = 'propose_field_write';
@@ -95,6 +100,7 @@ export interface RoomTurnContext {
   // Authors who actually have messages in the assembled channel window —
   // the evidence set for the room attribution guard (§7.2, D9).
   channelAuthors: Set<string>;
+  projectMemory?: AgentMemoryContext;
 }
 
 export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
@@ -115,13 +121,16 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
       }
 
       case PASS_TOOL: {
-        turn.recorder.passReason = typeof args.reason === 'string' ? args.reason : 'no reason given';
+        const reason = typeof args.reason === 'string' ? args.reason : 'no reason given';
+        turn.recorder.passReason = turn.projectMemory
+          ? finalizeAgentMemoryText(reason, turn.projectMemory).text
+          : reason;
         return { kind: 'final', result: { message: '', suggestions: [], ok: true } };
       }
 
       case REMEMBER_TOOL: {
         const label = typeof args.label === 'string' ? args.label : '';
-        const value = typeof args.value === 'string' ? args.value : '';
+        const rawValue = typeof args.value === 'string' ? args.value : '';
         if (!(PRIVATE_BLOCK_LABELS as readonly string[]).includes(label)) {
           return {
             kind: 'error',
@@ -129,11 +138,15 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
             content: `remember accepts labels ${PRIVATE_BLOCK_LABELS.join(', ')} — got "${label}".`,
           };
         }
+        const finalized = turn.projectMemory
+          ? finalizeAgentMemoryText(rawValue, turn.projectMemory)
+          : { text: rawValue, receipt: undefined };
         const written = await store.writeBlock({
           projectId: turn.projectId,
           agentId: turn.agentId,
           label,
-          value,
+          value: finalized.text,
+          memoryReceipt: finalized.receipt,
           updatedBy: turn.agentId,
           charCap: label === 'lane_notes' ? 4000 : 1500, // §4.1 standard private caps
         });
@@ -155,15 +168,19 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
       case PROPOSE_TOOL: {
         const surface = typeof args.surface === 'string' ? args.surface : '';
         const fieldPath = typeof args.fieldPath === 'string' ? args.fieldPath : '';
-        const value = typeof args.value === 'string' ? args.value : '';
-        const rationale = typeof args.rationale === 'string' ? args.rationale : '';
-        if (!(PROPOSAL_SURFACES as readonly string[]).includes(surface) || !fieldPath || !value || !rationale) {
+        const rawValue = typeof args.value === 'string' ? args.value : '';
+        const rawRationale = typeof args.rationale === 'string' ? args.rationale : '';
+        if (!(PROPOSAL_SURFACES as readonly string[]).includes(surface) || !fieldPath || !rawValue || !rawRationale) {
           return {
             kind: 'error',
             toolUseId: use.id,
             content: 'propose_field_write requires surface (storyBible|outline|synopsis|treatment), fieldPath, value, rationale.',
           };
         }
+        const finalized = turn.projectMemory
+          ? finalizeAgentMemoryValue({ value: rawValue, rationale: rawRationale }, turn.projectMemory)
+          : { value: { value: rawValue, rationale: rawRationale }, receipt: undefined };
+        const { value, rationale } = finalized.value;
 
         // §7.3 lock fidelity gate — before the proposal persists as pending.
         const lockCheck = await checkProposalAgainstLocks({
@@ -182,6 +199,7 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
             proposedValue: value,
             rationale,
             status: 'blocked',
+            memoryReceipt: finalized.receipt,
           });
           turn.recorder.proposalsBlocked += 1;
           return {
@@ -200,6 +218,7 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
           fieldPath,
           proposedValue: value,
           rationale,
+          memoryReceipt: finalized.receipt,
         });
         turn.recorder.proposalsFiled += 1;
 
@@ -210,6 +229,7 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
           author: turn.agentId,
           kind: 'proposal_ref',
           content: `${personaName} proposed a change to ${surface} → ${fieldPath} (proposal ${proposal.id})`,
+          memoryReceipt: finalized.receipt,
         });
         broadcast(turn.projectId, { type: 'proposal', proposal });
         broadcast(turn.projectId, { type: 'message', message: ref as RoomMessageRow });

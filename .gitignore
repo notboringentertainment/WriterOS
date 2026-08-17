@@ -19,3 +19,9 @@ repos/
 
 # claude-mem injected memory context (auto-generated, not project instructions)
 AGENTS.md
+
+# Local isolated feature worktrees
+.worktrees/
+
+# Supabase CLI local-link metadata
+supabase/.temp/

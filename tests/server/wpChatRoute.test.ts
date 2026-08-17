@@ -9,9 +9,11 @@ import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { StoryMemory } from '../../shared/schema'
+import * as roomStore from '../../server/room/store'
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 async function startApp() {
@@ -24,7 +26,10 @@ async function startApp() {
 }
 
 function postJson(port: number, path: string, body: unknown): Promise<{ status: number; json: any; text: string }> {
-  const payload = JSON.stringify(body)
+  const requestBody = path === '/api/wp-chat' && body && typeof body === 'object'
+    ? { projectId: 'test-project', ...body }
+    : body
+  const payload = JSON.stringify(requestBody)
 
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -56,6 +61,41 @@ function postJson(port: number, path: string, body: unknown): Promise<{ status: 
 }
 
 describe('/api/wp-chat synopsis story-coach context', () => {
+  it('uses unified project memory instead of loading legacy Supabase shared blocks directly', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://writeros-memory.test')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key')
+    const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
+      message: 'Morgan response.',
+      suggestions: [],
+    })
+    const memorySpy = vi.spyOn(roomStore, 'getSharedBlocksForAgent')
+    const state = defaultProjectState()
+
+    const { server, port } = await startApp()
+    try {
+      const response = await postJson(port, '/api/wp-chat', {
+        projectId: 'project-1',
+        personaId: 'writingPartner',
+        message: 'Answer the first Outline question.',
+        projectContext: buildProjectContext(state),
+        conversationHistory: [],
+      })
+
+      expect(response.status).toBe(200)
+      expect(memorySpy).not.toHaveBeenCalled()
+      const storyMemory = generateSpy.mock.calls[0][3] as StoryMemory
+      expect(storyMemory.sharedMemory).toEqual([])
+      expect(response.json.memoryReceipt).toEqual({
+        revision: 0,
+        status: 'disabled',
+        citations: [],
+        conflictIds: [],
+      })
+    } finally {
+      server.close()
+    }
+  })
+
   it('sends Sam active Feature synopsis document content instead of stale header format', async () => {
     const generateSpy = vi.spyOn(OpenAIService.prototype, 'generatePersonaResponse').mockResolvedValue({
       message: 'Sam response.',

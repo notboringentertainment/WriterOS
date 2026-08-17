@@ -29,9 +29,10 @@ async function composeFromRecipe(
   recipe: Recipe,
   format: 'feature' | 'series',
   sourceHash: string,
+  projectMemoryPrompt = '',
 ): Promise<ComposeResult> {
   const inventory = buildEntityInventory(factSheet)
-  const { system, user } = buildComposePrompt(factSheet, recipe)
+  const { system, user } = buildComposePrompt(factSheet, recipe, projectMemoryPrompt)
 
   const model = await callComposeModel(provider, system, user, MAX_TOKENS_BY_SURFACE[recipe.surface])
   if (!model.ok) return { ok: false, reason: model.reason }
@@ -57,6 +58,7 @@ export interface ComposeOutlineArgs {
   format: 'feature' | 'series'
   identity: ComposeIdentity
   provider?: ModelProvider
+  projectMemoryPrompt?: string
 }
 export type ComposeOutlineResult = ComposeResult
 
@@ -65,7 +67,7 @@ export async function composeOutline(args: ComposeOutlineArgs): Promise<ComposeO
   const factSheet = buildOutlineFactSheet(args.content, args.format)
   const recipe = getOutlineRecipe(args.format)
   const sourceHash = computeOutlineSourceHash(args.content, args.format, args.identity)
-  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash)
+  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash, args.projectMemoryPrompt)
 }
 
 export interface ComposeSynopsisArgs {
@@ -73,6 +75,7 @@ export interface ComposeSynopsisArgs {
   format: 'feature' | 'series'
   identity: ComposeIdentity
   provider?: ModelProvider
+  projectMemoryPrompt?: string
 }
 
 export async function composeSynopsis(args: ComposeSynopsisArgs): Promise<ComposeResult> {
@@ -80,7 +83,7 @@ export async function composeSynopsis(args: ComposeSynopsisArgs): Promise<Compos
   const factSheet = buildSynopsisFactSheet(args.content, args.format)
   const recipe = getSynopsisRecipe(args.format)
   const sourceHash = computeSynopsisSourceHash(args.content, args.format, args.identity)
-  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash)
+  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash, args.projectMemoryPrompt)
 }
 
 export interface ComposeTreatmentArgs {
@@ -88,6 +91,7 @@ export interface ComposeTreatmentArgs {
   format: 'feature' | 'series'
   identity: ComposeIdentity
   provider?: ModelProvider
+  projectMemoryPrompt?: string
 }
 
 export async function composeTreatment(args: ComposeTreatmentArgs): Promise<ComposeResult> {
@@ -95,5 +99,5 @@ export async function composeTreatment(args: ComposeTreatmentArgs): Promise<Comp
   const factSheet = buildTreatmentFactSheet(args.content, args.format)
   const recipe = getTreatmentRecipe(args.format)
   const sourceHash = computeTreatmentSourceHash(args.content, args.format, args.identity)
-  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash)
+  return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash, args.projectMemoryPrompt)
 }

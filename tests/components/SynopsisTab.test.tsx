@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useState } from 'react'
 import { SynopsisTab } from '../../client/src/components/writing/SynopsisTab'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
@@ -9,12 +9,20 @@ import { computeSynopsisSourceHash } from '../../shared/compose/synopsisSourceHa
 import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
 import type { ComposedDocument } from '../../shared/compose/types'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((next, fail) => { resolve = next; reject = fail })
+  return { promise, resolve, reject }
+}
+
 function makeDocument(
   override: Partial<SynopsisDocumentContent> = {},
   viewPreferences?: { activeView?: 'edit' | 'document' },
 ): AuthoredDocumentState<SynopsisDocumentContent> {
   return {
     version: 1,
+    revision: 0,
     mode: 'prose',
     updatedAt: new Date('2025-01-15').toISOString(),
     content: {
@@ -345,7 +353,7 @@ describe('SynopsisTab — Document View composer', () => {
     fidelity: { status: 'clean', warnings: [] },
   })
 
-  function DocumentHarness() {
+  function DocumentHarness({ projectId = 'folder-synopsis-1', projectScopeKey, onComposedSpy }: { projectId?: string; projectScopeKey?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
     const [doc, setDoc] = useState<AuthoredDocumentState<SynopsisDocumentContent>>({
       ...makeDocument(),
       content: syntheticSynopsisFeature,
@@ -354,12 +362,14 @@ describe('SynopsisTab — Document View composer', () => {
     })
     return (
       <SynopsisTab
+        projectId={projectId}
+        projectScopeKey={projectScopeKey}
         document={doc}
         projectFormat="feature"
         identity={identity}
         onContentPatch={vi.fn()}
         onViewPreferencesPatch={(patch) => setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))}
-        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onComposed={(composed) => { onComposedSpy?.(composed); setDoc((d) => ({ ...d, composed })) }}
         onClear={vi.fn()}
       />
     )
@@ -378,6 +388,71 @@ describe('SynopsisTab — Document View composer', () => {
     await waitFor(() => expect(screen.getByText(/Vera races a rising flood to expose Meridian/)).toBeInTheDocument())
     const [, options] = fetchMock.mock.calls[0]
     expect(JSON.parse(options.body).surface).toBe('synopsis')
+    expect(JSON.parse(options.body).projectId).toBe('folder-synopsis-1')
+  })
+
+  it('discloses the exact project-memory revision after composition', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        composed: cleanComposed(),
+        memoryReceipt: { revision: 52, status: 'available', citations: [], conflictIds: [] },
+      }),
+    }))
+
+    const { rerender } = render(<DocumentHarness projectId="folder-synopsis-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    expect(await screen.findByText(/project memory revision 52/i)).toBeInTheDocument()
+    rerender(<DocumentHarness projectId="folder-synopsis-2" />)
+    expect(screen.queryByText(/project memory revision 52/i)).not.toBeInTheDocument()
+  })
+
+  it('ignores project A completion after project B starts and applies only B composition', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    const fetchMock = vi.fn(async () => {
+      const response = fetchMock.mock.calls.length === 1 ? pendingA.promise : pendingB.promise
+      return { ok: true, json: async () => response }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onComposed = vi.fn()
+    const { rerender } = render(<DocumentHarness projectId={undefined} projectScopeKey="browser:synopsis-A" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    rerender(<DocumentHarness projectId={undefined} projectScopeKey="browser:synopsis-B" onComposedSpy={onComposed} />)
+    const composeB = screen.getByRole('button', { name: /compose this synopsis/i })
+    expect(composeB).toBeEnabled()
+    fireEvent.click(composeB)
+    await act(async () => pendingA.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 111, status: 'available', citations: [], conflictIds: [] } }))
+    expect(onComposed).not.toHaveBeenCalled()
+    expect(screen.queryByText(/project memory revision 111/i)).not.toBeInTheDocument()
+
+    await act(async () => pendingB.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 112, status: 'available', citations: [], conflictIds: [] } }))
+    await waitFor(() => expect(onComposed).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/project memory revision 112/i)).toBeInTheDocument()
+  })
+
+  it('ignores a deferred browser project A error after switching to B', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    const fetchMock = vi.fn(async () => {
+      const response = fetchMock.mock.calls.length === 1 ? pendingA.promise : pendingB.promise
+      return { ok: true, json: async () => response }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onComposed = vi.fn()
+    const { rerender } = render(<DocumentHarness projectId={undefined} projectScopeKey="browser:error-A" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+
+    rerender(<DocumentHarness projectId={undefined} projectScopeKey="browser:error-B" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this synopsis/i }))
+    await act(async () => pendingA.reject(new Error('stale project A failure')))
+    expect(screen.queryByText(/could not compose/i)).not.toBeInTheDocument()
+
+    await act(async () => pendingB.resolve({ composed: cleanComposed(), memoryReceipt: { revision: 113, status: 'available', citations: [], conflictIds: [] } }))
+    await waitFor(() => expect(onComposed).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/project memory revision 113/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is in flight', async () => {

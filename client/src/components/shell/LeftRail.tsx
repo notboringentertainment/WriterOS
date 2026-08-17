@@ -3,6 +3,8 @@ import type { TranscriptMessage } from '../../lib/projectState'
 import { getActiveHelperText, type ActiveTab } from '../../lib/wpRouting'
 import type { StoryBibleSection } from '../../lib/shellState'
 import { CapabilityReceiptChip } from '../transcript/CapabilityReceiptChip'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { MemoryPatchSuggestionChip } from '../memory/MemoryPatchSuggestionChip'
 
 interface LeftRailProps {
   open: boolean
@@ -14,6 +16,12 @@ interface LeftRailProps {
   loading: boolean
   onSend: (text: string) => void
   onClearTranscript?: () => void
+  // Task 10 continuation: id of the assistant message whose memory-grounded
+  // patch was "kept as suggestion" rather than applied or dismissed — null/
+  // undefined when there is none. Reachable only as a chip on that message;
+  // onReopenPatchSuggestion brings the full preview back.
+  keptPatchMessageId?: string | null
+  onReopenPatchSuggestion?: () => void
 }
 
 export function LeftRail({
@@ -26,6 +34,8 @@ export function LeftRail({
   loading,
   onSend,
   onClearTranscript,
+  keptPatchMessageId = null,
+  onReopenPatchSuggestion,
 }: LeftRailProps) {
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -99,6 +109,12 @@ export function LeftRail({
                     </div>
                     {msg.role === 'assistant' && msg.capabilityReceipt && (
                       <CapabilityReceiptChip receipt={msg.capabilityReceipt} />
+                    )}
+                    {msg.role === 'assistant' && msg.memoryReceipt && (
+                      <MemoryReceiptDisclosure receipt={msg.memoryReceipt} />
+                    )}
+                    {msg.role === 'assistant' && msg.id === keptPatchMessageId && onReopenPatchSuggestion && (
+                      <MemoryPatchSuggestionChip onReopen={onReopenPatchSuggestion} />
                     )}
                   </div>
                 ))}

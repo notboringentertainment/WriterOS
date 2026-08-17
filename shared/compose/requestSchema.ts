@@ -6,18 +6,21 @@ const FormatSchema = z.enum(['feature', 'series'])
 
 export const ComposeDocumentRequestSchema = z.discriminatedUnion('surface', [
   z.object({
+    projectId: z.string().min(1).optional(),
     surface: z.literal('outline'),
     format: FormatSchema,
     content: OutlineDocumentContentSchema,
     identity: IdentitySchema,
   }),
   z.object({
+    projectId: z.string().min(1).optional(),
     surface: z.literal('synopsis'),
     format: FormatSchema,
     content: SynopsisDocumentContentSchema,
     identity: IdentitySchema,
   }),
   z.object({
+    projectId: z.string().min(1).optional(),
     surface: z.literal('treatment'),
     format: FormatSchema,
     content: TreatmentDocumentContentSchema,

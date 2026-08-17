@@ -226,6 +226,7 @@ function makeDoc(overrides: Partial<SynopsisDocumentContent> = {}): AuthoredDocu
   const content = { ...createEmptySynopsisContent(), ...overrides }
   return {
     version: DOCUMENT_SCHEMA_VERSION,
+    revision: 0,
     mode: 'prose',
     updatedAt: '2026-05-15T00:00:00.000Z',
     content,
@@ -309,6 +310,7 @@ describe('mirrorSynopsisFromLegacy', () => {
   it('preserves version, mode, and viewPreferences from existingDoc', () => {
     const existing: AuthoredDocumentState<SynopsisDocumentContent> = {
       version: DOCUMENT_SCHEMA_VERSION,
+      revision: 0,
       mode: 'prose',
       updatedAt: '2026-01-01T00:00:00.000Z',
       content: createEmptySynopsisContent(),

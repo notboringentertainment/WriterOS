@@ -18,6 +18,10 @@ import {
   type ResearchSource,
   type ResearchTaskResult,
 } from './researchTypes'
+import {
+  finalizeAgentMemoryText,
+  type AgentMemoryContext,
+} from '../projectMemory/agentContext'
 
 export interface PersonaCapabilitySynthesisInput {
   personaId: 'zoe'
@@ -29,6 +33,7 @@ export interface PersonaCapabilitySynthesisInput {
   sources: ResearchSource[]
   status: PersonaCapabilityStatus
   failureReason?: PersonaCapabilityFailureReason
+  projectMemoryPrompt?: string
 }
 
 export interface PersonaCapabilitySynthesisResult {
@@ -42,6 +47,7 @@ export interface PersonaCapabilityDeps {
   baseUrl: string
   token?: string
   now?: () => Date
+  agentMemory?: AgentMemoryContext
 }
 
 const researchSourceSchema = z.object({
@@ -216,6 +222,7 @@ function buildReceipt(input: {
   status: PersonaCapabilityStatus
   sources: CapabilityReceiptSource[]
   failureReason?: PersonaCapabilityFailureReason
+  memory: NonNullable<CapabilityReceipt['memory']>
 }): CapabilityReceipt {
   return {
     schemaVersion: 1,
@@ -232,6 +239,7 @@ function buildReceipt(input: {
     },
     missingSurfaces: getMissingCapabilitySurfaces(input.request.projectContext),
     sources: input.sources,
+    memory: input.memory,
     ...(input.failureReason ? { failureReason: input.failureReason } : {}),
   }
 }
@@ -262,7 +270,7 @@ async function callOpenSwarm(request: PersonaCapabilityRequest, deps: PersonaCap
       },
       body: JSON.stringify({
         recipient_agent: entry.upstreamRecipient,
-        message: buildResearchWorldContextPrompt(request),
+        message: buildResearchWorldContextPrompt(request, deps.agentMemory?.prompt),
         chat_history: [],
       }),
       signal: controller.signal,
@@ -330,6 +338,7 @@ export async function runPersonaTask(
       sources,
       status,
       failureReason,
+      projectMemoryPrompt: deps.agentMemory?.prompt,
     })
   } catch (error) {
     console.error('[persona-capability] synthesis failed', error instanceof Error ? error.message : error)
@@ -340,6 +349,10 @@ export async function runPersonaTask(
   }
 
   const completedAt = deps.now?.() ?? new Date()
+  const finalizedMemory = deps.agentMemory
+    ? finalizeAgentMemoryText(synthesis.finalMessage, deps.agentMemory)
+    : undefined
+  if (finalizedMemory) synthesis = { ...synthesis, finalMessage: finalizedMemory.text }
   const receiptSources = markCitedSources(sources, synthesis.citedLabels)
   const receipt = buildReceipt({
     request,
@@ -348,6 +361,12 @@ export async function runPersonaTask(
     status,
     failureReason,
     sources: receiptSources,
+    memory: finalizedMemory?.receipt ?? {
+      revision: 0,
+      status: 'disabled',
+      citations: [],
+      conflictIds: [],
+    },
   })
 
   console.log(

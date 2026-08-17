@@ -101,10 +101,19 @@ export type DuplicateProjectResult<TRef extends ProjectStorageProjectRef> =
   | { ok: true; ref: TRef; project: StoredProject; warnings: string[] }
   | { ok: false; reason: 'unsupported' | 'permission-denied' | 'failed'; message: string }
 
+export interface ProjectStorageCapabilities {
+  removeProject: boolean
+  archiveProject: boolean
+  restoreProject: boolean
+  showProjectInFolder: boolean
+  duplicateProject: boolean
+}
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
-  kind: 'file-system-access'
+  kind: 'file-system-access' | 'server'
   label: string
   defaultFolderLabel: string
+  capabilities: ProjectStorageCapabilities
   listProjects(): Promise<Array<ProjectStorageListEntry<TRef>>>
   readProject(ref: TRef): Promise<ProjectPackageReadResult>
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
@@ -422,6 +431,13 @@ export function createFileSystemAccessProjectStorageAdapter(
     kind: 'file-system-access',
     label: folderLabel,
     defaultFolderLabel: DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
+    capabilities: {
+      removeProject: typeof rootHandle.removeEntry === 'function',
+      archiveProject: typeof rootHandle.removeEntry === 'function',
+      restoreProject: typeof rootHandle.removeEntry === 'function',
+      showProjectInFolder: false,
+      duplicateProject: true,
+    },
     async listProjects() {
       const entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>> = []
       let archiveHandle: WriterOSFileSystemDirectoryHandle | undefined

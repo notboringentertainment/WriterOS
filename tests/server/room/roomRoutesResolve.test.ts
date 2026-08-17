@@ -117,6 +117,14 @@ describe('POST /api/room/:projectId/messages', () => {
       content: 'Casey, help with Rosa.',
       characterNames: ['Rosa'],
       characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+      surfaceAwareness: {
+        kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'series',
+        questions: [{ id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'answered', answers: [{ value: 'Ray Gravely' }] }],
+        selectionSource: 'first_unanswered',
+        answeredCount: 1, totalCount: 1,
+        nextQuestion: { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead.', status: 'answered', answers: [{ value: 'Ray Gravely' }] },
+        nextRecommendedAction: 'all_answered',
+      },
     })
 
     expect(res.status).toBe(200)
@@ -126,6 +134,10 @@ describe('POST /api/room/:projectId/messages', () => {
         payload: expect.objectContaining({
           characterNames: ['Rosa'],
           characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+          surfaceAwareness: expect.objectContaining({
+            kind: 'intake', surface: 'outline', format: 'series',
+            nextQuestion: expect.objectContaining({ label: 'Who are we following?', answers: [{ value: 'Ray Gravely' }] }),
+          }),
         }),
       }),
     )

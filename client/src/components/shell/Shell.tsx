@@ -40,6 +40,8 @@ interface RailProps {
   loading: boolean
   onSend: (text: string) => void
   onClearTranscript?: () => void
+  keptPatchMessageId?: string | null
+  onReopenPatchSuggestion?: () => void
 }
 
 interface ShellProps {
@@ -174,6 +176,7 @@ export function Shell({
           voiceProfileOpen={voiceProfileOpen}
           ritual={ritual}
           onProjectMeeting={activeProjectId ? () => openRitual('projectMeeting') : undefined}
+          onOpenMemory={activeProjectId ? () => openRitual('memory') : undefined}
         />
       )}
       <div style={styles.body}>

@@ -4,9 +4,7 @@
 // time by whichever section writer touches the block first — the initializer
 // preserves existing non-blank values verbatim (B6).
 //
-// Meeting locks are round-cumulative: each bank UNIONS its new lock lines into
-// the section (exact-line dedupe). Existing Meeting locks stay active until an
-// explicit future withdrawal/supersession workflow — out of scope here.
+import type { MeetingDecisionRow } from './interview/types';
 
 export const SURFACE_HEADER = '## Surface-declared locks';
 export const MEETING_HEADER = '## Meeting locks';
@@ -90,4 +88,14 @@ export function mergeMeetingLocks(current: string, newLines: string[]): string {
     .filter((l) => l && l !== SURFACE_HEADER && l !== MEETING_HEADER && !seen.has(l) && (seen.add(l), true));
   const merged = [...existing, ...additions];
   return renderLockSections({ ...sections, meeting: merged.length ? merged.join('\n') : NONE_DECLARED });
+}
+
+export function renderMeetingLocksFromDirection(current: string, activeDirection: readonly MeetingDecisionRow[]): string {
+  const lines = activeDirection.flatMap((row) => {
+    if (!('statement' in row.content) || row.content.mutability !== 'locked') return [];
+    return `${row.content.originMarker} ${row.content.statement}`.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && line !== SURFACE_HEADER && line !== MEETING_HEADER);
+  });
+  return mergeLockSection(current, 'meeting', lines.join('\n'));
 }

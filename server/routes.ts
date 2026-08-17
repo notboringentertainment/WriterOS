@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
 import { isDebugApiEnabled } from "./ai/morganRuntime";
@@ -15,11 +15,43 @@ import { scriptFactLines } from "./scriptFactFormatting";
 import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
 import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
+import { loadProjectLibraryConfig } from "./projectLibrary/config";
+import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLibrary/store";
+import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
+import {
+  STRUCTURED_DOCUMENT_SURFACES,
+  isValidStructuredDocumentContent,
+  shouldRequestDocumentPatch,
+  structuredDocumentSurfaceFromSurfaceId,
+  type MemoryGroundedPatchAttempt,
+  type MemoryGroundedPatchProposal,
+  type StructuredDocumentSurface,
+} from "@shared/memoryPatches";
+import type { SurfaceAwareness } from "@shared/surfaceAwareness";
+import {
+  createNonProjectMemoryBodyParser,
+  createProjectMemoryJsonParser,
+  projectMemoryJsonErrorBoundary,
+  registerProjectMemoryRoutes,
+  registerProjectMemorySecurityBoundary,
+} from "./projectMemory/routes";
+import { WRITEROS_JSON_BODY_LIMIT } from "./httpLimits";
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  createProjectMemoryProvider,
+  finalizeAgentMemoryText,
+  finalizeAgentMemoryValue,
+  type AgentMemoryContext,
+  type MemoryReceipt,
+  type ProjectMemoryProvider,
+} from "./projectMemory/agentContext";
 
 const openaiService = new OpenAIService();
 
 // Request schemas
 const chatMessageSchema = z.object({
+  projectId: z.string().min(1).optional(),
   personaId: z.string(),
   message: z.string(),
   userProfile: z.object({
@@ -66,6 +98,7 @@ const chatMessageSchema = z.object({
 });
 
 const synopsisAssistSchema = z.object({
+  projectId: z.string().min(1).optional(),
   userInput: z.string(),
   currentLogline: z.string(),
   currentSynopsis: z.string(),
@@ -374,6 +407,7 @@ const voiceProfileDocumentSchema = z.object({
 });
 
 const wpChatSchema = z.object({
+  projectId: z.string().min(1),
   personaId: z.string(),
   message: z.string(),
   projectContext: projectContextSchema,
@@ -385,9 +419,22 @@ const wpChatSchema = z.object({
   // must never break chat, so it degrades to undefined (no conditioning) instead of
   // failing the parse. Mirrors the `surface` safety rule.
   voiceProfile: voiceProfileDocumentSchema.optional().catch(undefined),
+  // Task 10 (review Important 4): the writer's own in-memory revision/content
+  // for whichever structured document they are currently on. A
+  // structured-document patch's baseVersion is built from this, not the
+  // folder-backed package on disk — the debounced autosave can lag the
+  // browser by up to its ~600ms debounce, which made every Apply refuse as
+  // stale even when the writer made no edits after asking for the rewrite.
+  // Malformed/absent degrades to undefined, same as voiceProfile/surface.
+  documentSnapshot: z.object({
+    surface: z.enum(STRUCTURED_DOCUMENT_SURFACES),
+    revision: z.number().int().nonnegative(),
+    content: z.unknown(),
+  }).optional().catch(undefined),
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
+  projectId: z.string().min(1).optional(),
   message: z.string(),
   projectContext: projectContextSchema,
   voiceProfile: voiceProfileDocumentSchema.optional(),
@@ -699,7 +746,8 @@ function buildVoiceProfileLines(voiceProfile?: VoiceProfileDocument): string[] {
 export function buildOpenSwarmWritingPartnerPrompt(
   message: string,
   projectContext: ProjectContextForOpenSwarm,
-  voiceProfile?: VoiceProfileDocument
+  voiceProfile?: VoiceProfileDocument,
+  projectMemoryPrompt = '',
 ): string {
   const synopsisContextLines = buildSynopsisContextLines(projectContext)
     .map(line => `- ${line}`);
@@ -846,7 +894,7 @@ Story Bible:
 ${bulletLines(storyBibleLines)}
 
 Script context:
-${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
+${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}${projectMemoryPrompt ? `\n\n${projectMemoryPrompt}` : ''}`;
 }
 
 // Build the HTTP body for a PersonaResponse, gating admin/debug trace metadata.
@@ -854,10 +902,15 @@ ${scriptLines.length ? scriptLines.join('\n') : '- None supplied'}`;
 // EVERY persona-chat adapter (/api/chat, /api/wp-chat) must route through this so
 // debug never leaks from any surface by default. The default contract stays
 // { message, suggestions }.
-function personaResponseBody(response: PersonaResponse) {
-  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug'] } = {
+function personaResponseBody(response: PersonaResponse, memory: AgentMemoryContext) {
+  const finalized = finalizeAgentMemoryValue({
     message: response.message,
     suggestions: response.suggestions,
+  }, memory);
+  const body: { message: string; suggestions?: string[]; debug?: PersonaResponse['debug']; memoryReceipt: typeof finalized.receipt } = {
+    message: finalized.value.message,
+    suggestions: finalized.value.suggestions,
+    memoryReceipt: finalized.receipt,
   };
   if (isDebugApiEnabled() && response.debug) {
     body.debug = response.debug;
@@ -865,10 +918,136 @@ function personaResponseBody(response: PersonaResponse) {
   return body;
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+// Review round 2 (Important): documentSnapshot.content is untrusted request
+// input, unlike the disk-read document (already guaranteed valid by
+// ProjectDocumentsSchema). A generous but bounded cap on top of exact-schema
+// validation — full documents are text; ~200k characters comfortably covers
+// even a large treatment or story bible while refusing anything padded far
+// past what a real document could be.
+const MAX_DOCUMENT_SNAPSHOT_CONTENT_CHARS = 200_000;
+
+function isUsableDocumentSnapshot(
+  snapshot: { surface: StructuredDocumentSurface; revision: number; content: unknown } | undefined,
+  surface: StructuredDocumentSurface,
+): boolean {
+  if (!snapshot || snapshot.surface !== surface) return false;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(snapshot.content) ?? '';
+  } catch {
+    return false;
+  }
+  if (serialized.length === 0 || serialized.length > MAX_DOCUMENT_SNAPSHOT_CONTENT_CHARS) return false;
+  return isValidStructuredDocumentContent(surface, snapshot.content);
+}
+
+// Task 10: gates and orchestrates one memory-grounded structured-document
+// patch attempt alongside a wp-chat response — same "attach it next to the
+// response" shape as personaResponseBody attaches a MemoryReceipt. Never
+// throws: every failure mode (no folder-backed project, no matching surface,
+// no intent, an unreadable package) degrades to 'not-requested', which is the
+// normal/silent case, not a visible failure.
+async function attemptStructuredDocumentPatch(input: {
+  projectId: string;
+  message: string;
+  surfaceAwareness: SurfaceAwareness | undefined;
+  documentSnapshot?: { surface: StructuredDocumentSurface; revision: number; content: unknown };
+  memory: AgentMemoryContext;
+  projectLibraryStore: ProjectLibraryStore | null;
+}): Promise<MemoryGroundedPatchAttempt> {
+  if (!input.projectLibraryStore) return { status: 'not-requested' };
+  // Plan ruling: only on an explicit fill/rewrite/apply/revise ask that names
+  // (or deictically means) the CURRENT structured surface — never for script
+  // (surfaceAwareness only models the four structured-document surfaces;
+  // script always reports { kind: 'none' }, see shared/surfaceAwareness.ts),
+  // and never unprompted. Surface must be resolved first: shouldRequestDocumentPatch
+  // needs to know which surface is "current" to judge whether the message
+  // actually refers to it.
+  if (input.surfaceAwareness?.kind !== 'intake') return { status: 'not-requested' };
+  const surface = structuredDocumentSurfaceFromSurfaceId(input.surfaceAwareness.surface);
+  if (!surface) return { status: 'not-requested' };
+  if (!shouldRequestDocumentPatch(input.message, surface)) return { status: 'not-requested' };
+
+  let read;
+  try {
+    read = await input.projectLibraryStore.readProject(input.projectId);
+  } catch {
+    // Not found (browser-only project, stale id) or any other read error —
+    // there is no authoritative document/revision to propose a patch
+    // against, so this is simply inapplicable, not a failure to surface.
+    return { status: 'not-requested' };
+  }
+  if (!read.ok) return { status: 'not-requested' };
+
+  // Review Important 4: prefer the writer's own in-memory revision/content
+  // for this exact surface over the folder-backed package on disk. The
+  // package is written by a debounced autosave (~600ms) and so can lag the
+  // browser by a beat — reading it here would attribute baseVersion to a
+  // moment already behind the writer's live document, making the apply-time
+  // staleness check in client/src/lib/memoryPatch.ts fail even when the
+  // writer made no edits after asking for the rewrite.
+  //
+  // Review round 2 (Important): unlike the disk read (already guaranteed
+  // schema-valid by ProjectDocumentsSchema), a snapshot is untrusted request
+  // input — isUsableDocumentSnapshot checks its declared surface matches the
+  // one we just resolved, its size is bounded, and its content validates
+  // against that exact surface's content schema. Any failure there falls
+  // back to the disk read (same path as "no snapshot sent") rather than
+  // erroring the chat or trusting unvalidated content into the model prompt.
+  const document = isUsableDocumentSnapshot(input.documentSnapshot, surface)
+    ? { content: input.documentSnapshot!.content, revision: input.documentSnapshot!.revision }
+    : read.project.state.documents[surface];
+  return openaiService.generateStructuredDocumentPatch({
+    surface,
+    currentContent: document.content,
+    baseVersion: document.revision,
+    userMessage: input.message,
+    agentMemory: input.memory,
+  });
+}
+
+function patchAttemptResponseFields(
+  attempt: MemoryGroundedPatchAttempt,
+): { patch?: MemoryGroundedPatchProposal; patchFailure?: { reason: string } } {
+  if (attempt.status === 'generated') return { patch: attempt.proposal };
+  if (attempt.status === 'failed') return { patchFailure: { reason: attempt.reason } };
+  return {};
+}
+
+export interface RegisterRoutesOptions {
+  projectMemoryProvider?: ProjectMemoryProvider | null;
+}
+
+export async function registerRoutes(app: Express, options: RegisterRoutesOptions = {}): Promise<Server> {
+  let projectLibraryConfig;
+  try {
+    projectLibraryConfig = await loadProjectLibraryConfig(process.env);
+  } catch (error) {
+    console.warn('Server project library disabled:', error instanceof Error ? error.message : 'invalid configuration');
+    projectLibraryConfig = await loadProjectLibraryConfig({
+      ...process.env,
+      WRITEROS_PROJECTS_ROOT: undefined,
+    });
+  }
+  registerProjectMemorySecurityBoundary(app, projectLibraryConfig);
+  app.use(createProjectMemoryJsonParser(WRITEROS_JSON_BODY_LIMIT));
+  app.use(createNonProjectMemoryBodyParser(express.json({ limit: WRITEROS_JSON_BODY_LIMIT })));
+  app.use(createNonProjectMemoryBodyParser(express.urlencoded({ extended: false })));
+  app.use(projectMemoryJsonErrorBoundary);
+  const projectLibraryStore = projectLibraryConfig.enabled && projectLibraryConfig.rootPath
+    ? await createProjectLibraryStore(projectLibraryConfig.rootPath)
+    : null;
+  const agentMemoryProvider = options.projectMemoryProvider !== undefined
+    ? options.projectMemoryProvider
+    : projectLibraryStore
+      ? createProjectMemoryProvider({ projectLibraryStore })
+      : null;
+  registerProjectLibraryRoutes(app, projectLibraryConfig, projectLibraryStore);
+  registerProjectMemoryRoutes(app, projectLibraryConfig, projectLibraryStore);
+
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
-  registerRoomRoutes(app);
+  registerRoomRoutes(app, agentMemoryProvider);
 
   // Chat with persona
   app.post("/api/chat", async (req, res) => {
@@ -880,16 +1059,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid persona ID" });
       }
 
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'chat',
+        personaId: data.personaId,
+      });
       const response = await openaiService.generatePersonaResponse(
         persona,
         data.message,
         data.userProfile,
         data.storyMemory,
-        data.conversationHistory
+        data.conversationHistory,
+        undefined,
+        memory,
       );
 
-      res.json(personaResponseBody(response));
+      res.json(personaResponseBody(response, memory));
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({
+          error: 'project-memory-unavailable',
+          message: error.message,
+        });
+      }
       console.error("Chat error:", error);
       res.status(500).json({
         error: "Failed to process chat message",
@@ -902,17 +1094,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/synopsis-assist", async (req, res) => {
     try {
       const data = synopsisAssistSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.userInput,
+        surface: 'synopsis',
+        personaId: 'sam',
+      });
       
       const response = await openaiService.generateSynopsisAssistance(
         data.userInput,
         data.currentLogline,
         data.currentSynopsis,
         data.projectDetails,
-        data.userProfile
+        data.userProfile,
+        memory,
       );
 
-      res.json(response);
+      const finalized = finalizeAgentMemoryValue(response, memory);
+      res.json({ ...finalized.value, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       console.error("Synopsis assist error:", error);
       res.status(500).json({ 
         error: "Failed to process synopsis assistance",
@@ -939,8 +1141,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         immediateNeed: '',
       };
       const scriptContext = data.projectContext.script;
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: data.projectContext.surface?.kind === 'intake'
+          ? data.projectContext.surface.surface
+          : 'writing-partner',
+        personaId: data.personaId,
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
 
       const storyMemory: StoryMemory = {
+        sharedMemory: [],
         project: {
           title: data.projectContext.title,
           genre: data.projectContext.genre,
@@ -995,17 +1206,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         decisions: [],
       };
 
-      const response = await openaiService.generatePersonaResponse(
-        persona,
-        data.message,
-        userProfile,
-        storyMemory,
-        data.conversationHistory,
-        data.voiceProfile
-      );
+      // Runs alongside the main chat call, not after it: patch generation
+      // reads its own document snapshot and never depends on the persona
+      // reply, so there is no reason to serialize them.
+      const [response, patchAttempt] = await Promise.all([
+        openaiService.generatePersonaResponse(
+          persona,
+          data.message,
+          userProfile,
+          storyMemory,
+          data.conversationHistory,
+          data.voiceProfile,
+          memory,
+        ),
+        attemptStructuredDocumentPatch({
+          projectId: data.projectId,
+          message: data.message,
+          surfaceAwareness: data.projectContext.surface,
+          // Zod infers `content` as optional here (z.unknown() accepts a
+          // missing key, same quirk documented in shared/memoryPatches.ts);
+          // the object is either absent or has all three keys from the
+          // request body, so this cast is safe.
+          documentSnapshot: data.documentSnapshot as { surface: StructuredDocumentSurface; revision: number; content: unknown } | undefined,
+          memory,
+          projectLibraryStore,
+        }),
+      ]);
 
-      res.json(personaResponseBody(response));
+      res.json({ ...personaResponseBody(response, memory), ...patchAttemptResponseFields(patchAttempt) });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       console.error("WP chat error:", error);
       res.status(500).json({
         error: "Failed to process message",
@@ -1016,8 +1248,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // OpenSwarm Writing Partner bridge — explicit opt-in, separate from /api/wp-chat
   app.post("/api/openswarm/writing-partner", async (req, res) => {
+    let failureMemoryReceipt: MemoryReceipt | undefined;
     try {
       const data = openSwarmWritingPartnerSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'openswarm-writing-partner',
+        personaId: 'writingPartner',
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
+      failureMemoryReceipt = finalizeAgentMemoryText('', memory).receipt;
       const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
       const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const controller = new AbortController();
@@ -1033,7 +1273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
           body: JSON.stringify({
             recipient_agent: 'Writing Partner',
-            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext, data.voiceProfile),
+            message: buildOpenSwarmWritingPartnerPrompt(data.message, data.projectContext, data.voiceProfile, memory.prompt),
             chat_history: [],
           }),
           signal: controller.signal,
@@ -1048,6 +1288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(502).json({
           error: "OpenSwarm request failed",
           message: "OpenSwarm is reachable, but Writing Partner could not complete the request.",
+          memoryReceipt: failureMemoryReceipt,
         });
       }
 
@@ -1057,13 +1298,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(502).json({
           error: "OpenSwarm returned an error",
           message: "OpenSwarm Writing Partner returned an error.",
+          memoryReceipt: failureMemoryReceipt,
         });
       }
 
-      res.json({
-        message: typeof payload.response === 'string' ? payload.response : "OpenSwarm Writing Partner did not return a text response.",
-      });
+      const finalized = finalizeAgentMemoryText(
+        typeof payload.response === 'string' ? payload.response : "OpenSwarm Writing Partner did not return a text response.",
+        memory,
+      );
+      res.json({ message: finalized.text, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("OpenSwarm bridge validation error:", error.flatten());
         return res.status(400).json({
@@ -1076,6 +1323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(502).json({
         error: "Failed to reach OpenSwarm",
         message: "Start OpenSwarm's FastAPI server on port 8080, then try again.",
+        ...(failureMemoryReceipt ? { memoryReceipt: failureMemoryReceipt } : {}),
       });
     }
   });
@@ -1084,16 +1332,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/persona-capability/run", async (req, res) => {
     try {
       const data = personaCapabilityRequestSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: data.message,
+        surface: 'persona-capability',
+        personaId: data.personaId,
+        currentEntities: data.projectContext.characters.map(character => character.name).filter(Boolean),
+      });
       const baseUrl = process.env.OPENSWARM_URL || process.env.OPEN_SWARM_URL || 'http://localhost:8080';
       const token = process.env.OPENSWARM_APP_TOKEN || process.env.OPEN_SWARM_APP_TOKEN;
       const response = await runPersonaTask(data, {
         baseUrl,
         token,
         synthesizeFinal: input => openaiService.synthesizePersonaCapabilityResponse(input),
+        agentMemory: memory,
       });
 
       res.json(response);
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("Persona capability validation error:", error.flatten());
         return res.status(400).json({
@@ -1111,25 +1369,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/compose-document", async (req, res) => {
+    let failureMemoryReceipt: MemoryReceipt | undefined;
     try {
       const data = ComposeDocumentRequestSchema.parse(req.body);
+      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
+        message: `${data.identity.title} ${data.identity.genre}`,
+        surface: data.surface,
+      });
+      failureMemoryReceipt = finalizeAgentMemoryText('', memory).receipt;
       const result = data.surface === "treatment"
-        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity })
+        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
         : data.surface === "synopsis"
-          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity })
-          : await composeOutline({ content: data.content, format: data.format, identity: data.identity });
+          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
+          : await composeOutline({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt });
       if (!result.ok) {
         console.error("compose-document soft-fail:", result.reason);
-        return res.status(422).json({ error: "compose_failed", message: "WriterOS could not compose this document right now.", reason: "compose_failed" });
+        return res.status(422).json({
+          error: "compose_failed", message: "WriterOS could not compose this document right now.",
+          reason: "compose_failed", memoryReceipt: failureMemoryReceipt,
+        });
       }
-      res.json({ composed: result.composed });
+      const finalized = finalizeAgentMemoryValue(result.composed, memory);
+      res.json({ composed: finalized.value, memoryReceipt: finalized.receipt });
     } catch (error) {
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
+      }
       if (error instanceof z.ZodError) {
         console.error("compose-document validation error:", error.flatten());
         return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });
       }
       console.error("compose-document route error:", error instanceof Error ? error.message : error);
-      res.status(502).json({ error: "compose_error", message: "WriterOS could not compose this document right now." });
+      res.status(502).json({
+        error: "compose_error", message: "WriterOS could not compose this document right now.",
+        ...(failureMemoryReceipt ? { memoryReceipt: failureMemoryReceipt } : {}),
+      });
     }
   });
 

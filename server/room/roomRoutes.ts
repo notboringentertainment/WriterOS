@@ -4,15 +4,19 @@
 
 import type { Express, Request, Response } from 'express';
 import { PERSONAS } from '../../shared/personas';
+import { SurfaceAwarenessSchema } from '../../shared/surfaceAwareness';
 import { addSseClient, broadcast } from './sseHub';
 import { startRoomScheduler } from './scheduler';
 import * as store from './store';
 import * as interviewRuntime from './interview/runtime';
+import * as pitchPacketRuntime from './interview/pitchPacketRuntime';
 import { InvalidLockSectionsError } from './lockSections';
 import { isRoomConfigured } from './supabaseClient';
 import { syncSurfaceLocks } from './surfaceLockSync';
-import { ensureProjectMemory } from './memoryContract';
+import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
 import type { ProposalOrigin, RoomEventKind } from './types';
+import type { MeetingRevisionInput } from './interview/banking';
+import type { ProjectMemoryProvider } from '../projectMemory/agentContext';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
 const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
@@ -39,6 +43,10 @@ async function ensureMemoryOr503(req: Request, res: Response): Promise<boolean> 
 
 function handleInterviewError(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Failed to execute Project Meeting action.';
+  if (error instanceof RoomMemoryError) {
+    res.status(503).json({ message: 'Project memory is unavailable and needs repair.' });
+    return;
+  }
   if (error instanceof InvalidLockSectionsError) {
     res.status(422).json({ message: 'Story locks contain malformed reserved section headers. Repair the lock sections before banking.' });
     return;
@@ -55,7 +63,22 @@ function handleInterviewError(res: Response, error: unknown): void {
   res.status(500).json({ message });
 }
 
-export function registerRoomRoutes(app: Express): void {
+function handlePitchPacketError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : 'Pitch Packet action failed.';
+  if (error instanceof RoomMemoryError) { res.status(503).json({ message: 'Project memory is unavailable and needs repair.' }); return; }
+  if (error instanceof Error && error.name === 'ZodError') { res.status(400).json({ message: 'Pitch Packet data is invalid.' }); return; }
+  if (message.includes('not found')) { res.status(404).json({ message }); return; }
+  if (message.includes('cannot be approved') || message.includes('Only a draft') || message.includes('must be approved')) {
+    res.status(422).json({ message }); return;
+  }
+  if (message.includes('does not belong') || message.includes('identity does not match') || message.includes('direction changed') || message.includes('requires a banked')) {
+    res.status(409).json({ message }); return;
+  }
+  console.error('[room.routes] pitch packet action failed:', error);
+  res.status(500).json({ message });
+}
+
+export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryProvider | null): void {
   // Live channel stream. An open connection = "project is open" for idle_tick.
   app.get('/api/room/:projectId/stream', async (req, res) => {
     if (!requireRoom(res)) return;
@@ -122,13 +145,18 @@ export function registerRoomRoutes(app: Express): void {
               !!c && typeof c === 'object' && typeof (c as Record<string, unknown>).id === 'string',
           )
         : [];
+      const surfaceResult = SurfaceAwarenessSchema.safeParse(req.body?.surfaceAwareness);
+      if (!surfaceResult.success) {
+        res.status(400).json({ message: 'surfaceAwareness is required and must match current WriterOS surface state.' });
+        return;
+      }
 
       const message = await store.insertMessage({ projectId, author: 'writer', content });
       broadcast(projectId, { type: 'message', message });
       await store.insertEvent({
         projectId,
         kind: 'writer_message',
-        payload: { content, characterNames, characters, messageId: message.id },
+        payload: { content, characterNames, characters, surfaceAwareness: surfaceResult.data, messageId: message.id },
       });
       res.json({ message });
     } catch (error) {
@@ -265,6 +293,7 @@ export function registerRoomRoutes(app: Express): void {
         mode,
         seedText,
         speculative: Boolean(req.body?.speculative),
+        memoryProvider,
       });
       res.json(result);
     } catch (error) {
@@ -340,6 +369,24 @@ export function registerRoomRoutes(app: Express): void {
     }
   });
 
+  app.post('/api/room/:projectId/interview/:sessionId/redirect', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      const area = typeof req.body?.area === 'string' ? req.body.area.trim() : '';
+      const questionId = typeof req.body?.questionId === 'string' ? req.body.questionId.trim() : '';
+      if (!area || !questionId || area.length > 200 || questionId.length > 200) {
+        res.status(400).json({ message: 'Choose a valid earlier-round area to ask again.' });
+        return;
+      }
+      res.json(await interviewRuntime.redirectInterviewArea({
+        sessionId: String(req.params.sessionId), projectId: projectIdOf(req), area, questionId,
+      }));
+    } catch (error) {
+      handleInterviewError(res, error);
+    }
+  });
+
   // Writer mutability decisions arrive from the client; keep only well-formed entries.
   function sanitizeMutability(raw: unknown): Record<string, 'locked' | 'leaning' | 'open'> {
     const result: Record<string, 'locked' | 'leaning' | 'open'> = {};
@@ -350,13 +397,35 @@ export function registerRoomRoutes(app: Express): void {
     return result;
   }
 
+  function sanitizeOperations(raw: unknown): MeetingRevisionInput[] {
+    if (!Array.isArray(raw)) return [];
+    const isText = (value: unknown, max = 20000): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+    const isMutability = (value: unknown): value is 'locked' | 'leaning' | 'open' => value === 'locked' || value === 'leaning' || value === 'open';
+    return raw.flatMap((entry): MeetingRevisionInput[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const value = entry as Record<string, unknown>;
+      if ((value.op === 'keep' || value.op === 'retract') && isText(value.targetId, 200)) {
+        return [{ op: value.op, targetId: value.targetId.trim() }];
+      }
+      if (value.op === 'revise' && isText(value.targetId, 200) && isText(value.statement)) {
+        return [{ op: 'revise', targetId: value.targetId.trim(), statement: value.statement.trim(), ...(isMutability(value.mutability) ? { mutability: value.mutability } : {}) }];
+      }
+      if (value.op === 'supersede' && Array.isArray(value.targetIds) && value.targetIds.length > 0
+        && value.targetIds.every((id) => isText(id, 200)) && isText(value.area, 200)
+        && isText(value.fieldPath, 500) && isText(value.statement) && isMutability(value.mutability)) {
+        return [{ op: 'supersede', targetIds: value.targetIds.map((id) => (id as string).trim()), area: value.area.trim(), fieldPath: value.fieldPath.trim(), statement: value.statement.trim(), mutability: value.mutability }];
+      }
+      return [];
+    });
+  }
+
   // POST because the preview is parameterized by the writer's in-flight mutability
   // choices (live re-preview while tagging in readback).
   app.post('/api/room/:projectId/interview/:sessionId/bank-preview', async (req, res) => {
     if (!requireRoom(res)) return;
     if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
+      res.json(await interviewRuntime.previewBankFinal({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability), operations: sanitizeOperations(req.body?.operations) }));
     } catch (error) {
       handleInterviewError(res, error);
     }
@@ -366,7 +435,7 @@ export function registerRoomRoutes(app: Express): void {
     if (!requireRoom(res)) return;
     if (!(await ensureMemoryOr503(req, res))) return;
     try {
-      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability) }));
+      res.json(await interviewRuntime.bankInterview({ sessionId: String(req.params.sessionId), projectId: projectIdOf(req), mutability: sanitizeMutability(req.body?.mutability), operations: sanitizeOperations(req.body?.operations) }));
     } catch (error) {
       handleInterviewError(res, error);
     }
@@ -382,5 +451,53 @@ export function registerRoomRoutes(app: Express): void {
     }
   });
 
-  startRoomScheduler();
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/draft', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.createPitchPacketDraft({
+        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), documents: req.body?.documents,
+        projectMeta: { title: typeof req.body?.projectMeta?.title === 'string' ? req.body.projectMeta.title : undefined },
+        memoryProvider,
+      }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.patch('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.savePitchPacketDraft({
+        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId), packet: req.body?.packet,
+      }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId/approve', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.approvePitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId) }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.post('/api/room/:projectId/interview/:sessionId/pitch-packet/:packetId/export', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      res.json(await pitchPacketRuntime.exportPitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId), packetId: String(req.params.packetId) }));
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  app.get('/api/room/:projectId/interview/:sessionId/pitch-packet/exported', async (req, res) => {
+    if (!requireRoom(res)) return;
+    if (!(await ensureMemoryOr503(req, res))) return;
+    try {
+      const row = await pitchPacketRuntime.getExportedPitchPacket({ projectId: projectIdOf(req), sessionId: String(req.params.sessionId) });
+      if (!row) { res.status(404).json({ message: 'No exported Pitch Packet exists for this Meeting round.' }); return; }
+      res.json(row);
+    } catch (error) { handlePitchPacketError(res, error); }
+  });
+
+  startRoomScheduler(memoryProvider);
 }

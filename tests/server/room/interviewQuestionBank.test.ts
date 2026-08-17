@@ -56,6 +56,16 @@ describe('Project Meeting question bank traceability contract', () => {
     expect(selected).toHaveLength(0);
   });
 
+  it('does not select questions carried from prior rounds', () => {
+    const selected = selectQuestionsForAudit({
+      audit: { locks: 'SUFFICIENT_FROM_PRIOR', ending: 'THIN', open_questions: 'SUFFICIENT', load_bearing_character: 'SUFFICIENT' },
+      mode: 'full',
+      speculative: false,
+    });
+
+    expect(selected.map(question => question.trigger)).toEqual(['ending']);
+  });
+
   it('collapses quick mode to Morgan-owned required questions at one per THIN area', () => {
     const selected = selectQuestionsForAudit({ audit: thinRequiredAudit, mode: 'quick', speculative: false });
 

@@ -6,6 +6,7 @@ import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION, type ComposedDocument } from
 import { syntheticSynopsisFeature } from '../fixtures/synopsis/syntheticSynopsis'
 
 const identity = { title: 'Tideline', genre: 'Thriller' }
+const memoryReceipt = { revision: 42, status: 'disabled' as const, citations: [], conflictIds: [] }
 
 function composed(): ComposedDocument {
   return {
@@ -34,6 +35,18 @@ describe('requestSynopsisCompose', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.surface).toBe('synopsis')
     if (result.ok) expect(result.composed.blocks[0]).toEqual({ type: 'heading', text: 'Logline' })
+  })
+
+  it('sends its folder project identity and retains disabled-memory disclosure', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: composed(), memoryReceipt }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestSynopsisCompose({
+      projectId: 'folder-project-2', content: syntheticSynopsisFeature, format: 'feature', identity,
+    })
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).projectId).toBe('folder-project-2')
+    expect(result).toMatchObject({ ok: true, memoryReceipt })
   })
 
   it('downgrades malformed success payloads to a client failure', async () => {

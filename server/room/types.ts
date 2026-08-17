@@ -1,6 +1,7 @@
 // Writers' Room runtime — shared type contracts (Phase 1).
 // Row shapes mirror the §5 Supabase schema; SSE event union is the wire
 // contract between the room server and the channel UI.
+import type { MemoryReceipt } from '../../shared/schema';
 
 export type RoomMessageKind = 'say' | 'proposal_ref' | 'system';
 
@@ -12,6 +13,7 @@ export interface RoomMessageRow {
   content: string;
   reply_to: string | null;
   created_at: string;
+  memory_receipt?: MemoryReceipt | null;
 }
 
 export interface MemoryBlockRow {
@@ -23,6 +25,7 @@ export interface MemoryBlockRow {
   char_cap: number;
   updated_by: string | null;
   updated_at: string;
+  memory_receipt?: MemoryReceipt | null;
 }
 
 export type RoomEventKind =
@@ -63,6 +66,7 @@ export interface ProposalRow {
   question_id?: string | null;
   origin?: ProposalOrigin | null;
   created_at: string;
+  memory_receipt?: MemoryReceipt | null;
 }
 
 export type LedgerAction = 'spoke' | 'proposed' | 'passed' | 'digested' | 'errored';

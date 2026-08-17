@@ -6,7 +6,7 @@
 // Honest bounds: answers drop from the tail with an omission marker, the seed
 // excerpt truncates with a marker, dropped older rounds are announced.
 
-import type { InterviewSessionRow, TranscriptEntry } from './types';
+import type { InterviewSessionRow, MeetingDecisionContent, MeetingDecisionRow, TranscriptEntry } from './types';
 
 export const CONCEPT_SEED_SENTINEL = 'No concept seed banked yet. Offer the Project Meeting.';
 const SEED_TRUNCATED = '… [seed truncated — full text in the Meeting record]';
@@ -130,4 +130,32 @@ export function projectConceptSeed(sessions: InterviewSessionRow[], cap = 4000):
 
   if (dropped > 0) parts.push(roundsOmitted(dropped));
   return parts.join('\n\n');
+}
+
+export function projectConceptSeedWithDirection(
+  sessions: InterviewSessionRow[],
+  activeDirection: readonly MeetingDecisionRow[],
+  cap = 4000,
+): string {
+  const ordered = [...activeDirection]
+    .filter((row) => 'statement' in row.content && row.content.statement.trim())
+    .sort((a, b) => a.area.localeCompare(b.area) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  if (ordered.length === 0) return projectConceptSeed(sessions, cap);
+
+  const heading = '## Active Meeting direction';
+  const lines = ordered.map((row) => {
+    const content = row.content as MeetingDecisionContent;
+    return `- ${content.originMarker} ${row.area}: ${content.statement} (${content.mutability})`;
+  });
+  const omission = (count: number) => `- … (+${count} more active decisions — see Meeting ledger)`;
+  const directionBudget = Math.min(Math.floor(cap / 2), 1800);
+  const kept: string[] = [];
+  for (const line of lines) {
+    const candidate = [heading, ...kept, line, omission(lines.length - kept.length - 1)].join('\n');
+    if (candidate.length > directionBudget) break;
+    kept.push(line);
+  }
+  const direction = [heading, ...kept, ...(kept.length < lines.length ? [omission(lines.length - kept.length)] : [])].join('\n');
+  const history = projectConceptSeed(sessions, Math.max(0, cap - direction.length - 2));
+  return `${history}\n\n${direction}`;
 }

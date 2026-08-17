@@ -1,5 +1,6 @@
 import { InvalidLockSectionsError, containsReservedLockHeader, mergeLockSection } from './lockSections';
 import * as store from './store';
+import { bridgeStoryLocksToMemory } from '../projectMemory/roomBridge';
 
 export async function syncSurfaceLocks(
   projectId: string,
@@ -21,7 +22,14 @@ export async function syncSurfaceLocks(
     const written = await store.casUpdateSharedBlock({
       projectId, label: 'story_locks', expected: current, next: merged, updatedBy: 'writer',
     });
-    if (written) return 'ok';
+    if (written) {
+      // Best-effort mirror into project memory as explicit canon (a writer
+      // committing a lock IS explicit approval). The Supabase write above is
+      // already durable and authoritative; a sync failure here is invisible
+      // to this caller by design and simply retries from that durable source.
+      void bridgeStoryLocksToMemory({ projectId, storyLocksValue: merged }).catch(() => {});
+      return 'ok';
+    }
   }
   return 'conflict';
 }

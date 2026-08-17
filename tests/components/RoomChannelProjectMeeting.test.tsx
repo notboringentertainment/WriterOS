@@ -67,6 +67,7 @@ function renderChannel(onOpenProjectMeeting?: () => void) {
     <RoomChannel
       projectId="p1"
       characterNames={[]}
+      surfaceAwareness={{ kind: 'none' }}
       locksText=""
       onAdoptProposal={() => true}
       onOpenProjectMeeting={onOpenProjectMeeting}

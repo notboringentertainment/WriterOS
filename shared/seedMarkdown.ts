@@ -161,12 +161,16 @@ function openQuestionsSection(treatment: TreatmentDocumentContent): string | und
 }
 
 export function seedFileName(title: string): string {
+  return `${slugifyProjectTitle(title)}-seed.md`
+}
+
+export function slugifyProjectTitle(title: string): string {
   const slug = title
     .toLowerCase()
     .replace(/['’]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-  return `${slug || 'project'}-seed.md`
+  return slug || 'project'
 }
 
 export function composeSeedMarkdown(input: SeedMarkdownInput): string {

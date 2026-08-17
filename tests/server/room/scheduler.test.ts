@@ -27,6 +27,14 @@ beforeEach(() => {
 });
 
 describe('scheduler memory retry', () => {
+  it('threads one provider through every scheduled specialist turn', async () => {
+    const memoryProvider = { context: vi.fn() }
+    turnMock.mockResolvedValue(undefined)
+    await __processEventsForTests(memoryProvider as never)
+    expect(turnMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ memoryProvider }))
+    expect(turnMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ memoryProvider }))
+  })
+
   it('preserves payload and records completed speakers', async () => {
     turnMock.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new RoomMemoryError('memory down'));
     await __processEventsForTests();

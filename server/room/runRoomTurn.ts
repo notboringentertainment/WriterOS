@@ -15,11 +15,17 @@ import * as store from './store';
 import type { LedgerAction, RoomEventRow } from './types';
 import { newRecorder } from './types';
 import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  finalizeAgentMemoryText,
+  type ProjectMemoryProvider,
+} from '../projectMemory/agentContext';
 
 // The room's honest reach contract: agents see blocks + channel + the trigger,
-// nothing else. Static because the room's reach IS static in Phase 1.
+// plus typed surface state deliberately attached to the writer's message.
 const ROOM_INVENTORY: ReachInventory = {
-  canSee: ['the shared memory blocks', 'your private memory blocks', 'the last 30 channel messages', 'the trigger event'],
+  canSee: ['the shared memory blocks', 'your private memory blocks', 'the last 30 channel messages', 'the trigger event', 'the active structured surface question deck supplied with a writer message'],
   cannotSee: ['the full documents', 'the writer\'s screen', 'other apps', 'the live web'],
   canDoNow: ['speak in the channel', 'file field proposals', 'update your private memory', 'pass'],
   cannotDoYet: ['message specific agents directly', 'edit documents', 'edit locks', 'research the web'],
@@ -29,12 +35,30 @@ export async function runRoomTurn(input: {
   projectId: string;
   agentId: string;
   event: RoomEventRow;
+  memoryProvider?: ProjectMemoryProvider | null;
 }): Promise<void> {
   const { projectId, agentId, event } = input;
   const turnId = createRunId();
   const recorder = newRecorder();
 
   await ensureProjectMemory(projectId);
+
+  let projectMemory;
+  try {
+    projectMemory = await buildAgentMemoryContext(input.memoryProvider ?? null, projectId, {
+      message: typeof event.payload.content === 'string' ? event.payload.content : JSON.stringify(event.payload),
+      surface: typeof event.payload.surface === 'string' ? event.payload.surface : 'writers-room',
+      personaId: agentId,
+      currentEntities: Array.isArray(event.payload.characterNames)
+        ? event.payload.characterNames.filter((value): value is string => typeof value === 'string')
+        : undefined,
+    });
+  } catch (error) {
+    if (error instanceof ProjectMemoryAgentUnavailableError) {
+      throw new RoomMemoryError('Project memory is unavailable and needs repair.');
+    }
+    throw error;
+  }
 
   // §6.3 context assembly.
   const [sharedBlocks, privateBlocks, channel, locksText] = await Promise.all([
@@ -49,11 +73,14 @@ export async function runRoomTurn(input: {
   }
 
   const ambient = event.kind !== 'writer_message';
-  const systemPrompt = buildRoomSystemPrompt({ agentId, sharedBlocks, privateBlocks, ambient });
+  const systemPrompt = buildRoomSystemPrompt({
+    agentId, sharedBlocks, privateBlocks, ambient,
+    projectMemoryPrompt: projectMemory.prompt,
+  });
   const userMessage = buildTurnUserMessage({ channel, event });
   const channelAuthors = new Set(channel.map((m) => m.author));
 
-  const toolset = makeRoomToolset({ projectId, agentId, recorder, locksText, channelAuthors });
+  const toolset = makeRoomToolset({ projectId, agentId, recorder, locksText, channelAuthors, projectMemory });
 
   broadcast(projectId, { type: 'turn_started', agentId, turnId });
 
@@ -87,12 +114,14 @@ export async function runRoomTurn(input: {
     if (!result.ok) {
       action = 'errored';
     } else if (recorder.speak) {
+      const finalized = finalizeAgentMemoryText(recorder.speak.content, projectMemory);
       // Channel insert happens HERE, after the guard accepted the turn.
       const message = await store.insertMessage({
         projectId,
         author: agentId,
-        content: recorder.speak.content,
+        content: finalized.text,
         replyTo: recorder.speak.replyTo,
+        memoryReceipt: finalized.receipt,
       });
       broadcast(projectId, { type: 'message', message, turnId });
       messageLanded = true;

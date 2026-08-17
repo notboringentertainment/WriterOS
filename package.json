@@ -12,6 +12,7 @@
     "check": "tsc",
     "test": "vitest",
     "test:run": "vitest run",
+    "memory": "tsx server/projectMemory/cli.ts",
     "opensrc:fetch": "npx --yes opensrc fetch",
     "opensrc:vendor": "bash scripts/opensrc-vendor.sh"
   },

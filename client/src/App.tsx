@@ -1,9 +1,26 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useShellState } from './lib/shellState'
 import { useProjectState } from './lib/useProjectState'
-import { useWriterOSProjectsFolder } from './lib/useWriterOSProjectsFolder'
+import { useWriterOSProjectLibrary } from './lib/useWriterOSProjectLibrary'
 import { FdxImportError, importFdxFile } from './lib/fdxImport'
-import { parseMention, parseOpenSwarmCommand, buildProjectContext, formatWritingPartnerSpeaker } from './lib/wpRouting'
+import {
+  parseMention,
+  parseOpenSwarmCommand,
+  buildProjectContext,
+  formatWritingPartnerSpeaker,
+  countRelevantMemoryConflicts,
+} from './lib/wpRouting'
+import { useProjectMemory } from './lib/useProjectMemory'
+import { MemorySurface } from './components/memory/MemorySurface'
+import { MemoryConflictBanner } from './components/memory/MemoryConflictCard'
+import { MemoryPatchPreview } from './components/memory/MemoryPatchPreview'
+import {
+  applyMemoryGroundedPatch,
+  parsePatchProposal,
+  shouldRequestDocumentPatch,
+  surfaceForActiveTab,
+} from './lib/memoryPatch'
+import type { MemoryGroundedPatchProposal, StructuredDocumentSurface } from '@shared/memoryPatches'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -36,6 +53,8 @@ import type { StoredProject } from './lib/projectLibrary'
 import { getUnmigratedProjects, loadActiveProjectLibrary, markProjectsMigrated, summarizeProjects } from './lib/projectLibrary'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
 import type { CapabilityReceipt } from '@shared/personaCapability'
+import type { MemoryReceipt } from '@shared/schema'
+import { parseMemoryReceipt } from './lib/memoryReceipt'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
 import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib/projectMeetingStatus'
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
@@ -56,9 +75,13 @@ function makeMessage(
   role: 'user' | 'assistant',
   content: string,
   speaker: string,
-  options: { capabilityReceipt?: CapabilityReceipt } = {}
+  // `id` lets a caller know a message's id before it lands in the transcript
+  // (Task 10: so a patch proposal arriving with this response can be tied to
+  // this exact message for the "kept as suggestion" chip).
+  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt; id?: string } = {}
 ): TranscriptMessage {
-  return { id: crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...options }
+  const { id, ...rest } = options
+  return { id: id ?? crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...rest }
 }
 
 function historyFromTranscript(transcript: TranscriptMessage[]) {
@@ -71,39 +94,61 @@ function formatFdxImportError(error: unknown) {
 }
 
 async function postWPChat(body: {
+  projectId: string
   personaId: string
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
   voiceProfile?: VoiceProfileDocument
-}): Promise<{ message: string; suggestions?: string[] }> {
+  // Review Important 4: the writer's own in-memory revision/content for the
+  // surface they are currently on, sent so a structured-document patch's
+  // baseVersion reflects what the browser actually has right now — not a
+  // debounced folder autosave that can lag behind it, which made every Apply
+  // refuse as stale with advice ("Refresh") that could never fix it.
+  documentSnapshot?: { surface: StructuredDocumentSurface; revision: number; content: unknown }
+}): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt; patchProposal?: MemoryGroundedPatchProposal }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`wp-chat ${res.status}`)
-  return res.json()
+  const response = await res.json()
+  return {
+    ...response,
+    memoryReceipt: parseMemoryReceipt(response?.memoryReceipt),
+    // Task 10: a wp-chat response may carry an optional memory-grounded
+    // document patch alongside its receipt. parsePatchProposal never throws
+    // and drops anything malformed or whose content fails the surface's own
+    // schema, so a bad/absent field here is indistinguishable from "no patch".
+    patchProposal: parsePatchProposal(response?.patch),
+  }
 }
 
 async function postOpenSwarmWritingPartner(body: {
+  projectId?: string
   message: string
   projectContext: ReturnType<typeof buildProjectContext>
   voiceProfile?: VoiceProfileDocument
-}): Promise<{ message: string }> {
+}): Promise<{ message: string; memoryReceipt?: MemoryReceipt }> {
   const res = await fetch('/api/openswarm/writing-partner', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`openswarm writing-partner ${res.status}`)
-  return res.json()
+  const response = await res.json()
+  if (!res.ok) {
+    const memoryReceipt = parseMemoryReceipt(response?.memoryReceipt)
+    if (typeof response?.message === 'string') return { message: response.message, memoryReceipt }
+    throw new Error(`openswarm writing-partner ${res.status}`)
+  }
+  return { ...response, memoryReceipt: parseMemoryReceipt(response?.memoryReceipt) }
 }
 
 export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
-  const projectFolder = useWriterOSProjectsFolder()
+  const projectFolder = useWriterOSProjectLibrary()
   const [wpLoading, setWpLoading] = useState(false)
   const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
@@ -161,6 +206,92 @@ export default function App() {
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
+  const activeAgentProjectKey = activeFolderProjectId
+    ? `folder:${activeFolderProjectId}`
+    : `browser:${project.activeProjectId ?? ''}`
+  // Drives the Memory surface and inline conflict banners (Task 9). A
+  // browser-only project (no activeFolderProjectId) has nowhere durable to
+  // keep a shared memory ledger, so the hook reports browserOnly instead of
+  // fetching.
+  const projectMemory = useProjectMemory(activeFolderProjectId ?? undefined, activeAgentProjectKey)
+  const openMemorySurface = useCallback(() => shellState.openRitual('memory'), [shellState.openRitual])
+  // The hook above is a single, app-lifetime instance (never a second one
+  // inside MemorySurface) so that actions taken there update the exact same
+  // state the banners below read — no separate refresh handshake needed for
+  // that case. It only fetches on mount/scope change otherwise, so anything
+  // WriterOS's background analysis publishes after that point (Task 8) would
+  // sit unseen until the next project switch; refreshing on every Memory-open
+  // picks that up whenever the writer actually looks.
+  useEffect(() => {
+    if (shellState.ritual === 'memory') void projectMemory.refresh()
+  }, [shellState.ritual, projectMemory.refresh])
+  const activeAgentProjectKeyRef = useRef(activeAgentProjectKey)
+  const wpRequestGenerationRef = useRef(0)
+  activeAgentProjectKeyRef.current = activeAgentProjectKey
+  useEffect(() => {
+    wpRequestGenerationRef.current += 1
+    setWpLoading(false)
+  }, [activeAgentProjectKey])
+
+  // Task 10: the single memory-grounded document patch attached to the most
+  // recent qualifying response, if any, and what the writer has done with it.
+  // 'previewing' renders the full MemoryPatchPreview banner inline above the
+  // surface it targets (like the MemoryConflictBanner above it), never a
+  // modal. 'kept' collapses that banner to a small chip on the transcript
+  // message that proposed it (messageId) — reachable for the rest of this
+  // session, not durable across sessions or projects (no store; plan
+  // ruling). Dismiss clears this state outright rather than moving to
+  // 'kept'. Cleared on project switch so a suggestion from one project can
+  // never surface — or get applied — against another.
+  const [activePatchProposal, setActivePatchProposal] = useState<{
+    proposal: MemoryGroundedPatchProposal
+    messageId: string
+    mode: 'previewing' | 'kept'
+  } | null>(null)
+  const [patchApplyError, setPatchApplyError] = useState<string | null>(null)
+  const [applyingPatch, setApplyingPatch] = useState(false)
+  useEffect(() => {
+    setActivePatchProposal(null)
+    setPatchApplyError(null)
+    setApplyingPatch(false)
+  }, [activeAgentProjectKey])
+
+  const handleApplyPatch = useCallback(() => {
+    if (!activePatchProposal) return
+    setApplyingPatch(true)
+    const result = applyMemoryGroundedPatch(activePatchProposal.proposal.patch, project.state.documents, {
+      synopsis: project.setSynopsisDocument,
+      outline: project.setOutlineDocument,
+      treatment: project.setTreatmentDocument,
+      storyBible: project.setStoryBibleDocument,
+    })
+    setApplyingPatch(false)
+    if (!result.ok) {
+      setPatchApplyError(result.message)
+      return
+    }
+    setPatchApplyError(null)
+    setActivePatchProposal(null)
+  }, [activePatchProposal, project])
+
+  // Keeps the same proposal but collapses it to a chip on its message (see
+  // keptPatchMessageId / handleReopenPatchSuggestion below) instead of
+  // discarding it — the behavioral difference from Dismiss. Neither ever
+  // touches the document or project memory.
+  const handleKeepPatchAsSuggestion = useCallback(() => {
+    setActivePatchProposal(current => (current ? { ...current, mode: 'kept' } : current))
+    setPatchApplyError(null)
+  }, [])
+
+  const handleDismissPatch = useCallback(() => {
+    setActivePatchProposal(null)
+    setPatchApplyError(null)
+  }, [])
+
+  const handleReopenPatchSuggestion = useCallback(() => {
+    setActivePatchProposal(current => (current ? { ...current, mode: 'previewing' } : current))
+    setPatchApplyError(null)
+  }, [])
   const latestScriptSnapshotRef = useRef<ScriptSnapshot>({
     rawHtml: project.state.script.rawHtml,
     scenes: project.state.script.scenes,
@@ -636,6 +767,12 @@ export default function App() {
 
   const handleWPSend = useCallback(async (text: string) => {
     const openSwarmMessage = parseOpenSwarmCommand(text)
+    const requestProjectKey = activeAgentProjectKey
+    const requestGeneration = ++wpRequestGenerationRef.current
+    const requestIsCurrent = () => (
+      wpRequestGenerationRef.current === requestGeneration
+      && activeAgentProjectKeyRef.current === requestProjectKey
+    )
 
     if (openSwarmMessage) {
       project.addMessage('writingPartner', makeMessage('user', text, 'Writer'))
@@ -643,9 +780,11 @@ export default function App() {
       try {
         const projectContext = buildFreshProjectContext(openSwarmMessage)
         const voiceProfile = loadCompletedVoiceProfile()
-        const response = await postOpenSwarmWritingPartner({ message: openSwarmMessage, projectContext, voiceProfile })
-        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)'))
+        const response = await postOpenSwarmWritingPartner({ projectId: activeFolderProjectId ?? undefined, message: openSwarmMessage, projectContext, voiceProfile })
+        if (!requestIsCurrent()) return
+        project.addMessage('writingPartner', makeMessage('assistant', response.message, 'Morgan (OpenSwarm)', { memoryReceipt: response.memoryReceipt }))
       } catch {
+        if (!requestIsCurrent()) return
         project.addMessage(
           'writingPartner',
           makeMessage(
@@ -655,7 +794,7 @@ export default function App() {
           )
         )
       } finally {
-        setWpLoading(false)
+        if (requestIsCurrent()) setWpLoading(false)
       }
       return
     }
@@ -680,6 +819,7 @@ export default function App() {
 
       if (capabilityKind === 'research_world_context' && personaId === 'zoe') {
         const response = await postPersonaCapability({
+          projectId: activeFolderProjectId ?? undefined,
           personaId: 'zoe',
           taskKind: 'research_world_context',
           message: messageToSend,
@@ -688,6 +828,7 @@ export default function App() {
           sourceSurface: 'writingPartner',
           clientRequestId: crypto.randomUUID(),
         })
+        if (!requestIsCurrent()) return
 
         if (response.status !== 'cancelled' && response.finalMessage.trim()) {
           project.addMessage(
@@ -710,15 +851,42 @@ export default function App() {
         storyBibleSection: shellState.storyBibleSection,
         surface,
       })
-      const response = await postWPChat({ personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
-      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName))
+      const currentSurface = surfaceForActiveTab(shellState.activeTab)
+      // Review Important 4: captured fresh, right before the request, so the
+      // server can use the browser's own current revision/content as
+      // baseVersion instead of a debounced folder autosave that can lag
+      // behind it.
+      const documentSnapshot = currentSurface
+        ? {
+            surface: currentSurface,
+            revision: project.state.documents[currentSurface].revision,
+            content: project.state.documents[currentSurface].content,
+          }
+        : undefined
+      const response = await postWPChat({ projectId: project.activeProjectId!, personaId, message: messageToSend, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile(), documentSnapshot })
+      if (!requestIsCurrent()) return
+      const assistantMessageId = crypto.randomUUID()
+      project.addMessage('writingPartner', makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt, id: assistantMessageId }))
+      // Plan ruling: never show a patch the writer did not, in effect, ask
+      // for. Whatever the backend decided to send back, only surface it when
+      // the message that produced it named/meant the surface the writer is
+      // looking at AND the patch targets that same surface.
+      if (
+        response.patchProposal
+        && currentSurface
+        && shouldRequestDocumentPatch(messageToSend, currentSurface)
+        && currentSurface === response.patchProposal.patch.surface
+      ) {
+        setActivePatchProposal({ proposal: response.patchProposal, messageId: assistantMessageId, mode: 'previewing' })
+        setPatchApplyError(null)
+      }
     } catch (error) {
-      if (isAbortError(error)) return
+      if (isAbortError(error) || !requestIsCurrent()) return
       project.addMessage('writingPartner', makeMessage('assistant', 'Connection error — please try again.', 'Morgan'))
     } finally {
-      setWpLoading(false)
+      if (requestIsCurrent()) setWpLoading(false)
     }
-  }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
+  }, [activeAgentProjectKey, activeFolderProjectId, buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
   // Room proposal adoption (D7): applies the field via the same document path
   // the writer uses. Deliberately NOT routed through onContentPatch — adopted
@@ -750,9 +918,9 @@ export default function App() {
         storyBibleSection: shellState.storyBibleSection,
         surface,
       })
-      const response = await postWPChat({ personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
+      const response = await postWPChat({ projectId: project.activeProjectId!, personaId: specialistId, message: text, projectContext: { ...projectContext, surface, location }, conversationHistory, voiceProfile: loadCompletedVoiceProfile() })
       const speakerName = PERSONAS[specialistId]?.name ?? specialistId
-      project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName))
+      project.addMessage(specialistId, makeMessage('assistant', response.message, speakerName, { memoryReceipt: response.memoryReceipt }))
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage(specialistId, makeMessage('assistant', 'Connection error — please try again.', PERSONAS[specialistId]?.name ?? specialistId))
@@ -787,6 +955,8 @@ export default function App() {
       case 'synopsis':
         return (
           <SynopsisTab
+            projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.synopsis}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -802,6 +972,8 @@ export default function App() {
       case 'outline':
         return (
           <OutlineTab
+            projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.outline}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -817,6 +989,8 @@ export default function App() {
       case 'treatment':
         return (
           <TreatmentTab
+            projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
             document={project.state.documents.treatment}
             projectFormat={project.state.meta.format}
             identity={pickIdentity(project.state.meta)}
@@ -864,9 +1038,28 @@ export default function App() {
 
     if (shellState.ritual === 'projectMeeting' && project.activeProjectId) {
       return (
-        <ProjectMeetingPage
-          projectId={project.activeProjectId}
-          projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+        <div style={styles.centerColumn}>
+          <MemoryConflictBanner
+            conflictCount={countRelevantMemoryConflicts(projectMemory.snapshot, 'project-meeting')}
+            onOpenMemory={openMemorySurface}
+          />
+          <div style={styles.flexFill}>
+            <ProjectMeetingPage
+              projectId={project.activeProjectId}
+              projectScopeKey={activeAgentProjectKey}
+              projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+              documents={project.state.documents}
+              onExit={shellState.closeRitual}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    if (shellState.ritual === 'memory') {
+      return (
+        <MemorySurface
+          memory={projectMemory}
           onExit={shellState.closeRitual}
         />
       )
@@ -880,11 +1073,13 @@ export default function App() {
           folderProjects={projectFolder.projects}
           corruptFolderProjects={projectFolder.corruptProjects}
           storageStatus={{
+            source: projectFolder.source,
             status: projectFolder.status,
             label: projectFolder.label,
             defaultFolderLabel: projectFolder.defaultFolderLabel,
             fileSystemAccessSupported: projectFolder.fileSystemAccessSupported,
             folderPersistenceSupported: projectFolder.folderPersistenceSupported,
+            capabilities: projectFolder.capabilities,
             errorMessage: folderProjectError ?? projectFolder.errorMessage,
           }}
           activeStorageKind={activeProjectStorage.kind}
@@ -920,42 +1115,70 @@ export default function App() {
     }
 
     const activeSurface = renderActiveSurface()
+    // Independent, mutually-exclusive workflow families (writeros document
+    // surfaces vs. writeros-room), so summing their relevant-conflict counts
+    // cannot double-count a single conflict.
+    const workspaceConflictCount = countRelevantMemoryConflicts(projectMemory.snapshot, shellState.activeTab)
+      + (shellState.writersRoomActive ? countRelevantMemoryConflicts(projectMemory.snapshot, 'writers-room') : 0)
+
+    const patchProposalForActiveTab = activePatchProposal?.mode === 'previewing'
+      && surfaceForActiveTab(shellState.activeTab) === activePatchProposal.proposal.patch.surface
+      ? activePatchProposal.proposal
+      : null
 
     return (
-      <div style={styles.surfaceWithWritersRoom}>
-        <div style={styles.activeSurfacePane}>
-          {activeSurface}
-        </div>
-        {shellState.writersRoomActive && (
-          <WritersRoom
-            mode="dock"
-            projectState={project.state}
-            onSendToSpecialist={handleSpecialistSend}
-            onClearTranscript={project.clearTranscript}
-            roomProps={
-              project.activeProjectId
-                ? {
-                    projectId: project.activeProjectId,
-                    characterNames: project.state.documents.storyBible.content.characters
-                      .map((c) => c.name)
-                      .filter(Boolean),
-                    characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
-                      id: c.id,
-                      name: c.name,
-                      want: c.want,
-                      need: c.need,
-                      flaw: c.flaw,
-                      secret: c.secret,
-                      arc: c.arc,
-                    })),
-                    locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
-                    onAdoptProposal: handleAdoptRoomProposal,
-                    onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
-                  }
-                : undefined
-            }
+      <div style={styles.centerColumn}>
+        <MemoryConflictBanner conflictCount={workspaceConflictCount} onOpenMemory={openMemorySurface} />
+        {patchProposalForActiveTab && (
+          <MemoryPatchPreview
+            patch={patchProposalForActiveTab.patch}
+            rationale={patchProposalForActiveTab.rationale}
+            canonConflicts={patchProposalForActiveTab.canonConflicts}
+            citations={patchProposalForActiveTab.citations}
+            applying={applyingPatch}
+            applyError={patchApplyError}
+            onApply={handleApplyPatch}
+            onKeepAsSuggestion={handleKeepPatchAsSuggestion}
+            onDismiss={handleDismissPatch}
           />
         )}
+        <div style={styles.surfaceWithWritersRoom}>
+          <div style={styles.activeSurfacePane}>
+            {activeSurface}
+          </div>
+          {shellState.writersRoomActive && (
+            <WritersRoom
+              mode="dock"
+              projectState={project.state}
+              onSendToSpecialist={handleSpecialistSend}
+              onClearTranscript={project.clearTranscript}
+              roomProps={
+                project.activeProjectId
+                  ? {
+                      projectId: project.activeProjectId,
+                      projectScopeKey: activeAgentProjectKey,
+                      characterNames: project.state.documents.storyBible.content.characters
+                        .map((c) => c.name)
+                        .filter(Boolean),
+                      characterBriefs: project.state.documents.storyBible.content.characters.map((c) => ({
+                        id: c.id,
+                        name: c.name,
+                        want: c.want,
+                        need: c.need,
+                        flaw: c.flaw,
+                        secret: c.secret,
+                        arc: c.arc,
+                      })),
+                      surfaceAwareness: buildSurfaceAwareness(shellState.activeTab, project.state),
+                      locksText: renderStoryLocksBlock(project.state.documents.storyBible.content),
+                      onAdoptProposal: handleAdoptRoomProposal,
+                      onOpenProjectMeeting: () => shellState.openRitual('projectMeeting'),
+                    }
+                  : undefined
+              }
+            />
+          )}
+        </div>
       </div>
     )
   }
@@ -965,6 +1188,8 @@ export default function App() {
     loading: wpLoading,
     onSend: handleWPSend,
     onClearTranscript: () => project.clearTranscript('writingPartner'),
+    keptPatchMessageId: activePatchProposal?.mode === 'kept' ? activePatchProposal.messageId : null,
+    onReopenPatchSuggestion: handleReopenPatchSuggestion,
   }
 
   const leftZone = useMemo(
@@ -996,8 +1221,20 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  surfaceWithWritersRoom: {
+  centerColumn: {
     height: '100%',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  flexFill: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto',
+  },
+  surfaceWithWritersRoom: {
+    flex: 1,
     minHeight: 0,
     display: 'flex',
     overflow: 'hidden',

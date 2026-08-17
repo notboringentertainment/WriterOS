@@ -51,6 +51,10 @@ const SourceImportSchema = z.object({
   copiedSourcePath: z.string().optional(),
 }).passthrough()
 
+const ProjectSourcesSchema = z.object({
+  buzzChannelId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/).optional(),
+}).strict()
+
 export const WriterOSProjectManifestSchema = z.object({
   schemaVersion: z.literal(WRITEROS_PACKAGE_SCHEMA_VERSION),
   projectId: z.string().min(1),
@@ -60,6 +64,7 @@ export const WriterOSProjectManifestSchema = z.object({
   updatedAt: TimestampStringSchema,
   openedAt: TimestampStringSchema,
   sourceImport: SourceImportSchema.nullable(),
+  sources: ProjectSourcesSchema.optional(),
   appVersion: z.string().min(1),
 }).passthrough()
 
@@ -107,6 +112,7 @@ export type ProjectPackageErrorCode =
   | 'invalid-title-page'
   | 'invalid-script-facts'
   | 'invalid-transcript'
+  | 'unsafe-path'
 
 export interface ProjectPackageReadError {
   code: ProjectPackageErrorCode

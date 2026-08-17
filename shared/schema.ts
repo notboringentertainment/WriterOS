@@ -1,6 +1,26 @@
 import type { ProjectFormat } from './projectFormat'
 import type { SurfaceAwareness } from './surfaceAwareness'
 import type { WorkspaceLocation } from './workspaceLocation'
+import type { MemoryWorkflow } from './projectMemory'
+import { z } from 'zod'
+
+export interface MemoryReceipt {
+  revision: number
+  status: 'available' | 'disabled'
+  citations: Array<{ id: string; workflow: MemoryWorkflow; sourceUri: string }>
+  conflictIds: string[]
+}
+
+export const MemoryReceiptSchema: z.ZodType<MemoryReceipt> = z.object({
+  revision: z.number().int().nonnegative(),
+  status: z.enum(['available', 'disabled']),
+  citations: z.array(z.object({
+    id: z.string(),
+    workflow: z.enum(['writeros', 'writeros-room', 'story-wayfinder', 'pitchstudio', 'buzz']),
+    sourceUri: z.string(),
+  })),
+  conflictIds: z.array(z.string()),
+})
 
 export type EntryState =
   | 'blank_slate'
@@ -44,6 +64,10 @@ export interface ScriptScene {
 }
 
 export interface StoryMemory {
+  sharedMemory?: Array<{
+    label: string
+    value: string
+  }>
   project: {
     title?: string
     genre?: string

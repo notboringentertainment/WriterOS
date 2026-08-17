@@ -8,9 +8,18 @@ import App from '../../client/src/App'
 // Partner and the Writer's Room specialist. (Reproduces the live manual test.)
 
 function mockFetchCapturing() {
-  const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
+  const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
     if (String(url).includes('/api/wp-chat')) {
       return { ok: true, status: 200, json: async () => ({ message: 'ok', suggestions: [] }) } as Response
+    }
+    if (String(url).includes('/api/room/') && String(url).includes('/proposals')) {
+      return { ok: true, status: 200, json: async () => ({ proposals: [] }) } as Response
+    }
+    if (String(url).includes('/api/room/') && String(url).includes('/messages')) {
+      if (init?.method === 'POST') {
+        return { ok: true, status: 200, json: async () => ({ message: { id: 'm1' } }) } as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ messages: [] }) } as Response
     }
     return { ok: true, status: 200, json: async () => ({}) } as Response
   })
@@ -45,6 +54,8 @@ describe('App surface awareness — live request path', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
 
     const body = wpChatBody(fetchMock)
+    expect(body.projectId).toEqual(expect.any(String))
+    expect(body.projectId).not.toBe('')
     expect(body.personaId).toBe('writingPartner')
     expect(body.projectContext.surface.kind).toBe('intake')
     expect(body.projectContext.surface.surface).toBe('outline')
@@ -69,6 +80,30 @@ describe('App surface awareness — live request path', () => {
     expect(body.projectContext.surface.kind).toBe('intake')
     expect(body.projectContext.surface.surface).toBe('outline')
     expect(body.projectContext.surface.nextQuestion.label).toBe('Who are we following?')
+  })
+
+  it('live Room channel on Outline sends the exact question deck with the writer message', async () => {
+    const fetchMock = mockFetchCapturing()
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+
+    const input = await screen.findByPlaceholderText('Say something to the room…')
+    fireEvent.change(input, { target: { value: 'Can you answer the first Outline question?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message to the room' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).includes('/api/room/') && String(url).endsWith('/messages') && init?.method === 'POST')).toBe(true))
+    const call = fetchMock.mock.calls.find(([url, init]) =>
+      String(url).includes('/api/room/') && String(url).endsWith('/messages') && init?.method === 'POST')!
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.surfaceAwareness).toMatchObject({
+      kind: 'intake',
+      surface: 'outline',
+      nextQuestion: { label: 'Who are we following?' },
+    })
+    expect(body.surfaceAwareness.questions[0].label).toBe('Who are we following?')
   })
 
   it.each([

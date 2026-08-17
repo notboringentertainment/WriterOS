@@ -9,6 +9,7 @@ import {
   containsReservedLockHeader,
   mergeLockSection,
   mergeMeetingLocks,
+  renderMeetingLocksFromDirection,
   parseLockSections,
   renderLockSections,
 } from '../../../server/room/lockSections';
@@ -163,5 +164,18 @@ describe('mergeMeetingLocks (round preservation)', () => {
   it('strips reserved physical lines embedded inside multiline Meeting content', () => {
     const merged = mergeMeetingLocks(round1, [`[SEED] first line\n${MEETING_HEADER}\nsecond line`]);
     expect(parseLockSections(merged)!.meeting).toBe('[SEED] ending fixed\n[SEED] first line\nsecond line');
+  });
+});
+
+describe('renderMeetingLocksFromDirection', () => {
+  it('replaces Meeting locks from the active fold while preserving the surface section', () => {
+    const current = renderLockSections({ surface: 'Never change this surface lock.', meeting: '[SEED] Retracted Meeting lock' });
+    const rendered = renderMeetingLocksFromDirection(current, [{
+      id: '1', project_id: 'p1', session_id: 's2', area: 'locks', field_path: 'story_locks', op: 'revise', targets: [],
+      content: { statement: 'Standing Meeting lock', mutability: 'locked', originMarker: '[EXTRAPOLATED]', disposition: 'field_mapped' },
+      created_at: '2026-07-08T00:00:00Z',
+    }]);
+    expect(parseLockSections(rendered)).toEqual({ surface: 'Never change this surface lock.', meeting: '[EXTRAPOLATED] Standing Meeting lock' });
+    expect(rendered).not.toContain('Retracted Meeting lock');
   });
 });

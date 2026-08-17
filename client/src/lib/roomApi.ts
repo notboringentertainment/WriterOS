@@ -1,6 +1,11 @@
 // Writers' Room — client API + SSE stream. Thin fetch wrappers over
 // /api/room/*; all room persistence lives server-side in Supabase.
 
+import type { ProjectDocuments } from '@shared/documents'
+import type { PitchPacket } from '@shared/pitchPacket'
+import type { SurfaceAwareness } from '@shared/surfaceAwareness'
+import type { MemoryReceipt } from '@shared/schema'
+
 export interface RoomMessage {
   id: string
   project_id: string
@@ -9,6 +14,7 @@ export interface RoomMessage {
   content: string
   reply_to: string | null
   created_at: string
+  memory_receipt?: MemoryReceipt | null
 }
 
 export interface RoomProposal {
@@ -27,6 +33,7 @@ export interface RoomProposal {
   question_id?: string | null
   origin?: 'seed' | 'extrapolated' | 'invented' | null
   created_at: string
+  memory_receipt?: MemoryReceipt | null
 }
 
 export interface RoomCharacterBrief {
@@ -45,8 +52,8 @@ export interface InterviewSession {
   mode: 'quick' | 'full'
   state: 'intake' | 'auditing' | 'interviewing' | 'readback' | 'banked' | 'exported' | 'paused'
   seed_text: string
-  audit: Record<string, 'SUFFICIENT' | 'THIN'>
-  cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; paused_from?: string }
+  audit: Record<string, 'SUFFICIENT' | 'SUFFICIENT_FROM_PRIOR' | 'THIN'>
+  cursor: { lane: string | null; question_id: string | null; budgets_spent: Record<string, number>; redirects?: Array<{ area: string; question_id: string; at: string; answered_at: string | null }>; paused_from?: string }
   answers: Array<{ question_id: string; lane: string; answer_text: string; origin: 'seed' | 'extrapolated' | null; disposition: 'field_mapped' | 'seed_color' | 'skipped_delegated'; at: string }>
   bank_snapshot: { applied_classifications: Record<string, InterviewMutability>; open_questions: string[]; legacy_open_questions: string[] } | null
   created_at: string
@@ -67,9 +74,49 @@ export interface InterviewQuestion {
 
 export interface InterviewStatus {
   activeSession: InterviewSession | null
+  latestTerminalSession?: InterviewSession | null
   hasBankedSeed: boolean
   actionLabel: 'Project Meeting' | 'New interview round'
   currentQuestion: InterviewQuestion | null
+  recap: MeetingRecapItem[]
+  directionDiff: MeetingDirectionDiff[]
+  directionRevision: number
+}
+
+export interface PitchPacketRow {
+  id: string
+  project_id: string
+  session_id: string
+  packet: PitchPacket
+  packet_version: number
+  status: 'draft' | 'approved' | 'exported'
+  direction_revision: number
+  created_at: string
+  exported_at: string | null
+  memory_receipt?: MemoryReceipt
+}
+
+export interface MeetingRecapItem {
+  decisionId: string
+  sessionId: string
+  area: string
+  fieldPath: string
+  statement: string
+  roundNumber: number
+  questionId: string | null
+}
+
+export type MeetingRevisionInput =
+  | { op: 'keep'; targetId: string }
+  | { op: 'revise'; targetId: string; statement: string; mutability?: InterviewMutability }
+  | { op: 'retract'; targetId: string }
+  | { op: 'supersede'; targetIds: string[]; area: string; fieldPath: string; statement: string; mutability: InterviewMutability }
+
+export interface MeetingDirectionDiff {
+  area: string
+  before: string[]
+  after: string[]
+  op: MeetingRevisionInput['op'] | 'assert'
 }
 
 export type InterviewMutability = 'locked' | 'leaning' | 'open'
@@ -160,11 +207,12 @@ export async function sendRoomMessage(
   content: string,
   characterNames: string[],
   characters: RoomCharacterBrief[] = [],
+  surfaceAwareness: SurfaceAwareness,
 ): Promise<RoomMessage> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, characterNames, characters }),
+    body: JSON.stringify({ content, characterNames, characters, surfaceAwareness }),
   })
   const body = await jsonOrThrow<{ message: RoomMessage }>(res)
   return body.message
@@ -215,7 +263,7 @@ export async function fetchInterviewStatus(projectId: string): Promise<Interview
 export async function startInterview(
   projectId: string,
   input: { mode: 'quick' | 'full'; seedText: string; speculative?: boolean },
-): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null }> {
+): Promise<{ session: InterviewSession; auditMessage: string; currentQuestion: InterviewQuestion | null; recap: MeetingRecapItem[]; directionDiff: MeetingDirectionDiff[]; directionRevision: number; memoryReceipt: MemoryReceipt }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -261,31 +309,84 @@ export async function fetchInterviewBankPreview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
-): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }> {
+  operations: MeetingRevisionInput[] = [],
+): Promise<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues; directionDiff: MeetingDirectionDiff[]; directionRevision: number }> {
   // POST: the preview is parameterized by the writer's in-flight mutability choices.
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank-preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mutability }),
+    body: JSON.stringify({ mutability, operations }),
   })
-  return jsonOrThrow<{ preview: InterviewBankPreview; finalValues: InterviewBankFinalValues }>(res)
+  return jsonOrThrow(res)
 }
 
 export async function bankInterview(
   projectId: string,
   sessionId: string,
   mutability: Record<string, InterviewMutability> = {},
+  operations: MeetingRevisionInput[] = [],
 ): Promise<{ session: InterviewSession; preview: InterviewBankPreview }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/bank`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mutability }),
+    body: JSON.stringify({ mutability, operations }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function redirectInterviewArea(projectId: string, sessionId: string, area: string, questionId: string): Promise<{ session: InterviewSession; currentQuestion: InterviewQuestion | null }> {
+  const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/redirect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ area, questionId }),
   })
   return jsonOrThrow(res)
 }
 
 export async function exportInterview(projectId: string, sessionId: string): Promise<{ session: InterviewSession; markdown: string }> {
   const res = await fetch(`/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/export`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+function pitchPacketPath(projectId: string, sessionId: string): string {
+  return `/api/room/${encodeURIComponent(projectId)}/interview/${encodeURIComponent(sessionId)}/pitch-packet`
+}
+
+export async function createPitchPacketDraft(
+  projectId: string,
+  sessionId: string,
+  documents: ProjectDocuments,
+  projectMeta: { title?: string },
+): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents, projectMeta }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function savePitchPacketDraft(projectId: string, sessionId: string, packetId: string, packet: PitchPacket): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ packet }),
+  })
+  return jsonOrThrow(res)
+}
+
+export async function approvePitchPacket(projectId: string, sessionId: string, packetId: string): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}/approve`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function exportPitchPacket(projectId: string, sessionId: string, packetId: string): Promise<PitchPacketRow> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/${encodeURIComponent(packetId)}/export`, { method: 'POST' })
+  return jsonOrThrow(res)
+}
+
+export async function fetchExportedPitchPacket(projectId: string, sessionId: string): Promise<PitchPacketRow | null> {
+  const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/exported`)
   return jsonOrThrow(res)
 }
 

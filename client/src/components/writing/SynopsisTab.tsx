@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { AuthoredDocumentState, SynopsisDocumentContent } from '@shared/documents'
 import { createEmptySeriesContent } from '@shared/documents'
 import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
@@ -8,8 +8,13 @@ import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import { requestSynopsisCompose } from '../../lib/synopsisComposeClient'
 import { SynopsisStoryCoachEditView } from './synopsis/SynopsisStoryCoachEditView'
 import { SynopsisDocumentView } from './synopsis/SynopsisDocumentView'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 export interface SynopsisTabProps {
+  projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<SynopsisDocumentContent>
   projectFormat?: ProjectFormat
   identity?: ComposeIdentity
@@ -23,6 +28,8 @@ export interface SynopsisTabProps {
 }
 
 export function SynopsisTab({
+  projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -37,27 +44,43 @@ export function SynopsisTab({
 
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
+    const requestIsCurrent = beginComposeRequest()
     isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
-      const result = await requestSynopsisCompose({ content: document.content, format: activeFormat, identity })
+      const result = await requestSynopsisCompose({ projectId, content: document.content, format: activeFormat, identity })
+      if (!requestIsCurrent()) return
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
       } else {
         setComposeError('WriterOS could not compose this document right now.')
       }
     } catch {
+      if (!requestIsCurrent()) return
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
-      isComposingRef.current = false
-      setIsComposing(false)
+      if (requestIsCurrent()) {
+        isComposingRef.current = false
+        setIsComposing(false)
+      }
     }
-  }, [document.content, activeFormat, identity, onComposed])
+  }, [beginComposeRequest, projectId, document.content, activeFormat, identity, onComposed])
+
+  useEffect(() => {
+    isComposingRef.current = false
+    setIsComposing(false)
+    setComposeError(null)
+    setMemoryReceipt(undefined)
+  }, [effectiveProjectScopeKey])
 
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return
@@ -144,6 +167,7 @@ export function SynopsisTab({
           onCompose={handleCompose}
         />
       )}
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
     </div>
   )
 }

@@ -13,6 +13,7 @@ import {
   type ArchiveProjectResult,
   type DuplicateProjectResult,
   type FileSystemAccessProjectRef,
+  type ProjectStorageCapabilities,
   type ProjectStorageListEntry,
   type ShowProjectInFolderResult,
   type RemoveProjectResult,
@@ -55,6 +56,7 @@ export interface WriterOSProjectsFolderState {
   defaultFolderLabel: string
   fileSystemAccessSupported: boolean
   folderPersistenceSupported: boolean
+  capabilities?: ProjectStorageCapabilities
   projects: WriterOSFolderProject[]
   corruptProjects: WriterOSCorruptFolderProject[]
   errorMessage: string | null
@@ -154,6 +156,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
   const [archivedProjects, setArchivedProjects] = useState<WriterOSFolderProject[]>([])
   const [corruptProjects, setCorruptProjects] = useState<WriterOSCorruptFolderProject[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [capabilities, setCapabilities] = useState<ProjectStorageCapabilities | undefined>()
   const projectRefsRef = useRef(new Map<string, ReadyFileSystemProjectEntry>())
 
   const updateProjectRefs = useCallback((entries: Array<ProjectStorageListEntry<FileSystemAccessProjectRef>>) => {
@@ -193,6 +196,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
 
     setHandle(folderHandle)
     const adapter = createFileSystemAccessProjectStorageAdapter(folderHandle)
+    setCapabilities(adapter.capabilities)
     const nextEntries = await adapter.listProjects()
     if (options.isCancelled?.()) return
 
@@ -557,6 +561,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       setArchivedProjects([])
       setCorruptProjects([])
       projectRefsRef.current = new Map()
+      setCapabilities(undefined)
       setErrorMessage(null)
       setStatus(fileSystemAccessSupported ? 'disconnected' : 'unsupported')
     }
@@ -604,6 +609,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
     defaultFolderLabel: DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
     fileSystemAccessSupported,
     folderPersistenceSupported,
+    capabilities,
     projects,
     corruptProjects,
     errorMessage,

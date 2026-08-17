@@ -11,15 +11,18 @@ const { apiMock } = vi.hoisted(() => ({
     pauseInterview: vi.fn(),
     resolveRoomProposal: vi.fn(),
     resumeInterview: vi.fn(),
+    redirectInterviewArea: vi.fn(),
     skipInterviewQuestion: vi.fn(),
     startInterview: vi.fn(),
     wrapInterview: vi.fn(),
+    createPitchPacketDraft: vi.fn(), savePitchPacketDraft: vi.fn(), approvePitchPacket: vi.fn(), exportPitchPacket: vi.fn(), fetchExportedPitchPacket: vi.fn(),
   },
 }))
 vi.mock('../../client/src/lib/roomApi', () => apiMock)
 
 import { ProjectMeetingPage } from '../../client/src/components/ritual/ProjectMeetingPage'
 import type { InterviewSession } from '../../client/src/lib/roomApi'
+import { createEmptyDocuments } from '../../shared/documents'
 
 function session(state: InterviewSession['state']): InterviewSession {
   return {
@@ -59,7 +62,7 @@ function statusOf(state: InterviewSession['state'] | null, currentQuestion: type
 }
 
 function renderPage(onExit = vi.fn()) {
-  render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" onExit={onExit} />)
+  render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" documents={createEmptyDocuments()} onExit={onExit} />)
   return onExit
 }
 
@@ -88,7 +91,10 @@ describe('ProjectMeetingPage', () => {
   })
 
   it('starts the interview from the seed and shows the first question', async () => {
-    apiMock.startInterview.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
+    apiMock.startInterview.mockResolvedValue({
+      session: session('interviewing'), currentQuestion: question,
+      memoryReceipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+    })
     renderPage()
 
     fireEvent.change(await screen.findByLabelText('Project Meeting seed'), { target: { value: 'A grieving chef returns home.' } })
@@ -97,6 +103,7 @@ describe('ProjectMeetingPage', () => {
     expect(await screen.findByText('What must stay true no matter what?')).toBeInTheDocument()
     expect(apiMock.startInterview).toHaveBeenCalledWith('p1', { mode: 'full', seedText: 'A grieving chef returns home.' })
     expect(screen.getByLabelText('Project Meeting answer')).toBeInTheDocument()
+    expect(screen.getByText(/project memory disabled/i)).toBeInTheDocument()
   })
 
   it('answers with the selected origin and adopts the mapping', async () => {
@@ -151,17 +158,17 @@ describe('ProjectMeetingPage', () => {
 
     // Entering readback fetches the preview without an extra click.
     expect(await screen.findByTestId('readback-taggable')).toBeInTheDocument()
-    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {})
+    expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', {}, [])
     expect(screen.getAllByTestId('mutability-toggle')).toHaveLength(2)
     expect(screen.getByTestId('readback-grouped-preview')).toHaveTextContent('Locks')
 
     // Tagging an answer re-previews with the writer's in-flight choices.
     fireEvent.click(screen.getAllByRole('radio', { name: 'Leaning' })[0])
-    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }))
+    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }, []))
 
     // Banking sends the accumulated selections — not an empty map.
     fireEvent.click(screen.getByRole('button', { name: 'Bank this round' }))
-    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }))
+    await waitFor(() => expect(apiMock.bankInterview).toHaveBeenCalledWith('p1', 's1', { 'p-1': 'leaning' }, []))
     expect(await screen.findByText(/This round is banked/)).toBeInTheDocument()
   })
 
@@ -207,12 +214,73 @@ describe('ProjectMeetingPage', () => {
     expect(screen.getByRole('radio', { name: 'Locked' })).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('banked stage exports to PitchStudio', async () => {
+  it('keeps the banked entry label and opens Pitch Packet review', async () => {
     apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('banked'))
-    apiMock.exportInterview.mockResolvedValue({ session: session('exported'), markdown: '# Ace Handler — Seed' })
+    const field = <T,>(value: T) => ({ value, origin: 'document' as const, approved: false, sourceRef: 'test' })
+    const packet = {
+      packetVersion: 1, projectId: 'p1', exportedAt: '2026-07-14T00:00:00Z', directionRevision: 1,
+      title: field('Ace Handler'), logline: field('Logline'), format: field('Feature'), genre: field('Thriller'), tone: field('Tense'),
+      premise: field('Premise'), storyEngine: field('Engine'), coreCharacters: field([{ name: 'Ace', role: '', want: '', need: '', flawOrWound: '', secretOrContradiction: '', arc: '' }]), locks: field([]), openQuestions: field([]),
+    }
+    const row = { id: 'packet-1', project_id: 'p1', session_id: 's1', packet, packet_version: 1, status: 'draft', direction_revision: 1, created_at: 'now', exported_at: null }
+    apiMock.createPitchPacketDraft.mockResolvedValue({
+      row,
+      proposalUnavailable: false,
+      memoryReceipt: { revision: 89, status: 'available', citations: [], conflictIds: [] },
+    })
+    apiMock.savePitchPacketDraft.mockResolvedValue(row)
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Export to PitchStudio' }))
-    expect(await screen.findByText('# Ace Handler — Seed')).toBeInTheDocument()
+    expect(apiMock.createPitchPacketDraft).toHaveBeenCalledWith('p1', 's1', expect.any(Object), { title: 'Ace Handler' })
+    expect(await screen.findByRole('heading', { name: 'Pitch Packet review' })).toBeInTheDocument()
+    expect(screen.getByText(/project memory revision 89/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(apiMock.savePitchPacketDraft).toHaveBeenCalled())
+    expect(screen.getByText(/project memory revision 89/i)).toBeInTheDocument()
+  })
+
+  it('lets a writer explicitly leave the latest banked round and start a new one', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('banked'))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start new interview round' }))
+
+    expect(await screen.findByLabelText('Project Meeting seed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Begin the meeting' })).toBeInTheDocument()
+  })
+
+  it('shows standing recap controls, revision safety copy, and the exact direction diff', async () => {
+    const recap = [{ decisionId: 'd1', sessionId: 'old', area: 'ending', fieldPath: 'story_locks', statement: 'Mara leaves town.', roundNumber: 1, questionId: 'morgan-ending' }]
+    apiMock.fetchInterviewStatus.mockResolvedValue({ ...statusOf('readback'), recap })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({
+      preview: { title: 'Ace', seedText: 'seed', datedAnswers: [], seedColor: [], locks: [], leanings: [], openQuestions: [], conceptSeedAppend: '', taggable: [] },
+      finalValues: { concept_seed: 'seed', story_locks: 'locks', open_questions: 'open' },
+      directionDiff: [{ area: 'ending', before: ['Mara leaves town.'], after: ['Mara stays.'], op: 'revise' }], directionRevision: 2,
+    })
+    apiMock.redirectInterviewArea.mockResolvedValue({ session: session('interviewing'), currentQuestion: question })
+    renderPage()
+
+    expect(await screen.findByText("What's standing from earlier rounds")).toBeInTheDocument()
+    expect(screen.getByText("Answered in Round 1. We won't re-ask unless you reopen it.")).toBeInTheDocument()
+    expect(screen.getByText(/Selections from an earlier visit are not restored/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Revise' }))
+    fireEvent.change(screen.getByLabelText('Revised direction for ending'), { target: { value: 'Mara stays.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use revision' }))
+    await waitFor(() => expect(apiMock.fetchInterviewBankPreview).toHaveBeenLastCalledWith('p1', 's1', {}, [{ op: 'revise', targetId: 'd1', statement: 'Mara stays.' }]))
+    expect(await screen.findByText('Exactly what this round changes')).toBeInTheDocument()
+    expect(screen.getByText(/Mara stays\./)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ask me again' }))
+    await waitFor(() => expect(apiMock.redirectInterviewArea).toHaveBeenCalledWith('p1', 's1', 'ending', 'morgan-ending'))
+  })
+
+  it('warns that retract changes direction but preserves the immutable round record', async () => {
+    const recap = [{ decisionId: 'd1', sessionId: 'old', area: 'ending', fieldPath: 'story_locks', statement: 'Mara leaves.', roundNumber: 1, questionId: 'morgan-ending' }]
+    apiMock.fetchInterviewStatus.mockResolvedValue({ ...statusOf('readback'), recap })
+    apiMock.fetchInterviewBankPreview.mockResolvedValue({ preview: { title: 'Ace', seedText: 'seed', datedAnswers: [], seedColor: [], locks: [], leanings: [], openQuestions: [], conceptSeedAppend: '', taggable: [] }, finalValues: { concept_seed: 'seed', story_locks: 'locks', open_questions: 'open' }, directionDiff: [], directionRevision: 2 })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Retract' }))
+    expect(screen.getByText("Retracting removes this from your project's active direction. Your Round 1 answer stays in the record.")).toBeInTheDocument()
   })
 })

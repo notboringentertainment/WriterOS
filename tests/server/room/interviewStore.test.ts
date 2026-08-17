@@ -6,6 +6,7 @@ import {
   listInterviewSessions,
   updateInterviewSession,
   appendInterviewAnswer,
+  appendInterviewAnswerAndUpdateCursor,
   listInterviewProposals,
 } from '../../../server/room/interview/store';
 import { __setRoomDbForTests } from '../../../server/room/supabaseClient';
@@ -121,9 +122,10 @@ describe('interview.store.createInterviewSession', () => {
       lane: null,
       question_id: null,
       budgets_spent: {},
+      redirects: [],
     });
     // Ensure no extra keys sneak in
-    expect(Object.keys(cursor)).toHaveLength(3);
+    expect(Object.keys(cursor)).toHaveLength(4);
   });
 
   it('throws on database error', async () => {
@@ -270,6 +272,65 @@ describe('interview.store.appendInterviewAnswer', () => {
       origin: null,
       disposition: 'skipped_delegated',
     })).rejects.toThrow(/session s1 not found/);
+  });
+});
+
+describe('interview.store.appendInterviewAnswerAndUpdateCursor', () => {
+  it('writes answer, redirect stamp, cursor, and state in one row update', async () => {
+    const updates: Record<string, unknown>[] = [];
+    const existing = {
+      id: 's1',
+      answers: [],
+      cursor: {
+        lane: 'morgan',
+        question_id: 'morgan-ending',
+        budgets_spent: {},
+        redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: null }],
+      },
+    };
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      maybeSingle: async () => ({ data: existing, error: null }),
+      update: (patch: Record<string, unknown>) => { updates.push(patch); return chain; },
+      single: async () => ({ data: { ...existing, ...updates[0] }, error: null }),
+    };
+    __setRoomDbForTests({ from: () => chain } as unknown as SupabaseClient);
+
+    const row = await appendInterviewAnswerAndUpdateCursor('s1', {
+      question_id: 'morgan-ending',
+      lane: 'morgan',
+      answer_text: 'She leaves.',
+      origin: 'seed',
+      disposition: 'field_mapped',
+    }, {
+      state: 'readback',
+      cursor: {
+        lane: null,
+        question_id: null,
+        budgets_spent: {},
+        redirects: [{ area: 'ending', question_id: 'morgan-ending', at: '2026-07-14T00:00:00Z', answered_at: '2026-07-14T00:01:00Z' }],
+      },
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ state: 'readback' });
+    expect(updates[0].answers).toHaveLength(1);
+    expect(updates[0].cursor).toMatchObject({ redirects: [expect.objectContaining({ answered_at: '2026-07-14T00:01:00Z' })] });
+    expect(row.state).toBe('readback');
+  });
+});
+
+describe('interview.store cursor compatibility', () => {
+  it('normalizes a pre-feature cursor with redirects defaulted to an empty array', async () => {
+    __setRoomDbForTests(fakeDb({
+      data: { id: 's1', cursor: { lane: null, question_id: null, budgets_spent: {} } },
+      error: null,
+    }));
+
+    const row = await getInterviewSession('s1');
+
+    expect(row?.cursor.redirects).toEqual([]);
   });
 });
 

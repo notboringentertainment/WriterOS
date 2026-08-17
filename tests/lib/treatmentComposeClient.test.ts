@@ -6,6 +6,7 @@ import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION, type ComposedDocument } from
 import { syntheticTreatment } from '../fixtures/treatment/syntheticTreatment'
 
 const identity = { title: 'Tidewrack', genre: 'Thriller' }
+const memoryReceipt = { revision: 43, status: 'available' as const, citations: [], conflictIds: [] }
 
 function composed(): ComposedDocument {
   return {
@@ -34,6 +35,18 @@ describe('requestTreatmentCompose', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.surface).toBe('treatment')
     if (result.ok) expect(result.composed.blocks[0]).toEqual({ type: 'heading', text: 'Logline' })
+  })
+
+  it('sends its folder project identity and retains the exact memory receipt', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ composed: composed(), memoryReceipt }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestTreatmentCompose({
+      projectId: 'folder-project-3', content: syntheticTreatment, format: 'feature', identity,
+    })
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).projectId).toBe('folder-project-3')
+    expect(result).toMatchObject({ ok: true, memoryReceipt })
   })
 
   it('downgrades malformed success payloads to a client failure', async () => {

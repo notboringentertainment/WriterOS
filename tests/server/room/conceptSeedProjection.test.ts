@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InterviewSessionRow } from '../../../server/room/interview/types';
-import { DOMAIN_BY_TRIGGER, projectConceptSeed } from '../../../server/room/interview/conceptSeedProjection';
+import { DOMAIN_BY_TRIGGER, projectConceptSeed, projectConceptSeedWithDirection } from '../../../server/room/interview/conceptSeedProjection';
 
 function session(overrides: Partial<InterviewSessionRow>): InterviewSessionRow {
   return {
@@ -124,5 +124,20 @@ describe('projectConceptSeed', () => {
     expect(out).toContain('round 2 of 2');
     expect(out).toContain('(1 earlier rounds in the Meeting record)');
     expect(out).not.toContain('round 1 of 2');
+  });
+});
+
+describe('projectConceptSeedWithDirection', () => {
+  it('adds only the supplied active direction deterministically within the cap', () => {
+    const direction = [{
+      id: '1', project_id: 'p1', session_id: 's1', area: 'locks', field_path: 'story_locks', op: 'assert' as const, targets: [],
+      content: { statement: 'The ending remains fixed.', mutability: 'locked' as const, originMarker: '[SEED]' as const, disposition: 'field_mapped' as const },
+      created_at: '2026-07-01T00:10:00Z',
+    }];
+    const out = projectConceptSeedWithDirection([session({})], direction);
+    expect(out).toContain('## Active Meeting direction');
+    expect(out).toContain('[SEED] locks: The ending remains fixed. (locked)');
+    expect(out.length).toBeLessThanOrEqual(4000);
+    expect(out).toBe(projectConceptSeedWithDirection([session({})], direction));
   });
 });

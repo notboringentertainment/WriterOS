@@ -21,8 +21,13 @@ import {
   TREATMENT_PROSE_FIELDS as PROSE_FIELDS,
   TREATMENT_VISUAL_FIELDS as VISUAL_FIELDS,
 } from '../../lib/treatmentDeck'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 interface TreatmentTabProps {
+  projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<TreatmentDocumentContent>
   projectFormat?: ProjectFormat
   // Optional so existing Edit View tests keep compiling (Synopsis build-reality delta).
@@ -87,6 +92,8 @@ function hasTreatmentAnswers(content: TreatmentDocumentContent): boolean {
 }
 
 export function TreatmentTab({
+  projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity = { title: '', genre: '' },
@@ -104,28 +111,44 @@ export function TreatmentTab({
 
   const [isComposing, setIsComposing] = React.useState(false)
   const [composeError, setComposeError] = React.useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = React.useState<MemoryReceipt | undefined>()
   // The double-submit guard lives here in the tab handler, not in the compose client.
   const isComposingRef = React.useRef(false)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
 
   const handleCompose = React.useCallback(async () => {
     if (isComposingRef.current) return
+    const requestIsCurrent = beginComposeRequest()
     isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
-      const result = await requestTreatmentCompose({ content, format: activeFormat, identity })
+      const result = await requestTreatmentCompose({ projectId, content, format: activeFormat, identity })
+      if (!requestIsCurrent()) return
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed?.(result.composed)
       } else {
         setComposeError('WriterOS could not compose this document right now.')
       }
     } catch {
+      if (!requestIsCurrent()) return
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
-      isComposingRef.current = false
-      setIsComposing(false)
+      if (requestIsCurrent()) {
+        isComposingRef.current = false
+        setIsComposing(false)
+      }
     }
-  }, [content, activeFormat, identity, onComposed])
+  }, [beginComposeRequest, projectId, content, activeFormat, identity, onComposed])
+
+  React.useEffect(() => {
+    isComposingRef.current = false
+    setIsComposing(false)
+    setComposeError(null)
+    setMemoryReceipt(undefined)
+  }, [effectiveProjectScopeKey])
 
   function toggleCollapsed(id: string) {
     setCollapsedIds(current => {
@@ -520,6 +543,7 @@ export function TreatmentTab({
           onCompose={handleCompose}
         />
       )}
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
     </div>
   )
 }

@@ -38,6 +38,8 @@ vi.mock('../../../server/ai/morganRuntime/anthropicToolClient', async (importOri
 
 import { runRoomTurn } from '../../../server/room/runRoomTurn'
 import type { RoomEventRow } from '../../../server/room/types'
+import type { ProjectMemoryProvider } from '../../../server/projectMemory/agentContext'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 const event: RoomEventRow = {
   id: 'evt-1',
@@ -56,6 +58,17 @@ const writerMessageEvent: RoomEventRow = {
     content: "Casey, help me figure out Rosa's want.",
     characterNames: ['Rosa'],
     characters: [{ id: 'r1', name: 'Rosa', want: '', need: 'accept help' }],
+    surfaceAwareness: {
+      kind: 'intake', surface: 'outline', surfaceTitle: 'Outline', format: 'series',
+      questions: [
+        { id: 'series.protagonist', label: 'Who are we following?', helper: 'Name the lead whose choices drive the series.', status: 'answered', answers: [{ value: 'Ray Gravely' }] },
+        { id: 'series.engine', label: 'What repeats?', helper: 'Define the episode engine.', status: 'unanswered' },
+      ],
+      selectionSource: 'first_unanswered',
+      answeredCount: 1, totalCount: 2,
+      nextQuestion: { id: 'series.engine', label: 'What repeats?', helper: 'Define the episode engine.', status: 'unanswered' },
+      nextRecommendedAction: 'answer_next_question',
+    },
   },
   processed_at: null,
   created_at: new Date().toISOString(),
@@ -67,6 +80,24 @@ const toolTurn = (uses: Array<{ id: string; name: string; input: unknown }>, tex
   text,
   assistantContent: [],
 })
+
+const roomCitation = '[M-6182-00630061006E006F006E]'
+function roomProvider(): ProjectMemoryProvider {
+  return {
+    context: vi.fn().mockResolvedValue({
+      projectId: 'p1', revision: 23,
+      activeCanon: [{
+        id: 'canon', projectId: 'p1', kind: 'canon', status: 'active',
+        claim: 'Rosa cannot leave the restaurant.', tags: [], entities: [],
+        source: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/rosa', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' },
+        evidence: [], safety: 'clear', spoiler: false, supersedes: [],
+        createdAt: '2026-08-14T12:00:00.000Z', updatedAt: '2026-08-14T12:00:00.000Z',
+      }],
+      relevant: [], conflicts: [], spoilerConflictIds: [],
+      citationMap: { [roomCitation]: { workflow: 'writeros', sourceId: 'lock', sourceUri: 'writeros://locks/rosa', sourceHash: 'h', capturedAt: '2026-08-14T12:00:00.000Z', approval: 'explicit' } },
+    }),
+  }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -89,6 +120,30 @@ beforeEach(() => {
 })
 
 describe('runRoomTurn', () => {
+  it('grounds the room specialist once and persists a validated exact-revision receipt', async () => {
+    const memoryProvider = roomProvider()
+    sendToolTurnMock.mockResolvedValueOnce(toolTurn([{
+      id: 'u1', name: 'speak',
+      input: { content: `Canon holds ${roomCitation}; invented [M-FFFF-0066006F006F].` },
+    }]))
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider })
+
+    expect(memoryProvider.context).toHaveBeenCalledTimes(1)
+    expect(sendToolTurnMock.mock.calls[0][0].system).toContain('<project_memory_data>')
+    expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: `Canon holds ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23, status: 'available' }),
+    }))
+  })
+
+  it('fails closed before the model when folder memory is unavailable', async () => {
+    const memoryProvider = { context: vi.fn().mockRejectedValue(new Error('/private/ledger corrupt')) }
+    await expect(runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider }))
+      .rejects.toBeInstanceOf(RoomMemoryError)
+    expect(sendToolTurnMock).not.toHaveBeenCalled()
+  })
+
   it('speak turn: streams, inserts the message post-guard, ledgers as spoke', async () => {
     sendToolTurnMock.mockResolvedValueOnce(
       toolTurn([{ id: 'u1', name: 'speak', input: { content: 'That want shift changes her arc math.' } }]),
@@ -150,6 +205,11 @@ describe('runRoomTurn', () => {
     expect(userMsg).toContain("Casey, help me figure out Rosa's want.")
     expect(userMsg).toContain('VISIBLE STORY BIBLE CHARACTER CARDS')
     expect(userMsg).toContain('Rosa [id: r1]')
+    expect(userMsg).toContain('LIVE SURFACE QUESTION DECK')
+    expect(userMsg).toContain('Current app surface: Outline (series).')
+    expect(userMsg).toContain('1. [answered] Who are we following?')
+    expect(userMsg).toContain('Writer answer: Ray Gravely')
+    expect(userMsg).toContain('2. [unanswered] What repeats?')
     expect(userMsg).toContain('file propose_field_write')
   })
 
@@ -178,6 +238,45 @@ describe('runRoomTurn', () => {
     expect(storeMock.writeBlock).toHaveBeenCalledTimes(1)
     expect(storeMock.insertMessage).toHaveBeenCalledTimes(1)
     expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'spoke' }))
+  })
+
+  it('filters remember and proposal text and preserves the exact receipt when the agent proposes then passes', async () => {
+    storeMock.writeBlock.mockResolvedValue({ ok: true, nearCap: false })
+    storeMock.insertProposal.mockResolvedValue({
+      id: 'prop-memory', agent_id: 'casey', surface: 'storyBible', field_path: 'characters[r1].want',
+    })
+    sendToolTurnMock.mockResolvedValueOnce(toolTurn([
+      {
+        id: 'u1', name: 'remember',
+        input: { label: 'lane_notes', value: `Canon ${roomCitation}; invented [M-FFFF-0066006F006F].` },
+      },
+      {
+        id: 'u2', name: 'propose_field_write',
+        input: {
+          surface: 'storyBible', fieldPath: 'characters[r1].want',
+          value: `Honor (${roomCitation.slice(1, -1)}), not (M-FFFF-0066006F006F).`,
+          rationale: `Canon supports ${roomCitation}; invented M-FFFF-0066006F006F.`,
+        },
+      },
+      { id: 'u3', name: 'pass', input: { reason: `Enough ${roomCitation}` } },
+    ]))
+
+    await runRoomTurn({ projectId: 'p1', agentId: 'casey', event, memoryProvider: roomProvider() })
+
+    expect(storeMock.writeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      value: `Canon ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23 }),
+    }))
+    expect(storeMock.insertProposal).toHaveBeenCalledWith(expect.objectContaining({
+      proposedValue: `Honor ${roomCitation}, not .`,
+      rationale: `Canon supports ${roomCitation}; invented .`,
+      memoryReceipt: expect.objectContaining({ revision: 23, citations: [expect.objectContaining({ id: roomCitation })] }),
+    }))
+    expect(storeMock.insertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'proposal_ref',
+      memoryReceipt: expect.objectContaining({ revision: 23, citations: [expect.objectContaining({ id: roomCitation })] }),
+    }))
+    expect(storeMock.insertLedger).toHaveBeenCalledWith(expect.objectContaining({ action: 'proposed' }))
   })
 
   it('clears the streaming turn and ledgers errored when message persistence fails', async () => {

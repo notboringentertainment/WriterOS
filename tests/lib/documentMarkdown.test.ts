@@ -23,7 +23,7 @@ describe('synopsisToMarkdown', () => {
     content.header.title = 'My Film'
     content.logline.text = 'A widow returns home.'
     content.prose.opening = 'Sara is paged.'
-    const md = synopsisToMarkdown({ version: 1, mode: 'prose', updatedAt: FIXED_TS, content })
+    const md = synopsisToMarkdown({ version: 1, revision: 0, mode: 'prose', updatedAt: FIXED_TS, content })
     expect(md).toContain('# Synopsis — My Film')
     expect(md).toContain('## Logline')
     expect(md).toContain('A widow returns home.')
@@ -33,7 +33,7 @@ describe('synopsisToMarkdown', () => {
 
   it('skips empty optional sections', () => {
     const content = createEmptySynopsisContent()
-    const md = synopsisToMarkdown({ version: 1, mode: 'prose', updatedAt: FIXED_TS, content })
+    const md = synopsisToMarkdown({ version: 1, revision: 0, mode: 'prose', updatedAt: FIXED_TS, content })
     expect(md).not.toContain('## Logline')
     expect(md).not.toContain('## Synopsis')
     expect(md).not.toContain('## AI Production Implications')
@@ -42,7 +42,7 @@ describe('synopsisToMarkdown', () => {
   it('output is deterministic across two calls with the same input', () => {
     const content = createEmptySynopsisContent()
     content.logline.text = 'a'
-    const doc = { version: 1 as const, mode: 'prose', updatedAt: FIXED_TS, content }
+    const doc = { version: 1 as const, revision: 0, mode: 'prose', updatedAt: FIXED_TS, content }
     expect(synopsisToMarkdown(doc)).toBe(synopsisToMarkdown(doc))
   })
 })
@@ -82,7 +82,7 @@ describe('outlineToMarkdown', () => {
         draftNotes: '',
       },
     ]
-    const md = outlineToMarkdown({ version: 1, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
+    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
     expect(md).toMatch(/1\. Opening[\s\S]+2\. Catalyst/)
   })
 
@@ -105,7 +105,7 @@ describe('outlineToMarkdown', () => {
         draftNotes: '',
       },
     ]
-    const md = outlineToMarkdown({ version: 1, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
+    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
     expect(md).not.toContain('Conflict:')
     expect(md).not.toContain('Turn:')
   })
@@ -131,7 +131,7 @@ describe('storyBibleToMarkdown', () => {
       neverWriteThemAs: '',
       continuityFacts: '',
     })
-    const md = storyBibleToMarkdown({ version: 1, mode: 'development', updatedAt: FIXED_TS, content })
+    const md = storyBibleToMarkdown({ version: 1, revision: 0, mode: 'development', updatedAt: FIXED_TS, content })
     expect(md).toContain('# Story Bible — My Film')
     expect(md).toContain('### Sara')
   })
@@ -140,7 +140,7 @@ describe('storyBibleToMarkdown', () => {
 describe('treatmentToMarkdown', () => {
   it('returns a header even when empty (so emit is uniform)', () => {
     const content = createEmptyTreatmentContent()
-    const md = treatmentToMarkdown({ version: 1, mode: 'three_act_prose', updatedAt: FIXED_TS, content })
+    const md = treatmentToMarkdown({ version: 1, revision: 0, mode: 'three_act_prose', updatedAt: FIXED_TS, content })
     expect(md).toContain('# Treatment')
   })
 })

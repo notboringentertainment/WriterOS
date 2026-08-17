@@ -4,15 +4,21 @@
 
 import React, { useEffect, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
+import type { ProjectDocuments } from '@shared/documents'
 import { useInterviewSession, type InterviewAnswerOrigin, type InterviewMutability } from '../../lib/useInterviewSession'
+import type { MeetingRevisionInput } from '../../lib/roomApi'
 import { RitualPage } from './RitualPage'
 import { RitualQuestionCard } from './RitualQuestionCard'
 import { RitualStage } from './RitualStage'
 import { MutabilityToggle } from './MutabilityToggle'
+import { PitchPacketReview } from './PitchPacketReview'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 
 export interface ProjectMeetingPageProps {
   projectId: string
+  projectScopeKey?: string
   projectTitle?: string
+  documents: ProjectDocuments
   onExit: () => void
 }
 
@@ -21,26 +27,33 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectMeetingPageProps) {
-  const interview = useInterviewSession(projectId)
+export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, documents, onExit }: ProjectMeetingPageProps) {
+  const interview = useInterviewSession(projectId, projectScopeKey)
   const [seedDraft, setSeedDraft] = useState('')
   const [answerDraft, setAnswerDraft] = useState('')
   const [origin, setOrigin] = useState<InterviewAnswerOrigin>('seed')
   const [seedError, setSeedError] = useState<string | null>(null)
   const [mutabilitySelections, setMutabilitySelections] = useState<Record<string, InterviewMutability>>({})
+  const [revisionDrafts, setRevisionDrafts] = useState<Record<string, string>>({})
+  const [revisionOpen, setRevisionOpen] = useState<Record<string, boolean>>({})
+  const [retractNotices, setRetractNotices] = useState<Record<string, boolean>>({})
 
-  const session = interview.status.activeSession
+  const session = interview.status.activeSession ?? interview.status.latestTerminalSession ?? null
   const stage = session?.state ?? 'intake'
   const question = interview.status.currentQuestion
-  const { previewBank } = interview
 
   // Entering readback loads the taggable answers so the writer reviews before banking.
   useEffect(() => {
     if (stage === 'readback') {
       setMutabilitySelections({})
-      void previewBank({})
+      void interview.previewBank({})
     }
-  }, [stage, previewBank])
+  }, [stage, session?.id])
+
+  function applyRevisionOperation(operation: MeetingRevisionInput) {
+    const next = interview.setRevisionOperation(operation)
+    if (stage === 'readback') void interview.previewBank(mutabilitySelections, next)
+  }
 
   function handleMutabilityChange(proposalId: string, value: InterviewMutability) {
     const next = { ...mutabilitySelections, [proposalId]: value }
@@ -83,6 +96,49 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
       onExit={onExit}
     >
       {error && <p style={styles.error}>{error}</p>}
+      <MemoryReceiptDisclosure receipt={interview.memoryReceipt} />
+
+      {session && interview.status.recap.length > 0 && session.state !== 'banked' && session.state !== 'exported' && (
+        <section style={styles.recapSection} aria-label="Earlier round direction">
+          <h2 style={styles.sectionTitle}>What's standing from earlier rounds</h2>
+          <p style={styles.hint}>Selections from an earlier visit are not restored. Review these choices again before banking this round.</p>
+          {interview.status.recap.map(item => (
+            <article key={item.decisionId} style={styles.recapItem}>
+              <div style={styles.recapArea}>{item.area.replaceAll('_', ' ')}</div>
+              <p style={styles.prose}>{item.statement}</p>
+              <p style={styles.hint}>Answered in Round {item.roundNumber}. We won't re-ask unless you reopen it.</p>
+              <div style={styles.actionRow}>
+                <button type="button" style={styles.ghostButton} onClick={() => applyRevisionOperation({ op: 'keep', targetId: item.decisionId })}>Keep</button>
+                <button type="button" style={styles.ghostButton} onClick={() => setRevisionOpen(prev => ({ ...prev, [item.decisionId]: true }))}>Revise</button>
+                <button type="button" style={styles.ghostButton} onClick={() => {
+                  applyRevisionOperation({ op: 'retract', targetId: item.decisionId })
+                  setRetractNotices(prev => ({ ...prev, [item.decisionId]: true }))
+                }}>Retract</button>
+                <button type="button" style={styles.ghostButton} disabled={!item.questionId} onClick={() => item.questionId && void interview.redirect(item.area, item.questionId)}>Ask me again</button>
+              </div>
+              {revisionOpen[item.decisionId] && (
+                <div style={styles.stack}>
+                  <textarea
+                    aria-label={`Revised direction for ${item.area}`}
+                    value={revisionDrafts[item.decisionId] ?? item.statement}
+                    onChange={event => setRevisionDrafts(prev => ({ ...prev, [item.decisionId]: event.target.value }))}
+                    rows={3}
+                    style={styles.answerInput}
+                  />
+                  <button type="button" style={styles.primaryButton} onClick={() => {
+                    const statement = revisionDrafts[item.decisionId] ?? item.statement
+                    applyRevisionOperation({ op: 'revise', targetId: item.decisionId, statement })
+                    setRevisionOpen(prev => ({ ...prev, [item.decisionId]: false }))
+                  }}>Use revision</button>
+                </div>
+              )}
+              {retractNotices[item.decisionId] && (
+                <p style={styles.warning}>Retracting removes this from your project's active direction. Your Round {item.roundNumber} answer stays in the record.</p>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
 
       {!session && (
         <RitualStage stageKey="intake">
@@ -235,6 +291,18 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
               </details>
             )}
 
+            {interview.directionDiff.length > 0 && (
+              <section style={styles.diffSection}>
+                <h2 style={styles.sectionTitle}>Exactly what this round changes</h2>
+                {interview.directionDiff.map((entry, index) => (
+                  <div key={`${entry.area}-${entry.op}-${index}`} style={styles.diffItem}>
+                    <strong>{entry.area.replaceAll('_', ' ')}</strong>
+                    <div>{entry.before.length ? entry.before.join(' · ') : 'Nothing standing'} → {entry.after.length ? entry.after.join(' · ') : 'Removed from active direction'}</div>
+                  </div>
+                ))}
+              </section>
+            )}
+
             <div style={styles.actionRow}>
               <button
                 type="button"
@@ -251,24 +319,42 @@ export function ProjectMeetingPage({ projectId, projectTitle, onExit }: ProjectM
         </RitualStage>
       )}
 
-      {session?.state === 'banked' && (
+      {interview.pitchPacketRow && (
+        <RitualStage stageKey="pitch-packet-review">
+          <PitchPacketReview
+            row={interview.pitchPacketMemoryReceipt
+              ? { ...interview.pitchPacketRow, memory_receipt: interview.pitchPacketMemoryReceipt }
+              : interview.pitchPacketRow}
+            proposalUnavailable={interview.proposalUnavailable}
+            message={interview.packetMessage}
+            downloadError={interview.packetDownloadError}
+            onSave={interview.savePitchPacket}
+            onApprove={interview.approvePitchPacketReview}
+            onExport={interview.exportPitchPacketFiles}
+            onRedownload={interview.redownloadPitchPacket}
+          />
+        </RitualStage>
+      )}
+
+      {session?.state === 'banked' && !interview.pitchPacketRow && (
         <RitualStage stageKey="banked">
           <div style={styles.stack}>
             <p style={styles.prose}>This round is banked. Future rounds append; they do not edit this one.</p>
             <div style={styles.actionRow}>
-              <button type="button" style={styles.primaryButton} onClick={() => void interview.exportToPitchStudio()}>Export to PitchStudio</button>
+              <button type="button" style={styles.primaryButton} onClick={() => void interview.openPitchPacket(documents, projectTitle)}>Export to PitchStudio</button>
+              <button type="button" style={styles.ghostButton} onClick={interview.prepareNewRound}>Start new interview round</button>
               <button type="button" style={styles.ghostButton} onClick={onExit}>Back to writing</button>
             </div>
           </div>
         </RitualStage>
       )}
 
-      {session?.state === 'exported' && (
+      {session?.state === 'exported' && !interview.pitchPacketRow && (
         <RitualStage stageKey="exported">
           <div style={styles.stack}>
             <p style={styles.prose}>Export prepared for PitchStudio.</p>
-            {interview.exportMarkdown && <pre style={styles.previewBox}>{interview.exportMarkdown}</pre>}
             <div style={styles.actionRow}>
+              <button type="button" style={styles.ghostButton} onClick={interview.prepareNewRound}>Start new interview round</button>
               <button type="button" style={styles.primaryButton} onClick={onExit}>Back to writing</button>
             </div>
           </div>
@@ -308,6 +394,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: 'var(--danger, #d66)',
     margin: 0,
+  },
+  recapSection: {
+    display: 'flex', flexDirection: 'column', gap: 12, border: '1px solid var(--border)', borderRadius: 12, padding: 16, background: 'var(--surface-1)',
+  },
+  sectionTitle: {
+    fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--fg)', margin: 0,
+  },
+  recapItem: {
+    display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12,
+  },
+  recapArea: {
+    fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--wp-amber)', textTransform: 'uppercase', letterSpacing: '0.08em',
+  },
+  warning: {
+    fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--danger, #d66)', margin: 0,
+  },
+  diffSection: {
+    display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid var(--border)', borderRadius: 10, padding: 14,
+  },
+  diffItem: {
+    display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--fg-muted)',
   },
   seedInput: {
     background: 'var(--surface-2)',

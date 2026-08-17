@@ -1,10 +1,5 @@
-import type { InterviewCursor, InterviewSessionRow, InterviewSessionState } from './types';
+import type { InterviewCursor, InterviewSessionPatch, InterviewSessionRow, InterviewSessionState } from './types';
 import type { QuestionBankRow } from './questionBank';
-
-export interface InterviewSessionPatch {
-  state: InterviewSessionState;
-  cursor: InterviewCursor;
-}
 
 type PausedCursor = InterviewCursor & { paused_from?: InterviewSessionState };
 
@@ -18,8 +13,8 @@ function cursorIndex(questions: readonly QuestionBankRow[], questionId: string |
 export function initialInterviewCursor(questions: readonly QuestionBankRow[]): InterviewCursor {
   const first = questions[0];
   return first
-    ? { lane: first.lane, question_id: first.id, budgets_spent: {} }
-    : { lane: null, question_id: null, budgets_spent: {} };
+    ? { lane: first.lane, question_id: first.id, budgets_spent: {}, redirects: [] }
+    : { lane: null, question_id: null, budgets_spent: {}, redirects: [] };
 }
 
 export function advanceInterviewCursor(
@@ -28,7 +23,7 @@ export function advanceInterviewCursor(
 ): InterviewSessionPatch {
   const nextQuestion = questions[cursorIndex(questions, session.cursor.question_id) + 1];
   if (!nextQuestion) {
-    return { state: 'readback', cursor: { lane: null, question_id: null, budgets_spent: session.cursor.budgets_spent } };
+    return { state: 'readback', cursor: { lane: null, question_id: null, budgets_spent: session.cursor.budgets_spent, redirects: session.cursor.redirects ?? [] } };
   }
   return {
     state: 'interviewing',
@@ -39,6 +34,7 @@ export function advanceInterviewCursor(
         ...session.cursor.budgets_spent,
         [nextQuestion.trigger]: (session.cursor.budgets_spent[nextQuestion.trigger] ?? 0) + 1,
       },
+      redirects: session.cursor.redirects ?? [],
     },
   };
 }

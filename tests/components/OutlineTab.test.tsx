@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useState, type ComponentProps } from 'react'
 import { OutlineTab } from '../../client/src/components/writing/OutlineTab'
 import { defaultProjectState } from '../../client/src/lib/projectState'
@@ -8,6 +8,12 @@ import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
 import { getOutlineRecipe } from '../../shared/compose/recipe'
 import type { AuthoredDocumentState, OutlineDocumentContent } from '../../shared/documents'
 import type { ComposedDocument } from '../../shared/compose/types'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(next => { resolve = next })
+  return { promise, resolve }
+}
 
 describe('OutlineTab', () => {
   const defaultDocument = defaultProjectState().documents.outline
@@ -162,7 +168,7 @@ describe('OutlineTab Document View', () => {
 
   // Stateful harness mirroring App.tsx: persists composed + view toggle back
   // into the controlled document prop so the Document View reflects the result.
-  function DocumentHarness() {
+  function DocumentHarness({ projectId = 'folder-outline-1', projectScopeKey, onComposedSpy }: { projectId?: string; projectScopeKey?: string; onComposedSpy?: (value: ComposedDocument) => void }) {
     const base = defaultProjectState().documents.outline
     const [doc, setDoc] = useState<AuthoredDocumentState<OutlineDocumentContent>>({
       ...base,
@@ -172,6 +178,8 @@ describe('OutlineTab Document View', () => {
     })
     return (
       <OutlineTab
+        projectId={projectId}
+        projectScopeKey={projectScopeKey}
         document={doc}
         projectFormat="feature"
         identity={identity}
@@ -183,7 +191,7 @@ describe('OutlineTab Document View', () => {
         onViewPreferencesPatch={(patch) =>
           setDoc((d) => ({ ...d, viewPreferences: { ...d.viewPreferences, ...patch } }))
         }
-        onComposed={(composed) => setDoc((d) => ({ ...d, composed }))}
+        onComposed={(composed) => { onComposedSpy?.(composed); setDoc((d) => ({ ...d, composed })) }}
       />
     )
   }
@@ -207,8 +215,57 @@ describe('OutlineTab Document View', () => {
     await waitFor(() => expect(screen.getByText('Who We Follow')).toBeInTheDocument())
     expect(screen.getByText(/Vera Solano fights The Meridian Group/)).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/compose-document', expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).projectId).toBe('folder-outline-1')
     // Renderer purity: no labeled answer rows leak into the composed body.
     expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
+  })
+
+  it('discloses disabled project memory from the compose receipt', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        composed: cleanComposed(),
+        memoryReceipt: { revision: 0, status: 'disabled', citations: [], conflictIds: [] },
+      }),
+    }))
+
+    const { rerender } = render(<DocumentHarness projectId="folder-outline-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+
+    expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
+    rerender(<DocumentHarness projectId="folder-outline-2" />)
+    expect(screen.queryByText(/project memory disabled/i)).not.toBeInTheDocument()
+  })
+
+  it('ignores project A completion after project B starts and applies only B composition', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    const fetchMock = vi.fn(async () => {
+      const response = fetchMock.mock.calls.length === 1 ? pendingA.promise : pendingB.promise
+      return { ok: true, json: async () => response }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onComposed = vi.fn()
+    const { rerender } = render(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-A" onComposedSpy={onComposed} />)
+    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+
+    rerender(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-B" onComposedSpy={onComposed} />)
+    const composeB = screen.getByRole('button', { name: /compose this outline/i })
+    expect(composeB).toBeEnabled()
+    fireEvent.click(composeB)
+    await act(async () => pendingA.resolve({
+      composed: cleanComposed(),
+      memoryReceipt: { revision: 101, status: 'available', citations: [], conflictIds: [] },
+    }))
+    expect(onComposed).not.toHaveBeenCalled()
+    expect(screen.queryByText(/project memory revision 101/i)).not.toBeInTheDocument()
+
+    await act(async () => pendingB.resolve({
+      composed: cleanComposed(),
+      memoryReceipt: { revision: 102, status: 'available', citations: [], conflictIds: [] },
+    }))
+    await waitFor(() => expect(onComposed).toHaveBeenCalledTimes(1))
+    expect(screen.getByText(/project memory revision 102/i)).toBeInTheDocument()
   })
 
   it('ignores duplicate compose clicks while a request is already in flight', async () => {

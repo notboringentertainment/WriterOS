@@ -19,10 +19,15 @@ import { requestOutlineCompose } from '../../lib/composeClient'
 import { OutlineEditView } from './outline/OutlineEditView'
 import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
+import type { MemoryReceipt } from '@shared/schema'
+import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
+import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
 type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
 interface OutlineTabProps {
+  projectId?: string
+  projectScopeKey?: string
   document: AuthoredDocumentState<OutlineDocumentContent>
   projectFormat?: ProjectFormat
   identity: ComposeIdentity
@@ -36,6 +41,8 @@ interface OutlineTabProps {
 }
 
 export function OutlineTab({
+  projectId,
+  projectScopeKey,
   document,
   projectFormat = 'feature',
   identity,
@@ -50,34 +57,51 @@ export function OutlineTab({
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
+  const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const isComposingRef = useRef(false)
+  const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
+  const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
+    const requestIsCurrent = beginComposeRequest()
     isComposingRef.current = true
     setIsComposing(true)
     setComposeError(null)
     try {
       const result = await requestOutlineCompose({
+        projectId,
         content: document.content,
         format: activeFormat,
         identity,
       })
+      if (!requestIsCurrent()) return
+      setMemoryReceipt(result.memoryReceipt)
       if (result.ok) {
         onComposed(result.composed)
       } else {
         setComposeError('WriterOS could not compose this document right now.')
       }
     } catch {
+      if (!requestIsCurrent()) return
       setComposeError('WriterOS could not compose this document right now.')
     } finally {
-      isComposingRef.current = false
-      setIsComposing(false)
+      if (requestIsCurrent()) {
+        isComposingRef.current = false
+        setIsComposing(false)
+      }
     }
-  }, [document.content, activeFormat, identity, onComposed])
+  }, [beginComposeRequest, projectId, document.content, activeFormat, identity, onComposed])
+
+  useEffect(() => {
+    isComposingRef.current = false
+    setIsComposing(false)
+    setComposeError(null)
+    setMemoryReceipt(undefined)
+  }, [effectiveProjectScopeKey])
 
   useEffect(() => {
     if (activeFormat === 'series' && document.content.episodes.length === 0) {
@@ -169,6 +193,8 @@ export function OutlineTab({
           onCompose={handleCompose}
         />
       )}
+
+      <MemoryReceiptDisclosure receipt={memoryReceipt} />
 
       <ClearOutlineDialog
         open={clearDialogOpen}

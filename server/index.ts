@@ -2,18 +2,9 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { redactApiLogResponse } from "./apiLogRedaction";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-
-function redactApiLogResponse(path: string, bodyJson: Record<string, any>): Record<string, any> {
-  if (path === "/api/voice-profile/synthesize" && "profile" in bodyJson) {
-    return { ...bodyJson, profile: "[redacted]" };
-  }
-
-  return bodyJson;
-}
 
 app.use((req, res, next) => {
   const start = Date.now();

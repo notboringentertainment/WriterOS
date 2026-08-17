@@ -19,7 +19,7 @@ export type InterviewSessionState =
 
 // ---- §A5.2 audit verdicts ----
 
-export type AuditVerdict = 'SUFFICIENT' | 'THIN';
+export type AuditVerdict = 'SUFFICIENT' | 'SUFFICIENT_FROM_PRIOR' | 'THIN';
 
 export interface AuditVerdicts {
   // Keyed by audit area name (e.g. 'locks', 'ending', 'backstory', 'open_questions').
@@ -29,6 +29,13 @@ export interface AuditVerdicts {
 
 // ---- §A4 session cursor ----
 
+export interface InterviewRedirect {
+  area: string;
+  question_id: string;
+  at: string;
+  answered_at: string | null;
+}
+
 export interface InterviewCursor {
   // Current lane being interviewed (persona id), or null between phases.
   lane: string | null;
@@ -36,6 +43,8 @@ export interface InterviewCursor {
   question_id: string | null;
   // Budgets spent per lane, keyed by persona id. Per-area budgets from §A6.
   budgets_spent: Record<string, number>;
+  // Optional only at the storage boundary for pre-feature cursor JSON.
+  redirects?: InterviewRedirect[];
 }
 
 /**
@@ -46,6 +55,7 @@ export const DEFAULT_INTERVIEW_CURSOR: Readonly<InterviewCursor> = Object.freeze
   lane: null,
   question_id: null,
   budgets_spent: {},
+  redirects: [],
 });
 
 // ---- §A7.2 transcript entry ----
@@ -64,6 +74,37 @@ export interface TranscriptEntry {
 }
 
 export type MeetingMutability = 'locked' | 'leaning' | 'open';
+
+export type MeetingDecisionOp = 'assert' | 'revise' | 'retract' | 'supersede' | 'redirect';
+
+export interface MeetingDecisionContent {
+  statement: string;
+  mutability: MeetingMutability;
+  originMarker: '[SEED]' | '[EXTRAPOLATED]' | '[INVENTED]';
+  disposition: AnswerDisposition;
+}
+
+export interface MeetingDecisionRow {
+  id: string;
+  project_id: string;
+  session_id: string;
+  area: string;
+  field_path: string;
+  op: MeetingDecisionOp;
+  content: MeetingDecisionContent | Record<string, never>;
+  targets: string[];
+  created_at: string;
+}
+
+export interface MeetingRecapItem {
+  decisionId: string;
+  sessionId: string;
+  area: string;
+  fieldPath: string;
+  statement: string;
+  roundNumber: number;
+  questionId: string | null;
+}
 
 export interface MeetingBankSnapshot {
   applied_classifications: Record<string, MeetingMutability>;
@@ -85,6 +126,11 @@ export interface InterviewSessionRow {
   bank_snapshot: MeetingBankSnapshot | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface InterviewSessionPatch {
+  state: InterviewSessionState;
+  cursor: InterviewCursor;
 }
 
 // ---- §A7.2 extended proposal row ----

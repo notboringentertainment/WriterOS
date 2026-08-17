@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { createEmptyDocuments } from '../../../shared/documents'
 
 const { runtimeMock } = vi.hoisted(() => ({
   runtimeMock: {
@@ -12,13 +13,20 @@ const { runtimeMock } = vi.hoisted(() => ({
     wrapInterview: vi.fn(),
     pauseInterview: vi.fn(),
     resumeInterview: vi.fn(),
+    redirectInterviewArea: vi.fn(),
     previewBank: vi.fn(),
     previewBankFinal: vi.fn(),
     bankInterview: vi.fn(),
     exportInterview: vi.fn(),
+    createPitchPacketDraft: vi.fn(),
+    savePitchPacketDraft: vi.fn(),
+    approvePitchPacket: vi.fn(),
+    exportPitchPacket: vi.fn(),
+    getExportedPitchPacket: vi.fn(),
   },
 }))
 vi.mock('../../../server/room/interview/runtime', () => runtimeMock)
+vi.mock('../../../server/room/interview/pitchPacketRuntime', () => runtimeMock)
 vi.mock('../../../server/room/supabaseClient', () => ({ isRoomConfigured: () => true }))
 vi.mock('../../../server/room/scheduler', () => ({ startRoomScheduler: () => true }))
 vi.mock('../../../server/room/sseHub', () => ({ addSseClient: vi.fn(), broadcast: vi.fn() }))
@@ -27,15 +35,17 @@ vi.mock('../../../server/room/memoryContract', async (importOriginal) => ({
 }))
 
 import { registerRoomRoutes } from '../../../server/room/roomRoutes'
+import { RoomMemoryError } from '../../../server/room/memoryContract'
 
 let server: http.Server
 let port: number
+const memoryProvider = { context: vi.fn() }
 
 beforeEach(async () => {
   vi.clearAllMocks()
   const app = express()
   app.use(express.json())
-  registerRoomRoutes(app)
+  registerRoomRoutes(app, memoryProvider)
   server = http.createServer(app)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
@@ -45,10 +55,10 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-function post(path: string, body: unknown = {}): Promise<{ status: number; json: Record<string, unknown> }> {
+function post(path: string, body: unknown = {}, method = 'POST'): Promise<{ status: number; json: Record<string, unknown> }> {
   const payload = JSON.stringify(body)
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => {
+    const req = http.request({ hostname: '127.0.0.1', port, path, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', c => chunks.push(Buffer.from(c)))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString() || '{}') }))
@@ -88,7 +98,7 @@ describe('Project Meeting routes', () => {
     const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: '  thin seed  ', speculative: true })
 
     expect(res.status).toBe(200)
-    expect(runtimeMock.startInterview).toHaveBeenCalledWith({ projectId: 'project-A', mode: 'full', seedText: '  thin seed  ', speculative: true })
+    expect(runtimeMock.startInterview).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-A', mode: 'full', seedText: '  thin seed  ', speculative: true }))
     expect(res.json).toMatchObject({ session: { id: 's1' }, auditMessage: 'Morgan audit' })
   })
 
@@ -99,6 +109,14 @@ describe('Project Meeting routes', () => {
 
     expect(res.status).toBe(409)
     expect(res.json).toMatchObject({ message: expect.stringContaining('already in progress') })
+  })
+
+  it('returns a safe 503 when unified project memory needs repair', async () => {
+    runtimeMock.startInterview.mockRejectedValueOnce(new RoomMemoryError('/private/ledger.jsonl corrupt'))
+    const res = await post('/api/room/project-A/interview/start', { mode: 'full', seedText: 'harbor seed' })
+    expect(res.status).toBe(503)
+    expect(res.json).toEqual({ message: 'Project memory is unavailable and needs repair.' })
+    expect(JSON.stringify(res.json)).not.toContain('/private')
   })
 
   it('rejects blank start seed before creating anything', async () => {
@@ -140,10 +158,33 @@ describe('Project Meeting routes', () => {
     runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: { seedText: 'seed' } })
 
     await post('/api/room/project-A/interview/s1/bank-preview', { mutability: { 'p-1': 'leaning', 'p-2': 'bogus', 'p-3': 42 } })
-    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' } })
+    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'leaning' }, operations: [] })
 
     await post('/api/room/project-A/interview/s1/bank', { mutability: { 'p-1': 'open', 'p-2': null } })
-    expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' } })
+    expect(runtimeMock.bankInterview).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'project-A', mutability: { 'p-1': 'open' }, operations: [] })
+  })
+
+  it('sanitizes revision operations for preview and bank and redirects an exact recap area', async () => {
+    runtimeMock.previewBankFinal.mockResolvedValueOnce({ preview: {}, finalValues: {}, directionDiff: [] })
+    runtimeMock.bankInterview.mockResolvedValueOnce({ session: { id: 's1', state: 'banked' }, preview: {} })
+    runtimeMock.redirectInterviewArea.mockResolvedValueOnce({ session: { id: 's1', state: 'interviewing' }, currentQuestion: { id: 'morgan-ending' } })
+    const operations = [
+      { op: 'keep', targetId: 'd1' },
+      { op: 'revise', targetId: 'd2', statement: 'A sharper ending.', mutability: 'locked' },
+      { op: 'retract', targetId: 'd3' },
+      { op: 'supersede', targetIds: ['d4', 'd5'], area: 'ending', fieldPath: 'story_locks', statement: 'One ending.', mutability: 'locked' },
+      { op: 'assert', targetId: 'bad' },
+    ]
+
+    await post('/api/room/project-A/interview/s1/bank-preview', { operations })
+    expect(runtimeMock.previewBankFinal).toHaveBeenCalledWith(expect.objectContaining({ operations: operations.slice(0, 4) }))
+    await post('/api/room/project-A/interview/s1/bank', { operations })
+    expect(runtimeMock.bankInterview).toHaveBeenCalledWith(expect.objectContaining({ operations: operations.slice(0, 4) }))
+
+    const redirect = await post('/api/room/project-A/interview/s1/redirect', { area: 'ending', questionId: 'morgan-ending' })
+    expect(redirect.status).toBe(200)
+    expect(runtimeMock.redirectInterviewArea).toHaveBeenCalledWith({ projectId: 'project-A', sessionId: 's1', area: 'ending', questionId: 'morgan-ending' })
+    expect(JSON.stringify(redirect.json)).not.toMatch(/ledger|fold|projection|assert/i)
   })
 
   it('rejects overly long seed, answer, and resolved values', async () => {
@@ -155,5 +196,32 @@ describe('Project Meeting routes', () => {
     expect((await post('/api/room/project-A/interview/start', { mode: 'full', seedText: oversized })).status).toBe(413)
     expect((await post('/api/room/project-A/interview/s1/answer', { answerText: oversized })).status).toBe(413)
     expect((await post('/api/room/project-A/interview/s1/answer', { answerText: 'short', resolvedValue: oversized })).status).toBe(413)
+  })
+
+  it('supports the explicit Pitch Packet draft, save, approve, export, and re-download lifecycle', async () => {
+    const row = { id: 'packet-1', project_id: 'project-A', session_id: 's1', status: 'draft', packet: { packetVersion: 1 } }
+    runtimeMock.createPitchPacketDraft.mockResolvedValueOnce({ row, proposalUnavailable: false })
+    runtimeMock.savePitchPacketDraft.mockResolvedValueOnce(row)
+    runtimeMock.approvePitchPacket.mockResolvedValueOnce({ ...row, status: 'approved' })
+    runtimeMock.exportPitchPacket.mockResolvedValueOnce({ ...row, status: 'exported' })
+    runtimeMock.getExportedPitchPacket.mockResolvedValueOnce({ ...row, status: 'exported' })
+
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/draft', { documents: { synopsis: {} }, projectMeta: { title: 'Ace' } })).status).toBe(200)
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1', { packet: { packetVersion: 1 } }, 'PATCH')).status).toBe(200)
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1/approve')).json).toMatchObject({ status: 'approved' })
+    expect((await post('/api/room/project-A/interview/s1/pitch-packet/packet-1/export')).json).toMatchObject({ status: 'exported' })
+    expect((await get('/api/room/project-A/interview/s1/pitch-packet/exported')).json).toMatchObject({ status: 'exported' })
+    expect(runtimeMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-A', sessionId: 's1', projectMeta: { title: 'Ace' } }))
+    expect(runtimeMock.createPitchPacketDraft).toHaveBeenCalledWith(expect.objectContaining({ memoryProvider }))
+  })
+
+  it('returns a safe retryable Pitch Packet failure when unified memory needs repair', async () => {
+    runtimeMock.createPitchPacketDraft.mockRejectedValueOnce(new RoomMemoryError('/Users/writer/private-memory.jsonl'))
+
+    const res = await post('/api/room/project-A/interview/s1/pitch-packet/draft', { documents: createEmptyDocuments() })
+
+    expect(res.status).toBe(503)
+    expect(res.json).toEqual({ message: 'Project memory is unavailable and needs repair.' })
+    expect(JSON.stringify(res.json)).not.toContain('/Users')
   })
 })

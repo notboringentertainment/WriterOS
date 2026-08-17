@@ -1,9 +1,9 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
-import type { SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
+import type { SurfaceAnswer, SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
 import { createEmptyStoryBibleContent } from '@shared/documents'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
-import { getOutlineDeck, isOutlineCardAnswered } from './outlineDeck'
+import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
 import {
   getDeckForFormat as getSynopsisDeck,
   resolveSynopsisPath,
@@ -24,12 +24,21 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
   switch (activeTab) {
     case 'outline': {
       const content = state.documents.outline.content
-      const questions: SurfaceQuestion[] = getOutlineDeck(format).map(card => ({
-        id: card.id,
-        label: card.question,
-        helper: card.helper,
-        status: isOutlineCardAnswered(content, card) ? 'answered' : 'unanswered',
-      }))
+      const questions: SurfaceQuestion[] = getOutlineDeck(format).map(card => {
+        const bindings = typeof card.mappingPath === 'string'
+          ? [{ path: card.mappingPath }]
+          : card.mappingPath
+        return {
+          id: card.id,
+          label: card.question,
+          helper: card.helper,
+          status: isOutlineCardAnswered(content, card) ? 'answered' : 'unanswered',
+          answers: collectSurfaceAnswers(bindings.map(binding => ({
+            label: 'label' in binding ? binding.label : undefined,
+            value: resolveOutlinePath(content, binding.path),
+          }))),
+        }
+      })
       return buildIntakeSurface('outline', 'Outline', format, questions)
     }
 
@@ -40,6 +49,10 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
         label: prompt.question,
         helper: prompt.helper,
         status: isSynopsisPromptAnswered(content, prompt) ? 'answered' : 'unanswered',
+        answers: collectSurfaceAnswers(prompt.inputs.map(input => ({
+          label: input.label,
+          value: resolveSynopsisPath(content, input.path).value,
+        }))),
       }))
       return buildIntakeSurface('synopsis', 'Synopsis', format, questions)
     }
@@ -51,6 +64,10 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
         label: prompt.question,
         helper: prompt.helper,
         status: isTreatmentPromptAnswered(content, prompt) ? 'answered' : 'unanswered',
+        answers: collectSurfaceAnswers(prompt.paths.map(path => ({
+          label: prompt.paths.length > 1 ? path : undefined,
+          value: resolveTreatmentPath(content, path).value,
+        }))),
       }))
       return buildIntakeSurface('treatment', 'Treatment', format, questions)
     }
@@ -62,6 +79,16 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
         label: prompt.question,
         helper: prompt.helper,
         status: isStoryBiblePromptAnswered(content, prompt) ? 'answered' : 'unanswered',
+        answers: collectSurfaceAnswers(prompt.inputs.map(input => {
+          const resolved = resolveStoryBiblePath(content, input.path)
+          const emptyResolved = resolveStoryBiblePath(EMPTY_STORY_BIBLE_CONTENT, input.path)
+          return {
+            label: input.label,
+            value: emptyResolved.defined && sameValue(resolved.value, emptyResolved.value)
+              ? undefined
+              : resolved.value,
+          }
+        })),
       }))
       return buildIntakeSurface('story-bible', 'Story Bible', format, questions)
     }
@@ -141,6 +168,22 @@ function hasMeaningfulContent(value: unknown): boolean {
     })
   }
   return false
+}
+
+function collectSurfaceAnswers(
+  values: ReadonlyArray<{ label?: string; value: unknown }>,
+): SurfaceAnswer[] {
+  return values.flatMap(({ label, value }) => {
+    if (!hasMeaningfulContent(value)) return []
+    const rendered = renderSurfaceAnswerValue(value)
+    return rendered ? [{ ...(label ? { label } : {}), value: rendered }] : []
+  })
+}
+
+function renderSurfaceAnswerValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
 }
 
 function sameValue(a: unknown, b: unknown): boolean {
