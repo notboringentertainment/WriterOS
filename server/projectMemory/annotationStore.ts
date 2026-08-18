@@ -121,6 +121,15 @@ async function withLock<T>(projectPath: string, operation: (projectId: string) =
     projectId,
   })
   try {
+    // Same discipline as the memory store's withProjectLock: the manifest was read before
+    // the lock was held, so re-read it under the lock and refuse if the package changed
+    // identity in between — the lock taken would be keyed to the wrong project.
+    const lockedProjectId = await readProjectId(projectPath)
+    if (lockedProjectId !== projectId) {
+      throw new AnnotationStoreError(
+        `The package changed identity while the lock was being acquired (${projectId} → ${lockedProjectId}).`,
+        'conflict')
+    }
     return await operation(projectId)
   } finally {
     await lock.release()
@@ -261,7 +270,9 @@ export function createAnnotationStore(): AnnotationQueries {
       const questions: PendingQuestion[] = []
       for (const [annotationId, locator] of cueQuestions(snapshot)) {
         const existing = state.annotations.get(annotationId)
-        if (existing === undefined) {
+        // An invalidated annotation's question is open again: re-derive it fresh, exactly
+        // as if it had never been asked, so it is answerable rather than a dead end.
+        if (existing === undefined || existing.status === 'invalidated') {
           const candidateRecordIds = candidateIds(snapshot, locator.recordId)
           questions.push({
             annotationId,
@@ -281,8 +292,8 @@ export function createAnnotationStore(): AnnotationQueries {
             questionText: renderQuestionText(existing.locator, existing.candidateRecordIds.length),
           })
         }
-        // approved / declined / invalidated: nothing to ask. Re-asking after the language
-        // changes is the invalidation slice's job.
+        // approved / declined: nothing to ask. Re-asking after the language changes is
+        // the invalidation slice's job.
       }
       return questions.sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
     },
@@ -305,7 +316,7 @@ export function createAnnotationStore(): AnnotationQueries {
             'not-found')
         }
         const existing = state.annotations.get(annotationId)
-        if (existing !== undefined && existing.status !== 'declined') {
+        if (existing !== undefined && existing.status !== 'declined' && existing.status !== 'invalidated') {
           if (existing.status === 'proposed') return existing
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
         }

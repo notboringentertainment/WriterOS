@@ -190,7 +190,7 @@ export function composeWhatsStanding(args: ComposeWhatsStandingArgs): ComposeRes
   return composeDeterministic({
     factSheet: buildWhatsStandingFactSheet(snapshot, annotations),
     recipe: getWhatsStandingRecipe(snapshot),
-    sourceHash: computeWhatsStandingSourceHash(snapshot),
+    sourceHash: computeWhatsStandingSourceHash(snapshot, annotations),
     renderer: () => renderWhatsStandingBlocks(snapshot, annotations),
     extraWarnings: unresolved,
     run: {

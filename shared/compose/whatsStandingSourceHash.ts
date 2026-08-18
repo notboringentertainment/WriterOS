@@ -1,4 +1,5 @@
 import type { ProjectMemorySnapshot } from '../projectMemory'
+import type { AnnotationLogState } from '../projectMemoryAnnotations'
 import { stableHash } from './stableHash'
 import { buildWhatsStandingFactSheet } from './whatsStandingFactSheet'
 
@@ -9,11 +10,20 @@ import { buildWhatsStandingFactSheet } from './whatsStandingFactSheet'
  * different memory states can produce the same visible facts — a promotion that changes a
  * record's status without changing its text, for instance — and a report should not claim
  * to be the same artifact as one taken at a different point in the project's history.
+ *
+ * Annotations are part of the source too: they contribute fact-sheet fields, resolved
+ * references, and readiness. Hashing the annotation revision alongside the annotation-aware
+ * fact sheet means an annotation-only change can never produce a different report under the
+ * same hash.
  */
-export function computeWhatsStandingSourceHash(snapshot: ProjectMemorySnapshot): string {
+export function computeWhatsStandingSourceHash(
+  snapshot: ProjectMemorySnapshot,
+  annotations?: AnnotationLogState,
+): string {
   return stableHash({
-    factSheet: buildWhatsStandingFactSheet(snapshot),
+    factSheet: buildWhatsStandingFactSheet(snapshot, annotations),
     revision: snapshot.revision,
+    annotationRevision: annotations?.revision,
     projectId: snapshot.projectId,
   })
 }

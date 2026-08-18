@@ -584,10 +584,11 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   // command's promise that generating a report changes nothing.
   //
   // Memory and annotations are two files, and every write to either happens under the
-  // package lock — which this command must not take, because acquiring it writes a lock
-  // file. So consistency is optimistic instead: if the annotation revision is identical
-  // before and after the snapshot read, no writer ran in between and the pair is one
-  // moment's state, never a report stitched from two.
+  // package lock. The snapshot read is itself lock-protected inside readSnapshotReadOnly,
+  // but annotationStore.state reads memory/annotations.jsonl outside any lock, so the pair
+  // is made consistent optimistically: if the annotation revision is identical before and
+  // after the snapshot read, no writer ran in between and the pair is one moment's state,
+  // never a report stitched from two.
   let annotations = await annotationStore.state(project.path)
   let snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
   for (let attempt = 0; ; attempt += 1) {
@@ -728,6 +729,10 @@ export async function runProjectMemoryCli(
   } catch (error) {
     if (error instanceof AnnotationStoreError) {
       io.stderr(`${error.message}\n`)
+      // Same contract as exitCodeFor: 2 for bad input, 3 for state that is unusable or
+      // moved out from under the caller, 1 for anything else.
+      if (error.reason === 'invalid-input' || error.reason === 'not-found') return 2
+      if (error.reason === 'corrupt' || error.reason === 'conflict') return 3
       return 1
     }
     const exitCode = exitCodeFor(error)

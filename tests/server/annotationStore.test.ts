@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
@@ -309,6 +309,43 @@ describe('question scope and shape', () => {
     await writeFile(filePath, `${JSON.stringify(legacy)}\n`)
     const state = await annotationStore.state(projectPath)
     expect(state.annotations.get(q.annotationId)?.status).toBe('proposed')
+  })
+})
+
+describe('invalidation aftermath', () => {
+  it('an invalidated question is asked again and can be re-proposed', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!q || !beats) throw new Error('fixture missing')
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    await annotationStore.approve(projectPath, snapshot, q.annotationId, [beats.id], 'run-1')
+
+    // No producer writes invalidation yet — that is the next slice — so append the event
+    // by hand: the replay rules and the re-ask path must already cope with it.
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    await appendFile(filePath, `${JSON.stringify({
+      type: 'annotation-invalidated',
+      projectId: PROJECT_ID,
+      annotationId: q.annotationId,
+      annotationRevision: 3,
+      at: '2026-08-18T20:00:00.000Z',
+      cause: 'language-changed',
+      changedRecordId: q.locator.recordId,
+    })}\n`)
+
+    const state = await annotationStore.state(projectPath)
+    expect(state.annotations.get(q.annotationId)?.status).toBe('invalidated')
+
+    const reasked = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const again = reasked.find(x => x.annotationId === q.annotationId)
+    expect(again?.status).toBe('new')
+
+    const reproposed = await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
+    expect(reproposed.status).toBe('proposed')
+    expect((await annotationStore.state(projectPath)).revision).toBe(4)
   })
 })
 

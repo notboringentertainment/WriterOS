@@ -255,6 +255,38 @@ describe('markdown rendering', () => {
     expect(markdown).toContain('mem-9 never cited')
   })
 
+  it('keeps hostile warning text inside the banner, one line per warning', () => {
+    const orphan = snapshot([record({ id: 'mem-1' })])
+    const result = composeWhatsStanding({ snapshot: orphan, runId: 'run-1' })
+    if (!result.ok) return
+    const flagged = {
+      ...result.composed,
+      fidelity: {
+        status: 'flagged' as const,
+        warnings: [{ kind: 'coverage' as const, message: 'quoted phrase\n# smuggled heading\n> fake quote' }],
+      },
+    }
+    const lines = renderComposedMarkdown(flagged).split('\n')
+    // The whole warning collapses onto its single blockquoted line; nothing it contained
+    // becomes top-level Markdown.
+    expect(lines[0]).toContain('INCOMPLETE')
+    expect(lines[1].startsWith('> - coverage:')).toBe(true)
+    expect(lines[1]).toContain('smuggled heading')
+    expect(lines.some(l => l.startsWith('# smuggled'))).toBe(false)
+  })
+
+  it('quotes a cue sentence once per annotation, not once per sentence text', () => {
+    const twice = record({
+      id: 'mem-1',
+      claim: 'Superseded by beats 9-11.',
+      detail: 'Superseded by beats 9-11.',
+    })
+    const blocks = renderWhatsStandingBlocks(snapshot([twice, record({ id: 'mem-2' })]))
+    const quoted = blocks.filter(b => b.type === 'leadInParagraph')
+    // Claim and detail each carry the cue, each with its own annotation; both must render.
+    expect(quoted).toHaveLength(2)
+  })
+
   it('states the revision and that no model was used', () => {
     const result = composeWhatsStanding({ snapshot: snapshot([record({ id: 'mem-1' })]), runId: 'run-1' })
     if (!result.ok) return
@@ -354,6 +386,21 @@ describe('readiness', () => {
   it('cues on records the report never displays are not readiness items', () => {
     const hidden = record({ id: 'mem-dev', kind: 'development' as ProjectMemoryRecord['kind'], claim: 'Superseded by beats 9-11.' })
     expect(unresolvedReferences(snapshot([hidden, referent]))).toEqual([])
+  })
+})
+
+describe('source hash', () => {
+  it('changes when only the annotation state changes', () => {
+    const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+    const referent = record({ id: 'mem-target', claim: 'Beat sequence: 15 beats across three acts.' })
+    const snap = snapshot([referencing, referent])
+    const { annotations } = logWith(referencing, { status: 'approved', referentRecordIds: ['mem-target'] })
+
+    const bare = composeWhatsStanding({ snapshot: snap, runId: 'run-1' })
+    const annotated = composeWhatsStanding({ snapshot: snap, runId: 'run-1', annotations })
+    if (!bare.ok || !annotated.ok) throw new Error('compose failed')
+    // Same memory, different annotations → a different report, so it must not share a hash.
+    expect(annotated.composed.sourceHash).not.toBe(bare.composed.sourceHash)
   })
 })
 

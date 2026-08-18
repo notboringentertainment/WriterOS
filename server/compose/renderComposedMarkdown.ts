@@ -43,6 +43,16 @@ function escapeBlockText(value: string): string {
   return collapsed.join('\n')
 }
 
+/**
+ * Warning messages quote record ids and cue phrases straight from project memory, which is
+ * untrusted. Banner lines are single-line by construction — an embedded newline would end
+ * the blockquote and let the remainder render as top-level Markdown — so escape and then
+ * collapse to one line.
+ */
+function escapeBannerText(value: string): string {
+  return escapeBlockText(value).replace(/\n+/g, ' ')
+}
+
 function renderBlock(block: ComposedBlock): string {
   switch (block.type) {
     case 'heading':
@@ -70,7 +80,7 @@ export function renderComposedMarkdown(composed: ComposedDocument): string {
   const banner = composed.fidelity.status === 'flagged'
     ? [
       '> **INCOMPLETE — this report has unresolved problems and should not be relied on alone.**',
-      ...composed.fidelity.warnings.map(w => `> - ${w.kind}: ${w.message}`),
+      ...composed.fidelity.warnings.map(w => `> - ${w.kind}: ${escapeBannerText(w.message)}`),
       '',
     ].join('\n')
     : ''

@@ -168,10 +168,12 @@ export interface AnnotationLogState {
 /**
  * Legal transitions. proposed → approved | declined; approved → invalidated;
  * declined → proposed (re-ask) only once the language it was declined against has moved —
- * the store enforces the fingerprint check; this table enforces the shape.
+ * the store enforces the fingerprint check; this table enforces the shape. An invalidated
+ * annotation may also be re-proposed — its question is open again and must be answerable,
+ * never a dead end — but never approved directly: approval requires a live proposal.
  */
 const TRANSITIONS: Record<string, AnnotationStatus[]> = {
-  'annotation-proposed': ['declined'], // a declined question may be re-proposed
+  'annotation-proposed': ['declined', 'invalidated'], // a settled question may be re-opened
   'annotation-approved': ['proposed'],
   'annotation-declined': ['proposed'],
   'annotation-invalidated': ['approved'],
