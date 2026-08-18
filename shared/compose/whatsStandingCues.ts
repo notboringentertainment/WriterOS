@@ -62,19 +62,26 @@ export function findCues(field: 'claim' | 'detail', text: string | undefined): C
   if (!text) return []
   const matches: CueMatch[] = []
   for (const sentence of splitSentences(text)) {
+    const inSentence: Omit<CueMatch, 'occurrence'>[] = []
     for (const { name, pattern } of CUE_PATTERNS) {
       // Fresh RegExp per use: the module-level patterns carry /g and therefore
       // lastIndex state, which would leak between calls and drop matches.
       const scan = new RegExp(pattern.source, pattern.flags)
       for (const m of sentence.matchAll(scan)) {
-        matches.push({
-          field,
-          sentence,
-          phrase: m[0].trim(),
-          occurrence: matches.length,
-          cue: name,
-        })
+        inSentence.push({ field, sentence, phrase: m[0].trim(), cue: name })
       }
+    }
+    // One question per stretch of text: a match whose phrase sits inside another match in
+    // the same sentence is dropped. "Superseded by beats 9-11" would otherwise raise both
+    // a superseded-by question and a beat-range question about the same words, and
+    // answering one would still leave the other nagging.
+    const kept = inSentence.filter((candidate, index) => !inSentence.some((other, otherIndex) => (
+      otherIndex !== index
+      && other.phrase !== candidate.phrase
+      && other.phrase.includes(candidate.phrase)
+    )))
+    for (const match of kept) {
+      matches.push({ ...match, occurrence: matches.length })
     }
   }
   return matches

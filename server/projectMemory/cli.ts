@@ -24,6 +24,7 @@ import {
 } from './safePaths'
 import { previewProjectMemoryImport } from './importer'
 import { composeWhatsStanding } from '../compose'
+import { annotationStore, AnnotationStoreError } from './annotationStore'
 import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
 
 export interface ProjectMemoryCliIo {
@@ -583,9 +584,11 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   // command's promise that generating a report changes nothing.
   const snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
 
+  const annotations = await annotationStore.state(project.path)
   const result = composeWhatsStanding({
     snapshot,
-    runId: `whats-standing-r${snapshot.revision}`,
+    runId: `whats-standing-r${snapshot.revision}-a${annotations.revision}`,
+    annotations,
   })
   if (!result.ok) {
     io.stderr(`${result.reason}\n`)
@@ -595,6 +598,95 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   io.stdout(format === 'json'
     ? `${JSON.stringify(result.composed, null, 2)}\n`
     : renderComposedMarkdown(result.composed))
+  return 0
+}
+
+/**
+ * `questions` — list the reference questions the writer could answer right now.
+ *
+ * Read-only. Each question is a phrase in a record's own wording that appears to point at
+ * another decision and has not been resolved, declined, or answered "can't say".
+ */
+async function runQuestions(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+  assertAllowedOptions(args, ['project', 'format'], [])
+  const format = args.values.get('format') ?? 'markdown'
+  if (format !== 'json' && format !== 'markdown') throw new CliInputError('--format must be json or markdown.')
+  const project = await safeProjectPath(args)
+  await project.verify()
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+  const questions = await annotationStore.pendingQuestions(project.path, snapshot)
+
+  if (format === 'json') {
+    io.stdout(`${JSON.stringify({ projectId: snapshot.projectId, revision: snapshot.revision, questions }, null, 2)}\n`)
+    return 0
+  }
+  if (questions.length === 0) {
+    io.stdout('No open reference questions.\n')
+    return 0
+  }
+  const byId = new Map(snapshot.records.map(r => [r.id, r]))
+  const lines: string[] = [`${questions.length} open reference question(s):`, '']
+  for (const q of questions) {
+    lines.push(`## ${q.annotationId}`, '', q.questionText, '', 'Candidates:')
+    for (const id of q.candidateRecordIds) {
+      const head = byId.get(id)?.claim.split('\n')[0] ?? ''
+      lines.push(`  - ${id}  ${head.length > 70 ? `${head.slice(0, 69)}…` : head}`)
+    }
+    lines.push('', `Answer with: npm run memory -- answer --project <path> --question ${q.annotationId} --referents <id,id>  (or --cant-say / --decline)`, '')
+  }
+  io.stdout(`${lines.join('\n')}\n`)
+  return 0
+}
+
+/**
+ * `answer` — record the writer's answer to one reference question.
+ *
+ * A `new` question is proposed first, then answered, as two events — the proposal captures
+ * the candidate list the answer is judged against. Free text is not accepted anywhere: the
+ * only answers are referent ids from the candidate list, --cant-say, or --decline.
+ */
+async function runAnswer(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+  assertAllowedOptions(args, ['project', 'question', 'referents'], ['cant-say', 'decline'])
+  const annotationId = requiredValue(args, 'question')
+  const cantSay = args.flags.has('cant-say')
+  const decline = args.flags.has('decline')
+  const referentsRaw = args.values.get('referents')
+  const chosen = [cantSay, decline, referentsRaw !== undefined].filter(Boolean).length
+  if (chosen !== 1) {
+    throw new CliInputError('Answer with exactly one of --referents, --cant-say, or --decline.')
+  }
+
+  const project = await safeProjectPath(args)
+  await project.verify()
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+  const runId = `answer-r${snapshot.revision}`
+
+  const pending = await annotationStore.pendingQuestions(project.path, snapshot)
+  const question = pending.find(q => q.annotationId === annotationId)
+  if (question === undefined) {
+    throw new CliInputError('No such open question. Run the questions command to list them.')
+  }
+  if (question.status === 'new') {
+    await annotationStore.propose(project.path, snapshot, annotationId, runId)
+  }
+
+  if (referentsRaw !== undefined) {
+    const referents = referentsRaw.split(',').map(part => part.trim()).filter(part => part.length > 0)
+    if (referents.length === 0) throw new CliInputError('--referents needs at least one record id.')
+    const candidates = new Set(question.candidateRecordIds)
+    for (const id of referents) {
+      if (!candidates.has(id)) throw new CliInputError(`${id} is not among this question's candidates.`)
+    }
+    const state = await annotationStore.approve(project.path, snapshot, annotationId, referents, runId)
+    io.stdout(`Resolved. “${state.locator.phrase}” now refers to: ${referents.join(', ')}\n`)
+    return 0
+  }
+
+  const state = await annotationStore.decline(
+    project.path, snapshot, annotationId, cantSay ? 'cant-say' : 'declined', runId)
+  io.stdout(cantSay
+    ? `Recorded as can't-say. “${state.locator.phrase}” stays unresolved and the report stays marked incomplete.\n`
+    : `Declined. “${state.locator.phrase}” will not be asked again unless its wording changes.\n`)
   return 0
 }
 
@@ -611,8 +703,14 @@ export async function runProjectMemoryCli(
     if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
     if (args.command === 'report') return await runReport(args, io)
+    if (args.command === 'questions') return await runQuestions(args, io)
+    if (args.command === 'answer') return await runAnswer(args, io)
     throw new CliInputError('Unknown memory command.')
   } catch (error) {
+    if (error instanceof AnnotationStoreError) {
+      io.stderr(`${error.message}\n`)
+      return 1
+    }
     const exitCode = exitCodeFor(error)
     if (error instanceof CliImportPartialError) {
       if (error.progress.durability === 'reconciled') {

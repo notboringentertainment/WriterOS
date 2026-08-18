@@ -81,6 +81,16 @@ describe('reference cues', () => {
     expect(readsAsWithdrawn(findCues('claim', 'See the pilot ending ticket.'))).toBe(false)
   })
 
+  it('asks one question per stretch of text, not one per overlapping cue', () => {
+    // 'superseded-by' captures "Superseded by beats 9-11"; 'beat-range' would also match
+    // the "beats 9-11" inside it. One sentence, one question.
+    const cues = findCues('claim', 'Superseded by beats 9-11.')
+    expect(cues).toHaveLength(1)
+    expect(cues[0].cue).toBe('superseded-by')
+    // A beat range on its own still fires.
+    expect(findCues('claim', 'Rebuilt in beats 9–11.').map(c => c.cue)).toEqual(['beat-range'])
+  })
+
   it('does not leak regex state between calls', () => {
     const first = findCues('claim', 'Superseded by A. Superseded by B.')
     const second = findCues('claim', 'Superseded by A. Superseded by B.')

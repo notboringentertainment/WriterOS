@@ -21,6 +21,7 @@ import { buildWhatsStandingFactSheet } from '../../shared/compose/whatsStandingF
 import { getWhatsStandingRecipe } from '../../shared/compose/whatsStandingRecipe'
 import { computeWhatsStandingSourceHash } from '../../shared/compose/whatsStandingSourceHash'
 import type { ProjectMemorySnapshot } from '../../shared/projectMemory'
+import type { AnnotationLogState } from '../../shared/projectMemoryAnnotations'
 
 export type ComposeResult =
   | { ok: true; composed: ComposedDocument }
@@ -162,15 +163,21 @@ export function composeDeterministic(args: ComposeDeterministicArgs): ComposeRes
 export interface ComposeWhatsStandingArgs {
   snapshot: ProjectMemorySnapshot
   runId: string
+  /** Writer-approved reference resolutions; absent means none have been made yet. */
+  annotations?: AnnotationLogState
 }
 
 export function composeWhatsStanding(args: ComposeWhatsStandingArgs): ComposeResult {
-  const { snapshot } = args
+  const { snapshot, annotations } = args
   return composeDeterministic({
     factSheet: buildWhatsStandingFactSheet(snapshot),
     recipe: getWhatsStandingRecipe(snapshot),
     sourceHash: computeWhatsStandingSourceHash(snapshot),
-    renderer: () => renderWhatsStandingBlocks(snapshot),
-    run: { runId: args.runId, snapshotRevision: snapshot.revision },
+    renderer: () => renderWhatsStandingBlocks(snapshot, annotations),
+    run: {
+      runId: args.runId,
+      snapshotRevision: snapshot.revision,
+      ...(annotations !== undefined ? { annotationRevision: annotations.revision } : {}),
+    },
   })
 }
