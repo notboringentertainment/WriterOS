@@ -9,6 +9,10 @@ export const MAX_TOKENS_BY_SURFACE: Record<ComposeSurface, number> = {
   outline: 2000,
   synopsis: 2000,
   treatment: 6000,
+  // 'whatsStanding' is composed deterministically and never reaches a model. The entry
+  // exists because the map is exhaustive over ComposeSurface; a zero here would be a
+  // silent bug if that ever changed, so it carries a real budget instead.
+  whatsStanding: 4000,
 }
 
 export async function callComposeModel(

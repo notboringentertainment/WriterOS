@@ -119,10 +119,21 @@ const treatmentContract: PromptContract = {
   },
 }
 
+// Deterministically composed surfaces have no model call and therefore no contract. The
+// map stays exhaustive over ComposeSurface so a new surface cannot be added without a
+// decision here, and asking for a contract that should never be needed fails loudly rather
+// than reaching a model with no rules attached.
+const noModelContract = (surface: ComposeSurface): PromptContract => ({
+  buildSystem() {
+    throw new Error(`Surface "${surface}" is composed deterministically and has no prompt contract.`)
+  },
+})
+
 const CONTRACTS: Record<ComposeSurface, PromptContract> = {
   outline: outlineContract,
   synopsis: synopsisContract,
   treatment: treatmentContract,
+  whatsStanding: noModelContract('whatsStanding'),
 }
 
 export function getPromptContract(surface: ComposeSurface): PromptContract {

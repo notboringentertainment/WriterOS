@@ -70,6 +70,20 @@ export interface ProjectMemoryStore {
    * rename window makes `project.json` briefly absent.
    */
   readSnapshot(projectPath: string, knownProjectId?: string): Promise<ProjectMemorySnapshot>
+  /**
+   * Read the current snapshot without writing anything: no ledger creation, no
+   * migration events, no projection repair. For consumers whose contract is
+   * read-only — the report command promises the package is byte-identical after
+   * it runs. A project that has never initialized memory yields the empty
+   * revision-0 snapshot rather than creating one.
+   */
+  readSnapshotReadOnly(projectPath: string, knownProjectId?: string): Promise<ProjectMemorySnapshot>
+  /**
+   * The same read-only replay WITHOUT acquiring the package lock. Only for a caller that
+   * already holds this project's package lock and needs memory state consistent with it —
+   * calling the locked variant from there would deadlock. Never call this unlocked.
+   */
+  readSnapshotReadOnlyInHeldLock(projectPath: string, projectId: string): Promise<ProjectMemorySnapshot>
   publish(projectPath: string, input: PublishMemoryInput): Promise<PublishResult>
   reconcilePublication(
     projectPath: string,
@@ -1018,6 +1032,41 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         }
         return replayed.snapshot
       }, knownProjectId, options.testHooks?.packageLock)
+    },
+
+    async readSnapshotReadOnly(projectPath, knownProjectId) {
+      return withProjectLock(
+        projectPath,
+        async projectId => this.readSnapshotReadOnlyInHeldLock(projectPath, projectId),
+        knownProjectId,
+        options.testHooks?.packageLock,
+      )
+    },
+
+    async readSnapshotReadOnlyInHeldLock(projectPath, projectId) {
+      // Deliberately not ensureLedger(): that creates memory/ and the ledger
+      // file on first touch, and this path must leave the package untouched.
+      const ledgerPath = path.join(projectPath, MEMORY_DIRECTORY, LEDGER_FILE)
+      try {
+        await assertRegularFile(ledgerPath)
+      } catch (error) {
+        if (!isNodeError(error, 'ENOENT')) throw error
+        // No ledger. If derived state exists without one the package is
+        // corrupt, same rule as ensureLedger — surface it, never mask it.
+        try {
+          const entries = await readdir(path.join(projectPath, MEMORY_DIRECTORY))
+          if (entries.some(entry => [SNAPSHOT_FILE, CANON_FILE, REVIEW_FILE].includes(entry))) {
+            throw new ProjectMemoryStoreError('memory/ledger.jsonl is missing while derived memory state exists.', 'corrupt-ledger')
+          }
+        } catch (dirError) {
+          if (!isNodeError(dirError, 'ENOENT')) throw dirError
+        }
+        return { schemaVersion: 1, projectId, revision: 0, records: [], conflicts: [] } as ProjectMemorySnapshot
+      }
+      // replayLedger, not replayLedgerWithMigrations: migrations append events,
+      // and this path writes nothing. Projections are not repaired here either.
+      const replayed = await replayLedger(ledgerPath, projectId)
+      return replayed.snapshot
     },
 
     async publish(projectPath, rawInput) {
