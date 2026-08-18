@@ -8,6 +8,7 @@ import { annotationStore, annotationIdFor, recordLanguageFingerprint } from '../
 import { AnnotationReplayError, applyAnnotationEvent, type AnnotationEvent, type AnnotationLogState } from '../../shared/projectMemoryAnnotations'
 import { composeWhatsStanding } from '../../server/compose'
 import { renderComposedMarkdown } from '../../server/compose/renderComposedMarkdown'
+import { runProjectMemoryCli } from '../../server/projectMemory/cli'
 
 const PROJECT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
@@ -29,13 +30,19 @@ async function makePackage(): Promise<string> {
   return projectPath
 }
 
-async function publishRecord(projectPath: string, dedupeKey: string, claim: string): Promise<void> {
+async function publishRecord(
+  projectPath: string,
+  dedupeKey: string,
+  claim: string,
+  options: { supersedes?: string[]; kind?: 'canon' | 'development' } = {},
+): Promise<void> {
   await projectMemoryStore.publish(projectPath, {
     projectId: PROJECT_ID,
     dedupeKey,
-    kind: 'canon',
+    kind: options.kind ?? 'canon',
     requestedStatus: 'active',
     claim,
+    ...(options.supersedes !== undefined ? { supersedes: options.supersedes } : {}),
     source: {
       workflow: 'writeros',
       sourceId: dedupeKey,
@@ -104,8 +111,11 @@ describe('answering', () => {
     expect(markdown).toContain('You resolved this: it refers to')
     expect(markdown).toContain('Beat sequence: 15 beats across three acts.')
     expect(result.composed.run?.annotationRevision).toBe(2)
-    // The referent citation must be valid, not dangling.
-    expect(result.composed.fidelity.status).toBe('clean')
+    // The referent citation must be valid, not dangling. The struck cue on the same record
+    // is still unanswered, so the report is INCOMPLETE — but only for that reason.
+    const kinds = result.composed.fidelity.warnings.map(w => w.kind)
+    expect(kinds).not.toContain('dangling_source_id')
+    expect(kinds.every(k => k === 'unresolved_reference')).toBe(true)
   })
 
   it('rejects a referent outside the proposal candidates', async () => {
@@ -116,6 +126,28 @@ describe('answering', () => {
     await expect(
       annotationStore.approve(projectPath, snapshot, q.annotationId, ['mem_not_a_candidate'], 'run-1'),
     ).rejects.toThrow()
+  })
+
+  it('refuses — without poisoning the log — a referent that exists but was never offered', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const [q] = await annotationStore.pendingQuestions(projectPath, snapshot)
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+
+    // The referencing record itself: present in memory, deliberately excluded from the
+    // candidate list. Before the preflight this was appended durably and then rejected on
+    // replay, which made the whole log unreadable.
+    await expect(
+      annotationStore.approve(projectPath, snapshot, q.annotationId, [q.locator.recordId], 'run-1'),
+    ).rejects.toThrow(/not among the proposal's candidates/)
+
+    // The log is still replayable and the question still answerable.
+    const state = await annotationStore.state(projectPath)
+    expect(state.revision).toBe(1)
+    expect(state.annotations.get(q.annotationId)?.status).toBe('proposed')
+    const approved = await annotationStore.approve(
+      projectPath, snapshot, q.annotationId, [q.candidateRecordIds[0]], 'run-1')
+    expect(approved.status).toBe('approved')
   })
 
   it('a decline is durable: the question is not re-asked', async () => {
@@ -159,6 +191,148 @@ describe('answering', () => {
 
     expect(await readFile(path.join(projectPath, 'memory', 'ledger.jsonl'), 'utf8')).toBe(ledgerBefore)
     expect(await readFile(path.join(projectPath, 'memory', 'canon.md'), 'utf8')).toBe(canonBefore)
+  })
+})
+
+describe('run consistency', () => {
+  it('an unrelated publish between question and answer does not block the answer', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!q || !beats) throw new Error('fixture missing')
+
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    // Memory moves for a reason unrelated to this question. The stale snapshot's premise
+    // still holds — language fingerprints, not the global revision, decide.
+    await publishRecord(projectPath, 'test:unrelated', 'A new unrelated decision.')
+    const state = await annotationStore.approve(projectPath, snapshot, q.annotationId, [beats.id], 'run-1')
+    expect(state.status).toBe('approved')
+  })
+
+  it('a status-only change to the referent does not block the answer either', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!q || !beats) throw new Error('fixture missing')
+
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    await publishRecord(projectPath, 'test:beats-v2', 'Beat sequence v2: 16 beats.', { supersedes: [beats.id] })
+    const state = await annotationStore.approve(projectPath, snapshot, q.annotationId, [beats.id], 'run-1')
+    expect(state.status).toBe('approved')
+  })
+
+  it('refuses an answer when the questioned wording has moved', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!q || !beats) throw new Error('fixture missing')
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+
+    // Records are immutable today, so simulate the future edit path the check defends
+    // against: a proposal whose captured fingerprint no longer matches the record.
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n')
+    const event = JSON.parse(lines[0]) as { support: { contentHash: string }[] }
+    event.support[0].contentHash = 'b'.repeat(64)
+    await writeFile(filePath, `${JSON.stringify(event)}\n`)
+
+    await expect(
+      annotationStore.approve(projectPath, snapshot, q.annotationId, [beats.id], 'run-1'),
+    ).rejects.toThrow(/wording .* has changed/)
+    await expect(
+      annotationStore.decline(projectPath, snapshot, q.annotationId, 'cant-say', 'run-1'),
+    ).rejects.toThrow(/wording .* has changed/)
+  })
+
+  it('refuses to propose from a stale snapshot when the question no longer exists', async () => {
+    const { projectPath } = await seeded()
+    const stale = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, stale)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const struck = stale.records.find(r => r.claim.startsWith('STRUCK'))
+    if (!q || !struck) throw new Error('fixture missing')
+
+    // The referencing record leaves the displayed set; its questions die with it.
+    await publishRecord(projectPath, 'test:replacement', 'The replacement engine.', { supersedes: [struck.id] })
+    await expect(
+      annotationStore.propose(projectPath, stale, q.annotationId, 'run-1'),
+    ).rejects.toThrow(/questions command again/)
+  })
+})
+
+describe('question scope and shape', () => {
+  it('asks nothing about records the report never displays', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const base = snapshot.records[0]
+    const hidden = { ...base, id: 'mem-hidden', kind: 'development' as typeof base.kind, claim: 'Superseded by beats 9-11.' }
+    const withHidden = { ...snapshot, records: [...snapshot.records, hidden] }
+    const questions = await annotationStore.pendingQuestions(projectPath, withHidden)
+    expect(questions.some(x => x.locator.recordId === 'mem-hidden')).toBe(false)
+  })
+
+  it('a question with no candidates can still be answered cant-say', async () => {
+    const projectPath = await makePackage()
+    await publishRecord(projectPath, 'test:only', 'The only decision. Superseded by beats 9-11.')
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    expect(questions).toHaveLength(1)
+    const [q] = questions
+    expect(q.candidateRecordIds).toEqual([])
+    expect(q.questionText).toContain('cant-say')
+
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    const state = await annotationStore.decline(projectPath, snapshot, q.annotationId, 'cant-say', 'run-1')
+    expect(state.status).toBe('declined')
+    expect(state.declineReason).toBe('cant-say')
+  })
+
+  it('persists a phraseHash on new proposals and replays old events without one', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const [q] = await annotationStore.pendingQuestions(projectPath, snapshot)
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const written = JSON.parse((await readFile(filePath, 'utf8')).trim()) as { locator: { phraseHash?: string } }
+    expect(written.locator.phraseHash).toMatch(/^[0-9a-f]{64}$/)
+
+    // A log written before phraseHash existed must still replay.
+    const legacy = JSON.parse(JSON.stringify(written)) as { locator: { phraseHash?: string } }
+    delete legacy.locator.phraseHash
+    await writeFile(filePath, `${JSON.stringify(legacy)}\n`)
+    const state = await annotationStore.state(projectPath)
+    expect(state.annotations.get(q.annotationId)?.status).toBe('proposed')
+  })
+})
+
+describe('report command', () => {
+  it('prints INCOMPLETE while questions are open and drops it once they are settled', async () => {
+    const { projectPath } = await seeded()
+    const run = async (): Promise<string> => {
+      const out: string[] = []
+      const code = await runProjectMemoryCli(
+        ['report', '--project', projectPath],
+        { stdout: (v: string) => out.push(v), stderr: (v: string) => out.push(v) },
+      )
+      expect(code).toBe(0)
+      return out.join('')
+    }
+
+    expect(await run()).toContain('INCOMPLETE')
+
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    for (const q of await annotationStore.pendingQuestions(projectPath, snapshot)) {
+      await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+      await annotationStore.decline(projectPath, snapshot, q.annotationId, 'declined', 'run-1')
+    }
+    expect(await run()).not.toContain('INCOMPLETE')
   })
 })
 

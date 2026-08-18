@@ -582,9 +582,25 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   // Read-only by contract: readSnapshot() can initialize a ledger, append
   // migration events, and rewrite projections, all of which would falsify this
   // command's promise that generating a report changes nothing.
-  const snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+  //
+  // Memory and annotations are two files, and every write to either happens under the
+  // package lock — which this command must not take, because acquiring it writes a lock
+  // file. So consistency is optimistic instead: if the annotation revision is identical
+  // before and after the snapshot read, no writer ran in between and the pair is one
+  // moment's state, never a report stitched from two.
+  let annotations = await annotationStore.state(project.path)
+  let snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+  for (let attempt = 0; ; attempt += 1) {
+    const after = await annotationStore.state(project.path)
+    if (after.revision === annotations.revision) break
+    if (attempt >= 3) {
+      io.stderr('Memory kept changing while the report was being read. Try again when the project is quiet.\n')
+      return 1
+    }
+    annotations = after
+    snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+  }
 
-  const annotations = await annotationStore.state(project.path)
   const result = composeWhatsStanding({
     snapshot,
     runId: `whats-standing-r${snapshot.revision}-a${annotations.revision}`,
@@ -628,6 +644,9 @@ async function runQuestions(args: ParsedArguments, io: ProjectMemoryCliIo): Prom
   const lines: string[] = [`${questions.length} open reference question(s):`, '']
   for (const q of questions) {
     lines.push(`## ${q.annotationId}`, '', q.questionText, '', 'Candidates:')
+    if (q.candidateRecordIds.length === 0) {
+      lines.push('  (none — answer with --cant-say or --decline)')
+    }
     for (const id of q.candidateRecordIds) {
       const head = byId.get(id)?.claim.split('\n')[0] ?? ''
       lines.push(`  - ${id}  ${head.length > 70 ? `${head.slice(0, 69)}…` : head}`)

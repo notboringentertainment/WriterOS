@@ -6,6 +6,8 @@ import { renderWhatsStandingBlocks } from '../../server/compose/whatsStandingRen
 import { buildStandingEntries } from '../../shared/compose/whatsStandingFactSheet'
 import { CUE_NAMES, findCues, readsAsWithdrawn } from '../../shared/compose/whatsStandingCues'
 import { ComposedDocumentSchema } from '../../shared/compose/schemas'
+import { annotationIdFor, type AnnotationLogState, type AnnotationState } from '../../shared/projectMemoryAnnotations'
+import { unresolvedReferences } from '../../shared/compose/whatsStandingReadiness'
 
 const AT = '2026-08-13T20:00:00.000Z'
 
@@ -115,7 +117,9 @@ describe('grouping', () => {
     )
     const inForceIndex = markdown.indexOf('## In force')
     const withdrawnIndex = markdown.indexOf('## Reads as withdrawn')
-    const struckIndex = markdown.indexOf('STRUCK — do not use')
+    // From the withdrawn heading on: the INCOMPLETE banner above the body also quotes the
+    // struck phrase, so the body's own copy is the one whose position matters.
+    const struckIndex = markdown.indexOf('STRUCK — do not use', withdrawnIndex)
     expect(withdrawnIndex).toBeGreaterThan(inForceIndex)
     expect(struckIndex).toBeGreaterThan(withdrawnIndex)
     // Its true standing still travels with it.
@@ -164,7 +168,11 @@ describe('composition', () => {
     if (!result.ok) return
     const cited = new Set(result.composed.blocks.flatMap(b => (b as { sourceFieldIds?: string[] }).sourceFieldIds ?? []))
     for (const id of ['mem-1', 'mem-2', 'mem-3', 'mem-4']) expect(cited).toContain(id)
-    expect(result.composed.fidelity.status).toBe('clean')
+    // mem-2 carries an unresolved reference cue, so the report is INCOMPLETE — but that is
+    // the only problem: provenance and coverage are intact.
+    const kinds = result.composed.fidelity.warnings.map(w => w.kind)
+    expect(kinds.every(k => k === 'unresolved_reference')).toBe(true)
+    expect(result.composed.fidelity.status).toBe('flagged')
   })
 
   it('drops the two fidelity checks that only make sense for model output', () => {
@@ -253,5 +261,120 @@ describe('markdown rendering', () => {
     const markdown = renderComposedMarkdown(result.composed)
     expect(markdown).toContain('As of memory revision 7')
     expect(markdown).toContain('composed deterministically, no model')
+  })
+})
+
+/** Annotation log state holding one annotation over the first cue in `referencing`'s claim. */
+function logWith(
+  referencing: ProjectMemoryRecord,
+  overrides: Partial<AnnotationState>,
+): { annotations: AnnotationLogState; annotationId: string } {
+  const cue = findCues('claim', referencing.claim)[0]
+  const locator = {
+    recordId: referencing.id,
+    field: cue.field,
+    sentence: cue.sentence,
+    phrase: cue.phrase,
+    occurrence: cue.occurrence,
+    cue: cue.cue,
+  }
+  const annotationId = annotationIdFor(locator)
+  const state: AnnotationState = {
+    annotationId,
+    status: 'proposed',
+    questionType: 'resolve-reference',
+    locator,
+    candidateRecordIds: [],
+    support: [{ recordId: referencing.id, contentHash: 'a'.repeat(64) }],
+    updatedAt: AT,
+    ...overrides,
+  }
+  return {
+    annotations: { projectId: 'project-1', revision: 1, annotations: new Map([[annotationId, state]]) },
+    annotationId,
+  }
+}
+
+describe('readiness', () => {
+  const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+  const referent = record({ id: 'mem-target', claim: 'Beat sequence: 15 beats across three acts.' })
+
+  it('marks the report INCOMPLETE while a reference has no writer-approved resolution', () => {
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.composed.fidelity.status).toBe('flagged')
+    const unresolved = result.composed.fidelity.warnings.filter(w => w.kind === 'unresolved_reference')
+    expect(unresolved).toHaveLength(1)
+    expect(unresolved[0].message).toContain('mem-ref')
+    expect(unresolved[0].message).toContain('Superseded by beats 9-11')
+    // Loud, at the top, naming the item — not buried in a footer.
+    const markdown = renderComposedMarkdown(result.composed)
+    expect(markdown.split('\n')[0]).toContain('INCOMPLETE')
+    expect(markdown).toContain('unresolved_reference')
+  })
+
+  it('a proposed-but-unanswered question still counts as unresolved', () => {
+    const { annotations } = logWith(referencing, { status: 'proposed' })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) return
+    expect(result.composed.fidelity.warnings.map(w => w.kind)).toContain('unresolved_reference')
+  })
+
+  it("cant-say is durable but does not resolve: the report stays INCOMPLETE", () => {
+    const { annotations } = logWith(referencing, { status: 'declined', declineReason: 'cant-say' })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) return
+    expect(result.composed.fidelity.status).toBe('flagged')
+    expect(result.composed.fidelity.warnings.some(w => w.kind === 'unresolved_reference' && w.message.includes('cant-say'))).toBe(true)
+  })
+
+  it('a plain decline settles the question: the report is clean', () => {
+    const { annotations } = logWith(referencing, { status: 'declined', declineReason: 'declined' })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) return
+    expect(result.composed.fidelity.status).toBe('clean')
+  })
+
+  it('an approved resolution clears the INCOMPLETE marking', () => {
+    const { annotations } = logWith(referencing, { status: 'approved', referentRecordIds: ['mem-target'] })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) return
+    expect(result.composed.fidelity.status).toBe('clean')
+    expect(result.composed.fidelity.warnings).toEqual([])
+  })
+
+  it('an invalidated approval is unresolved again', () => {
+    const { annotations } = logWith(referencing, { status: 'invalidated', referentRecordIds: ['mem-target'] })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) return
+    expect(result.composed.fidelity.warnings.some(w => w.kind === 'unresolved_reference' && w.message.includes('invalidated'))).toBe(true)
+  })
+
+  it('cues on records the report never displays are not readiness items', () => {
+    const hidden = record({ id: 'mem-dev', kind: 'development' as ProjectMemoryRecord['kind'], claim: 'Superseded by beats 9-11.' })
+    expect(unresolvedReferences(snapshot([hidden, referent]))).toEqual([])
+  })
+})
+
+describe('status-only referent change', () => {
+  it('keeps an approved resolution clean and rendered after the referent is superseded', () => {
+    const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+    const referent = record({
+      id: 'mem-target',
+      claim: 'Beat sequence: 15 beats across three acts.',
+      status: 'superseded' as ProjectMemoryRecord['status'],
+    })
+    const { annotations } = logWith(referencing, { status: 'approved', referentRecordIds: ['mem-target'] })
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The design rules that a status flip must not invalidate a reference annotation, so
+    // the citation to the now-undisplayed referent must not read as dangling.
+    expect(result.composed.fidelity.warnings.map(w => w.kind)).not.toContain('dangling_source_id')
+    expect(result.composed.fidelity.status).toBe('clean')
+    const markdown = renderComposedMarkdown(result.composed)
+    expect(markdown).toContain('You resolved this: it refers to')
+    expect(markdown).toContain('Beat sequence: 15 beats across three acts.')
   })
 })

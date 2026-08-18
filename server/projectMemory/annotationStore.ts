@@ -7,15 +7,19 @@ import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '../../shared/pr
 import {
   AnnotationEventSchema,
   AnnotationReplayError,
+  annotationIdFor,
   applyAnnotationEvent,
+  phraseHashFor,
   type AnnotationEvent,
   type AnnotationLogState,
   type AnnotationState,
   type PhraseLocator,
   type RecordLanguageFingerprint,
 } from '../../shared/projectMemoryAnnotations'
-import { findCues } from '../../shared/compose/whatsStandingCues'
 import { buildStandingEntries } from '../../shared/compose/whatsStandingFactSheet'
+import { projectMemoryStore } from './store'
+
+export { annotationIdFor }
 
 const MEMORY_DIRECTORY = 'memory'
 const ANNOTATIONS_FILE = 'annotations.jsonl'
@@ -131,20 +135,6 @@ export function recordLanguageFingerprint(record: ProjectMemoryRecord): RecordLa
   }
 }
 
-/**
- * Deterministic annotation id: the same phrase at the same spot in the same record always
- * yields the same id, so a crashed or retried run re-derives the identical question instead
- * of proposing a duplicate.
- */
-export function annotationIdFor(locator: PhraseLocator): string {
-  return `ann_${sha256Hex(JSON.stringify({
-    recordId: locator.recordId,
-    field: locator.field,
-    phrase: locator.phrase,
-    occurrence: locator.occurrence,
-  })).slice(0, 32)}`
-}
-
 export interface PendingQuestion {
   annotationId: string
   status: 'new' | 'proposed'
@@ -154,12 +144,14 @@ export interface PendingQuestion {
   questionText: string
 }
 
-function renderQuestionText(locator: PhraseLocator): string {
+function renderQuestionText(locator: PhraseLocator, candidateCount: number): string {
   return [
     `In the decision recorded at ${locator.recordId}, the wording`,
     `“${locator.sentence}”`,
     `appears to point at another decision (the phrase “${locator.phrase}”).`,
-    'Which records does it refer to? Choose from the candidates, or answer cant-say.',
+    candidateCount > 0
+      ? 'Which records does it refer to? Choose from the candidates, or answer cant-say.'
+      : 'No other displayed decision is available as a referent. Answer cant-say, or decline if this is not really a reference.',
   ].join('\n')
 }
 
@@ -192,22 +184,69 @@ export interface AnnotationQueries {
 
 function cueQuestions(snapshot: ProjectMemorySnapshot): Map<string, PhraseLocator> {
   const out = new Map<string, PhraseLocator>()
-  for (const record of snapshot.records) {
-    if (record.status !== 'active' && record.status !== 'candidate') continue
-    const cues = [...findCues('claim', record.claim), ...findCues('detail', record.detail)]
-    for (const cue of cues) {
+  // Derived from the standing entries — the exact set of records the report displays — so
+  // the CLI never asks a question whose resolution the report could not show. A record can
+  // be active yet undisplayed (non-canon kind, safety-flagged); its cues are not questions.
+  for (const entry of buildStandingEntries(snapshot)) {
+    for (const cue of entry.cues) {
       const locator: PhraseLocator = {
-        recordId: record.id,
+        recordId: entry.record.id,
         field: cue.field,
         sentence: cue.sentence,
         phrase: cue.phrase,
         occurrence: cue.occurrence,
         cue: cue.cue,
+        phraseHash: phraseHashFor(cue.phrase, cue.sentence),
       }
       out.set(annotationIdFor(locator), locator)
     }
   }
   return out
+}
+
+/**
+ * Validate an event against the replayed state BEFORE anything is written. The replay rules
+ * in applyAnnotationEvent are the single authority on legal events — e.g. a referent that
+ * exists in memory but was never among the proposal's candidates — so they must run as a
+ * preflight: an illegal line appended durably would halt every future replay and leave the
+ * whole log unreadable.
+ */
+function preflightAnnotationEvent(state: AnnotationLogState, event: AnnotationEvent): AnnotationLogState {
+  try {
+    return applyAnnotationEvent(state, event, -1)
+  } catch (error) {
+    if (error instanceof AnnotationReplayError) {
+      throw new AnnotationStoreError(
+        `Refused annotation event: ${error.message.replace(/^memory\/annotations\.jsonl:-1: /, '')}`,
+        'invalid-input')
+    }
+    throw error
+  }
+}
+
+/**
+ * The answer-time revalidation the design requires: before an answer is written, the record
+ * whose wording the question quoted must still exist and still carry that wording. The
+ * baseline is the fingerprint captured at proposal time; comparison is language only, so an
+ * unrelated publish — or a status flip on this very record — never blocks an answer.
+ */
+function requireUnmovedReferencing(
+  current: ProjectMemorySnapshot,
+  existing: AnnotationState,
+): ProjectMemoryRecord {
+  const referencing = current.records.find(r => r.id === existing.locator.recordId)
+  if (referencing === undefined) {
+    throw new AnnotationStoreError(
+      `The record this question quotes (${existing.locator.recordId}) is no longer in memory. Run the questions command again.`,
+      'conflict')
+  }
+  const baseline = existing.support.find(f => f.recordId === existing.locator.recordId)
+  if (baseline !== undefined && recordLanguageFingerprint(referencing).contentHash !== baseline.contentHash) {
+    throw new AnnotationStoreError(
+      `The wording of ${existing.locator.recordId} has changed since this question was asked. Run the questions command again.`,
+      'conflict')
+  }
+  return referencing
 }
 
 export function createAnnotationStore(): AnnotationQueries {
@@ -223,12 +262,13 @@ export function createAnnotationStore(): AnnotationQueries {
       for (const [annotationId, locator] of cueQuestions(snapshot)) {
         const existing = state.annotations.get(annotationId)
         if (existing === undefined) {
+          const candidateRecordIds = candidateIds(snapshot, locator.recordId)
           questions.push({
             annotationId,
             status: 'new',
             locator,
-            candidateRecordIds: candidateIds(snapshot, locator.recordId),
-            questionText: renderQuestionText(locator),
+            candidateRecordIds,
+            questionText: renderQuestionText(locator, candidateRecordIds.length),
           })
           continue
         }
@@ -238,7 +278,7 @@ export function createAnnotationStore(): AnnotationQueries {
             status: 'proposed',
             locator: existing.locator,
             candidateRecordIds: existing.candidateRecordIds,
-            questionText: renderQuestionText(existing.locator),
+            questionText: renderQuestionText(existing.locator, existing.candidateRecordIds.length),
           })
         }
         // approved / declined / invalidated: nothing to ask. Re-asking after the language
@@ -253,16 +293,23 @@ export function createAnnotationStore(): AnnotationQueries {
           throw new AnnotationStoreError('Snapshot does not belong to this project.', 'invalid-input')
         }
         const state = await replayAnnotations(projectPath, projectId)
-        const locator = cueQuestions(snapshot).get(annotationId)
+        // Revalidate under the lock: the caller's snapshot was read before the lock was
+        // held, so the question is re-derived from memory as it is NOW. If the cue no
+        // longer exists — the wording changed, the record left the displayed set — there
+        // is no premise to propose.
+        const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const locator = cueQuestions(current).get(annotationId)
         if (locator === undefined) {
-          throw new AnnotationStoreError('No such question in the current snapshot.', 'not-found')
+          throw new AnnotationStoreError(
+            'No such question in the current memory. It may have been settled by an edit; run the questions command again.',
+            'not-found')
         }
         const existing = state.annotations.get(annotationId)
         if (existing !== undefined && existing.status !== 'declined') {
           if (existing.status === 'proposed') return existing
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
         }
-        const referencing = snapshot.records.find(r => r.id === locator.recordId)
+        const referencing = current.records.find(r => r.id === locator.recordId)
         if (referencing === undefined) {
           throw new AnnotationStoreError('Referencing record vanished from the snapshot.', 'conflict')
         }
@@ -274,30 +321,32 @@ export function createAnnotationStore(): AnnotationQueries {
           at: new Date().toISOString(),
           questionType: 'resolve-reference',
           locator,
-          candidateRecordIds: candidateIds(snapshot, locator.recordId),
+          candidateRecordIds: candidateIds(current, locator.recordId),
           support: [recordLanguageFingerprint(referencing)],
           runId,
         }
+        const next = preflightAnnotationEvent(state, event)
         await appendAnnotationEvent(projectPath, event)
-        return applyAnnotationEvent(state, event, -1).annotations.get(annotationId) as AnnotationState
+        return next.annotations.get(annotationId) as AnnotationState
       })
     },
 
     async approve(projectPath, snapshot, annotationId, referentRecordIds, runId) {
       return withLock(projectPath, async projectId => {
+        if (snapshot.projectId !== projectId) {
+          throw new AnnotationStoreError('Snapshot does not belong to this project.', 'invalid-input')
+        }
         const state = await replayAnnotations(projectPath, projectId)
         const existing = state.annotations.get(annotationId)
         if (existing === undefined) throw new AnnotationStoreError('Unknown annotation.', 'not-found')
         if (existing.status !== 'proposed') {
           throw new AnnotationStoreError(`Cannot approve an annotation in status "${existing.status}".`, 'conflict')
         }
-        const referencing = snapshot.records.find(r => r.id === existing.locator.recordId)
-        if (referencing === undefined) {
-          throw new AnnotationStoreError('Referencing record vanished from the snapshot.', 'conflict')
-        }
+        const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const referencing = requireUnmovedReferencing(current, existing)
         const support: RecordLanguageFingerprint[] = [recordLanguageFingerprint(referencing)]
         for (const id of referentRecordIds) {
-          const referent = snapshot.records.find(r => r.id === id)
+          const referent = current.records.find(r => r.id === id)
           if (referent === undefined) {
             throw new AnnotationStoreError(`Chosen referent ${id} is not in the snapshot.`, 'invalid-input')
           }
@@ -314,23 +363,25 @@ export function createAnnotationStore(): AnnotationQueries {
           actor: 'writer',
           runId,
         }
+        const next = preflightAnnotationEvent(state, event)
         await appendAnnotationEvent(projectPath, event)
-        return applyAnnotationEvent(state, event, -1).annotations.get(annotationId) as AnnotationState
+        return next.annotations.get(annotationId) as AnnotationState
       })
     },
 
     async decline(projectPath, snapshot, annotationId, reason, runId) {
       return withLock(projectPath, async projectId => {
+        if (snapshot.projectId !== projectId) {
+          throw new AnnotationStoreError('Snapshot does not belong to this project.', 'invalid-input')
+        }
         const state = await replayAnnotations(projectPath, projectId)
         const existing = state.annotations.get(annotationId)
         if (existing === undefined) throw new AnnotationStoreError('Unknown annotation.', 'not-found')
         if (existing.status !== 'proposed') {
           throw new AnnotationStoreError(`Cannot decline an annotation in status "${existing.status}".`, 'conflict')
         }
-        const referencing = snapshot.records.find(r => r.id === existing.locator.recordId)
-        const support = referencing !== undefined
-          ? [recordLanguageFingerprint(referencing)]
-          : existing.support
+        const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const referencing = requireUnmovedReferencing(current, existing)
         const event: AnnotationEvent = {
           type: 'annotation-declined',
           projectId,
@@ -338,12 +389,13 @@ export function createAnnotationStore(): AnnotationQueries {
           annotationRevision: state.revision + 1,
           at: new Date().toISOString(),
           reason,
-          support,
+          support: [recordLanguageFingerprint(referencing)],
           actor: 'writer',
           runId,
         }
+        const next = preflightAnnotationEvent(state, event)
         await appendAnnotationEvent(projectPath, event)
-        return applyAnnotationEvent(state, event, -1).annotations.get(annotationId) as AnnotationState
+        return next.annotations.get(annotationId) as AnnotationState
       })
     },
   }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { sha256Hex } from './compose/sha256'
 
 /**
  * Reference annotations — the writer's answers to "what does this phrase point at?"
@@ -38,6 +39,12 @@ export const PhraseLocatorSchema = z.object({
   occurrence: z.number().int().min(0),
   /** Which named cue pattern matched — diagnostics, never shown to the writer. */
   cue: z.string().min(1).max(100),
+  /**
+   * Hash of the phrase plus its containing sentence — the bounded window the design
+   * requires so invalidation can tell "this exact wording moved" without re-deriving cues.
+   * Optional because early logs were written before it existed; every new event carries it.
+   */
+  phraseHash: HashSchema.optional(),
 }).strict()
 
 /**
@@ -66,8 +73,10 @@ export const AnnotationProposedEventSchema = EventBaseSchema.extend({
   /**
    * The ids the writer may choose among. An answer outside this list is invalid. Captured
    * at proposal time so an answer is always judged against the choices actually offered.
+   * May be empty — a project displaying only the referencing record has no candidates to
+   * offer, but the writer must still be able to record cant-say or decline.
    */
-  candidateRecordIds: z.array(IdentifierSchema).min(1).max(200),
+  candidateRecordIds: z.array(IdentifierSchema).max(200),
   /** Language fingerprints of the referencing record — proof of what was asked about. */
   support: z.array(RecordLanguageFingerprintSchema).min(1).max(50),
   runId: IdentifierSchema,
@@ -111,6 +120,26 @@ export const AnnotationEventSchema = z.discriminatedUnion('type', [
 export type AnnotationEvent = z.infer<typeof AnnotationEventSchema>
 export type PhraseLocator = z.infer<typeof PhraseLocatorSchema>
 export type RecordLanguageFingerprint = z.infer<typeof RecordLanguageFingerprintSchema>
+
+/** Hash of the phrase plus its containing sentence — the locator's persisted `phraseHash`. */
+export function phraseHashFor(phrase: string, sentence: string): string {
+  return sha256Hex(JSON.stringify({ phrase, sentence }))
+}
+
+/**
+ * Deterministic annotation id: the same phrase at the same spot in the same record always
+ * yields the same id, so a crashed or retried run re-derives the identical question instead
+ * of proposing a duplicate. `phraseHash` is deliberately excluded — adding it later must not
+ * orphan annotations already written without it.
+ */
+export function annotationIdFor(locator: PhraseLocator): string {
+  return `ann_${sha256Hex(JSON.stringify({
+    recordId: locator.recordId,
+    field: locator.field,
+    phrase: locator.phrase,
+    occurrence: locator.occurrence,
+  })).slice(0, 32)}`
+}
 
 /** Replay outcome for one annotation. */
 export type AnnotationStatus = 'proposed' | 'approved' | 'declined' | 'invalidated'

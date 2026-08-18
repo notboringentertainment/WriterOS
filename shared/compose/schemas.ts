@@ -13,7 +13,7 @@ export const ComposedBlockSchema = z.discriminatedUnion('type', [
 ])
 
 export const FidelityWarningSchema = z.object({
-  kind: z.enum(['missing_provenance', 'dangling_source_id', 'coverage', 'entity_diff', 'injection_echo']),
+  kind: z.enum(['missing_provenance', 'dangling_source_id', 'coverage', 'entity_diff', 'injection_echo', 'unresolved_reference']),
   message: z.string(),
   blockIndex: z.number().int().optional(),
   fieldId: z.string().optional(),

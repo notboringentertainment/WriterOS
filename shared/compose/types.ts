@@ -59,6 +59,7 @@ export type ComposedBlock =
 
 export type FidelityWarningKind =
   | 'missing_provenance' | 'dangling_source_id' | 'coverage' | 'entity_diff' | 'injection_echo'
+  | 'unresolved_reference'
 
 export interface FidelityWarning {
   kind: FidelityWarningKind

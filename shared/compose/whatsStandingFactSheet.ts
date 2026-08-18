@@ -1,4 +1,5 @@
 import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '../projectMemory'
+import type { AnnotationLogState } from '../projectMemoryAnnotations'
 import type { FactSheet, FactSheetField } from './types'
 import { findCues, readsAsWithdrawn, type CueMatch } from './whatsStandingCues'
 
@@ -66,7 +67,10 @@ function factLabel(record: ProjectMemoryRecord): string {
   return firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine
 }
 
-export function buildWhatsStandingFactSheet(snapshot: ProjectMemorySnapshot): FactSheet {
+export function buildWhatsStandingFactSheet(
+  snapshot: ProjectMemorySnapshot,
+  annotations?: AnnotationLogState,
+): FactSheet {
   const fields: FactSheetField[] = buildStandingEntries(snapshot).map(entry => ({
     id: entry.record.id,
     label: factLabel(entry.record),
@@ -84,6 +88,27 @@ export function buildWhatsStandingFactSheet(snapshot: ProjectMemorySnapshot): Fa
       kind: 'prose',
       value: conflict.reason,
     })
+  }
+
+  // Records cited only as approved-annotation referents. A referent that later moved to
+  // superseded or rejected leaves the displayed set, but a status change must not turn the
+  // still-valid resolution citing it into a dangling citation — fingerprints cover language,
+  // not standing. A referent missing from the snapshot entirely is left out: that citation
+  // IS dangling until the invalidation slice rules on it.
+  if (annotations !== undefined) {
+    const present = new Set(fields.map(f => f.id))
+    const approved = [...annotations.annotations.values()]
+      .filter(a => a.status === 'approved')
+      .sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
+    for (const annotation of approved) {
+      for (const id of annotation.referentRecordIds ?? []) {
+        if (present.has(id)) continue
+        const record = snapshot.records.find(r => r.id === id)
+        if (record === undefined) continue
+        present.add(id)
+        fields.push({ id, label: factLabel(record), kind: 'prose', value: factValue(record) })
+      }
+    }
   }
 
   return {

@@ -10,7 +10,7 @@ import { buildTreatmentFactSheet } from '../../shared/compose/treatmentFactSheet
 import { getTreatmentRecipe } from '../../shared/compose/treatmentRecipe'
 import { computeTreatmentSourceHash } from '../../shared/compose/treatmentSourceHash'
 import { COMPOSED_SCHEMA_VERSION, COMPOSER_VERSION } from '../../shared/compose/types'
-import type { ComposedBlock, ComposeIdentity, ComposedDocument, ComposedRun, FactSheet, Recipe } from '../../shared/compose/types'
+import type { ComposedBlock, ComposeIdentity, ComposedDocument, ComposedRun, FactSheet, FidelityWarning, Recipe } from '../../shared/compose/types'
 import type { OutlineDocumentContent, SynopsisDocumentContent, TreatmentDocumentContent } from '../../shared/documents'
 import { buildComposePrompt } from './buildComposePrompt'
 import { callComposeModel, MAX_TOKENS_BY_SURFACE } from './composeDocument'
@@ -20,6 +20,7 @@ import { renderWhatsStandingBlocks } from './whatsStandingRenderer'
 import { buildWhatsStandingFactSheet } from '../../shared/compose/whatsStandingFactSheet'
 import { getWhatsStandingRecipe } from '../../shared/compose/whatsStandingRecipe'
 import { computeWhatsStandingSourceHash } from '../../shared/compose/whatsStandingSourceHash'
+import { unresolvedReferences } from '../../shared/compose/whatsStandingReadiness'
 import type { ProjectMemorySnapshot } from '../../shared/projectMemory'
 import type { AnnotationLogState } from '../../shared/projectMemoryAnnotations'
 
@@ -124,6 +125,11 @@ export interface ComposeDeterministicArgs {
   sourceHash: string
   renderer: DeterministicRenderer
   run: ComposedRun
+  /**
+   * Readiness warnings computed by the profile, outside the fidelity scan — e.g. an
+   * unresolved reference. Any entry here marks the document non-clean.
+   */
+  extraWarnings?: FidelityWarning[]
 }
 
 export function composeDeterministic(args: ComposeDeterministicArgs): ComposeResult {
@@ -143,7 +149,10 @@ export function composeDeterministic(args: ComposeDeterministicArgs): ComposeRes
   //
   // This is filtered explicitly rather than left to chance: if a future renderer starts
   // paraphrasing, these checks must be reinstated deliberately.
-  const applicable = fidelity.warnings.filter(w => w.kind !== 'injection_echo' && w.kind !== 'entity_diff')
+  const applicable = [
+    ...fidelity.warnings.filter(w => w.kind !== 'injection_echo' && w.kind !== 'entity_diff'),
+    ...(args.extraWarnings ?? []),
+  ]
 
   const composed: ComposedDocument = {
     schemaVersion: COMPOSED_SCHEMA_VERSION,
@@ -169,11 +178,21 @@ export interface ComposeWhatsStandingArgs {
 
 export function composeWhatsStanding(args: ComposeWhatsStandingArgs): ComposeResult {
   const { snapshot, annotations } = args
+  // Readiness is the design's central safety promise: a reference nobody has resolved must
+  // mark the whole report incomplete, loudly, not render as a clean document. Each entry
+  // names the settle action so the report never offers a second settlement path.
+  const unresolved = unresolvedReferences(snapshot, annotations).map((item): FidelityWarning => ({
+    kind: 'unresolved_reference',
+    message: `Unresolved reference in ${item.recordId} (${item.state}): “${item.phrase}”. `
+      + `Settle it with the questions/answer commands (question ${item.annotationId}).`,
+    fieldId: item.recordId,
+  }))
   return composeDeterministic({
-    factSheet: buildWhatsStandingFactSheet(snapshot),
+    factSheet: buildWhatsStandingFactSheet(snapshot, annotations),
     recipe: getWhatsStandingRecipe(snapshot),
     sourceHash: computeWhatsStandingSourceHash(snapshot),
     renderer: () => renderWhatsStandingBlocks(snapshot, annotations),
+    extraWarnings: unresolved,
     run: {
       runId: args.runId,
       snapshotRevision: snapshot.revision,
