@@ -88,12 +88,30 @@ Body, zod-validated:
   | { kind: 'decline' } }
 ```
 
-Mirrors the CLI `answer` command exactly: read snapshot read-only, find the question in
-`pendingQuestions`, propose if status is `new`, then `approve` (referent ids must be among
-the question's candidates — checked here for a clean 400, and enforced again by the store's
-preflight) or `decline` with the given reason. All store-side protections from the review
-rounds apply unchanged: package-lock revalidation, language-fingerprint checks,
-validate-before-append.
+Settlement is ONE store transaction, not the CLI's propose-then-answer pair — two separate
+locked calls could persist a proposal and then fail the settlement, returning an error
+while the log had changed, which would break this route's contract. The annotation store
+gains one method:
+
+```ts
+answerQuestion(projectPath, {
+  annotationId, questionVersion,
+  answer: { kind: 'referents', recordIds } | { kind: 'cant-say' } | { kind: 'decline' },
+}): Promise<AnnotationState>   // throws AnnotationStoreError otherwise
+```
+
+Under a single package lock it: replays the log, reads the snapshot in-lock, re-derives
+the question, recomputes `questionVersion` and refuses a mismatch (`conflict`), builds the
+proposal event (when the question is `new`) plus the settlement event, preflights BOTH
+against the replayed state, and appends only after every check has passed. Referent ids
+must be among the question's candidates — the route pre-checks for a clean 400, and the
+preflight enforces it again. All existing protections apply unchanged: lock-time identity
+re-read, language-fingerprint revalidation, validate-before-append. (A crash between the
+two appends can leave a proposal without a settlement; that is a legal, replayable state —
+the question is simply still open. An error response never leaves one.)
+
+The CLI `answer` command keeps its current behavior; migrating it onto `answerQuestion` is
+optional and out of scope.
 
 On success, respond `200` with a freshly composed `{ composed, questions }` from the same
 helper — the client updates in one round trip.
@@ -131,7 +149,8 @@ report.
 `client/src/lib/projectMemoryApi.ts` gains two methods on `createProjectMemoryApi`:
 
 - `whatsStanding(projectId)` → GET, returns the payload or `{ ok: false, reason }`
-- `answerWhatsStanding(projectId, annotationId, answer)` → POST, same envelope
+- `answerWhatsStanding(projectId, annotationId, questionVersion, answer)` → POST, same
+  envelope
 
 Same session-token header and URL-builder conventions as the existing methods. Responses
 validated with zod (`ComposedDocumentSchema` plus a payload schema) before use, like the
@@ -222,6 +241,8 @@ never edits the document it holds.
 - **Stale-question test**: load the payload, change the referencing record's wording in a
   way that keeps the matched phrase and annotation id, submit the old answer with the old
   `questionVersion` → `409`, annotation log byte-identical.
+- **Atomicity test**: an answer that fails any check on a `new` question (bad referent,
+  stale version) leaves the log byte-identical — no orphaned proposal event.
 - **Race test**: switch project A → B with A's response resolving last; B's panel state
   survives untouched.
 - **Renderer test**: cue blocks carry the `annotationId` matching
