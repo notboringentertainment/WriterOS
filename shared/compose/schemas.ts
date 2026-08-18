@@ -20,10 +20,17 @@ export const FidelityWarningSchema = z.object({
   entity: z.string().optional(),
 })
 
+export const ComposedRunSchema = z.object({
+  runId: z.string(),
+  snapshotRevision: z.number().int(),
+  annotationRevision: z.number().int().optional(),
+})
+
 export const ComposedDocumentSchema = z.object({
   schemaVersion: z.number().int(),
   generatedAt: z.string(),
-  model: z.string(),
+  // null when the document was composed deterministically, with no model involved.
+  model: z.string().nullable(),
   recipeVersion: z.number().int(),
   composerVersion: z.number().int(),
   sourceHash: z.string(),
@@ -33,6 +40,7 @@ export const ComposedDocumentSchema = z.object({
     status: z.enum(['clean', 'flagged']),
     warnings: z.array(FidelityWarningSchema),
   }),
+  run: ComposedRunSchema.optional(),
 })
 
 export const ModelComposeOutputSchema = z.object({ blocks: z.array(ComposedBlockSchema) })

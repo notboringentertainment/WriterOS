@@ -23,6 +23,8 @@ import {
   type SafeExistingPath,
 } from './safePaths'
 import { previewProjectMemoryImport } from './importer'
+import { composeWhatsStanding } from '../compose'
+import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
 
 export interface ProjectMemoryCliIo {
   stdout(value: string): void
@@ -560,6 +562,42 @@ function exitCodeFor(error: unknown): 1 | 2 | 3 {
   return 1
 }
 
+/**
+ * `report` — produce a readable "What's Standing" report from project memory.
+ *
+ * Read-only: it opens the snapshot and writes nothing back. The run id is derived from the
+ * snapshot rather than generated, so running the command twice on unchanged memory produces
+ * the same artifact instead of two documents that differ only by identifier.
+ */
+async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+  assertAllowedOptions(args, ['project', 'profile', 'format'], [])
+  const profile = args.values.get('profile') ?? 'whats-standing'
+  if (profile !== 'whats-standing') throw new CliInputError('Unknown report profile.')
+  const format = args.values.get('format') ?? 'markdown'
+  if (format !== 'json' && format !== 'markdown') throw new CliInputError('--format must be json or markdown.')
+
+  const project = await safeProjectPath(args)
+  await project.verify()
+  // Read-only by contract: readSnapshot() can initialize a ledger, append
+  // migration events, and rewrite projections, all of which would falsify this
+  // command's promise that generating a report changes nothing.
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
+
+  const result = composeWhatsStanding({
+    snapshot,
+    runId: `whats-standing-r${snapshot.revision}`,
+  })
+  if (!result.ok) {
+    io.stderr(`${result.reason}\n`)
+    return 1
+  }
+
+  io.stdout(format === 'json'
+    ? `${JSON.stringify(result.composed, null, 2)}\n`
+    : renderComposedMarkdown(result.composed))
+  return 0
+}
+
 export async function runProjectMemoryCli(
   argv: string[],
   io: ProjectMemoryCliIo = processIo,
@@ -572,6 +610,7 @@ export async function runProjectMemoryCli(
     if (args.command === 'export') return await runExport(args, io)
     if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
+    if (args.command === 'report') return await runReport(args, io)
     throw new CliInputError('Unknown memory command.')
   } catch (error) {
     const exitCode = exitCodeFor(error)

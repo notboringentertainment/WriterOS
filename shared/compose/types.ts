@@ -8,7 +8,7 @@ export interface FactSheetField {
   items?: string[]
 }
 
-export type ComposeSurface = 'outline' | 'synopsis' | 'treatment'
+export type ComposeSurface = 'outline' | 'synopsis' | 'treatment' | 'whatsStanding'
 
 export interface FactSheet {
   surface: ComposeSurface
@@ -68,16 +68,33 @@ export interface FidelityWarning {
   entity?: string
 }
 
+/**
+ * Provenance for a generated run. Present only on deterministically composed documents,
+ * which depend on more than the source hash: the memory revision they were taken from and
+ * (once questioning lands) the annotation revision that resolved their references.
+ *
+ * A report is a snapshot of a moment, not a live view. Without these a reader cannot tell
+ * whether what they are holding is current, which is the failure mode the report exists to
+ * prevent in the first place.
+ */
+export interface ComposedRun {
+  runId: string
+  snapshotRevision: number
+  annotationRevision?: number
+}
+
 export interface ComposedDocument {
   schemaVersion: number
   generatedAt: string
-  model: string
+  /** null for deterministic composition, where no model was involved. */
+  model: string | null
   recipeVersion: number
   composerVersion: number
   sourceHash: string
   format: 'feature' | 'series'
   blocks: ComposedBlock[]
   fidelity: { status: 'clean' | 'flagged'; warnings: FidelityWarning[] }
+  run?: ComposedRun
 }
 
 export const COMPOSED_SCHEMA_VERSION = 1
