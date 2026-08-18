@@ -73,7 +73,12 @@ identical guard stack: `requireSameOrigin`, `requireSession`, project-id pattern
 `projectLibraryStore.resolveProjectPackagePath`, and the snapshot/manifest project-id
 assertion.
 
-**`GET /api/projects/:projectId/whats-standing`**
+Both endpoints sit under the memory prefix — `/api/projects/:projectId/memory/whats-standing`
+and `.../memory/whats-standing/answer` — because the mount-level security boundary
+(`classifyProjectMemoryPath`) only classifies `/memory/...` paths; the classifier gains the
+two new endpoint shapes, exactly as the analysis-queue routes did.
+
+**`GET /api/projects/:projectId/memory/whats-standing`**
 Calls the helper. `200 { composed, questions }`. Read-only: uses
 `readSnapshotReadOnly` / `annotationStore.state` only — generating a report changes
 nothing on disk.
