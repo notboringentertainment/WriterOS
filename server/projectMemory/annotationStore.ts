@@ -177,6 +177,30 @@ function candidateIds(snapshot: ProjectMemorySnapshot, referencingId: string): s
     .sort()
 }
 
+/**
+ * Opaque hash of a question's premise as shown to the writer: the referencing record's
+ * language, the exact sentence quoted, and the offered candidates with their language.
+ * The annotation id deliberately excludes the sentence, so it alone cannot prove the
+ * writer answered the question they were looking at; this can.
+ */
+export function questionVersionFor(snapshot: ProjectMemorySnapshot, question: PendingQuestion): string {
+  const byId = new Map(snapshot.records.map(r => [r.id, r]))
+  const referencing = byId.get(question.locator.recordId)
+  return sha256Hex(JSON.stringify({
+    referencing: referencing ? recordLanguageFingerprint(referencing).contentHash : null,
+    sentence: question.locator.sentence,
+    candidates: question.candidateRecordIds.map(id => {
+      const record = byId.get(id)
+      return { id, hash: record ? recordLanguageFingerprint(record).contentHash : null }
+    }),
+  }))
+}
+
+export type WhatsStandingAnswer =
+  | { kind: 'referents'; recordIds: string[] }
+  | { kind: 'cant-say' }
+  | { kind: 'decline' }
+
 export interface AnnotationQueries {
   state(projectPath: string): Promise<AnnotationLogState>
   /**
@@ -189,6 +213,12 @@ export interface AnnotationQueries {
   propose(projectPath: string, snapshot: ProjectMemorySnapshot, annotationId: string, runId: string): Promise<AnnotationState>
   approve(projectPath: string, snapshot: ProjectMemorySnapshot, annotationId: string, referentRecordIds: string[], runId: string): Promise<AnnotationState>
   decline(projectPath: string, snapshot: ProjectMemorySnapshot, annotationId: string, reason: 'declined' | 'cant-say', runId: string): Promise<AnnotationState>
+  answerQuestion(projectPath: string, input: {
+    annotationId: string
+    questionVersion: string
+    answer: WhatsStandingAnswer
+    runId: string
+  }): Promise<AnnotationState>
 }
 
 function cueQuestions(snapshot: ProjectMemorySnapshot): Map<string, PhraseLocator> {
@@ -258,6 +288,38 @@ function requireUnmovedReferencing(
   return referencing
 }
 
+function derivePendingQuestions(state: AnnotationLogState, snapshot: ProjectMemorySnapshot): PendingQuestion[] {
+  const questions: PendingQuestion[] = []
+  for (const [annotationId, locator] of cueQuestions(snapshot)) {
+    const existing = state.annotations.get(annotationId)
+    // An invalidated annotation's question is open again: re-derive it fresh, exactly
+    // as if it had never been asked, so it is answerable rather than a dead end.
+    if (existing === undefined || existing.status === 'invalidated') {
+      const candidateRecordIds = candidateIds(snapshot, locator.recordId)
+      questions.push({
+        annotationId,
+        status: 'new',
+        locator,
+        candidateRecordIds,
+        questionText: renderQuestionText(locator, candidateRecordIds.length),
+      })
+      continue
+    }
+    if (existing.status === 'proposed') {
+      questions.push({
+        annotationId,
+        status: 'proposed',
+        locator: existing.locator,
+        candidateRecordIds: existing.candidateRecordIds,
+        questionText: renderQuestionText(existing.locator, existing.candidateRecordIds.length),
+      })
+    }
+    // approved / declined: nothing to ask. Re-asking after the language changes is
+    // the invalidation slice's job.
+  }
+  return questions.sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
+}
+
 export function createAnnotationStore(): AnnotationQueries {
   return {
     async state(projectPath) {
@@ -266,36 +328,7 @@ export function createAnnotationStore(): AnnotationQueries {
     },
 
     async pendingQuestions(projectPath, snapshot) {
-      const state = await this.state(projectPath)
-      const questions: PendingQuestion[] = []
-      for (const [annotationId, locator] of cueQuestions(snapshot)) {
-        const existing = state.annotations.get(annotationId)
-        // An invalidated annotation's question is open again: re-derive it fresh, exactly
-        // as if it had never been asked, so it is answerable rather than a dead end.
-        if (existing === undefined || existing.status === 'invalidated') {
-          const candidateRecordIds = candidateIds(snapshot, locator.recordId)
-          questions.push({
-            annotationId,
-            status: 'new',
-            locator,
-            candidateRecordIds,
-            questionText: renderQuestionText(locator, candidateRecordIds.length),
-          })
-          continue
-        }
-        if (existing.status === 'proposed') {
-          questions.push({
-            annotationId,
-            status: 'proposed',
-            locator: existing.locator,
-            candidateRecordIds: existing.candidateRecordIds,
-            questionText: renderQuestionText(existing.locator, existing.candidateRecordIds.length),
-          })
-        }
-        // approved / declined: nothing to ask. Re-asking after the language changes is
-        // the invalidation slice's job.
-      }
-      return questions.sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
+      return derivePendingQuestions(await this.state(projectPath), snapshot)
     },
 
     async propose(projectPath, snapshot, annotationId, runId) {
@@ -407,6 +440,96 @@ export function createAnnotationStore(): AnnotationQueries {
         const next = preflightAnnotationEvent(state, event)
         await appendAnnotationEvent(projectPath, event)
         return next.annotations.get(annotationId) as AnnotationState
+      })
+    },
+
+    async answerQuestion(projectPath, input) {
+      return withLock(projectPath, async projectId => {
+        const state = await replayAnnotations(projectPath, projectId)
+        const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const question = derivePendingQuestions(state, current)
+          .find(q => q.annotationId === input.annotationId)
+        if (question === undefined) {
+          throw new AnnotationStoreError('No such open question. Refresh the report.', 'not-found')
+        }
+        if (questionVersionFor(current, question) !== input.questionVersion) {
+          throw new AnnotationStoreError(
+            'This question changed since it was shown. Refresh the report and answer the current version.',
+            'conflict')
+        }
+
+        const referencing = current.records.find(r => r.id === question.locator.recordId)
+        if (referencing === undefined) {
+          throw new AnnotationStoreError('The record this question quotes is no longer in memory.', 'conflict')
+        }
+
+        const at = new Date().toISOString()
+        const events: AnnotationEvent[] = []
+        let revision = state.revision
+        if (question.status === 'new') {
+          events.push({
+            type: 'annotation-proposed',
+            projectId,
+            annotationId: input.annotationId,
+            annotationRevision: ++revision,
+            at,
+            questionType: 'resolve-reference',
+            locator: question.locator,
+            candidateRecordIds: question.candidateRecordIds,
+            support: [recordLanguageFingerprint(referencing)],
+            runId: input.runId,
+          })
+        }
+
+        if (input.answer.kind === 'referents') {
+          const chosen = input.answer.recordIds
+          if (chosen.length === 0) {
+            throw new AnnotationStoreError('An answer needs at least one referent.', 'invalid-input')
+          }
+          const candidates = new Set(question.candidateRecordIds)
+          const support: RecordLanguageFingerprint[] = [recordLanguageFingerprint(referencing)]
+          for (const id of chosen) {
+            if (!candidates.has(id)) {
+              throw new AnnotationStoreError(`${id} is not among this question's candidates.`, 'invalid-input')
+            }
+            const referent = current.records.find(r => r.id === id)
+            if (referent === undefined) {
+              throw new AnnotationStoreError(`Chosen referent ${id} is not in the snapshot.`, 'invalid-input')
+            }
+            support.push(recordLanguageFingerprint(referent))
+          }
+          events.push({
+            type: 'annotation-approved',
+            projectId,
+            annotationId: input.annotationId,
+            annotationRevision: ++revision,
+            at,
+            referentRecordIds: chosen,
+            support,
+            actor: 'writer',
+            runId: input.runId,
+          })
+        } else {
+          events.push({
+            type: 'annotation-declined',
+            projectId,
+            annotationId: input.annotationId,
+            annotationRevision: ++revision,
+            at,
+            reason: input.answer.kind === 'cant-say' ? 'cant-say' : 'declined',
+            support: [recordLanguageFingerprint(referencing)],
+            actor: 'writer',
+            runId: input.runId,
+          })
+        }
+
+        // Preflight EVERY event against the replayed state before ANY append. An error
+        // response must never leave the log changed; an illegal line appended durably
+        // would brick every future replay.
+        let next = state
+        for (const event of events) next = preflightAnnotationEvent(next, event)
+        for (const event of events) await appendAnnotationEvent(projectPath, event)
+        return next.annotations.get(input.annotationId) as AnnotationState
       })
     },
   }
