@@ -9,7 +9,7 @@ export const ComposedBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('meta'), text: z.string() }),
   z.object({ type: z.literal('logline'), text: z.string(), sourceFieldIds }),
   z.object({ type: z.literal('paragraph'), text: z.string(), sourceFieldIds }),
-  z.object({ type: z.literal('leadInParagraph'), lead: z.string(), text: z.string(), sourceFieldIds }),
+  z.object({ type: z.literal('leadInParagraph'), lead: z.string(), text: z.string(), sourceFieldIds, annotationId: z.string().optional() }),
 ])
 
 export const FidelityWarningSchema = z.object({

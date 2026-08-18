@@ -8,6 +8,7 @@ import { CUE_NAMES, findCues, readsAsWithdrawn } from '../../shared/compose/what
 import { ComposedDocumentSchema } from '../../shared/compose/schemas'
 import { annotationIdFor, type AnnotationLogState, type AnnotationState } from '../../shared/projectMemoryAnnotations'
 import { unresolvedReferences } from '../../shared/compose/whatsStandingReadiness'
+import type { ComposedBlock } from '../../shared/compose/types'
 
 const AT = '2026-08-13T20:00:00.000Z'
 
@@ -153,6 +154,18 @@ describe('composition', () => {
 
   it('renders identically on repeated runs', () => {
     expect(renderWhatsStandingBlocks(snap)).toEqual(renderWhatsStandingBlocks(snap))
+  })
+
+  it('anchors each cue block with its annotation id', () => {
+    const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+    const blocks = renderWhatsStandingBlocks(snapshot([referencing]))
+    const cueBlock = blocks.find(b => b.type === 'leadInParagraph') as
+      Extract<ComposedBlock, { type: 'leadInParagraph' }> | undefined
+    expect(cueBlock?.annotationId).toMatch(/^ann_[0-9a-f]{32}$/)
+    // Schema accepts the new field and documents without it stay valid.
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing]), runId: 'run-1' })
+    if (!result.ok) throw new Error('compose failed')
+    expect(ComposedDocumentSchema.safeParse(result.composed).success).toBe(true)
   })
 
   it('records that no model was involved, and pins the memory revision', () => {
