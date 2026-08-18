@@ -41,7 +41,7 @@ readWhatsStandingReport(projectPath: string, projectId: string): Promise<
   | { ok: false; reason: string }>
 ```
 
-`EnrichedQuestion` is a `PendingQuestion` plus candidate headlines:
+`EnrichedQuestion` is a `PendingQuestion` plus candidate headlines and a version stamp:
 
 ```ts
 interface EnrichedQuestion {
@@ -50,8 +50,18 @@ interface EnrichedQuestion {
   questionText: string
   recordId: string          // locator.recordId — where the question anchors
   candidates: { id: string; headline: string }[]  // headline = claim first line, truncated
+  questionVersion: string   // opaque hash of the question's premise — see below
 }
 ```
+
+**`questionVersion` — stale-screen protection.** The annotation id survives wording changes
+around the matched phrase (it hashes record id, field, phrase, occurrence — not the
+sentence), so an id alone cannot prove the writer answered the question they were shown.
+`questionVersion` is a hash covering the referencing record's language fingerprint, the
+locator sentence, and the offered candidate ids with their language fingerprints. The POST
+must echo it; the server recomputes it under the package lock and refuses a mismatch with
+`409`, log unchanged. This is the panel-level form of the design's rule that an answer must
+never be accepted against a premise that no longer holds.
 
 The CLI `report` and `questions` commands are re-pointed at the helper so route and CLI
 cannot drift. Behavior of both commands is unchanged (same output, same exit codes).
@@ -72,7 +82,7 @@ nothing on disk.
 Body, zod-validated:
 
 ```ts
-{ annotationId: string, answer:
+{ annotationId: string, questionVersion: string, answer:
     { kind: 'referents'; recordIds: string[] }   // non-empty
   | { kind: 'cant-say' }
   | { kind: 'decline' } }
@@ -89,9 +99,11 @@ On success, respond `200` with a freshly composed `{ composed, questions }` from
 helper — the client updates in one round trip.
 
 Errors: `400` unknown/invalid body or referent outside candidates; `404` unknown question
-(it may have been settled elsewhere); `409` when the store refuses because memory moved
-(`AnnotationStoreError` reason `conflict`) — the response body includes the store's
-message, and the client refetches. `500` otherwise.
+(it may have been settled elsewhere); `409` when the echoed `questionVersion` no longer
+matches the question recomputed under the lock, or when the store refuses because memory
+moved (`AnnotationStoreError` reason `conflict`) — the response body includes the message,
+and the client refetches. In every non-200 case the annotation log is unchanged. `500`
+otherwise.
 
 ### Block anchor
 
@@ -131,9 +143,16 @@ New folder `client/src/components/writing/whatsStanding/`.
 
 **`WhatsStandingTab`** — owns the state: `payload`, `loading`, `error`, `answeringId`.
 Fetches on mount and when the active project changes. Double-submit guard via ref, same as
-`SynopsisTab`. Passes an `onAnswer(annotationId, answer)` callback down; on success swaps
-the whole payload; on `409` refetches and shows a one-line notice that memory moved and the
-questions were refreshed.
+`SynopsisTab`. Passes an `onAnswer(annotationId, questionVersion, answer)` callback down;
+on success swaps the whole payload; on `409` refetches and shows a one-line notice that
+memory moved and the questions were refreshed.
+
+**Project-switch race guard.** Every request — initial fetch, retry, answer, and the 409
+refetch — goes through the suite's existing `useBoundProjectScopeKey` +
+`useProjectRequestGeneration` pattern (`client/src/lib/useProjectRequestGeneration.ts`,
+used by all three document tabs): a response whose generation is stale is discarded, so a
+slow project-A response can never overwrite project B's panel. The payload clears
+immediately on scope change.
 
 **`WhatsStandingView`** — pure presentation of one payload:
 
@@ -141,8 +160,10 @@ questions were refreshed.
    review-banner style. The count of unresolved references comes from the
    `unresolved_reference` warnings, NOT from the question list — a can't-say reference is
    unresolved (it stays in the banner) but is deliberately not re-asked, so it gets no
-   card. Any other warning kinds render beneath in the same style as the existing document
-   views' flagged state.
+   card. Its banner line must say so explicitly — "Parked: you answered can't say; this
+   reopens if the wording changes" — because an unresolved item with no visible settlement
+   action otherwise reads as a broken page. Any other warning kinds render beneath in the
+   same style as the existing document views' flagged state.
 2. **Blocks.** The report blocks through a private `Block` switch (fourth copy, per
    non-goals), handling the same seven block types as the other views.
 3. **Question cards.** After rendering a `leadInParagraph` block whose `annotationId`
@@ -196,7 +217,13 @@ never edits the document it holds.
   and decline, each asserting the returned report reflects the answer; referent outside
   candidates → 400 and the log unchanged; unknown question → 404; guard stack enforced
   (no session → rejected); GET writes nothing to the package (byte-compare `memory/`).
-- **Helper test**: CLI `report` output unchanged after re-pointing at the shared helper.
+- **Helper test**: CLI `report` AND `questions` output unchanged after re-pointing at the
+  shared helper — Markdown and JSON forms, and exit codes.
+- **Stale-question test**: load the payload, change the referencing record's wording in a
+  way that keeps the matched phrase and annotation id, submit the old answer with the old
+  `questionVersion` → `409`, annotation log byte-identical.
+- **Race test**: switch project A → B with A's response resolving last; B's panel state
+  survives untouched.
 - **Renderer test**: cue blocks carry the `annotationId` matching
   `annotationIdFor(locator)`; schema round-trip with the new optional field.
 - **Client tests** (suite convention in `tests/lib/`): api methods build correct URLs and
@@ -204,8 +231,10 @@ never edits the document it holds.
   multi-select, all three answers call `onAnswer` with the right shape, in-flight
   disabling, zero-candidate variant hides Confirm; `WhatsStandingView` — question card
   renders beneath its anchor block, fallback list for unanchored questions, banner counts.
-- **Live pass**: run the app against Stool Pigeon; confirm the report renders, the open
-  struck-cue question is answerable, and the banner clears when it is settled.
+- **Live pass**: `writeros-backup` FIRST (an in-app answer writes durable annotation
+  events — the parent design's safety rule applies). Then run the app against Stool
+  Pigeon; confirm the report renders, the open struck-cue question is answerable, and the
+  banner clears when it is settled.
 
 ## Verification
 
