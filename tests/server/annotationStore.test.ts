@@ -719,6 +719,30 @@ describe('report command', () => {
   })
 })
 
+describe('invalidate command', () => {
+  it('reports and writes invalidations when stale, and says so when clean', async () => {
+    const { projectPath } = await seeded()
+    const run = async () => {
+      const out: string[] = []
+      const code = await runProjectMemoryCli(
+        ['invalidate', '--project', projectPath],
+        { stdout: (v: string) => out.push(v), stderr: (v: string) => out.push(v) },
+      )
+      return { code, text: out.join('') }
+    }
+    const clean = await run()
+    expect(clean.code).toBe(0)
+    expect(clean.text).toContain('Nothing to invalidate')
+    // approve then tamper (reuse the producer describe's helpers)
+    await approveOne(projectPath)
+    await tamperApprovedSupport(projectPath)
+    const stale = await run()
+    expect(stale.code).toBe(0)
+    expect(stale.text).toContain('Invalidated ann_')
+    expect(stale.text).toContain('language-changed')
+  })
+})
+
 describe('answerQuestion transaction', () => {
   async function openQuestion(projectPath: string) {
     const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
