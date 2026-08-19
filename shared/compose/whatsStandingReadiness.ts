@@ -1,6 +1,6 @@
 import type { ProjectMemorySnapshot } from '../projectMemory'
 import type { AnnotationLogState } from '../projectMemoryAnnotations'
-import { annotationIdFor } from '../projectMemoryAnnotations'
+import { annotationIdFor, annotationStaleness } from '../projectMemoryAnnotations'
 import { buildStandingEntries } from './whatsStandingFactSheet'
 
 /**
@@ -19,7 +19,7 @@ import { buildStandingEntries } from './whatsStandingFactSheet'
  * question.
  */
 
-export type UnresolvedReferenceState = 'unasked' | 'proposed' | 'cant-say' | 'invalidated'
+export type UnresolvedReferenceState = 'unasked' | 'proposed' | 'cant-say' | 'invalidated' | 'stale'
 
 export interface UnresolvedReference {
   annotationId: string
@@ -55,8 +55,12 @@ export function unresolvedReferences(
       else if (existing.status === 'invalidated') state = 'invalidated'
       else if (existing.status === 'declined') {
         state = existing.declineReason === 'cant-say' ? 'cant-say' : undefined
+      } else if (existing.status === 'approved') {
+        // A resolution only stands while its premise does: a support fingerprint that no
+        // longer matches memory means the writer resolved different wording than what now
+        // exists, and showing that resolution as settled would be the original near-miss.
+        state = annotationStaleness(existing.support, snapshot).stale ? 'stale' : undefined
       }
-      // approved: resolved, nothing to report.
 
       if (state !== undefined) {
         out.push({ annotationId, recordId: entry.record.id, phrase: cue.phrase, sentence: cue.sentence, state })

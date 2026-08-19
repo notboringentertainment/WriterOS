@@ -1,5 +1,6 @@
 import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '../../shared/projectMemory'
 import type { AnnotationLogState, AnnotationState } from '../../shared/projectMemoryAnnotations'
+import { annotationStaleness } from '../../shared/projectMemoryAnnotations'
 import type { ComposedBlock } from '../../shared/compose/types'
 import { buildStandingEntries, type StandingEntry } from '../../shared/compose/whatsStandingFactSheet'
 import { annotationIdFor } from '../projectMemory/annotationStore'
@@ -31,6 +32,7 @@ function resolutionText(
   snapshot: ProjectMemorySnapshot,
 ): string | undefined {
   if (annotation === undefined || annotation.status !== 'approved') return undefined
+  if (annotationStaleness(annotation.support, snapshot).stale) return undefined
   const referents = annotation.referentRecordIds ?? []
   const summaries = referents.map(id => {
     const record = snapshot.records.find(r => r.id === id)

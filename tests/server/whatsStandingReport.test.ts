@@ -6,7 +6,12 @@ import { renderWhatsStandingBlocks } from '../../server/compose/whatsStandingRen
 import { buildStandingEntries } from '../../shared/compose/whatsStandingFactSheet'
 import { CUE_NAMES, findCues, readsAsWithdrawn } from '../../shared/compose/whatsStandingCues'
 import { ComposedDocumentSchema } from '../../shared/compose/schemas'
-import { annotationIdFor, type AnnotationLogState, type AnnotationState } from '../../shared/projectMemoryAnnotations'
+import {
+  annotationIdFor,
+  recordLanguageFingerprint,
+  type AnnotationLogState,
+  type AnnotationState,
+} from '../../shared/projectMemoryAnnotations'
 import { unresolvedReferences } from '../../shared/compose/whatsStandingReadiness'
 import type { ComposedBlock } from '../../shared/compose/types'
 
@@ -341,7 +346,7 @@ function logWith(
     questionType: 'resolve-reference',
     locator,
     candidateRecordIds: [],
-    support: [{ recordId: referencing.id, contentHash: 'a'.repeat(64) }],
+    support: [recordLanguageFingerprint(referencing)],
     updatedAt: AT,
     ...overrides,
   }
@@ -410,6 +415,33 @@ describe('readiness', () => {
   it('cues on records the report never displays are not readiness items', () => {
     const hidden = record({ id: 'mem-dev', kind: 'development' as ProjectMemoryRecord['kind'], claim: 'Superseded by beats 9-11.' })
     expect(unresolvedReferences(snapshot([hidden, referent]))).toEqual([])
+  })
+
+  it('an approved resolution whose support no longer matches is stale and INCOMPLETE', () => {
+    const { annotations, annotationId } = logWith(referencing, {
+      status: 'approved', referentRecordIds: ['mem-target'],
+    })
+    const state = annotations.annotations.get(annotationId)!
+    state.support = [{ recordId: referencing.id, contentHash: 'b'.repeat(64) }]
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) throw new Error('compose failed')
+    expect(result.composed.fidelity.status).toBe('flagged')
+    expect(result.composed.fidelity.warnings.some(w =>
+      w.kind === 'unresolved_reference' && w.message.includes('stale'))).toBe(true)
+  })
+
+  it('a stale approved resolution renders as unresolved, not "You resolved this"', () => {
+    const { annotations, annotationId } = logWith(referencing, {
+      status: 'approved', referentRecordIds: ['mem-target'],
+    })
+    annotations.annotations.get(annotationId)!.support =
+      [{ recordId: referencing.id, contentHash: 'b'.repeat(64) }]
+    const blocks = renderWhatsStandingBlocks(snapshot([referencing, referent]), annotations)
+    const cue = blocks.find(b => b.type === 'leadInParagraph') as
+      Extract<ComposedBlock, { type: 'leadInParagraph' }>
+    expect(cue.text).toContain('does not resolve')
+    expect(cue.text).not.toContain('You resolved this')
+    expect(cue.sourceFieldIds).toEqual([referencing.id])
   })
 })
 
