@@ -360,6 +360,12 @@ export function createAnnotationStore(): AnnotationQueries {
           if (existing.status === 'proposed') return existing
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
         }
+        if (existing !== undefined && existing.status === 'declined'
+          && !annotationStaleness(existing.support, current).stale) {
+          throw new AnnotationStoreError(
+            'This question was declined and the wording it was judged against has not changed.',
+            'conflict')
+        }
         const referencing = current.records.find(r => r.id === locator.recordId)
         if (referencing === undefined) {
           throw new AnnotationStoreError('Referencing record vanished from the snapshot.', 'conflict')

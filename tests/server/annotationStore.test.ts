@@ -312,6 +312,53 @@ describe('question scope and shape', () => {
   })
 })
 
+describe('declined re-propose gate', () => {
+  it('refuses to re-propose a declined question whose wording has not moved', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const [q] = await annotationStore.pendingQuestions(projectPath, snapshot)
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    await annotationStore.decline(projectPath, snapshot, q.annotationId, 'declined', 'run-1')
+
+    const file = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const before = await readFile(file, 'utf8')
+
+    await expect(
+      annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
+    ).rejects.toBeInstanceOf(AnnotationStoreError)
+
+    // Verify log is unchanged and reason is 'conflict'
+    expect(await readFile(file, 'utf8')).toBe(before)
+    try {
+      await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
+    } catch (error) {
+      if (error instanceof AnnotationStoreError) {
+        expect(error.reason).toBe('conflict')
+      }
+    }
+  })
+
+  it('re-proposes a declined question once its stored support no longer matches', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const [q] = await annotationStore.pendingQuestions(projectPath, snapshot)
+    await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-1')
+    await annotationStore.decline(projectPath, snapshot, q.annotationId, 'declined', 'run-1')
+
+    // Simulate drift: rewrite the decline event's support hash (the log is data;
+    // records themselves are immutable through the API).
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const decline = lines.find(l => l.type === 'annotation-declined')
+    if (!decline) throw new Error('decline event not found')
+    decline.support[0].contentHash = 'b'.repeat(64)
+    await writeFile(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const state = await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
+    expect(state.status).toBe('proposed')
+  })
+})
+
 describe('invalidation aftermath', () => {
   it('an invalidated question is asked again and can be re-proposed', async () => {
     const { projectPath } = await seeded()
