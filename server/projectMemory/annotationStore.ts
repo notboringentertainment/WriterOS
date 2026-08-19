@@ -1,6 +1,7 @@
 import { constants } from 'node:fs'
 import { lstat, open, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { z } from 'zod'
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
 import { sha256Hex } from '../../shared/compose/sha256'
 import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '../../shared/projectMemory'
@@ -189,7 +190,7 @@ export function questionVersionFor(snapshot: ProjectMemorySnapshot, question: Pe
   return sha256Hex(JSON.stringify({
     referencing: referencing ? recordLanguageFingerprint(referencing).contentHash : null,
     sentence: question.locator.sentence,
-    candidates: question.candidateRecordIds.map(id => {
+    candidates: [...question.candidateRecordIds].sort().map(id => {
       const record = byId.get(id)
       return { id, hash: record ? recordLanguageFingerprint(record).contentHash : null }
     }),
@@ -252,11 +253,16 @@ function cueQuestions(snapshot: ProjectMemorySnapshot): Map<string, PhraseLocato
  */
 function preflightAnnotationEvent(state: AnnotationLogState, event: AnnotationEvent): AnnotationLogState {
   try {
-    return applyAnnotationEvent(state, event, -1)
+    return applyAnnotationEvent(state, AnnotationEventSchema.parse(event), -1)
   } catch (error) {
     if (error instanceof AnnotationReplayError) {
       throw new AnnotationStoreError(
         `Refused annotation event: ${error.message.replace(/^memory\/annotations\.jsonl:-1: /, '')}`,
+        'invalid-input')
+    }
+    if (error instanceof z.ZodError) {
+      throw new AnnotationStoreError(
+        `Refused annotation event: ${error.issues[0]?.message ?? 'schema validation failed'}`,
         'invalid-input')
     }
     throw error
@@ -482,7 +488,7 @@ export function createAnnotationStore(): AnnotationQueries {
         }
 
         if (input.answer.kind === 'referents') {
-          const chosen = input.answer.recordIds
+          const chosen = [...new Set(input.answer.recordIds)]
           if (chosen.length === 0) {
             throw new AnnotationStoreError('An answer needs at least one referent.', 'invalid-input')
           }
