@@ -94,15 +94,23 @@ async function replayAnnotations(projectPath: string, projectId: string): Promis
   return state
 }
 
-async function appendAnnotationEvent(projectPath: string, event: AnnotationEvent): Promise<void> {
-  const parsed = AnnotationEventSchema.parse(event)
+/**
+ * Appends one or more events in a single open/write/fsync/close — the crash window between
+ * events of a batch (propose's sweep + its own event, answerQuestion's sweep + settlement
+ * events, invalidateStale's whole sweep) exists only if each is written separately. Every
+ * event is schema-parsed first, exactly as the single-event path always has, and an empty
+ * batch touches the file — and O_CREAT's file-creation side effect — not at all.
+ */
+async function appendAnnotationEvents(projectPath: string, events: readonly AnnotationEvent[]): Promise<void> {
+  if (events.length === 0) return
+  const parsedEvents = events.map(event => AnnotationEventSchema.parse(event))
   const filePath = annotationsPath(projectPath)
   // O_CREAT is deliberate here, unlike the memory ledger: the first proposal is what brings
   // the log into existence. The memory/ directory must already exist — a project with no
   // memory has nothing to annotate, and this store must not create memory state.
   const handle = await open(filePath, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600)
   try {
-    const bytes = Buffer.from(`${JSON.stringify(parsed)}\n`, 'utf8')
+    const bytes = Buffer.from(parsedEvents.map(event => `${JSON.stringify(event)}\n`).join(''), 'utf8')
     let offset = 0
     while (offset < bytes.length) {
       const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset)
@@ -115,6 +123,12 @@ async function appendAnnotationEvent(projectPath: string, event: AnnotationEvent
   } finally {
     await handle.close()
   }
+}
+
+/** Thin single-event wrapper over {@link appendAnnotationEvents} for callers (approve, decline)
+ * that only ever append one event at a time. */
+async function appendAnnotationEvent(projectPath: string, event: AnnotationEvent): Promise<void> {
+  return appendAnnotationEvents(projectPath, [event])
 }
 
 async function withLock<T>(projectPath: string, operation: (projectId: string) => Promise<T>): Promise<T> {
@@ -424,9 +438,9 @@ export function createAnnotationStore(): AnnotationQueries {
             // Idempotent return — but the sweep was already preflighted against `next` above,
             // and a stale approved annotation elsewhere must not go unwritten just because
             // THIS annotationId had nothing left to do. Append the sweep (already validated,
-            // nothing else pending) before returning; still all-or-nothing, since every write
-            // on this path is a write that already passed preflight.
-            for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
+            // nothing else pending) before returning, as a single batch — still all-or-nothing,
+            // since every event on this path already passed preflight.
+            await appendAnnotationEvents(projectPath, sweep)
             return next.annotations.get(annotationId) as AnnotationState
           }
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
@@ -456,8 +470,7 @@ export function createAnnotationStore(): AnnotationQueries {
         // Preflight EVERY event before ANY append — a failure past this point must never
         // leave the log changed.
         const finalState = preflightAnnotationEvent(next, event)
-        for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
-        await appendAnnotationEvent(projectPath, event)
+        await appendAnnotationEvents(projectPath, [...sweep, event])
         return finalState.annotations.get(annotationId) as AnnotationState
       })
     },
@@ -625,8 +638,7 @@ export function createAnnotationStore(): AnnotationQueries {
         // the log changed; an illegal line appended durably would brick every future replay.
         let finalState = next
         for (const event of events) finalState = preflightAnnotationEvent(finalState, event)
-        for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
-        for (const event of events) await appendAnnotationEvent(projectPath, event)
+        await appendAnnotationEvents(projectPath, [...sweep, ...events])
         return finalState.annotations.get(input.annotationId) as AnnotationState
       })
     },
@@ -639,7 +651,7 @@ export function createAnnotationStore(): AnnotationQueries {
         if (events.length === 0) return []
         let next = state
         for (const event of events) next = preflightAnnotationEvent(next, event)
-        for (const event of events) await appendAnnotationEvent(projectPath, event)
+        await appendAnnotationEvents(projectPath, events)
         return events.map(event => ({
           annotationId: event.annotationId,
           cause: event.cause,

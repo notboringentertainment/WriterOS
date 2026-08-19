@@ -70,6 +70,44 @@ function getJson(port: number, requestPath: string, headers: Record<string, stri
   })
 }
 
+function requestRaw(
+  port: number,
+  requestPath: string,
+  options: {
+    method: string
+    headers?: Record<string, string>
+    body?: string | Buffer
+    omitContentLength?: boolean
+  },
+) {
+  const body = typeof options.body === 'string' ? Buffer.from(options.body) : options.body
+  return new Promise<{ status: number; text: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: requestPath,
+      method: options.method,
+      headers: {
+        ...(body === undefined || options.omitContentLength
+          ? {}
+          : { 'Content-Length': String(body.byteLength) }),
+        ...options.headers,
+      },
+    }, response => {
+      const chunks: Buffer[] = []
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)))
+      response.on('end', () => resolve({
+        status: response.statusCode ?? 0,
+        text: Buffer.concat(chunks).toString('utf8'),
+        headers: response.headers,
+      }))
+    })
+    request.on('error', reject)
+    if (body !== undefined) request.write(body)
+    request.end()
+  })
+}
+
 function postJson(
   port: number,
   requestPath: string,
@@ -248,5 +286,86 @@ describe('what\'s standing panel HTTP routes', () => {
 
     const unauthed = await getJson(port, `/api/projects/${project.id}/memory/whats-standing`)
     expect(unauthed.status).toBeGreaterThanOrEqual(400)
+  })
+
+  it('boundary: a body on the GET report, a non-JSON body on the answer POST, and GET on the answer path', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-whats-standing-routes-'))
+    temporaryRoots.push(root)
+    const { store, project } = await seedProject(root)
+    const config: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const port = await startMemoryApp(config, store)
+    const authHeaders = { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' }
+
+    // GET whats-standing with a request body: 400 unexpected-body.
+    const bodyOnRead = await requestRaw(port, `/api/projects/${project.id}/memory/whats-standing`, {
+      method: 'GET',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unexpected: true }),
+    })
+    expect(bodyOnRead.status).toBe(400)
+    expect(JSON.parse(bodyOnRead.text)).toEqual({
+      error: 'unexpected-body',
+      message: 'Project memory read requests must not include a body.',
+    })
+
+    // POST whats-standing/answer with a non-JSON content type and a body: 415 unsupported-body.
+    const nonJsonAnswer = await requestRaw(port, `/api/projects/${project.id}/memory/whats-standing/answer`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'Content-Type': 'text/plain' },
+      body: 'not-json',
+    })
+    expect(nonJsonAnswer.status).toBe(415)
+    expect(JSON.parse(nonJsonAnswer.text)).toEqual({
+      error: 'unsupported-body',
+      message: 'Project memory request body encoding or media type is unsupported.',
+    })
+
+    // GET on the answer path: 405 method-not-allowed via the boundary.
+    const getOnAnswer = await requestRaw(port, `/api/projects/${project.id}/memory/whats-standing/answer`, {
+      method: 'GET',
+      headers: authHeaders,
+    })
+    expect(getOnAnswer.status).toBe(405)
+    expect(JSON.parse(getOnAnswer.text)).toEqual({
+      error: 'method-not-allowed',
+      message: 'Project memory request method is not allowed.',
+    })
+  })
+
+  it('rejects a resolved package whose manifest project ID differs from the URL', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-whats-standing-routes-'))
+    temporaryRoots.push(root)
+    const { store, project } = await seedProject(root)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+    // Same technique projectMemoryRoutes.test.ts's sibling-route coverage uses: a library
+    // index that resolves ANY requested id to this one real package, so the URL id and the
+    // package's own manifest projectId disagree once the route reads it.
+    const staleIndexStore: ProjectLibraryStore = {
+      ...store,
+      resolveProjectPackagePath: async () => projectPath,
+    }
+    const config: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const port = await startMemoryApp(config, staleIndexStore)
+    const authHeaders = { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' }
+
+    const res = await getJson(port, '/api/projects/different-project-id/memory/whats-standing', authHeaders)
+
+    expect(res.status).toBe(400)
+    expect(res.json).toEqual({
+      error: 'project-mismatch',
+      message: 'URL project id does not match the WriterOS project package.',
+    })
   })
 })

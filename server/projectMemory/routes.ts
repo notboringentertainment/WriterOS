@@ -119,6 +119,23 @@ function libraryStore(
   return store
 }
 
+/**
+ * Maps a failed {@link readWhatsStandingReport} result to its HTTP response. 'project-mismatch'
+ * is the specific reason readWhatsStandingReport returns for its manifest-id assertion — mapped
+ * to the same status, error code, and message every sibling project-memory route uses for the
+ * identical check (see routeError's 'project-mismatch' branch above). Any other reason is the
+ * generic report-unavailable case.
+ */
+function respondWhatsStandingReadFailure(res: Response, result: { ok: false; reason: string }) {
+  if (result.reason === 'project-mismatch') {
+    return res.status(400).json({
+      error: 'project-mismatch',
+      message: 'URL project id does not match the WriterOS project package.',
+    })
+  }
+  return res.status(503).json({ error: 'report-unavailable', message: result.reason })
+}
+
 function routeError(res: Response, error: unknown) {
   if (error instanceof z.ZodError) {
     return res.status(400).json({
@@ -607,8 +624,8 @@ export function registerProjectMemoryRoutes(
     try {
       const projectId = validatedProjectId(req.params.projectId)
       const projectPath = await libraryStore(config, projectLibraryStore).resolveProjectPackagePath(projectId)
-      const result = await readWhatsStandingReport(projectPath)
-      if (!result.ok) return res.status(503).json({ error: 'report-unavailable', message: result.reason })
+      const result = await readWhatsStandingReport(projectPath, projectId)
+      if (!result.ok) return respondWhatsStandingReadFailure(res, result)
       return res.json(result.payload)
     } catch (error) {
       return routeError(res, error)
@@ -625,7 +642,7 @@ export function registerProjectMemoryRoutes(
         annotationId: request.annotationId,
         questionVersion: request.questionVersion,
         answer: request.answer,
-        runId: `panel-answer`,
+        runId: 'panel-answer',
       })
       // The write above already landed durably, so a failed read here must never turn into
       // an error response — that would contradict "non-200 ⇒ log unchanged" for a write
@@ -634,8 +651,12 @@ export function registerProjectMemoryRoutes(
       // direct (non-paired) read, which is an acceptable one-time blip for this post-write
       // display refresh (see readWhatsStandingReportDirect). Only if that also fails —
       // composeReportPayload itself cannot fail today; this is defensive — report 503.
-      const result = await readWhatsStandingReport(projectPath)
+      // A project-mismatch, unlike the retry-exhaustion case, is not a blip worth falling
+      // back for — it means the URL id and package manifest disagree, same as every sibling
+      // route, so it is reported immediately.
+      const result = await readWhatsStandingReport(projectPath, projectId)
       if (result.ok) return res.json(result.payload)
+      if (result.reason === 'project-mismatch') return respondWhatsStandingReadFailure(res, result)
       const fallback = await readWhatsStandingReportDirect(projectPath)
       if (!fallback.ok) return res.status(503).json({ error: 'report-unavailable', message: fallback.reason })
       return res.json(fallback.payload)

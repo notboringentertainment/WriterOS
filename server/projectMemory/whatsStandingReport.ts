@@ -44,7 +44,17 @@ function composeReportPayload(
   return { ok: true, payload: { composed: result.composed, questions } }
 }
 
-export async function readWhatsStandingReport(projectPath: string): Promise<ReadResult> {
+/**
+ * @param expectedProjectId When provided, the route's URL project id — asserted against the
+ * resolved package's own manifest id, matching the assertion every sibling project-memory
+ * route performs (readSnapshot's callers compare `snapshot.projectId` to the URL id). The CLI
+ * report command has no URL id to compare against, so it omits this argument and the check
+ * never runs.
+ */
+export async function readWhatsStandingReport(
+  projectPath: string,
+  expectedProjectId?: string,
+): Promise<ReadResult> {
   // Optimistic consistent pair — same contract the CLI report command documented:
   // annotation revision identical before and after the snapshot read means no writer
   // ran in between, so the pair is one moment's state.
@@ -58,6 +68,10 @@ export async function readWhatsStandingReport(projectPath: string): Promise<Read
     }
     annotations = after
     snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+  }
+
+  if (expectedProjectId !== undefined && snapshot.projectId !== expectedProjectId) {
+    return { ok: false, reason: 'project-mismatch' }
   }
 
   return composeReportPayload(snapshot, annotations)

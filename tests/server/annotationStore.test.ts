@@ -692,6 +692,54 @@ describe('invalidation producer', () => {
       .toEqual(['annotation-invalidated', 'annotation-proposed', 'annotation-declined'])
     expect(tail.every((e: { annotationId: string }) => e.annotationId === annotationId)).toBe(true)
   })
+
+  it('writes a sweep + proposal + settlement multi-event batch in one answerQuestion call, matching the sequential-append log', async () => {
+    const { projectPath } = await seeded()
+    const { annotationId } = await approveOne(projectPath) // 'superseded-by' — proposed + approved
+    await tamperApprovedSupport(projectPath) // corrupts support[0] (the referencing record's own
+    // captured fingerprint), staling THIS annotation while the record's actual current text —
+    // and so the cue that derives its annotationId — is untouched.
+
+    const current = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const state = await annotationStore.state(projectPath)
+    const existing = state.annotations.get(annotationId) as AnnotationState
+    // Simulate the sweep's flip locally to re-derive the same 'new' question the store's own
+    // sweep will produce, exactly as the existing self-heal test above does.
+    const swept: AnnotationLogState = {
+      ...state,
+      annotations: new Map(state.annotations).set(annotationId, { ...existing, status: 'invalidated' }),
+    }
+    const question = derivePendingQuestions(swept, current).find(q => q.annotationId === annotationId)
+    if (!question) throw new Error('question was not re-derived from the simulated sweep')
+    const version = questionVersionFor(current, question)
+    const beats = current.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!beats) throw new Error('fixture missing')
+
+    const result = await annotationStore.answerQuestion(projectPath, {
+      annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: [beats.id] }, runId: 'run-2',
+    })
+    expect(result.status).toBe('approved')
+
+    // One batch write landed three events — sweep's invalidation, then this call's own
+    // proposal and settlement — on top of approveOne's earlier propose + approve. The parsed
+    // lines and revisions are exactly what appending each event separately would have
+    // produced; byte-format equivalence (one JSON line per event, newline-terminated) is
+    // covered by the untouched replay tests passing against this same batched writer.
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    expect(lines.length).toBe(5)
+    const tail = lines.slice(-3)
+    expect(tail.map((e: { type: string }) => e.type))
+      .toEqual(['annotation-invalidated', 'annotation-proposed', 'annotation-approved'])
+    expect(tail.every((e: { annotationId: string }) => e.annotationId === annotationId)).toBe(true)
+    expect(tail.map((e: { annotationRevision: number }) => e.annotationRevision)).toEqual([3, 4, 5])
+
+    const finalState = await annotationStore.state(projectPath)
+    expect(finalState.revision).toBe(5)
+    expect(finalState.annotations.get(annotationId)?.status).toBe('approved')
+    expect(finalState.annotations.get(annotationId)?.referentRecordIds).toEqual([beats.id])
+  })
 })
 
 describe('declined re-ask', () => {
