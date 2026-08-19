@@ -152,7 +152,7 @@ const WRITEROS_MEMORY_SURFACE_URI_PREFIXES: Record<ActiveTab, string> = {
   treatment: 'documents/treatment.json',
   'story-bible': 'documents/story-bible.json',
   script: 'script/script.writeros.html',
-  'whats-standing': '', // Report surface with no document — no memory records match
+  'whats-standing': 'writeros:none/', // Unreachable — guarded by isMemoryRecordRelevantToSurface
 }
 
 /**
@@ -171,6 +171,8 @@ export function isMemoryRecordRelevantToSurface(
   }
   if (record.source.workflow !== 'writeros') return false
   if (surface === 'writers-room' || surface === 'project-meeting') return false
+  // A report surface has no document of its own; no memory record is "about" it.
+  if (surface === 'whats-standing') return false
   const prefix = WRITEROS_MEMORY_SURFACE_URI_PREFIXES[surface]
   return record.source.sourceUri.startsWith(prefix)
 }
