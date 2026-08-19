@@ -109,6 +109,11 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
     answeringRef.current = true
     setAnsweringId(annotationId)
     setError(null)
+    // A stale 409 notice from a prior attempt must not linger past a
+    // successful save on the same (or another) question, where it would
+    // read as if this new save also had a problem. A fresh 409 below
+    // re-sets it.
+    setNotice(null)
     try {
       const token = await getSessionToken()
       if (!isCurrent()) return
