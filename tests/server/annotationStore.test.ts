@@ -359,17 +359,10 @@ describe('declined re-propose gate', () => {
 
     await expect(
       annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
-    ).rejects.toBeInstanceOf(AnnotationStoreError)
+    ).rejects.toMatchObject({ reason: 'conflict' })
 
-    // Verify log is unchanged and reason is 'conflict'
+    // Verify log is unchanged
     expect(await readFile(file, 'utf8')).toBe(before)
-    try {
-      await annotationStore.propose(projectPath, snapshot, q.annotationId, 'run-2')
-    } catch (error) {
-      if (error instanceof AnnotationStoreError) {
-        expect(error.reason).toBe('conflict')
-      }
-    }
   })
 
   it('re-proposes a declined question once its stored support no longer matches', async () => {
@@ -443,6 +436,68 @@ describe('invalidation producer', () => {
     const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
     const reasked = await annotationStore.pendingQuestions(projectPath, snapshot)
     expect(reasked.some(x => x.annotationId === annotationId && x.status === 'new')).toBe(true)
+  })
+
+  it('two stale approved annotations invalidate together, sequential revisions in annotationId-sorted order', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    // The struck record carries two cues (struck, superseded-by) — both have candidates here.
+    expect(questions.length).toBe(2)
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!beats) throw new Error('fixture missing')
+
+    for (const q of questions) {
+      await annotationStore.answerQuestion(projectPath, {
+        annotationId: q.annotationId, questionVersion: questionVersionFor(snapshot, q),
+        answer: { kind: 'referents', recordIds: [beats.id] }, runId: 'run-1',
+      })
+    }
+
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const approvedEvents = lines.filter(l => l.type === 'annotation-approved')
+    expect(approvedEvents.length).toBe(2)
+    for (const e of approvedEvents) e.support[0].contentHash = 'b'.repeat(64)
+    await writeFile(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const stateBefore = await annotationStore.state(projectPath)
+    const result = await annotationStore.invalidateStale(projectPath)
+    expect(result.length).toBe(2)
+
+    const sortedIds = questions.map(q => q.annotationId).sort()
+    const after = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const tail = after.slice(-2)
+    expect(tail.every((e: { type: string }) => e.type === 'annotation-invalidated')).toBe(true)
+    expect(tail.map((e: { annotationId: string }) => e.annotationId)).toEqual(sortedIds)
+    expect(tail[0].annotationRevision).toBe(stateBefore.revision + 1)
+    expect(tail[1].annotationRevision).toBe(stateBefore.revision + 2)
+    expect(result.map(r => r.annotationId)).toEqual(sortedIds)
+  })
+
+  it('declined and proposed annotations are untouched by the sweep even when their support is tampered', async () => {
+    const { projectPath } = await seeded()
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    expect(questions.length).toBe(2)
+    const [first, second] = questions
+    await annotationStore.propose(projectPath, snapshot, first.annotationId, 'run-1')
+    await annotationStore.propose(projectPath, snapshot, second.annotationId, 'run-1')
+    await annotationStore.decline(projectPath, snapshot, second.annotationId, 'declined', 'run-1')
+    // first stays 'proposed', second is 'declined' — neither is 'approved'.
+
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    for (const l of lines) {
+      if (l.type === 'annotation-proposed' || l.type === 'annotation-declined') {
+        l.support[0].contentHash = 'b'.repeat(64)
+      }
+    }
+    await writeFile(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const before = await readFile(filePath, 'utf8')
+    expect(await annotationStore.invalidateStale(projectPath)).toEqual([])
+    expect(await readFile(filePath, 'utf8')).toBe(before)
   })
 
   it('is a no-op on a clean log: returns [], log byte-identical', async () => {
@@ -740,6 +795,22 @@ describe('invalidate command', () => {
     expect(stale.code).toBe(0)
     expect(stale.text).toContain('Invalidated ann_')
     expect(stale.text).toContain('language-changed')
+  })
+
+  it('says "Nothing to invalidate" and leaves the log byte-identical when the approved annotation is fresh', async () => {
+    const { projectPath } = await seeded()
+    await approveOne(projectPath) // approved, not tampered — nothing stale to sweep
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const before = await readFile(filePath, 'utf8')
+
+    const out: string[] = []
+    const code = await runProjectMemoryCli(
+      ['invalidate', '--project', projectPath],
+      { stdout: (v: string) => out.push(v), stderr: (v: string) => out.push(v) },
+    )
+    expect(code).toBe(0)
+    expect(out.join('')).toContain('Nothing to invalidate')
+    expect(await readFile(filePath, 'utf8')).toBe(before)
   })
 })
 

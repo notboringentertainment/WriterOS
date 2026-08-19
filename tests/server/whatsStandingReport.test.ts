@@ -370,6 +370,9 @@ describe('readiness', () => {
     expect(unresolved).toHaveLength(1)
     expect(unresolved[0].message).toContain('mem-ref')
     expect(unresolved[0].message).toContain('Superseded by beats 9-11')
+    // The generic (non-stale) template is unchanged: names the settle path via questions/answer.
+    expect(unresolved[0].message).toContain('Settle it with the questions/answer commands (question')
+    expect(unresolved[0].message).not.toContain('invalidate')
     // Loud, at the top, naming the item — not buried in a footer.
     const markdown = renderComposedMarkdown(result.composed)
     expect(markdown.split('\n')[0]).toContain('INCOMPLETE')
@@ -427,8 +430,13 @@ describe('readiness', () => {
     const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
     if (!result.ok) throw new Error('compose failed')
     expect(result.composed.fidelity.status).toBe('flagged')
-    expect(result.composed.fidelity.warnings.some(w =>
-      w.kind === 'unresolved_reference' && w.message.includes('stale'))).toBe(true)
+    const warning = result.composed.fidelity.warnings.find(w => w.kind === 'unresolved_reference')
+    expect(warning).toBeDefined()
+    // Names the changed record and says the resolution no longer holds — not the generic
+    // questions/answer template, which is deliberately not offered for a stale approval.
+    expect(warning!.message).toContain(referencing.id)
+    expect(warning!.message).toContain('invalidate')
+    expect(warning!.message).not.toContain('questions/answer')
   })
 
   it('a stale approved resolution renders as unresolved, not "You resolved this"', () => {

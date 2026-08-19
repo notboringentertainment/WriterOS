@@ -27,6 +27,8 @@ export interface UnresolvedReference {
   phrase: string
   sentence: string
   state: UnresolvedReferenceState
+  /** For state 'stale': the record whose wording changed since the resolution was made. */
+  changedRecordId?: string
 }
 
 export function unresolvedReferences(
@@ -50,6 +52,7 @@ export function unresolvedReferences(
 
       const existing = annotations?.annotations.get(annotationId)
       let state: UnresolvedReferenceState | undefined
+      let changedRecordId: string | undefined
       if (existing === undefined) state = 'unasked'
       else if (existing.status === 'proposed') state = 'proposed'
       else if (existing.status === 'invalidated') state = 'invalidated'
@@ -59,11 +62,22 @@ export function unresolvedReferences(
         // A resolution only stands while its premise does: a support fingerprint that no
         // longer matches memory means the writer resolved different wording than what now
         // exists, and showing that resolution as settled would be the original near-miss.
-        state = annotationStaleness(existing.support, snapshot).stale ? 'stale' : undefined
+        const staleness = annotationStaleness(existing.support, snapshot)
+        if (staleness.stale) {
+          state = 'stale'
+          changedRecordId = staleness.changedRecordId
+        }
       }
 
       if (state !== undefined) {
-        out.push({ annotationId, recordId: entry.record.id, phrase: cue.phrase, sentence: cue.sentence, state })
+        out.push({
+          annotationId,
+          recordId: entry.record.id,
+          phrase: cue.phrase,
+          sentence: cue.sentence,
+          state,
+          ...(changedRecordId !== undefined ? { changedRecordId } : {}),
+        })
       }
     }
   }
