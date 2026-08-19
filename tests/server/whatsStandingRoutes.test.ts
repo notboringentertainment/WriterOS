@@ -1,7 +1,7 @@
 import express from 'express'
 import http, { type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -367,5 +367,53 @@ describe('what\'s standing panel HTTP routes', () => {
       error: 'project-mismatch',
       message: 'URL project id does not match the WriterOS project package.',
     })
+  })
+
+  it('regression: rejects a mismatched-URL answer BEFORE writing it — the log is byte-identical before and after', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-whats-standing-routes-'))
+    temporaryRoots.push(root)
+    const { store, project } = await seedProject(root)
+    const projectPath = await store.resolveProjectPackagePath(project.id)
+    // Same stale-library-index technique as the read-route mismatch test above: any URL id
+    // resolves to this one real package, so the answer POST's URL id and the package's own
+    // manifest projectId disagree.
+    const staleIndexStore: ProjectLibraryStore = {
+      ...store,
+      resolveProjectPackagePath: async () => projectPath,
+    }
+    const config: ProjectLibraryConfig = {
+      enabled: true,
+      rootPath: root,
+      label: 'Projects',
+      sessionToken: 'route-session',
+      allowedOrigins: new Set(['http://127.0.0.1:5177']),
+    }
+    const port = await startMemoryApp(config, staleIndexStore)
+    const authHeaders = { Origin: 'http://127.0.0.1:5177', 'X-WriterOS-Session': 'route-session' }
+
+    // Fetch a real, answerable question through the correct project id — the mismatch under
+    // test is specifically the answer POST's URL id, not a bogus annotationId/questionVersion.
+    const before = await getJson(port, `/api/projects/${project.id}/memory/whats-standing`, authHeaders)
+    const q = before.json.questions[0]
+
+    const annotationsPath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const logBefore = await readFile(annotationsPath, 'utf8').catch(() => '')
+
+    const res = await postJson(
+      port,
+      '/api/projects/different-project-id/memory/whats-standing/answer',
+      { annotationId: q.annotationId, questionVersion: q.questionVersion, answer: { kind: 'decline' } },
+      authHeaders,
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.json).toEqual({
+      error: 'project-mismatch',
+      message: 'URL project id does not match the WriterOS project package.',
+    })
+    // The critical assertion: the mismatch was caught BEFORE annotationStore.answerQuestion
+    // wrote anything, not just reported after a write had already landed.
+    const logAfter = await readFile(annotationsPath, 'utf8').catch(() => '')
+    expect(logAfter).toBe(logBefore)
   })
 })

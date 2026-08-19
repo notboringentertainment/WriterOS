@@ -120,14 +120,18 @@ function libraryStore(
 }
 
 /**
- * Maps a failed {@link readWhatsStandingReport} result to its HTTP response. 'project-mismatch'
- * is the specific reason readWhatsStandingReport returns for its manifest-id assertion — mapped
- * to the same status, error code, and message every sibling project-memory route uses for the
- * identical check (see routeError's 'project-mismatch' branch above). Any other reason is the
- * generic report-unavailable case.
+ * Maps a failed {@link readWhatsStandingReport} result to its HTTP response. Branches on the
+ * structural `code` field, never on `reason` text — `reason` is a free-form human-readable
+ * message, not a sentinel. `code: 'project-mismatch'` is mapped to the same status, error code,
+ * and message every sibling project-memory route uses for the identical manifest-id assertion
+ * (see routeError's 'project-mismatch' branch above). Any other failure is the generic
+ * report-unavailable case.
  */
-function respondWhatsStandingReadFailure(res: Response, result: { ok: false; reason: string }) {
-  if (result.reason === 'project-mismatch') {
+function respondWhatsStandingReadFailure(
+  res: Response,
+  result: { ok: false; reason: string; code?: 'project-mismatch' },
+) {
+  if (result.code === 'project-mismatch') {
     return res.status(400).json({
       error: 'project-mismatch',
       message: 'URL project id does not match the WriterOS project package.',
@@ -638,6 +642,19 @@ export function registerProjectMemoryRoutes(
       const projectId = validatedProjectId(req.params.projectId)
       const request = WhatsStandingAnswerRequestSchema.parse(req.body)
       const projectPath = await libraryStore(config, projectLibraryStore).resolveProjectPackagePath(projectId)
+      // Assert manifest identity BEFORE the write — the sibling /actions route's pattern
+      // (routes.ts's PROJECT_MEMORY_ROUTE_PATHS.actions handler above). A mismatch caught
+      // only on the post-write read-back below would let the answer land durably in the log
+      // while still reporting failure to the caller — readSnapshot falls back to a read-only
+      // replay on an id mismatch (see store.ts), so this never writes under the wrong lock.
+      const before = await memoryStore.readSnapshot(projectPath, projectId)
+      if (before.projectId !== projectId) {
+        throw new ProjectLibraryStoreError(
+          'URL project id does not match the WriterOS project package.',
+          400,
+          'project-mismatch',
+        )
+      }
       await annotationStore.answerQuestion(projectPath, {
         annotationId: request.annotationId,
         questionVersion: request.questionVersion,
@@ -651,12 +668,12 @@ export function registerProjectMemoryRoutes(
       // direct (non-paired) read, which is an acceptable one-time blip for this post-write
       // display refresh (see readWhatsStandingReportDirect). Only if that also fails —
       // composeReportPayload itself cannot fail today; this is defensive — report 503.
-      // A project-mismatch, unlike the retry-exhaustion case, is not a blip worth falling
-      // back for — it means the URL id and package manifest disagree, same as every sibling
-      // route, so it is reported immediately.
+      // A project-mismatch here would mean identity changed between the assertion above and
+      // this read — the pre-write check above makes that unreachable in practice, but the
+      // branch is kept as defense in depth rather than assumed away.
       const result = await readWhatsStandingReport(projectPath, projectId)
       if (result.ok) return res.json(result.payload)
-      if (result.reason === 'project-mismatch') return respondWhatsStandingReadFailure(res, result)
+      if (result.code === 'project-mismatch') return respondWhatsStandingReadFailure(res, result)
       const fallback = await readWhatsStandingReportDirect(projectPath)
       if (!fallback.ok) return res.status(503).json({ error: 'report-unavailable', message: fallback.reason })
       return res.json(fallback.payload)
