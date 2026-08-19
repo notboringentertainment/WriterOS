@@ -215,7 +215,7 @@ Synopsis/Treatment/Outline, not a new app.
 
 ## Data flow
 
-```
+```text
 open tab → GET whats-standing → { composed, questions }
 render blocks; card per open question beneath its anchor block
 writer answers → POST answer → store validates under lock → recompose

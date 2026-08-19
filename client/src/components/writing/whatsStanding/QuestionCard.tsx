@@ -28,8 +28,10 @@ export function QuestionCard({ question, disabled, onAnswer }: QuestionCardProps
     })
   }
 
+  const selectedCandidates = question.candidates.filter(candidate => selected.has(candidate.id))
+
   function confirmReferents() {
-    const recordIds = question.candidates.filter(c => selected.has(c.id)).map(c => c.id)
+    const recordIds = selectedCandidates.map(candidate => candidate.id)
     onAnswer(question.annotationId, question.questionVersion, { kind: 'referents', recordIds })
   }
 
@@ -60,7 +62,7 @@ export function QuestionCard({ question, disabled, onAnswer }: QuestionCardProps
         {hasCandidates && (
           <button
             type="button"
-            disabled={disabled || selected.size === 0}
+            disabled={disabled || selectedCandidates.length === 0}
             style={styles.actionButton}
             onClick={confirmReferents}
           >

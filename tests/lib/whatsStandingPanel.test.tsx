@@ -29,6 +29,8 @@ describe('WhatsStanding panel components', () => {
     expect(container.querySelector('input[type=text], textarea')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /can.t say/i }))
     expect(onAnswer).toHaveBeenCalledWith('ann_1', 'a'.repeat(64), { kind: 'cant-say' })
+    fireEvent.click(screen.getByRole('button', { name: /not a reference/i }))
+    expect(onAnswer).toHaveBeenLastCalledWith('ann_1', 'a'.repeat(64), { kind: 'decline' })
     rerender(<QuestionCard question={{ ...question, candidates: [] }} disabled={false} onAnswer={onAnswer} />)
     expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
   })
@@ -49,10 +51,21 @@ describe('WhatsStanding panel components', () => {
       },
       questions: [question, { ...question, annotationId: 'ann_orphan' }],
     }
-    render(<WhatsStandingView payload={payload} answeringId={null} notice={null} onAnswer={() => {}} />)
+    const { container } = render(<WhatsStandingView payload={payload} answeringId={null} notice={null} onAnswer={() => {}} />)
     expect(screen.getByText(/2 references unresolved/i)).toBeInTheDocument()
     expect(screen.getByText(/parked/i)).toBeInTheDocument()          // cant-say banner line
     expect(screen.getAllByText(/can.t say/i).length).toBeGreaterThan(0)
     expect(screen.getByText(/still needs an answer/i)).toBeInTheDocument() // fallback section for ann_orphan
+
+    // The anchored card must sit immediately after its lead-in block in DOM
+    // order, not merely appear somewhere on the page (e.g. only in the
+    // unanchored fallback section, or above the lead-in text).
+    const leadIn = Array.from(container.querySelectorAll('p'))
+      .find(p => p.textContent?.includes('Superseded by beats 9-11'))
+    expect(leadIn).toBeTruthy()
+    const anchoredCard = leadIn!.nextElementSibling
+    expect(anchoredCard).not.toBeNull()
+    expect(anchoredCard?.getAttribute('aria-label')).toBe("What's Standing question")
+    expect(leadIn!.compareDocumentPosition(anchoredCard!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

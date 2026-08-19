@@ -162,6 +162,17 @@ describe('composition', () => {
     const cueBlock = blocks.find(b => b.type === 'leadInParagraph') as
       Extract<ComposedBlock, { type: 'leadInParagraph' }> | undefined
     expect(cueBlock?.annotationId).toMatch(/^ann_[0-9a-f]{32}$/)
+    // Not just format: the id must be the deterministic hash of this exact cue's
+    // locator, so a block anchored to an unrelated (but valid-looking) ann_ id fails.
+    const [cue] = findCues('claim', referencing.claim)
+    expect(cueBlock?.annotationId).toBe(annotationIdFor({
+      recordId: referencing.id,
+      field: cue.field,
+      sentence: cue.sentence,
+      phrase: cue.phrase,
+      occurrence: cue.occurrence,
+      cue: cue.cue,
+    }))
     // Schema accepts the new field and documents without it stay valid.
     const result = composeWhatsStanding({ snapshot: snapshot([referencing]), runId: 'run-1' })
     if (!result.ok) throw new Error('compose failed')

@@ -17,7 +17,7 @@ export const EnrichedQuestionSchema = z.object({
   questionText: z.string(),
   recordId: z.string(),
   candidates: z.array(z.object({ id: z.string(), headline: z.string() })),
-  questionVersion: z.string(),
+  questionVersion: z.string().regex(/^[0-9a-f]{64}$/),
 }).strict()
 export const WhatsStandingPayloadSchema = z.object({
   composed: ComposedDocumentSchema,
