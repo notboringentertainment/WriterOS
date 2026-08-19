@@ -294,7 +294,14 @@ function requireUnmovedReferencing(
   return referencing
 }
 
-function derivePendingQuestions(state: AnnotationLogState, snapshot: ProjectMemorySnapshot): PendingQuestion[] {
+/**
+ * Pure derivation of pending questions from annotation state already held in memory — no
+ * I/O of its own. Exported so callers that already hold a consistent (state, snapshot) pair
+ * (the What's Standing report helper) can derive questions from it directly, instead of
+ * going through `pendingQuestions` below and triggering a third, redundant replay of the
+ * annotation log.
+ */
+export function derivePendingQuestions(state: AnnotationLogState, snapshot: ProjectMemorySnapshot): PendingQuestion[] {
   const questions: PendingQuestion[] = []
   for (const [annotationId, locator] of cueQuestions(snapshot)) {
     const existing = state.annotations.get(annotationId)

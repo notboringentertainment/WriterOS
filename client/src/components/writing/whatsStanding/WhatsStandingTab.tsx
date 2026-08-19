@@ -40,6 +40,7 @@ const SESSION_UNAVAILABLE_MESSAGE = 'WriterOS could not verify this session for 
 const NO_FOLDER_MESSAGE = "What's Standing reads your project's memory package, which needs a folder-backed project."
 const LOAD_FAILURE_MESSAGE = "WriterOS could not load What's Standing."
 const ANSWER_FAILURE_MESSAGE = 'WriterOS could not save this answer.'
+const QUESTION_CHANGED_NOTICE = 'This question changed since it was shown — the report below has been refreshed.'
 
 export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTabProps) {
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
@@ -128,10 +129,11 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
     } catch (caught) {
       if (!isCurrent()) return
       if (caught instanceof ProjectMemoryApiError && caught.statusCode === 409) {
-        // The annotation moved under us — surface the server's explanation
-        // and refetch the current report (through its own generation guard)
-        // rather than silently retrying the stale answer.
-        setNotice(caught.message)
+        // The annotation moved under us — show a client-owned notice (the app
+        // refreshes automatically below, so the server's "refresh the report"
+        // wording would be stale) and refetch the current report (through its
+        // own generation guard) rather than silently retrying the stale answer.
+        setNotice(QUESTION_CHANGED_NOTICE)
         answeringRef.current = false
         setAnsweringId(null)
         await load()

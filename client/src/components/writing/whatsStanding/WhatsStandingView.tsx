@@ -102,8 +102,12 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
           const question = block.type === 'leadInParagraph' && block.annotationId
             ? questionsByAnnotation.get(block.annotationId)
             : undefined
+          // Key by the annotation id when the block carries one, not by array index: if the
+          // block array shifts between renders, an index key would let a QuestionCard's
+          // selected-candidates state migrate onto a different question.
+          const key = block.type === 'leadInParagraph' && block.annotationId ? block.annotationId : `block-${i}`
           return (
-            <React.Fragment key={i}>
+            <React.Fragment key={key}>
               <Block block={block} />
               {question && <QuestionCard question={question} disabled={disabled} onAnswer={onAnswer} />}
             </React.Fragment>

@@ -1,15 +1,50 @@
-import { annotationStore, questionVersionFor } from './annotationStore'
+import { annotationStore, derivePendingQuestions, questionVersionFor } from './annotationStore'
 import { projectMemoryStore } from './store'
 import { composeWhatsStanding } from '../compose'
 import type { WhatsStandingPayload, EnrichedQuestion } from '../../shared/whatsStandingPanel'
+import type { AnnotationLogState } from '../../shared/projectMemoryAnnotations'
+import type { ProjectMemorySnapshot } from '../../shared/projectMemory'
 
 function headline(claim: string): string {
   const first = claim.split('\n')[0]
   return first.length > 70 ? `${first.slice(0, 69)}…` : first
 }
 
-export async function readWhatsStandingReport(projectPath: string): Promise<
-  { ok: true; payload: WhatsStandingPayload } | { ok: false; reason: string }> {
+type ReadResult =
+  | { ok: true; payload: WhatsStandingPayload }
+  | { ok: false; reason: string }
+
+/**
+ * Shared composition step for a (snapshot, annotations) pair already read from disk. Derives
+ * pending questions from the annotation state directly (`derivePendingQuestions`) rather than
+ * re-replaying the log through `annotationStore.pendingQuestions` — the caller already holds
+ * the state, so a third read of the same log would be redundant.
+ */
+function composeReportPayload(
+  snapshot: ProjectMemorySnapshot,
+  annotations: AnnotationLogState,
+): ReadResult {
+  const result = composeWhatsStanding({
+    snapshot,
+    runId: `whats-standing-r${snapshot.revision}-a${annotations.revision}`,
+    annotations,
+  })
+  if (!result.ok) return { ok: false, reason: result.reason }
+
+  const byId = new Map(snapshot.records.map(r => [r.id, r]))
+  const questions: EnrichedQuestion[] = derivePendingQuestions(annotations, snapshot)
+    .map(q => ({
+      annotationId: q.annotationId,
+      status: q.status,
+      questionText: q.questionText,
+      recordId: q.locator.recordId,
+      candidates: q.candidateRecordIds.map(id => ({ id, headline: headline(byId.get(id)?.claim ?? '') })),
+      questionVersion: questionVersionFor(snapshot, q),
+    }))
+  return { ok: true, payload: { composed: result.composed, questions } }
+}
+
+export async function readWhatsStandingReport(projectPath: string): Promise<ReadResult> {
   // Optimistic consistent pair — same contract the CLI report command documented:
   // annotation revision identical before and after the snapshot read means no writer
   // ran in between, so the pair is one moment's state.
@@ -25,22 +60,26 @@ export async function readWhatsStandingReport(projectPath: string): Promise<
     snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
   }
 
-  const result = composeWhatsStanding({
-    snapshot,
-    runId: `whats-standing-r${snapshot.revision}-a${annotations.revision}`,
-    annotations,
-  })
-  if (!result.ok) return { ok: false, reason: result.reason }
+  return composeReportPayload(snapshot, annotations)
+}
 
-  const byId = new Map(snapshot.records.map(r => [r.id, r]))
-  const questions: EnrichedQuestion[] = (await annotationStore.pendingQuestions(projectPath, snapshot))
-    .map(q => ({
-      annotationId: q.annotationId,
-      status: q.status,
-      questionText: q.questionText,
-      recordId: q.locator.recordId,
-      candidates: q.candidateRecordIds.map(id => ({ id, headline: headline(byId.get(id)?.claim ?? '') })),
-      questionVersion: questionVersionFor(snapshot, q),
-    }))
-  return { ok: true, payload: { composed: result.composed, questions } }
+/**
+ * Post-write fallback ONLY — never use this for the GET route, which must keep the strict
+ * paired read above. This does one `annotationStore.state` read and one
+ * `readSnapshotReadOnly` read with no consistent-pair retry, so under a concurrent writer
+ * the snapshot and annotation state it composes from can, rarely, come from two adjacent
+ * moments rather than one.
+ *
+ * That's acceptable here and only here: the one caller is the answer POST handler, after
+ * its own write already landed durably. A failed paired read at that point is never a
+ * reason to report failure for a write that succeeded — the log changed, so returning an
+ * error status would contradict the "non-200 ⇒ log unchanged" contract. This is a display
+ * refresh; the client's very next action against a stale-looking question revalidates via
+ * questionVersion regardless, so a slightly stitched pair here self-corrects rather than
+ * being load-bearing.
+ */
+export async function readWhatsStandingReportDirect(projectPath: string): Promise<ReadResult> {
+  const annotations = await annotationStore.state(projectPath)
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+  return composeReportPayload(snapshot, annotations)
 }

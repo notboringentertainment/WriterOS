@@ -83,7 +83,7 @@ Calls the helper. `200 { composed, questions }`. Read-only: uses
 `readSnapshotReadOnly` / `annotationStore.state` only — generating a report changes
 nothing on disk.
 
-**`POST /api/projects/:projectId/whats-standing/answer`**
+**`POST /api/projects/:projectId/memory/whats-standing/answer`**
 Body, zod-validated:
 
 ```ts

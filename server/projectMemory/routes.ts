@@ -21,7 +21,7 @@ import {
 } from '../../shared/projectMemory'
 import { readAnalysisQueue, processQueueItem, type AnalysisQueueItem } from './writerOSObserver'
 import { createModelProvider, type ModelProvider } from '../ai/modelProvider'
-import { readWhatsStandingReport } from './whatsStandingReport'
+import { readWhatsStandingReport, readWhatsStandingReportDirect } from './whatsStandingReport'
 import { annotationStore, AnnotationStoreError } from './annotationStore'
 import { WhatsStandingAnswerRequestSchema } from '../../shared/whatsStandingPanel'
 
@@ -627,9 +627,18 @@ export function registerProjectMemoryRoutes(
         answer: request.answer,
         runId: `panel-answer`,
       })
+      // The write above already landed durably, so a failed read here must never turn into
+      // an error response — that would contradict "non-200 ⇒ log unchanged" for a write
+      // that in fact succeeded. The only reachable failure of the strict paired read is its
+      // optimistic-pair retries exhausting under a concurrent writer; fall back to the
+      // direct (non-paired) read, which is an acceptable one-time blip for this post-write
+      // display refresh (see readWhatsStandingReportDirect). Only if that also fails —
+      // composeReportPayload itself cannot fail today; this is defensive — report 503.
       const result = await readWhatsStandingReport(projectPath)
-      if (!result.ok) return res.status(503).json({ error: 'report-unavailable', message: result.reason })
-      return res.json(result.payload)
+      if (result.ok) return res.json(result.payload)
+      const fallback = await readWhatsStandingReportDirect(projectPath)
+      if (!fallback.ok) return res.status(503).json({ error: 'report-unavailable', message: fallback.reason })
+      return res.json(fallback.payload)
     } catch (error) {
       if (error instanceof AnnotationStoreError) {
         const status = error.reason === 'not-found' ? 404

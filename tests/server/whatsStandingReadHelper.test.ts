@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { projectMemoryStore } from '../../server/projectMemory/store'
-import { readWhatsStandingReport } from '../../server/projectMemory/whatsStandingReport'
+import { readWhatsStandingReport, readWhatsStandingReportDirect } from '../../server/projectMemory/whatsStandingReport'
 import { WhatsStandingPayloadSchema } from '../../shared/whatsStandingPanel'
 
 const PROJECT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
@@ -80,6 +80,35 @@ describe('readWhatsStandingReport', () => {
     const before = new Map<string, string>()
     for (const f of (await readdir(dir)).sort()) before.set(f, await readFile(path.join(dir, f), 'utf8'))
     await readWhatsStandingReport(projectPath)
+    for (const [f, bytes] of before) expect(await readFile(path.join(dir, f), 'utf8')).toBe(bytes)
+  })
+})
+
+describe('readWhatsStandingReportDirect', () => {
+  it('is the post-write fallback: on a quiet package it returns ok with a payload equivalent to the paired read', async () => {
+    const { projectPath } = await seeded()
+    const paired = await readWhatsStandingReport(projectPath)
+    const direct = await readWhatsStandingReportDirect(projectPath)
+
+    expect(paired.ok).toBe(true)
+    expect(direct.ok).toBe(true)
+    if (!paired.ok || !direct.ok) return
+    expect(WhatsStandingPayloadSchema.safeParse(direct.payload).success).toBe(true)
+    // Equivalent except generatedAt, which is a fresh timestamp on each call.
+    const stripGeneratedAt = (payload: typeof direct.payload) => ({
+      ...payload,
+      composed: { ...payload.composed, generatedAt: undefined },
+    })
+    expect(stripGeneratedAt(direct.payload)).toEqual(stripGeneratedAt(paired.payload))
+  })
+
+  it('writes nothing to the package', async () => {
+    const { projectPath } = await seeded()
+    await projectMemoryStore.readSnapshot(projectPath) // settle projections first
+    const dir = path.join(projectPath, 'memory')
+    const before = new Map<string, string>()
+    for (const f of (await readdir(dir)).sort()) before.set(f, await readFile(path.join(dir, f), 'utf8'))
+    await readWhatsStandingReportDirect(projectPath)
     for (const [f, bytes] of before) expect(await readFile(path.join(dir, f), 'utf8')).toBe(bytes)
   })
 })
