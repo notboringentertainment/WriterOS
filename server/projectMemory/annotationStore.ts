@@ -214,6 +214,13 @@ export interface AnnotationQueries {
     answer: WhatsStandingAnswer
     runId: string
   }): Promise<AnnotationState>
+  /**
+   * Sweep every approved annotation against current memory and invalidate whichever have
+   * gone stale — the same batch `propose`/`answerQuestion` prepend to their own writes, run
+   * standalone. A no-op leaves the log byte-identical.
+   */
+  invalidateStale(projectPath: string): Promise<
+    { annotationId: string; cause: 'language-changed' | 'record-removed'; changedRecordId: string }[]>
 }
 
 function cueQuestions(snapshot: ProjectMemorySnapshot): Map<string, PhraseLocator> {
@@ -264,6 +271,42 @@ function preflightAnnotationEvent(state: AnnotationLogState, event: AnnotationEv
 }
 
 /**
+ * The invalidation sweep's event-building core, shared by `invalidateStale` and the
+ * writer-path sweeps in `propose`/`answerQuestion`. Walks `state.annotations` directly, in
+ * annotationId-sorted order for determinism — it never re-derives cues from the snapshot, so
+ * an approved annotation is swept even if its stored locator no longer matches any cue the
+ * current memory would produce. For each `approved` annotation whose support has gone stale,
+ * emits one `annotation-invalidated` event threaded off `state.revision`.
+ */
+function buildInvalidationEvents(
+  state: AnnotationLogState,
+  snapshot: ProjectMemorySnapshot,
+  projectId: string,
+  at: string,
+): AnnotationEvent[] {
+  const events: AnnotationEvent[] = []
+  let revision = state.revision
+  for (const annotationId of [...state.annotations.keys()].sort()) {
+    const annotation = state.annotations.get(annotationId)
+    if (annotation === undefined || annotation.status !== 'approved') continue
+    const staleness = annotationStaleness(annotation.support, snapshot)
+    if (!staleness.stale) continue
+    events.push({
+      type: 'annotation-invalidated',
+      projectId,
+      annotationId,
+      annotationRevision: ++revision,
+      at,
+      cause: staleness.cause,
+      changedRecordId: staleness.changedRecordId,
+      previousContentHash: staleness.previousContentHash,
+      currentContentHash: staleness.currentContentHash,
+    })
+  }
+  return events
+}
+
+/**
  * The answer-time revalidation the design requires: before an answer is written, the record
  * whose wording the question quoted must still exist and still carry that wording. The
  * baseline is the fingerprint captured at proposal time; comparison is language only, so an
@@ -299,9 +342,14 @@ export function derivePendingQuestions(state: AnnotationLogState, snapshot: Proj
   const questions: PendingQuestion[] = []
   for (const [annotationId, locator] of cueQuestions(snapshot)) {
     const existing = state.annotations.get(annotationId)
+    // A decline is durable only while the language it was judged against holds — the spec's
+    // Part 2 promise. Once support has gone stale the decline no longer speaks to the
+    // current wording, so it re-derives fresh, on the same branch as undefined/invalidated.
+    const declinedStale = existing !== undefined && existing.status === 'declined'
+      && annotationStaleness(existing.support, snapshot).stale
     // An invalidated annotation's question is open again: re-derive it fresh, exactly
     // as if it had never been asked, so it is answerable rather than a dead end.
-    if (existing === undefined || existing.status === 'invalidated') {
+    if (existing === undefined || existing.status === 'invalidated' || declinedStale) {
       const candidateRecordIds = candidateIds(snapshot, locator.recordId)
       questions.push({
         annotationId,
@@ -321,8 +369,9 @@ export function derivePendingQuestions(state: AnnotationLogState, snapshot: Proj
         questionText: renderQuestionText(existing.locator, existing.candidateRecordIds.length),
       })
     }
-    // approved / declined: nothing to ask. Re-asking after the language changes is
-    // the invalidation slice's job.
+    // approved: nothing to ask. Re-asking after the language changes is the invalidation
+    // sweep's job (invalidated → re-derived above). A fresh (non-stale) decline stays
+    // suppressed here too — it fell through both branches above.
   }
   return questions.sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
 }
@@ -349,13 +398,21 @@ export function createAnnotationStore(): AnnotationQueries {
         // longer exists — the wording changed, the record left the displayed set — there
         // is no premise to propose.
         const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const at = new Date().toISOString()
+        // Sweep first, threaded ahead of this method's own event: an approved-stale
+        // annotation being re-proposed is invalidated by the sweep first, making the
+        // re-propose legal — the CLI path becomes self-healing.
+        const sweep = buildInvalidationEvents(state, current, projectId, at)
+        let next = state
+        for (const event of sweep) next = preflightAnnotationEvent(next, event)
+
         const locator = cueQuestions(current).get(annotationId)
         if (locator === undefined) {
           throw new AnnotationStoreError(
             'No such question in the current memory. It may have been settled by an edit; run the questions command again.',
             'not-found')
         }
-        const existing = state.annotations.get(annotationId)
+        const existing = next.annotations.get(annotationId)
         if (existing !== undefined && existing.status !== 'declined' && existing.status !== 'invalidated') {
           if (existing.status === 'proposed') return existing
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
@@ -374,17 +431,20 @@ export function createAnnotationStore(): AnnotationQueries {
           type: 'annotation-proposed',
           projectId,
           annotationId,
-          annotationRevision: state.revision + 1,
-          at: new Date().toISOString(),
+          annotationRevision: next.revision + 1,
+          at,
           questionType: 'resolve-reference',
           locator,
           candidateRecordIds: candidateIds(current, locator.recordId),
           support: [recordLanguageFingerprint(referencing)],
           runId,
         }
-        const next = preflightAnnotationEvent(state, event)
+        // Preflight EVERY event before ANY append — a failure past this point must never
+        // leave the log changed.
+        const finalState = preflightAnnotationEvent(next, event)
+        for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
         await appendAnnotationEvent(projectPath, event)
-        return next.annotations.get(annotationId) as AnnotationState
+        return finalState.annotations.get(annotationId) as AnnotationState
       })
     },
 
@@ -460,7 +520,16 @@ export function createAnnotationStore(): AnnotationQueries {
       return withLock(projectPath, async projectId => {
         const state = await replayAnnotations(projectPath, projectId)
         const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
-        const question = derivePendingQuestions(state, current)
+        const at = new Date().toISOString()
+        // Sweep first, threaded ahead of this method's own events. Defensive: an approved
+        // annotation can never itself be the one being answered (only new/proposed questions
+        // are answerable), but deriving the question against the swept state costs nothing
+        // and keeps the two writer paths identical in shape.
+        const sweep = buildInvalidationEvents(state, current, projectId, at)
+        let next = state
+        for (const event of sweep) next = preflightAnnotationEvent(next, event)
+
+        const question = derivePendingQuestions(next, current)
           .find(q => q.annotationId === input.annotationId)
         if (question === undefined) {
           throw new AnnotationStoreError('No such open question. Refresh the report.', 'not-found')
@@ -476,9 +545,8 @@ export function createAnnotationStore(): AnnotationQueries {
           throw new AnnotationStoreError('The record this question quotes is no longer in memory.', 'conflict')
         }
 
-        const at = new Date().toISOString()
         const events: AnnotationEvent[] = []
-        let revision = state.revision
+        let revision = next.revision
         if (question.status === 'new') {
           events.push({
             type: 'annotation-proposed',
@@ -536,13 +604,36 @@ export function createAnnotationStore(): AnnotationQueries {
           })
         }
 
-        // Preflight EVERY event against the replayed state before ANY append. An error
-        // response must never leave the log changed; an illegal line appended durably
-        // would brick every future replay.
+        // Preflight EVERY event — sweep already threaded above, now this method's own —
+        // against the replayed state before ANY append. An error response must never leave
+        // the log changed; an illegal line appended durably would brick every future replay.
+        let finalState = next
+        for (const event of events) finalState = preflightAnnotationEvent(finalState, event)
+        for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
+        for (const event of events) await appendAnnotationEvent(projectPath, event)
+        return finalState.annotations.get(input.annotationId) as AnnotationState
+      })
+    },
+
+    async invalidateStale(projectPath) {
+      return withLock(projectPath, async projectId => {
+        const state = await replayAnnotations(projectPath, projectId)
+        const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+        const events = buildInvalidationEvents(state, current, projectId, new Date().toISOString())
+        if (events.length === 0) return []
         let next = state
         for (const event of events) next = preflightAnnotationEvent(next, event)
         for (const event of events) await appendAnnotationEvent(projectPath, event)
-        return next.annotations.get(input.annotationId) as AnnotationState
+        return events.map(event => {
+          if (event.type !== 'annotation-invalidated') {
+            throw new AnnotationStoreError('buildInvalidationEvents produced a non-invalidation event.', 'corrupt')
+          }
+          return {
+            annotationId: event.annotationId,
+            cause: event.cause,
+            changedRecordId: event.changedRecordId,
+          }
+        })
       })
     },
   }
