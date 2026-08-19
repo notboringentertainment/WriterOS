@@ -35,6 +35,14 @@ describe('WhatsStanding panel components', () => {
     expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
   })
 
+  it('QuestionCard: renders errorMessage above the buttons when given, and nothing when absent', () => {
+    const onAnswer = vi.fn()
+    const { rerender } = render(<QuestionCard question={question} disabled={false} onAnswer={onAnswer} />)
+    expect(screen.queryByText(/could not save/i)).toBeNull()
+    rerender(<QuestionCard question={question} disabled={false} onAnswer={onAnswer} errorMessage="Could not save this answer." />)
+    expect(screen.getByText('Could not save this answer.')).toBeInTheDocument()
+  })
+
   it('WhatsStandingView: card renders beneath its anchor block; unanchored questions fall back to a bottom list; parked cant-say line present', () => {
     const payload: WhatsStandingPayload = {
       composed: {
@@ -45,8 +53,11 @@ describe('WhatsStanding panel components', () => {
           { type: 'leadInParagraph', lead: 'This record points elsewhere:', text: '“Superseded by beats 9-11”', sourceFieldIds: ['mem-ref'], annotationId: 'ann_1' },
         ],
         fidelity: { status: 'flagged', warnings: [
+          // No referenceState here on purpose: an old-shape payload (pre-dating the field)
+          // must still render without crashing, and must not produce a parked line — the
+          // panel no longer infers 'cant-say' from message prose.
           { kind: 'unresolved_reference', message: 'Unresolved reference in mem-ref (unasked): “beats 9-11”.' },
-          { kind: 'unresolved_reference', message: 'Unresolved reference in mem-x (cant-say): “the pilot ticket”.' },
+          { kind: 'unresolved_reference', message: 'Unresolved reference in mem-x (cant-say): “the pilot ticket”.', referenceState: 'cant-say' },
         ] },
       },
       questions: [question, { ...question, annotationId: 'ann_orphan' }],
@@ -67,5 +78,56 @@ describe('WhatsStanding panel components', () => {
     expect(anchoredCard).not.toBeNull()
     expect(anchoredCard?.getAttribute('aria-label')).toBe("What's Standing question")
     expect(leadIn!.compareDocumentPosition(anchoredCard!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('WhatsStandingView: an old-shape warning (cant-say in message prose, no referenceState) renders no parked line', () => {
+    const payload: WhatsStandingPayload = {
+      composed: {
+        schemaVersion: 1, generatedAt: '2026-08-18T00:00:00.000Z', model: null,
+        recipeVersion: 1, composerVersion: 1, sourceHash: 'a'.repeat(64), format: 'feature',
+        blocks: [{ type: 'heading', text: "What's Standing" }],
+        fidelity: { status: 'flagged', warnings: [
+          { kind: 'unresolved_reference', message: 'Unresolved reference in mem-x (cant-say): “the pilot ticket”.' },
+        ] },
+      },
+      questions: [],
+    }
+    render(<WhatsStandingView payload={payload} answeringId={null} notice={null} onAnswer={() => {}} />)
+    expect(screen.getByText(/1 reference unresolved/i)).toBeInTheDocument()
+    expect(screen.queryByText(/parked/i)).toBeNull()
+  })
+
+  it('WhatsStandingView: threads cardError to the matching card only, by annotationId', () => {
+    const anchoredQuestion: EnrichedQuestion = { ...question, annotationId: 'ann_1' }
+    const orphanQuestion: EnrichedQuestion = { ...question, annotationId: 'ann_orphan' }
+    const payload: WhatsStandingPayload = {
+      composed: {
+        schemaVersion: 1, generatedAt: '2026-08-18T00:00:00.000Z', model: null,
+        recipeVersion: 1, composerVersion: 1, sourceHash: 'a'.repeat(64), format: 'feature',
+        blocks: [
+          { type: 'heading', text: "What's Standing" },
+          { type: 'leadInParagraph', lead: 'This record points elsewhere:', text: '“Superseded by beats 9-11”', sourceFieldIds: ['mem-ref'], annotationId: 'ann_1' },
+        ],
+        fidelity: { status: 'clean', warnings: [] },
+      },
+      questions: [anchoredQuestion, orphanQuestion],
+    }
+    const { rerender } = render(
+      <WhatsStandingView payload={payload} answeringId={null} notice={null} onAnswer={() => {}}
+        cardError={{ annotationId: 'ann_orphan', message: 'Could not save this answer.' }} />,
+    )
+    const cards = screen.getAllByLabelText("What's Standing question")
+    expect(cards).toHaveLength(2)
+    // Only the orphan (fallback-list) card shows the error; the anchored card does not.
+    expect(cards[0].textContent).not.toContain('Could not save this answer.')
+    expect(cards[1].textContent).toContain('Could not save this answer.')
+
+    rerender(
+      <WhatsStandingView payload={payload} answeringId={null} notice={null} onAnswer={() => {}}
+        cardError={{ annotationId: 'ann_1', message: 'Could not save this answer.' }} />,
+    )
+    const cardsAfter = screen.getAllByLabelText("What's Standing question")
+    expect(cardsAfter[0].textContent).toContain('Could not save this answer.')
+    expect(cardsAfter[1].textContent).not.toContain('Could not save this answer.')
   })
 })

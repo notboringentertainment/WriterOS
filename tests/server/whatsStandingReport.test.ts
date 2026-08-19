@@ -373,6 +373,8 @@ describe('readiness', () => {
     // The generic (non-stale) template is unchanged: names the settle path via questions/answer.
     expect(unresolved[0].message).toContain('Settle it with the questions/answer commands (question')
     expect(unresolved[0].message).not.toContain('invalidate')
+    // The structural field, not message prose, is what a consumer should key off of.
+    expect(unresolved[0].referenceState).toBe('unasked')
     // Loud, at the top, naming the item — not buried in a footer.
     const markdown = renderComposedMarkdown(result.composed)
     expect(markdown.split('\n')[0]).toContain('INCOMPLETE')
@@ -384,6 +386,7 @@ describe('readiness', () => {
     const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
     if (!result.ok) return
     expect(result.composed.fidelity.warnings.map(w => w.kind)).toContain('unresolved_reference')
+    expect(result.composed.fidelity.warnings.find(w => w.kind === 'unresolved_reference')?.referenceState).toBe('proposed')
   })
 
   it("cant-say is durable but does not resolve: the report stays INCOMPLETE", () => {
@@ -392,6 +395,9 @@ describe('readiness', () => {
     if (!result.ok) return
     expect(result.composed.fidelity.status).toBe('flagged')
     expect(result.composed.fidelity.warnings.some(w => w.kind === 'unresolved_reference' && w.message.includes('cant-say'))).toBe(true)
+    // The structural field is the source of truth for "this is the parked/cant-say case" —
+    // consumers should not need to substring-match the message prose.
+    expect(result.composed.fidelity.warnings.find(w => w.kind === 'unresolved_reference')?.referenceState).toBe('cant-say')
   })
 
   it('a plain decline settles the question: the report is clean', () => {
@@ -414,6 +420,7 @@ describe('readiness', () => {
     const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
     if (!result.ok) return
     expect(result.composed.fidelity.warnings.some(w => w.kind === 'unresolved_reference' && w.message.includes('invalidated'))).toBe(true)
+    expect(result.composed.fidelity.warnings.find(w => w.kind === 'unresolved_reference')?.referenceState).toBe('invalidated')
   })
 
   it('cues on records the report never displays are not readiness items', () => {
@@ -437,6 +444,7 @@ describe('readiness', () => {
     expect(warning!.message).toContain(referencing.id)
     expect(warning!.message).toContain('invalidate')
     expect(warning!.message).not.toContain('questions/answer')
+    expect(warning!.referenceState).toBe('stale')
   })
 
   it('a stale approved resolution renders as unresolved, not "You resolved this"', () => {

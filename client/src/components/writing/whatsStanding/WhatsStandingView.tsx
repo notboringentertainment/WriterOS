@@ -1,65 +1,29 @@
-// Style constants and the private Block switch are a fourth copy of
-// SynopsisDocumentView.tsx's rendering primitives (per the plan's explicit
-// non-goal of not extracting a shared renderer yet), extended only so a
-// leadInParagraph with an open question renders its QuestionCard right
-// beneath it — an in-place answer, not a separate review queue.
+// Block rendering here reuses the shared composed-block primitives (see
+// ../shared/ComposedBlocks), extended only so a leadInParagraph with an open
+// question renders its QuestionCard right beneath it — an in-place answer,
+// not a separate review queue.
 import React, { useMemo } from 'react'
-import type { ComposedBlock } from '@shared/compose/types'
 import type { EnrichedQuestion, WhatsStandingPayload } from '@shared/whatsStandingPanel'
 import { QuestionCard, type WhatsStandingAnswer } from './QuestionCard'
+import { Block, metaStyle, subheadingStyle } from '../shared/ComposedBlocks'
 
 export interface WhatsStandingViewProps {
   payload: WhatsStandingPayload
   answeringId: string | null
   notice: string | null
   onAnswer: (annotationId: string, questionVersion: string, answer: WhatsStandingAnswer) => void
+  cardError?: { annotationId: string; message: string } | null
 }
 
 const pageStyle: React.CSSProperties = {
   maxWidth: 680, margin: '0 auto', padding: '48px 24px',
   display: 'flex', flexDirection: 'column', gap: 24,
 }
-const headingStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700,
-  color: 'var(--fg)', margin: 0, lineHeight: 1.25,
-}
-const subheadingStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: '0.75rem', fontWeight: 700,
-  letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
-}
-const bodyStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-body)', fontSize: '1rem', lineHeight: 1.75, color: 'var(--fg)', margin: 0,
-}
-const metaStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.1em',
-  textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
-}
 
-function formatLead(lead: string): string {
-  const trimmed = lead.trim()
-  return /[.!?:]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `
-}
-
-// Renderer purity: the body emits ONLY composed text. It never reads
-// sourceFieldIds, recipe labels, fidelity warnings, or answer ids.
-function Block({ block }: { block: ComposedBlock }) {
-  switch (block.type) {
-    case 'heading': return <h2 style={headingStyle}>{block.text}</h2>
-    case 'subheading': return <h3 style={subheadingStyle}>{block.text}</h3>
-    case 'divider': return <hr style={{ border: 0, borderTop: '1px solid var(--border)', width: '100%' }} />
-    case 'meta': return <p style={metaStyle}>{block.text}</p>
-    case 'logline': return <p style={{ ...bodyStyle, fontStyle: 'italic' }}>{block.text}</p>
-    case 'paragraph': return <p style={bodyStyle}>{block.text}</p>
-    case 'leadInParagraph': return <p style={bodyStyle}><strong>{formatLead(block.lead)}</strong>{block.text}</p>
-    default: return null
-  }
-}
-
-const CANT_SAY_MARKER = '(cant-say)'
 const PARKED_LINE = 'Parked: you answered can’t say; this reopens if the wording changes.'
 const OTHER_WARNINGS_LINE = 'Review: some lines may not match your answers. Structure-checked, not meaning-verified.'
 
-export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: WhatsStandingViewProps) {
+export function WhatsStandingView({ payload, answeringId, notice, onAnswer, cardError }: WhatsStandingViewProps) {
   const { composed, questions } = payload
 
   const questionsByAnnotation = useMemo(() => {
@@ -77,7 +41,7 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
   const fallbackQuestions = questions.filter(question => !matchedAnnotationIds.has(question.annotationId))
 
   const unresolvedWarnings = composed.fidelity.warnings.filter(w => w.kind === 'unresolved_reference')
-  const cantSayWarnings = unresolvedWarnings.filter(w => w.message.includes(CANT_SAY_MARKER))
+  const cantSayWarnings = unresolvedWarnings.filter(w => w.referenceState === 'cant-say')
   const hasOtherWarnings = composed.fidelity.warnings.some(w => w.kind !== 'unresolved_reference')
   const disabled = answeringId !== null
 
@@ -109,7 +73,14 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
           return (
             <React.Fragment key={key}>
               <Block block={block} />
-              {question && <QuestionCard question={question} disabled={disabled} onAnswer={onAnswer} />}
+              {question && (
+                <QuestionCard
+                  question={question}
+                  disabled={disabled}
+                  onAnswer={onAnswer}
+                  errorMessage={cardError && cardError.annotationId === question.annotationId ? cardError.message : undefined}
+                />
+              )}
             </React.Fragment>
           )
         })}
@@ -118,7 +89,13 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={subheadingStyle}>Still needs an answer</h3>
           {fallbackQuestions.map(question => (
-            <QuestionCard key={question.annotationId} question={question} disabled={disabled} onAnswer={onAnswer} />
+            <QuestionCard
+              key={question.annotationId}
+              question={question}
+              disabled={disabled}
+              onAnswer={onAnswer}
+              errorMessage={cardError && cardError.annotationId === question.annotationId ? cardError.message : undefined}
+            />
           ))}
         </div>
       )}

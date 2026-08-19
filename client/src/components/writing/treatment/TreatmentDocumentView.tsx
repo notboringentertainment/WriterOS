@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react'
 import type { TreatmentDocumentContent } from '@shared/documents'
-import type { ComposedBlock, ComposedDocument, ComposeIdentity } from '@shared/compose/types'
+import type { ComposedDocument, ComposeIdentity } from '@shared/compose/types'
 import { deriveTreatmentDocumentState } from '../../../lib/treatmentDocumentState'
+import { Block, bodyStyle, metaStyle } from '../shared/ComposedBlocks'
 
 export interface TreatmentDocumentViewProps {
   content: TreatmentDocumentContent
@@ -16,21 +17,6 @@ export interface TreatmentDocumentViewProps {
 const pageStyle: React.CSSProperties = {
   maxWidth: 680, margin: '0 auto', padding: '48px 24px',
   display: 'flex', flexDirection: 'column', gap: 24,
-}
-const headingStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700,
-  color: 'var(--fg)', margin: 0, lineHeight: 1.25,
-}
-const subheadingStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: '0.75rem', fontWeight: 700,
-  letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
-}
-const bodyStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-body)', fontSize: '1rem', lineHeight: 1.75, color: 'var(--fg)', margin: 0,
-}
-const metaStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.1em',
-  textTransform: 'uppercase', color: 'var(--fg-muted)', margin: 0,
 }
 const footerStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
@@ -76,26 +62,6 @@ function ArtifactHeader({ content, format }: { content: TreatmentDocumentContent
       )}
     </header>
   )
-}
-
-function formatLead(lead: string): string {
-  const trimmed = lead.trim()
-  return /[.!?:]$/.test(trimmed) ? `${trimmed} ` : `${trimmed}. `
-}
-
-// Renderer purity: the body emits ONLY composed text. It never reads
-// sourceFieldIds, recipe labels, fidelity warnings, or answer ids.
-function Block({ block }: { block: ComposedBlock }) {
-  switch (block.type) {
-    case 'heading': return <h2 style={headingStyle}>{block.text}</h2>
-    case 'subheading': return <h3 style={subheadingStyle}>{block.text}</h3>
-    case 'divider': return <hr style={{ border: 0, borderTop: '1px solid var(--border)', width: '100%' }} />
-    case 'meta': return <p style={metaStyle}>{block.text}</p>
-    case 'logline': return <p style={{ ...bodyStyle, fontStyle: 'italic' }}>{block.text}</p>
-    case 'paragraph': return <p style={bodyStyle}>{block.text}</p>
-    case 'leadInParagraph': return <p style={bodyStyle}><strong>{formatLead(block.lead)}</strong>{block.text}</p>
-    default: return null
-  }
 }
 
 export function TreatmentDocumentView(props: TreatmentDocumentViewProps) {

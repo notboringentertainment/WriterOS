@@ -189,6 +189,7 @@ export function composeWhatsStanding(args: ComposeWhatsStandingArgs): ComposeRes
       : `Unresolved reference in ${item.recordId} (${item.state}): “${item.phrase}”. `
         + `Settle it with the questions/answer commands (question ${item.annotationId}).`,
     fieldId: item.recordId,
+    referenceState: item.state,
   }))
   return composeDeterministic({
     factSheet: buildWhatsStandingFactSheet(snapshot, annotations),

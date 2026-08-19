@@ -22,7 +22,7 @@ export function computeWhatsStandingSourceHash(
 ): string {
   const annotationDigest = annotations === undefined ? undefined
     : [...annotations.annotations.values()]
-        .sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
+        .sort((a, b) => (a.annotationId < b.annotationId ? -1 : a.annotationId > b.annotationId ? 1 : 0))
         .map(a => ({
           annotationId: a.annotationId,
           status: a.status,

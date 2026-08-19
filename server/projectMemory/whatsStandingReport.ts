@@ -12,7 +12,11 @@ function headline(claim: string): string {
 
 type ReadResult =
   | { ok: true; payload: WhatsStandingPayload }
-  | { ok: false; reason: string }
+  // `reason` is always a human-readable message (used as-is for the generic 503 the routes
+  // fall back to). `code` is the separate, structural discriminant for callers that need to
+  // branch on a specific failure — currently just the manifest-identity mismatch — so no
+  // caller is ever tempted to compare `reason` text as a sentinel.
+  | { ok: false; reason: string; code?: 'project-mismatch' }
 
 /**
  * Shared composition step for a (snapshot, annotations) pair already read from disk. Derives
@@ -44,12 +48,35 @@ function composeReportPayload(
   return { ok: true, payload: { composed: result.composed, questions } }
 }
 
-export async function readWhatsStandingReport(projectPath: string): Promise<ReadResult> {
+/**
+ * @param expectedProjectId When provided, the route's URL project id — asserted against the
+ * resolved package's own manifest id, matching the assertion every sibling project-memory
+ * route performs (readSnapshot's callers compare `snapshot.projectId` to the URL id). The CLI
+ * report command has no URL id to compare against, so it omits this argument and the check
+ * never runs.
+ */
+export async function readWhatsStandingReport(
+  projectPath: string,
+  expectedProjectId?: string,
+): Promise<ReadResult> {
+  let annotations = await annotationStore.state(projectPath)
+  let snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+
+  // Checked against this first snapshot, before the optimistic-pair retry loop below: package
+  // identity does not change without a write this function never performs, so a mismatch here
+  // will not resolve itself by re-reading — spending up to 3 more read rounds on it first
+  // would only delay an answer that is already known.
+  if (expectedProjectId !== undefined && snapshot.projectId !== expectedProjectId) {
+    return {
+      ok: false,
+      reason: 'URL project id does not match the WriterOS project package.',
+      code: 'project-mismatch',
+    }
+  }
+
   // Optimistic consistent pair — same contract the CLI report command documented:
   // annotation revision identical before and after the snapshot read means no writer
   // ran in between, so the pair is one moment's state.
-  let annotations = await annotationStore.state(projectPath)
-  let snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
   for (let attempt = 0; ; attempt += 1) {
     const after = await annotationStore.state(projectPath)
     if (after.revision === annotations.revision) break

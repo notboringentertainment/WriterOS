@@ -1,3 +1,5 @@
+import type { UnresolvedReferenceState } from './whatsStandingReadiness'
+
 export type FactKind = 'name' | 'number' | 'prose' | 'list'
 
 export interface FactSheetField {
@@ -67,6 +69,9 @@ export interface FidelityWarning {
   blockIndex?: number
   fieldId?: string
   entity?: string
+  /** For kind 'unresolved_reference': the structural readiness state, so consumers don't
+   *  have to substring-match the message prose to tell a parked (cant-say) warning apart. */
+  referenceState?: UnresolvedReferenceState
 }
 
 /**
