@@ -83,8 +83,11 @@ annotation support fingerprints (staleness drives the banner and resolution rend
 but the hash covers only the fact sheet plus the two revisions — and tampering a stored
 support hash changes the report while moving NEITHER revision. The hash therefore gains a
 canonical annotation digest: for each annotation in annotation-id-sorted order, its
-`status`, `locator`, `referentRecordIds`, and `support` array. Test: identical snapshot
-and revisions with fresh vs tampered support produce different source hashes.
+`status`, `declineReason` (a plain decline settles the report; cant-say keeps it
+INCOMPLETE — same status, opposite reports), `locator`, `referentRecordIds`, and
+`support` array. Tests: identical snapshot and revisions with fresh vs tampered support
+produce different source hashes; identical everything with only `declineReason` changed
+produces different hashes.
 
 **Declined re-ask** (`server/projectMemory/annotationStore.ts`,
 `derivePendingQuestions`): a `declined` annotation (both reasons) whose staleness check
@@ -176,7 +179,8 @@ constructing snapshots in memory for the shared helpers.
 - Guardrails re-asserted: flipping a support record's status via a real supersession does
   not invalidate; an unrelated publish does not invalidate.
 - Source hash: same snapshot + same revisions, fresh vs tampered support → different
-  hashes; annotation-free reports keep their current hash (backward compatible).
+  hashes; declined vs cant-say with all other digest fields equal → different hashes;
+  annotation-free reports keep their current hash (backward compatible).
 - Store gate: propose over a fresh decline → conflict, log byte-identical; over a stale
   decline → succeeds with fresh support recorded.
 - CLI: `invalidate` on a stale package prints the line and writes the event; on a clean
