@@ -231,6 +231,143 @@ request.
 message instead of a snapshot; an agent turn on that project still completes
 normally with `memoryReceipt.status === 'disabled'` and no citations.
 
+## 6. Generate a What's Standing report
+
+**Symptom / Use:** you need a deterministic, readable snapshot of unresolved
+references and open questions in a project's memory — what questions are still
+waiting for answers, which answers need re-examination, or what the memory
+currently "thinks is standing."
+
+**Why this is safe:** this command is read-only. It queries `memory/ledger.jsonl`
+and `memory/annotations.jsonl`, replays all annotations to resolve each reference
+claim, and renders the current state as either a Markdown report or JSON — it
+never writes to the project.
+
+**Command:**
+
+```bash
+npm run memory -- report --project "<absolute .writeros path>" --format markdown|json
+```
+
+The `report` command reads the full memory ledger and every recorded answer
+(`memory/annotations.jsonl`) and builds a deterministic "What's Standing"
+output. If any reference claims remain unresolved (no `answer` recorded yet), the
+report opens with an `INCOMPLETE` banner, listing which question IDs are still
+waiting.
+
+**Verify:** `--format json` renders the same data as JSON; both formats are
+idempotent — running `report` twice produces identical output. Exit code is 0 on
+success, 2 if the `--project` path is invalid, or 3 if the ledger or annotation
+log is corrupt and cannot be replayed.
+
+## 7. List open reference questions
+
+**Symptom / Use:** you want to see which reference questions are still unanswered
+and what candidate resolutions are available for each one.
+
+**Why this is safe:** this is also read-only. It scans the unresolved references
+and reports the candidates (e.g., which external sources have potential matches)
+without modifying anything.
+
+**Command:**
+
+```bash
+npm run memory -- questions --project "<absolute .writeros path>"
+```
+
+The `questions` command lists every reference claim in the ledger that does not
+yet have an `answer` recorded in `memory/annotations.jsonl`. For each, it prints
+the question ID, the context from the original claim, and any candidate matches
+the memory system found (e.g., names or titles from external sources that might
+match the question).
+
+**Verify:** exit code 0 on success, 2 for invalid path, 3 for corrupt state. The
+list is derived fresh from the ledger and annotations; there is no separate
+state to synchronize.
+
+## 8. Record an answer to a reference question
+
+**Symptom / Use:** you have examined an unresolved reference and decided either
+that it resolves to specific records, that you cannot answer it right now, or
+that it is not really a reference at all — and you want to record that decision
+durably in the project's memory.
+
+**Why this writes durably:** unlike `report` and `questions`, this command
+appends a new entry to `memory/annotations.jsonl` (never modifying the ledger
+itself). Each answer is immutable once recorded and becomes part of the future
+resolution logic for this question ID.
+
+**Command:**
+
+```bash
+npm run memory -- answer --project "<absolute .writeros path>" \
+  --question <id> \
+  (--referents <id,id> | --cant-say | --decline)
+```
+
+Pass exactly one of the three outcomes:
+
+- **`--referents id,id`** — the question resolves to these specific record IDs.
+  The report will mark this question resolved, and future references to those
+  records will cite the answer.
+- **`--cant-say`** — you cannot answer this question right now, but you might be
+  able to later. The report will remain incomplete, but the system stops
+  re-asking the same question repeatedly.
+- **`--decline`** — this is not really a reference to an external record. The
+  question was a false alarm or a linguistic match that does not map to shared
+  memory. The report will skip this question entirely.
+
+**Verify:** exit code 0 on success. The answer is durably appended to
+`memory/annotations.jsonl`. Re-run `report` to confirm the question's state has
+changed according to which outcome you recorded.
+
+## 9. Sweep and re-open resolutions after backup restore
+
+**Symptom / Use:** you have restored a backup of a project's `.writeros` package
+from an earlier moment, but the restoration may have left `memory/ledger.jsonl`
+and `memory/annotations.jsonl` in a time-mismatch state — the ledger could have
+events the old annotation log never saw, or vice versa. You want to durably
+re-examine which resolutions still make sense given the current ledger state.
+
+**Why this is safe and necessary:** `invalidate` is the recovery tool for a
+specific backup-restore scenario. It scans every recorded answer in
+`memory/annotations.jsonl`, checks whether the premise of each answer still
+matches the current ledger (e.g., do the referent IDs it cited still exist in
+the records?), and durably reopens any answer whose premise is no longer valid.
+Only the answers that no longer apply are touched; valid answers remain resolved.
+
+**Recovery flow after restoring a backup:**
+
+1. **Run invalidate** to sweep for stale resolutions:
+   ```bash
+   npm run memory -- invalidate --project "<absolute .writeros path>"
+   ```
+   This checks every answer against the current ledger. If a referent no longer
+   exists or an answered question's context has changed, the answer is marked
+   invalid and the question is reopened. Exit code 0 on success.
+
+2. **Check the report** to see what re-opened:
+   ```bash
+   npm run memory -- report --project "<absolute .writeros path>" --format markdown
+   ```
+   The report will show an `INCOMPLETE` banner if any questions are now
+   unanswered again. Review the list of newly reopened questions.
+
+3. **Answer the reopened questions** using the `answer` command (§8):
+   ```bash
+   npm run memory -- answer --project "<absolute .writeros path>" \
+     --question <id> \
+     (--referents <id,id> | --cant-say | --decline)
+   ```
+
+**Why it writes to `memory/annotations.jsonl`:** `invalidate` appends new
+`invalid` entries to the annotation log, marking stale answers durably without
+erasing them. This creates an audit trail of what changed and when.
+
+**Verify:** exit code 0 on success, 2 for invalid path, 3 for corrupt state. The
+annotation log is never truncated or rewritten — only appended — so the full
+history of answers and invalidations remains in the file.
+
 ## Known deferred minors: analysis-queue truncation and growth
 
 Two Task 8 behaviors are intentional, documented, low-severity V1 trade-offs,
