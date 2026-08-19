@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
+type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis' | 'whats-standing'
 type PanelByTab = Record<WritingTab, boolean>
 export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'rules'
 // Full-bleed identity ritual takeovers: writer-level (Voice Profile) and
@@ -18,6 +18,7 @@ export function useShellState() {
     outline: false,
     treatment: false,
     synopsis: false,
+    'whats-standing': false,
   })
   const [focusMode, setFocusMode] = useState(false)
   const [storyBibleSection, setStoryBibleSectionRaw] = useState<StoryBibleSection | null>(null)

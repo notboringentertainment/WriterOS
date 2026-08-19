@@ -94,6 +94,7 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
     }
 
     default:
+      // 'whats-standing' and other future report surfaces land here — they have no intake deck
       return { kind: 'none' }
   }
 }

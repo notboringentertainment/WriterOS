@@ -36,6 +36,7 @@ import { SynopsisTab } from './components/writing/SynopsisTab'
 import { OutlineTab } from './components/writing/OutlineTab'
 import { TreatmentTab } from './components/writing/TreatmentTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
+import { WhatsStandingTab } from './components/writing/whatsStanding/WhatsStandingTab'
 import { WritersRoom } from './components/writing/WritersRoom'
 import {
   HomeSurface,
@@ -1023,6 +1024,13 @@ export default function App() {
             onMigrateLegacyStoryBible={project.migrateStoryBibleLegacyToDocument}
             onSectionChange={shellState.setStoryBibleSection}
             onClear={project.clearStoryBible}
+          />
+        )
+      case 'whats-standing':
+        return (
+          <WhatsStandingTab
+            projectId={activeFolderProjectId ?? undefined}
+            projectScopeKey={activeAgentProjectKey}
           />
         )
       default:

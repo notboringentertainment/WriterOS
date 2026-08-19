@@ -135,7 +135,7 @@ export function parseOpenSwarmCommand(text: string): string | null {
   return strippedText || null
 }
 
-export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'treatment' | 'story-bible'
+export type ActiveTab = 'script' | 'synopsis' | 'outline' | 'treatment' | 'story-bible' | 'whats-standing'
 
 // Surfaces a project-memory conflict banner can appear on (Task 9). Every
 // ActiveTab plus the two room-adjacent surfaces that are not writing tabs.
@@ -152,6 +152,7 @@ const WRITEROS_MEMORY_SURFACE_URI_PREFIXES: Record<ActiveTab, string> = {
   treatment: 'documents/treatment.json',
   'story-bible': 'documents/story-bible.json',
   script: 'script/script.writeros.html',
+  'whats-standing': '', // Report surface with no document — no memory records match
 }
 
 /**
@@ -504,6 +505,8 @@ export function getDefaultPersona(
     case 'treatment': return 'alex'
     case 'story-bible':
       return getStoryBiblePersona(storyBibleSection, userMessage)
+    case 'whats-standing':
+      return 'writingPartner'
   }
 }
 
