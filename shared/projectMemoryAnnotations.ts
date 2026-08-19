@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { sha256Hex } from './compose/sha256'
+import type { ProjectMemoryRecord, ProjectMemorySnapshot } from './projectMemory'
 
 /**
  * Reference annotations — the writer's answers to "what does this phrase point at?"
@@ -139,6 +140,53 @@ export function annotationIdFor(locator: PhraseLocator): string {
     phrase: locator.phrase,
     occurrence: locator.occurrence,
   })).slice(0, 32)}`
+}
+
+/** Hash of a record's language — claim and detail, never status or supersedes. */
+export function recordLanguageFingerprint(record: ProjectMemoryRecord): RecordLanguageFingerprint {
+  return {
+    recordId: record.id,
+    contentHash: sha256Hex(JSON.stringify({ claim: record.claim, detail: record.detail ?? null })),
+  }
+}
+
+export type AnnotationStaleness =
+  | { stale: false }
+  | { stale: true
+      cause: 'language-changed' | 'record-removed'
+      changedRecordId: string
+      previousContentHash?: string
+      currentContentHash?: string }
+
+/**
+ * Does an annotation's premise still hold? Compares its stored support fingerprints
+ * against the current snapshot, in support order; the FIRST divergence wins, matching
+ * the invalidated event's single changedRecordId. Only language (claim/detail) and
+ * record presence are visible here — status, supersedes, and safety flips can never
+ * make an annotation stale, which is the design's guardrail against over-firing.
+ */
+export function annotationStaleness(
+  support: RecordLanguageFingerprint[],
+  snapshot: Pick<ProjectMemorySnapshot, 'records'>,
+): AnnotationStaleness {
+  const byId = new Map(snapshot.records.map(r => [r.id, r]))
+  for (const fingerprint of support) {
+    const current = byId.get(fingerprint.recordId)
+    if (current === undefined) {
+      return {
+        stale: true, cause: 'record-removed', changedRecordId: fingerprint.recordId,
+        previousContentHash: fingerprint.contentHash,
+      }
+    }
+    const currentHash = recordLanguageFingerprint(current).contentHash
+    if (currentHash !== fingerprint.contentHash) {
+      return {
+        stale: true, cause: 'language-changed', changedRecordId: fingerprint.recordId,
+        previousContentHash: fingerprint.contentHash, currentContentHash: currentHash,
+      }
+    }
+  }
+  return { stale: false }
 }
 
 /** Replay outcome for one annotation. */

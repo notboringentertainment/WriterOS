@@ -9,8 +9,10 @@ import {
   AnnotationEventSchema,
   AnnotationReplayError,
   annotationIdFor,
+  annotationStaleness,
   applyAnnotationEvent,
   phraseHashFor,
+  recordLanguageFingerprint,
   type AnnotationEvent,
   type AnnotationLogState,
   type AnnotationState,
@@ -20,7 +22,7 @@ import {
 import { buildStandingEntries } from '../../shared/compose/whatsStandingFactSheet'
 import { projectMemoryStore } from './store'
 
-export { annotationIdFor }
+export { annotationIdFor, recordLanguageFingerprint }
 
 const MEMORY_DIRECTORY = 'memory'
 const ANNOTATIONS_FILE = 'annotations.jsonl'
@@ -134,14 +136,6 @@ async function withLock<T>(projectPath: string, operation: (projectId: string) =
     return await operation(projectId)
   } finally {
     await lock.release()
-  }
-}
-
-/** Hash of a record's language — claim and detail, never status or supersedes. */
-export function recordLanguageFingerprint(record: ProjectMemoryRecord): RecordLanguageFingerprint {
-  return {
-    recordId: record.id,
-    contentHash: sha256Hex(JSON.stringify({ claim: record.claim, detail: record.detail ?? null })),
   }
 }
 
