@@ -8,6 +8,14 @@ import {
   type ProjectMemorySnapshot,
 } from '../../../shared/projectMemory'
 import type { MemoryQuery } from '../../../server/projectMemory/retrieval'
+import {
+  WhatsStandingAnswerSchema,
+  WhatsStandingPayloadSchema,
+  type WhatsStandingPayload,
+} from '../../../shared/whatsStandingPanel'
+import type { z } from 'zod'
+
+type WhatsStandingAnswer = z.infer<typeof WhatsStandingAnswerSchema>
 
 type FetchProjectMemory = (
   input: RequestInfo | URL,
@@ -77,6 +85,8 @@ export function createProjectMemoryApi(
   }
   const projectMemoryPath = (projectId: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/memory`
+  const whatsStandingPath = (projectId: string) =>
+    `/api/projects/${encodeURIComponent(projectId)}/memory/whats-standing`
 
   return {
     async snapshot(projectId: string): Promise<ProjectMemorySnapshot> {
@@ -137,6 +147,33 @@ export function createProjectMemoryApi(
         )
       }
       return response.data.analysis
+    },
+    async whatsStanding(projectId: string): Promise<WhatsStandingPayload> {
+      const body = await requestJson<unknown>(fetchProjectMemory, whatsStandingPath(projectId), { headers })
+      const parsed = WhatsStandingPayloadSchema.safeParse(body)
+      if (!parsed.success) {
+        throw new ProjectMemoryApiError('WriterOS project memory returned an invalid response.', 200, 'invalid-response')
+      }
+      return parsed.data
+    },
+    async answerWhatsStanding(
+      projectId: string,
+      annotationId: string,
+      questionVersion: string,
+      answer: WhatsStandingAnswer,
+    ): Promise<WhatsStandingPayload> {
+      const body = await requestJson<unknown>(fetchProjectMemory,
+        `${whatsStandingPath(projectId)}/answer`,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ annotationId, questionVersion, answer }),
+        })
+      const parsed = WhatsStandingPayloadSchema.safeParse(body)
+      if (!parsed.success) {
+        throw new ProjectMemoryApiError('WriterOS project memory returned an invalid response.', 200, 'invalid-response')
+      }
+      return parsed.data
     },
   }
 }
