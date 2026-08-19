@@ -49,6 +49,7 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [cardError, setCardError] = useState<{ annotationId: string; message: string } | null>(null)
   const [answeringId, setAnsweringId] = useState<string | null>(null)
   const answeringRef = useRef(false)
   const sessionTokenRef = useRef<Promise<string | null> | null>(null)
@@ -92,6 +93,7 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
     setPayload(null)
     setError(null)
     setNotice(null)
+    setCardError(null)
     setAnsweringId(null)
     answeringRef.current = false
     setLoading(false)
@@ -115,6 +117,9 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
     // read as if this new save also had a problem. A fresh 409 below
     // re-sets it.
     setNotice(null)
+    // Same reasoning for a stale card-level error: clear it before this attempt so a
+    // successful save (or a different failure mode) doesn't leave a stale message on the card.
+    setCardError(null)
     try {
       const token = await getSessionToken()
       if (!isCurrent()) return
@@ -134,6 +139,16 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
         // wording would be stale) and refetch the current report (through its
         // own generation guard) rather than silently retrying the stale answer.
         setNotice(QUESTION_CHANGED_NOTICE)
+        answeringRef.current = false
+        setAnsweringId(null)
+        await load()
+        return
+      }
+      if (caught instanceof ProjectMemoryApiError && (caught.statusCode === 400 || caught.statusCode === 404)) {
+        // Per the panel's original error contract: a bad or stale answer surfaces ON the
+        // question card and the report resyncs — it does not hide the whole report behind
+        // the panel-level error state the way a network failure or 5xx does.
+        setCardError({ annotationId, message: caught.message })
         answeringRef.current = false
         setAnsweringId(null)
         await load()
@@ -176,7 +191,7 @@ export function WhatsStandingTab({ projectId, projectScopeKey }: WhatsStandingTa
       )}
 
       {projectId && !loading && !error && payload && (
-        <WhatsStandingView payload={payload} answeringId={answeringId} notice={notice} onAnswer={handleAnswer} />
+        <WhatsStandingView payload={payload} answeringId={answeringId} notice={notice} onAnswer={handleAnswer} cardError={cardError} />
       )}
     </div>
   )

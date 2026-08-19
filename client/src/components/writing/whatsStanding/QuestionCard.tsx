@@ -13,9 +13,12 @@ export interface QuestionCardProps {
   question: EnrichedQuestion
   disabled: boolean
   onAnswer: (annotationId: string, questionVersion: string, answer: WhatsStandingAnswer) => void
+  /** Card-level error from a failed answer attempt (400/404) — renders above the buttons, not
+   *  as a panel-wide error that hides the whole report. */
+  errorMessage?: string
 }
 
-export function QuestionCard({ question, disabled, onAnswer }: QuestionCardProps) {
+export function QuestionCard({ question, disabled, onAnswer, errorMessage }: QuestionCardProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const hasCandidates = question.candidates.length > 0
 
@@ -39,6 +42,7 @@ export function QuestionCard({ question, disabled, onAnswer }: QuestionCardProps
     <article style={styles.card} aria-label="What's Standing question">
       <p style={styles.meta}>{question.status === 'proposed' ? 'Proposed referents' : 'Unresolved reference'}</p>
       <p style={styles.questionText}>{question.questionText}</p>
+      {errorMessage && <p style={styles.error}>{errorMessage}</p>}
       {hasCandidates && (
         <div style={styles.candidates}>
           {question.candidates.map(candidate => {
@@ -107,6 +111,13 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
     color: 'var(--fg-subtle)',
+  },
+  error: {
+    margin: 0,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    letterSpacing: '0.04em',
+    color: 'var(--error, #b91c1c)',
   },
   questionText: {
     margin: 0,

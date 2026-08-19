@@ -12,6 +12,7 @@ export interface WhatsStandingViewProps {
   answeringId: string | null
   notice: string | null
   onAnswer: (annotationId: string, questionVersion: string, answer: WhatsStandingAnswer) => void
+  cardError?: { annotationId: string; message: string } | null
 }
 
 const pageStyle: React.CSSProperties = {
@@ -19,11 +20,10 @@ const pageStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 24,
 }
 
-const CANT_SAY_MARKER = '(cant-say)'
 const PARKED_LINE = 'Parked: you answered can’t say; this reopens if the wording changes.'
 const OTHER_WARNINGS_LINE = 'Review: some lines may not match your answers. Structure-checked, not meaning-verified.'
 
-export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: WhatsStandingViewProps) {
+export function WhatsStandingView({ payload, answeringId, notice, onAnswer, cardError }: WhatsStandingViewProps) {
   const { composed, questions } = payload
 
   const questionsByAnnotation = useMemo(() => {
@@ -41,7 +41,7 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
   const fallbackQuestions = questions.filter(question => !matchedAnnotationIds.has(question.annotationId))
 
   const unresolvedWarnings = composed.fidelity.warnings.filter(w => w.kind === 'unresolved_reference')
-  const cantSayWarnings = unresolvedWarnings.filter(w => w.message.includes(CANT_SAY_MARKER))
+  const cantSayWarnings = unresolvedWarnings.filter(w => w.referenceState === 'cant-say')
   const hasOtherWarnings = composed.fidelity.warnings.some(w => w.kind !== 'unresolved_reference')
   const disabled = answeringId !== null
 
@@ -73,7 +73,14 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
           return (
             <React.Fragment key={key}>
               <Block block={block} />
-              {question && <QuestionCard question={question} disabled={disabled} onAnswer={onAnswer} />}
+              {question && (
+                <QuestionCard
+                  question={question}
+                  disabled={disabled}
+                  onAnswer={onAnswer}
+                  errorMessage={cardError && cardError.annotationId === question.annotationId ? cardError.message : undefined}
+                />
+              )}
             </React.Fragment>
           )
         })}
@@ -82,7 +89,13 @@ export function WhatsStandingView({ payload, answeringId, notice, onAnswer }: Wh
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={subheadingStyle}>Still needs an answer</h3>
           {fallbackQuestions.map(question => (
-            <QuestionCard key={question.annotationId} question={question} disabled={disabled} onAnswer={onAnswer} />
+            <QuestionCard
+              key={question.annotationId}
+              question={question}
+              disabled={disabled}
+              onAnswer={onAnswer}
+              errorMessage={cardError && cardError.annotationId === question.annotationId ? cardError.message : undefined}
+            />
           ))}
         </div>
       )}

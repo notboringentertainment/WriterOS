@@ -18,6 +18,7 @@ export const FidelityWarningSchema = z.object({
   blockIndex: z.number().int().optional(),
   fieldId: z.string().optional(),
   entity: z.string().optional(),
+  referenceState: z.enum(['unasked', 'proposed', 'cant-say', 'invalidated', 'stale']).optional(),
 })
 
 export const ComposedRunSchema = z.object({
