@@ -78,6 +78,14 @@ removed record; a fresh answer will re-cite).
 referents missing from the snapshot, and extra fields for stale-but-present referents are
 harmless.
 
+**Source hash** (`shared/compose/whatsStandingSourceHash.ts`): the report now depends on
+annotation support fingerprints (staleness drives the banner and resolution rendering),
+but the hash covers only the fact sheet plus the two revisions — and tampering a stored
+support hash changes the report while moving NEITHER revision. The hash therefore gains a
+canonical annotation digest: for each annotation in annotation-id-sorted order, its
+`status`, `locator`, `referentRecordIds`, and `support` array. Test: identical snapshot
+and revisions with fresh vs tampered support produce different source hashes.
+
 **Declined re-ask** (`server/projectMemory/annotationStore.ts`,
 `derivePendingQuestions`): a `declined` annotation (both reasons) whose staleness check
 fires is re-asked — it re-derives as a `new` question exactly like an absent or
@@ -86,6 +94,15 @@ it was judged against is unchanged." No event is needed: `declined → proposed`
 a legal transition, and the eventual `propose` records fresh support. An `approved`-stale
 annotation is NOT re-asked here — the transition table forbids proposing over `approved`;
 it must be invalidated first (Part 3). Until then it appears in the banner only.
+
+**Store-enforced, not merely hidden:** the parent design (§163-164) says the store
+enforces the declined-re-propose fingerprint check, and today `propose` accepts any
+declined annotation. `propose` therefore refuses — under its lock, before any write —
+to re-propose a `declined` annotation whose `annotationStaleness(existing.support,
+current)` is `{ stale: false }`, with an `AnnotationStoreError('conflict')` naming the
+rule ("this question was declined and the wording it was judged against has not
+changed"). Direct-store regression test required: fresh decline → propose rejected, log
+byte-identical; tampered decline support → propose succeeds.
 
 ## Part 3 — Durable producer
 
@@ -158,6 +175,10 @@ constructing snapshots in memory for the shared helpers.
   untampered declined stays suppressed (existing test).
 - Guardrails re-asserted: flipping a support record's status via a real supersession does
   not invalidate; an unrelated publish does not invalidate.
+- Source hash: same snapshot + same revisions, fresh vs tampered support → different
+  hashes; annotation-free reports keep their current hash (backward compatible).
+- Store gate: propose over a fresh decline → conflict, log byte-identical; over a stale
+  decline → succeeds with fresh support recorded.
 - CLI: `invalidate` on a stale package prints the line and writes the event; on a clean
   package prints the no-op line and writes nothing (byte-compare).
 - Read-only contracts unchanged: existing byte-compare tests on report/questions must
