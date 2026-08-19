@@ -20,10 +20,22 @@ export function computeWhatsStandingSourceHash(
   snapshot: ProjectMemorySnapshot,
   annotations?: AnnotationLogState,
 ): string {
+  const annotationDigest = annotations === undefined ? undefined
+    : [...annotations.annotations.values()]
+        .sort((a, b) => (a.annotationId < b.annotationId ? -1 : 1))
+        .map(a => ({
+          annotationId: a.annotationId,
+          status: a.status,
+          declineReason: a.declineReason ?? null,
+          locator: a.locator,
+          referentRecordIds: a.referentRecordIds ?? null,
+          support: a.support,
+        }))
   return stableHash({
     factSheet: buildWhatsStandingFactSheet(snapshot, annotations),
     revision: snapshot.revision,
     annotationRevision: annotations?.revision,
+    annotationDigest,
     projectId: snapshot.projectId,
   })
 }

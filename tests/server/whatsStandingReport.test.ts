@@ -6,8 +6,14 @@ import { renderWhatsStandingBlocks } from '../../server/compose/whatsStandingRen
 import { buildStandingEntries } from '../../shared/compose/whatsStandingFactSheet'
 import { CUE_NAMES, findCues, readsAsWithdrawn } from '../../shared/compose/whatsStandingCues'
 import { ComposedDocumentSchema } from '../../shared/compose/schemas'
-import { annotationIdFor, type AnnotationLogState, type AnnotationState } from '../../shared/projectMemoryAnnotations'
+import {
+  annotationIdFor,
+  recordLanguageFingerprint,
+  type AnnotationLogState,
+  type AnnotationState,
+} from '../../shared/projectMemoryAnnotations'
 import { unresolvedReferences } from '../../shared/compose/whatsStandingReadiness'
+import { computeWhatsStandingSourceHash } from '../../shared/compose/whatsStandingSourceHash'
 import type { ComposedBlock } from '../../shared/compose/types'
 
 const AT = '2026-08-13T20:00:00.000Z'
@@ -341,7 +347,7 @@ function logWith(
     questionType: 'resolve-reference',
     locator,
     candidateRecordIds: [],
-    support: [{ recordId: referencing.id, contentHash: 'a'.repeat(64) }],
+    support: [recordLanguageFingerprint(referencing)],
     updatedAt: AT,
     ...overrides,
   }
@@ -364,6 +370,9 @@ describe('readiness', () => {
     expect(unresolved).toHaveLength(1)
     expect(unresolved[0].message).toContain('mem-ref')
     expect(unresolved[0].message).toContain('Superseded by beats 9-11')
+    // The generic (non-stale) template is unchanged: names the settle path via questions/answer.
+    expect(unresolved[0].message).toContain('Settle it with the questions/answer commands (question')
+    expect(unresolved[0].message).not.toContain('invalidate')
     // Loud, at the top, naming the item — not buried in a footer.
     const markdown = renderComposedMarkdown(result.composed)
     expect(markdown.split('\n')[0]).toContain('INCOMPLETE')
@@ -411,6 +420,38 @@ describe('readiness', () => {
     const hidden = record({ id: 'mem-dev', kind: 'development' as ProjectMemoryRecord['kind'], claim: 'Superseded by beats 9-11.' })
     expect(unresolvedReferences(snapshot([hidden, referent]))).toEqual([])
   })
+
+  it('an approved resolution whose support no longer matches is stale and INCOMPLETE', () => {
+    const { annotations, annotationId } = logWith(referencing, {
+      status: 'approved', referentRecordIds: ['mem-target'],
+    })
+    const state = annotations.annotations.get(annotationId)!
+    state.support = [{ recordId: referencing.id, contentHash: 'b'.repeat(64) }]
+    const result = composeWhatsStanding({ snapshot: snapshot([referencing, referent]), runId: 'run-1', annotations })
+    if (!result.ok) throw new Error('compose failed')
+    expect(result.composed.fidelity.status).toBe('flagged')
+    const warning = result.composed.fidelity.warnings.find(w => w.kind === 'unresolved_reference')
+    expect(warning).toBeDefined()
+    // Names the changed record and says the resolution no longer holds — not the generic
+    // questions/answer template, which is deliberately not offered for a stale approval.
+    expect(warning!.message).toContain(referencing.id)
+    expect(warning!.message).toContain('invalidate')
+    expect(warning!.message).not.toContain('questions/answer')
+  })
+
+  it('a stale approved resolution renders as unresolved, not "You resolved this"', () => {
+    const { annotations, annotationId } = logWith(referencing, {
+      status: 'approved', referentRecordIds: ['mem-target'],
+    })
+    annotations.annotations.get(annotationId)!.support =
+      [{ recordId: referencing.id, contentHash: 'b'.repeat(64) }]
+    const blocks = renderWhatsStandingBlocks(snapshot([referencing, referent]), annotations)
+    const cue = blocks.find(b => b.type === 'leadInParagraph') as
+      Extract<ComposedBlock, { type: 'leadInParagraph' }>
+    expect(cue.text).toContain('does not resolve')
+    expect(cue.text).not.toContain('You resolved this')
+    expect(cue.sourceFieldIds).toEqual([referencing.id])
+  })
 })
 
 describe('source hash', () => {
@@ -425,6 +466,27 @@ describe('source hash', () => {
     if (!bare.ok || !annotated.ok) throw new Error('compose failed')
     // Same memory, different annotations → a different report, so it must not share a hash.
     expect(annotated.composed.sourceHash).not.toBe(bare.composed.sourceHash)
+  })
+
+  it('changes when a stored support fingerprint is tampered, same snapshot and revisions', () => {
+    const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+    const referent = record({ id: 'mem-target', claim: 'Beat sequence: 15 beats across three acts.' })
+    const snap = snapshot([referencing, referent])
+    const fresh = logWith(referencing, { status: 'approved', referentRecordIds: ['mem-target'] })
+    const tampered = logWith(referencing, { status: 'approved', referentRecordIds: ['mem-target'] })
+    tampered.annotations.annotations.get(tampered.annotationId)!.support =
+      [{ recordId: 'mem-ref', contentHash: 'b'.repeat(64) }]
+    expect(computeWhatsStandingSourceHash(snap, fresh.annotations))
+      .not.toBe(computeWhatsStandingSourceHash(snap, tampered.annotations))
+  })
+
+  it('changes between declined and cant-say with every other digest field equal', () => {
+    const referencing = record({ id: 'mem-ref', claim: 'Second decision. Superseded by beats 9-11.' })
+    const snap = snapshot([referencing])
+    const declined = logWith(referencing, { status: 'declined', declineReason: 'declined' })
+    const cantSay = logWith(referencing, { status: 'declined', declineReason: 'cant-say' })
+    expect(computeWhatsStandingSourceHash(snap, declined.annotations))
+      .not.toBe(computeWhatsStandingSourceHash(snap, cantSay.annotations))
   })
 })
 

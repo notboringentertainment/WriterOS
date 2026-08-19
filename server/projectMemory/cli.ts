@@ -597,6 +597,26 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
 }
 
 /**
+ * `invalidate` — sweep for annotation resolutions whose premise no longer holds and
+ * durably reopen them. The recovery tool for a restored or hand-edited package; writer
+ * paths run the same sweep automatically.
+ */
+async function runInvalidate(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+  assertAllowedOptions(args, ['project'], [])
+  const project = await safeProjectPath(args)
+  await project.verify()
+  const invalidated = await annotationStore.invalidateStale(project.path)
+  if (invalidated.length === 0) {
+    io.stdout('Nothing to invalidate — all resolutions still hold.\n')
+    return 0
+  }
+  for (const item of invalidated) {
+    io.stdout(`Invalidated ${item.annotationId}: ${item.cause} (${item.changedRecordId})\n`)
+  }
+  return 0
+}
+
+/**
  * `questions` — list the reference questions the writer could answer right now.
  *
  * Read-only. Each question is a phrase in a record's own wording that appears to point at
@@ -701,6 +721,7 @@ export async function runProjectMemoryCli(
     if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
     if (args.command === 'report') return await runReport(args, io)
+    if (args.command === 'invalidate') return await runInvalidate(args, io)
     if (args.command === 'questions') return await runQuestions(args, io)
     if (args.command === 'answer') return await runAnswer(args, io)
     throw new CliInputError('Unknown memory command.')

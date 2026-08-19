@@ -183,8 +183,11 @@ export function composeWhatsStanding(args: ComposeWhatsStandingArgs): ComposeRes
   // names the settle action so the report never offers a second settlement path.
   const unresolved = unresolvedReferences(snapshot, annotations).map((item): FidelityWarning => ({
     kind: 'unresolved_reference',
-    message: `Unresolved reference in ${item.recordId} (${item.state}): “${item.phrase}”. `
-      + `Settle it with the questions/answer commands (question ${item.annotationId}).`,
+    message: item.state === 'stale'
+      ? `Resolution no longer holds for ${item.recordId}: the wording of ${item.changedRecordId} changed `
+        + `since “${item.phrase}” was resolved. Reopen it with the invalidate command (question ${item.annotationId}).`
+      : `Unresolved reference in ${item.recordId} (${item.state}): “${item.phrase}”. `
+        + `Settle it with the questions/answer commands (question ${item.annotationId}).`,
     fieldId: item.recordId,
   }))
   return composeDeterministic({
