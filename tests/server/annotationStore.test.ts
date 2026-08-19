@@ -4,8 +4,8 @@ import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import { projectMemoryStore } from '../../server/projectMemory/store'
-import { annotationStore, annotationIdFor, recordLanguageFingerprint, questionVersionFor, AnnotationStoreError } from '../../server/projectMemory/annotationStore'
-import { AnnotationReplayError, applyAnnotationEvent, type AnnotationEvent, type AnnotationLogState } from '../../shared/projectMemoryAnnotations'
+import { annotationStore, annotationIdFor, recordLanguageFingerprint, questionVersionFor, derivePendingQuestions, AnnotationStoreError } from '../../server/projectMemory/annotationStore'
+import { AnnotationReplayError, applyAnnotationEvent, type AnnotationEvent, type AnnotationLogState, type AnnotationState } from '../../shared/projectMemoryAnnotations'
 import { composeWhatsStanding } from '../../server/compose'
 import { renderComposedMarkdown } from '../../server/compose/renderComposedMarkdown'
 import { runProjectMemoryCli } from '../../server/projectMemory/cli'
@@ -538,6 +538,104 @@ describe('invalidation producer', () => {
     expect(result).toEqual([{ annotationId, cause: 'language-changed', changedRecordId: expect.any(String) }])
     const state = await annotationStore.state(projectPath)
     expect(state.annotations.get(annotationId)?.status).toBe('invalidated')
+  })
+
+  it("propose self-heals an approved-stale annotation via its own sweep: invalidate then re-propose, one call", async () => {
+    const { projectPath } = await seeded()
+    const { snapshot, annotationId } = await approveOne(projectPath)
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!beats) throw new Error('fixture missing')
+
+    // Tamper the REFERENT's fingerprint (support[1]) only — the referencing record (STRUCK)
+    // is untouched, so its cue still derives this same annotationId in `current`.
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const approved = lines.find(l => l.type === 'annotation-approved')
+    const referentIndex = approved.support.findIndex((s: { recordId: string }) => s.recordId === beats.id)
+    if (referentIndex < 0) throw new Error('referent fingerprint not found in support')
+    approved.support[referentIndex].contentHash = 'd'.repeat(64)
+    await writeFile(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    const result = await annotationStore.propose(projectPath, snapshot, annotationId, 'run-2')
+    expect(result.status).toBe('proposed')
+
+    const after = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const tail = after.slice(-2)
+    expect(tail[0].type).toBe('annotation-invalidated')
+    expect(tail[0].annotationId).toBe(annotationId)
+    expect(tail[1].type).toBe('annotation-proposed')
+    expect(tail[1].annotationId).toBe(annotationId)
+    expect(tail[1].annotationRevision).toBe(tail[0].annotationRevision + 1)
+  })
+
+  it("propose's idempotent early return still appends a sweep for a DIFFERENT stale annotation", async () => {
+    const { projectPath } = await seeded()
+    const { annotationId: approvedId } = await approveOne(projectPath) // 'superseded-by', approved
+
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const others = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const other = others.find(x => x.annotationId !== approvedId) // the still-open 'struck' question
+    if (!other) throw new Error('fixture missing')
+
+    // Get `other` into 'proposed' status BEFORE staling the approved annotation, so this
+    // first propose call's own sweep has nothing to do yet.
+    await annotationStore.propose(projectPath, snapshot, other.annotationId, 'run-1')
+    await tamperApprovedSupport(projectPath)
+
+    // Re-proposing an ALREADY-proposed question hits the idempotent early return. Before the
+    // fix this silently dropped the sweep it had already preflighted.
+    const result = await annotationStore.propose(projectPath, snapshot, other.annotationId, 'run-2')
+    expect(result.status).toBe('proposed')
+
+    const state = await annotationStore.state(projectPath)
+    expect(state.annotations.get(approvedId)?.status).toBe('invalidated')
+
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const last = lines[lines.length - 1]
+    expect(last.type).toBe('annotation-invalidated')
+    expect(last.annotationId).toBe(approvedId)
+  })
+
+  it('answerQuestion self-heals an approved-stale annotation via its own sweep, in the same call', async () => {
+    const { projectPath } = await seeded()
+    const { snapshot, annotationId } = await approveOne(projectPath)
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!beats) throw new Error('fixture missing')
+
+    const filePath = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const lines = (await readFile(filePath, 'utf8')).trim().split('\n').map(l => JSON.parse(l))
+    const approved = lines.find(l => l.type === 'annotation-approved')
+    const referentIndex = approved.support.findIndex((s: { recordId: string }) => s.recordId === beats.id)
+    if (referentIndex < 0) throw new Error('referent fingerprint not found in support')
+    approved.support[referentIndex].contentHash = 'e'.repeat(64)
+    await writeFile(filePath, lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+
+    // Compute the questionVersion the way the store's own sweep will re-derive it: simulate
+    // the approved -> invalidated flip on a local copy of state, then run the SAME exported
+    // derivePendingQuestions the store uses internally, against the SAME current snapshot.
+    const current = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const state = await annotationStore.state(projectPath)
+    const existing = state.annotations.get(annotationId) as AnnotationState
+    const swept: AnnotationLogState = {
+      ...state,
+      annotations: new Map(state.annotations).set(annotationId, { ...existing, status: 'invalidated' }),
+    }
+    const question = derivePendingQuestions(swept, current).find(q => q.annotationId === annotationId)
+    if (!question) throw new Error('question was not re-derived from the simulated sweep')
+    const version = questionVersionFor(current, question)
+
+    const result = await annotationStore.answerQuestion(projectPath, {
+      annotationId, questionVersion: version,
+      answer: { kind: 'decline' }, runId: 'run-2',
+    })
+    expect(result.status).toBe('declined')
+
+    // The full chain landed in one call: invalidate -> propose -> decline, appended together.
+    const tail = (await readFile(filePath, 'utf8')).trim().split('\n').slice(-3).map(l => JSON.parse(l))
+    expect(tail.map((e: { type: string }) => e.type))
+      .toEqual(['annotation-invalidated', 'annotation-proposed', 'annotation-declined'])
+    expect(tail.every((e: { annotationId: string }) => e.annotationId === annotationId)).toBe(true)
   })
 })
 

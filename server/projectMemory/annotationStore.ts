@@ -270,6 +270,12 @@ function preflightAnnotationEvent(state: AnnotationLogState, event: AnnotationEv
   }
 }
 
+/** The `annotation-invalidated` member of the event union — what `buildInvalidationEvents`
+ * actually produces. Narrower than `AnnotationEvent` on purpose, so callers that only ever
+ * see sweep output (like `invalidateStale`) never need a runtime type-guard to read `cause`
+ * and `changedRecordId` back off it. */
+type AnnotationInvalidatedEvent = Extract<AnnotationEvent, { type: 'annotation-invalidated' }>
+
 /**
  * The invalidation sweep's event-building core, shared by `invalidateStale` and the
  * writer-path sweeps in `propose`/`answerQuestion`. Walks `state.annotations` directly, in
@@ -283,8 +289,8 @@ function buildInvalidationEvents(
   snapshot: ProjectMemorySnapshot,
   projectId: string,
   at: string,
-): AnnotationEvent[] {
-  const events: AnnotationEvent[] = []
+): AnnotationInvalidatedEvent[] {
+  const events: AnnotationInvalidatedEvent[] = []
   let revision = state.revision
   for (const annotationId of [...state.annotations.keys()].sort()) {
     const annotation = state.annotations.get(annotationId)
@@ -414,7 +420,15 @@ export function createAnnotationStore(): AnnotationQueries {
         }
         const existing = next.annotations.get(annotationId)
         if (existing !== undefined && existing.status !== 'declined' && existing.status !== 'invalidated') {
-          if (existing.status === 'proposed') return existing
+          if (existing.status === 'proposed') {
+            // Idempotent return — but the sweep was already preflighted against `next` above,
+            // and a stale approved annotation elsewhere must not go unwritten just because
+            // THIS annotationId had nothing left to do. Append the sweep (already validated,
+            // nothing else pending) before returning; still all-or-nothing, since every write
+            // on this path is a write that already passed preflight.
+            for (const swept of sweep) await appendAnnotationEvent(projectPath, swept)
+            return next.annotations.get(annotationId) as AnnotationState
+          }
           throw new AnnotationStoreError(`Annotation is already ${existing.status}.`, 'conflict')
         }
         if (existing !== undefined && existing.status === 'declined'
@@ -521,10 +535,12 @@ export function createAnnotationStore(): AnnotationQueries {
         const state = await replayAnnotations(projectPath, projectId)
         const current = await projectMemoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
         const at = new Date().toISOString()
-        // Sweep first, threaded ahead of this method's own events. Defensive: an approved
-        // annotation can never itself be the one being answered (only new/proposed questions
-        // are answerable), but deriving the question against the swept state costs nothing
-        // and keeps the two writer paths identical in shape.
+        // Sweep first, threaded ahead of this method's own events. Deriving the pending
+        // question against the SWEPT state (`next`), not the raw replayed `state`, is
+        // deliberate, not merely defensive: if `input.annotationId` is the very annotation
+        // the sweep just invalidated, that flip (approved → invalidated) makes it surface as
+        // a fresh 'new' question right here — answerable in this same call, the same
+        // self-healing shape `propose` gets, without a prior invalidateStale round trip.
         const sweep = buildInvalidationEvents(state, current, projectId, at)
         let next = state
         for (const event of sweep) next = preflightAnnotationEvent(next, event)
@@ -624,16 +640,11 @@ export function createAnnotationStore(): AnnotationQueries {
         let next = state
         for (const event of events) next = preflightAnnotationEvent(next, event)
         for (const event of events) await appendAnnotationEvent(projectPath, event)
-        return events.map(event => {
-          if (event.type !== 'annotation-invalidated') {
-            throw new AnnotationStoreError('buildInvalidationEvents produced a non-invalidation event.', 'corrupt')
-          }
-          return {
-            annotationId: event.annotationId,
-            cause: event.cause,
-            changedRecordId: event.changedRecordId,
-          }
-        })
+        return events.map(event => ({
+          annotationId: event.annotationId,
+          cause: event.cause,
+          changedRecordId: event.changedRecordId,
+        }))
       })
     },
   }
