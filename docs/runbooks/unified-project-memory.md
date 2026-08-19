@@ -297,12 +297,13 @@ that it is not really a reference at all — and you want to record that decisio
 durably in the project's memory.
 
 **Why this writes durably:** unlike `report` and `questions`, this command
-appends to `memory/annotations.jsonl` (never modifying the ledger itself). Each
-answer appends multiple events: any stale resolutions are swept and invalidated
-first (zero or more `annotation-invalidated` events), then the answer is recorded
-as proposed (if new) plus approved or declined (two events for a new question;
-one if already proposed). All events append in a single atomic batch, and the
-full history remains durably in the log.
+appends to `memory/annotations.jsonl` (never modifying the ledger itself). For a
+new question, the CLI makes two separate atomic appends: first, `propose()`
+appends the proposal plus any stale-resolution sweep (one batch); then
+`approve()` or `decline()` appends the settlement (second batch). For an
+already-proposed question, only the settlement is appended (one batch). The app's
+answer panel uses a single-transaction variant that always sweeps. The full
+history remains durably in the log.
 
 **Command:**
 
