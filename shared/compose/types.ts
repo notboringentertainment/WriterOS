@@ -55,7 +55,7 @@ export type ComposedBlock =
   | { type: 'meta'; text: string }
   | { type: 'logline'; text: string; sourceFieldIds: string[] }
   | { type: 'paragraph'; text: string; sourceFieldIds: string[] }
-  | { type: 'leadInParagraph'; lead: string; text: string; sourceFieldIds: string[] }
+  | { type: 'leadInParagraph'; lead: string; text: string; sourceFieldIds: string[]; annotationId?: string }
 
 export type FidelityWarningKind =
   | 'missing_provenance' | 'dangling_source_id' | 'coverage' | 'entity_diff' | 'injection_echo'

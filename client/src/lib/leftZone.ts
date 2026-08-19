@@ -49,6 +49,7 @@ const SURFACE_LABELS: Record<ActiveTab, string> = {
   outline: 'Outline',
   treatment: 'Treatment',
   'story-bible': 'Story Bible',
+  'whats-standing': "What's Standing",
 }
 
 export function surfaceLabel(surface: ActiveTab): string {
@@ -160,6 +161,10 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
       }))
       return { surface, heading, nodes: [...sectionNodes, ...characterNodes, ...mapNodes], empty: false }
     }
+
+    case 'whats-standing':
+      // Report surfaces have no document structure
+      return { surface, heading, nodes: [], empty: true }
   }
 }
 
@@ -178,6 +183,9 @@ function surfaceCounts(surface: ActiveTab, state: ProjectState): ConsoleCount[] 
       const written = [p.opening, p.escalation, p.middle, p.climax, p.resolution].filter(v => v.trim()).length
       return [{ label: 'sections', value: written }]
     }
+    case 'whats-standing':
+      // Report surfaces have no document counts
+      return []
   }
 }
 

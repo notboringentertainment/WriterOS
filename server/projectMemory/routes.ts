@@ -21,6 +21,9 @@ import {
 } from '../../shared/projectMemory'
 import { readAnalysisQueue, processQueueItem, type AnalysisQueueItem } from './writerOSObserver'
 import { createModelProvider, type ModelProvider } from '../ai/modelProvider'
+import { readWhatsStandingReport, readWhatsStandingReportDirect } from './whatsStandingReport'
+import { annotationStore, AnnotationStoreError } from './annotationStore'
+import { WhatsStandingAnswerRequestSchema } from '../../shared/whatsStandingPanel'
 
 export type ProjectMemoryAnalyzeHandler = (input: {
   projectId: string
@@ -62,6 +65,14 @@ const PROJECT_MEMORY_ROUTE_PATHS = {
 // double-guards itself on top of the mount-level boundary.
 const ANALYSIS_QUEUE_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue`)
 const ANALYSIS_RETRY_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/analysis-queue/:itemId/retry`)
+
+// The What's Standing panel's report (Task 3's readWhatsStandingReport) and its one write
+// path, answering a pending reference question (Task 2's annotationStore.answerQuestion).
+// Same treatment as the analysis-queue routes above: additive-only path arrays and
+// classifier branches, going through the identical mount-level boundary and double-guarded
+// with requireSameOrigin/requireSession at registration.
+const WHATS_STANDING_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/whats-standing`)
+const WHATS_STANDING_ANSWER_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/whats-standing/answer`)
 
 /** Never exposes priorText/currentText — the queue keeps up to 20k characters
  * of document/scene content per item purely for re-analysis; the Memory
@@ -248,13 +259,22 @@ function classifyProjectMemoryPath(
   )
     && endpointSegments[0]?.toLowerCase() === 'analysis-queue'
     && endpointSegments[2]?.toLowerCase() === 'retry'
+  // The What's Standing panel's answer endpoint (.../whats-standing/answer) is the second
+  // project-memory endpoint with a two-segment shape, so it needs the same additive
+  // treatment as isAnalysisRetryPath above: `endpoint` and every existing branch are
+  // unchanged, so every previously-classified shape still resolves exactly as before.
+  const isWhatsStandingAnswerPath = (
+    endpointSegments.length === 2 || (endpointSegments.length === 3 && endpointSegments[2] === '')
+  )
+    && endpointSegments[0]?.toLowerCase() === 'whats-standing'
+    && endpointSegments[1]?.toLowerCase() === 'answer'
   const expectedMethod = endpoint === 'snapshot' || endpoint === 'context'
     ? 'GET'
     : endpoint === 'actions' || endpoint === 'analyze'
       ? 'POST'
-      : endpoint === 'analysis-queue'
+      : endpoint === 'analysis-queue' || endpoint === 'whats-standing'
         ? 'GET'
-        : isAnalysisRetryPath
+        : isAnalysisRetryPath || isWhatsStandingAnswerPath
           ? 'POST'
           : undefined
   return { encodedProjectId, expectedMethod }
@@ -578,6 +598,55 @@ export function registerProjectMemoryRoutes(
       const refreshed = refreshedItems.find(entry => entry.id === itemId)
       return res.json({ item: refreshed ? summarizeQueueItem(refreshed) : null })
     } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
+  // What's Standing panel: the deterministic report plus its pending reference questions.
+  app.get(WHATS_STANDING_ROUTE_PATHS, requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const projectId = validatedProjectId(req.params.projectId)
+      const projectPath = await libraryStore(config, projectLibraryStore).resolveProjectPackagePath(projectId)
+      const result = await readWhatsStandingReport(projectPath)
+      if (!result.ok) return res.status(503).json({ error: 'report-unavailable', message: result.reason })
+      return res.json(result.payload)
+    } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
+  // What's Standing panel: the only write path, answering one pending reference question.
+  app.post(WHATS_STANDING_ANSWER_ROUTE_PATHS, requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const projectId = validatedProjectId(req.params.projectId)
+      const request = WhatsStandingAnswerRequestSchema.parse(req.body)
+      const projectPath = await libraryStore(config, projectLibraryStore).resolveProjectPackagePath(projectId)
+      await annotationStore.answerQuestion(projectPath, {
+        annotationId: request.annotationId,
+        questionVersion: request.questionVersion,
+        answer: request.answer,
+        runId: `panel-answer`,
+      })
+      // The write above already landed durably, so a failed read here must never turn into
+      // an error response — that would contradict "non-200 ⇒ log unchanged" for a write
+      // that in fact succeeded. The only reachable failure of the strict paired read is its
+      // optimistic-pair retries exhausting under a concurrent writer; fall back to the
+      // direct (non-paired) read, which is an acceptable one-time blip for this post-write
+      // display refresh (see readWhatsStandingReportDirect). Only if that also fails —
+      // composeReportPayload itself cannot fail today; this is defensive — report 503.
+      const result = await readWhatsStandingReport(projectPath)
+      if (result.ok) return res.json(result.payload)
+      const fallback = await readWhatsStandingReportDirect(projectPath)
+      if (!fallback.ok) return res.status(503).json({ error: 'report-unavailable', message: fallback.reason })
+      return res.json(fallback.payload)
+    } catch (error) {
+      if (error instanceof AnnotationStoreError) {
+        const status = error.reason === 'not-found' ? 404
+          : error.reason === 'conflict' ? 409
+          : error.reason === 'invalid-input' ? 400
+          : 500
+        return res.status(status).json({ error: `annotation-${error.reason}`, message: error.message })
+      }
       return routeError(res, error)
     }
   })

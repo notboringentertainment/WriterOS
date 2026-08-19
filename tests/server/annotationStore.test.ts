@@ -4,7 +4,7 @@ import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import { projectMemoryStore } from '../../server/projectMemory/store'
-import { annotationStore, annotationIdFor, recordLanguageFingerprint } from '../../server/projectMemory/annotationStore'
+import { annotationStore, annotationIdFor, recordLanguageFingerprint, questionVersionFor, AnnotationStoreError } from '../../server/projectMemory/annotationStore'
 import { AnnotationReplayError, applyAnnotationEvent, type AnnotationEvent, type AnnotationLogState } from '../../shared/projectMemoryAnnotations'
 import { composeWhatsStanding } from '../../server/compose'
 import { renderComposedMarkdown } from '../../server/compose/renderComposedMarkdown'
@@ -370,6 +370,150 @@ describe('report command', () => {
       await annotationStore.decline(projectPath, snapshot, q.annotationId, 'declined', 'run-1')
     }
     expect(await run()).not.toContain('INCOMPLETE')
+  })
+})
+
+describe('answerQuestion transaction', () => {
+  async function openQuestion(projectPath: string) {
+    const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const questions = await annotationStore.pendingQuestions(projectPath, snapshot)
+    const q = questions.find(x => x.locator.cue === 'superseded-by')
+    const beats = snapshot.records.find(r => r.claim.startsWith('Beat sequence'))
+    if (!q || !beats) throw new Error('fixture missing')
+    return { snapshot, q, beats, version: questionVersionFor(snapshot, q) }
+  }
+
+  async function expectLogUnchanged(projectPath: string, run: () => Promise<unknown>) {
+    const file = path.join(projectPath, 'memory', 'annotations.jsonl')
+    const before = await readFile(file, 'utf8').catch(() => '')
+    await expect(run()).rejects.toBeInstanceOf(AnnotationStoreError)
+    expect(await readFile(file, 'utf8').catch(() => '')).toBe(before)
+  }
+
+  it('settles a new question with referents in one call: propose + approve appended together', async () => {
+    const { projectPath } = await seeded()
+    const { q, beats, version } = await openQuestion(projectPath)
+    const state = await annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: [beats.id] }, runId: 'run-1',
+    })
+    expect(state.status).toBe('approved')
+    expect((await annotationStore.state(projectPath)).revision).toBe(2) // proposal + approval
+  })
+
+  it('records cant-say and decline through the same transaction', async () => {
+    const { projectPath } = await seeded()
+    const { q, version } = await openQuestion(projectPath)
+    const state = await annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'cant-say' }, runId: 'run-1',
+    })
+    expect(state.status).toBe('declined')
+    expect(state.declineReason).toBe('cant-say')
+  })
+
+  it("records { kind: 'decline' } with declineReason 'declined'", async () => {
+    const { projectPath } = await seeded()
+    const { q, version } = await openQuestion(projectPath)
+    const state = await annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'decline' }, runId: 'run-1',
+    })
+    expect(state.status).toBe('declined')
+    expect(state.declineReason).toBe('declined')
+  })
+
+  it('refuses a stale questionVersion and leaves the log byte-identical', async () => {
+    const { projectPath } = await seeded()
+    const { q } = await openQuestion(projectPath)
+    await expectLogUnchanged(projectPath, () => annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: 'f'.repeat(64),
+      answer: { kind: 'decline' }, runId: 'run-1',
+    }))
+  })
+
+  it('refuses an unknown annotationId and leaves the log byte-identical', async () => {
+    const { projectPath } = await seeded()
+    await expectLogUnchanged(projectPath, () => annotationStore.answerQuestion(projectPath, {
+      annotationId: 'ann_does_not_exist', questionVersion: 'f'.repeat(64),
+      answer: { kind: 'decline' }, runId: 'run-1',
+    }))
+  })
+
+  it('refuses an empty referent list and leaves the log byte-identical', async () => {
+    const { projectPath } = await seeded()
+    const { q, version } = await openQuestion(projectPath)
+    await expectLogUnchanged(projectPath, () => annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: [] }, runId: 'run-1',
+    }))
+  })
+
+  it('refuses a referent outside candidates atomically — no orphaned proposal', async () => {
+    const { projectPath } = await seeded()
+    const { q, version } = await openQuestion(projectPath)
+    await expectLogUnchanged(projectPath, () => annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: [q.locator.recordId] }, runId: 'run-1',
+    }))
+    // The failing answer must not have persisted the proposal it derived.
+    expect((await annotationStore.state(projectPath)).revision).toBe(0)
+  })
+
+  it('deduplicates referent ids order-preservingly: 51 copies of one candidate succeeds', async () => {
+    const { projectPath } = await seeded()
+    const { q, beats, version } = await openQuestion(projectPath)
+    const state = await annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: Array(51).fill(beats.id) }, runId: 'run-1',
+    })
+    expect(state.status).toBe('approved')
+    expect(state.referentRecordIds).toEqual([beats.id])
+  })
+
+  it('resumes an already-proposed question: single settlement event appended', async () => {
+    const { projectPath } = await seeded()
+    const { q, beats } = await openQuestion(projectPath)
+    await annotationStore.propose(projectPath, await projectMemoryStore.readSnapshotReadOnly(projectPath), q.annotationId, 'run-1')
+    expect((await annotationStore.state(projectPath)).revision).toBe(1)
+
+    const currentSnapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const currentQuestions = await annotationStore.pendingQuestions(projectPath, currentSnapshot)
+    const proposedQ = currentQuestions.find(x => x.annotationId === q.annotationId)
+    if (!proposedQ) throw new Error('question missing after propose')
+    expect(proposedQ.status).toBe('proposed')
+    const version = questionVersionFor(currentSnapshot, proposedQ)
+
+    const state = await annotationStore.answerQuestion(projectPath, {
+      annotationId: q.annotationId, questionVersion: version,
+      answer: { kind: 'referents', recordIds: [beats.id] }, runId: 'run-2',
+    })
+    expect(state.status).toBe('approved')
+    expect((await annotationStore.state(projectPath)).revision).toBe(2)
+  })
+
+  it('questionVersion changes when the referencing wording changes', async () => {
+    const { projectPath } = await seeded()
+    const { snapshot, q } = await openQuestion(projectPath)
+    const edited = {
+      ...snapshot,
+      records: snapshot.records.map(r => r.id === q.locator.recordId
+        ? { ...r, claim: `${r.claim} And one extra clause.` } : r),
+    }
+    expect(questionVersionFor(snapshot, q)).not.toBe(questionVersionFor(edited, q))
+  })
+
+  it('questionVersion changes when a candidate record’s wording changes', async () => {
+    const { projectPath } = await seeded()
+    const { snapshot, q } = await openQuestion(projectPath)
+    const candidateId = q.candidateRecordIds[0]
+    if (!candidateId) throw new Error('fixture missing a candidate')
+    const edited = {
+      ...snapshot,
+      records: snapshot.records.map(r => r.id === candidateId
+        ? { ...r, claim: `${r.claim} And one extra clause.` } : r),
+    }
+    expect(questionVersionFor(snapshot, q)).not.toBe(questionVersionFor(edited, q))
   })
 })
 

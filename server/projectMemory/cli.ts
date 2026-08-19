@@ -23,8 +23,8 @@ import {
   type SafeExistingPath,
 } from './safePaths'
 import { previewProjectMemoryImport } from './importer'
-import { composeWhatsStanding } from '../compose'
 import { annotationStore, AnnotationStoreError } from './annotationStore'
+import { readWhatsStandingReport } from './whatsStandingReport'
 import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
 
 export interface ProjectMemoryCliIo {
@@ -581,40 +581,18 @@ async function runReport(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   await project.verify()
   // Read-only by contract: readSnapshot() can initialize a ledger, append
   // migration events, and rewrite projections, all of which would falsify this
-  // command's promise that generating a report changes nothing.
-  //
-  // Memory and annotations are two files, and every write to either happens under the
-  // package lock. The snapshot read is itself lock-protected inside readSnapshotReadOnly,
-  // but annotationStore.state reads memory/annotations.jsonl outside any lock, so the pair
-  // is made consistent optimistically: if the annotation revision is identical before and
-  // after the snapshot read, no writer ran in between and the pair is one moment's state,
-  // never a report stitched from two.
-  let annotations = await annotationStore.state(project.path)
-  let snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
-  for (let attempt = 0; ; attempt += 1) {
-    const after = await annotationStore.state(project.path)
-    if (after.revision === annotations.revision) break
-    if (attempt >= 3) {
-      io.stderr('Memory kept changing while the report was being read. Try again when the project is quiet.\n')
-      return 1
-    }
-    annotations = after
-    snapshot = await projectMemoryStore.readSnapshotReadOnly(project.path)
-  }
-
-  const result = composeWhatsStanding({
-    snapshot,
-    runId: `whats-standing-r${snapshot.revision}-a${annotations.revision}`,
-    annotations,
-  })
+  // command's promise that generating a report changes nothing. The consistent-pair
+  // read (memory + annotations) and compose call live in readWhatsStandingReport,
+  // shared with the What's Standing panel's server read path.
+  const result = await readWhatsStandingReport(project.path)
   if (!result.ok) {
     io.stderr(`${result.reason}\n`)
     return 1
   }
 
   io.stdout(format === 'json'
-    ? `${JSON.stringify(result.composed, null, 2)}\n`
-    : renderComposedMarkdown(result.composed))
+    ? `${JSON.stringify(result.payload.composed, null, 2)}\n`
+    : renderComposedMarkdown(result.payload.composed))
   return 0
 }
 

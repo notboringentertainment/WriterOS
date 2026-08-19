@@ -5,7 +5,7 @@ import { ProjectMenu } from './ProjectMenu'
 import { SavedToast } from './SavedToast'
 import type { ActiveRitual } from '../../lib/shellState'
 
-type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis'
+type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis' | 'whats-standing'
 
 const WRITING_TABS: { id: WritingTab; label: string }[] = [
   { id: 'script',      label: 'Script' },
@@ -13,6 +13,7 @@ const WRITING_TABS: { id: WritingTab; label: string }[] = [
   { id: 'outline',     label: 'Outline' },
   { id: 'treatment',   label: 'Treatment' },
   { id: 'synopsis',    label: 'Synopsis' },
+  { id: 'whats-standing', label: "What's Standing" },
 ]
 
 interface TopBarProps {

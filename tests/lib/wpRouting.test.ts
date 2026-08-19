@@ -8,6 +8,7 @@ import {
   formatWritingPartnerSpeaker,
   buildProjectContext,
   extractScriptContext,
+  isMemoryRecordRelevantToSurface,
 } from '../../client/src/lib/wpRouting'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
@@ -1025,5 +1026,49 @@ describe('buildProjectContext — project format and showOverview', () => {
     expect(ctx.format).toBe('feature')
     expect(ctx.synopsis.showOverview).toBe('')
     expect(ctx.synopsis.series).toBeUndefined()
+  })
+})
+
+describe('isMemoryRecordRelevantToSurface', () => {
+  it('excludes writeros records from whats-standing surface', () => {
+    const synopsisRecord: Pick<any, 'source'> = {
+      source: {
+        workflow: 'writeros' as const,
+        sourceUri: 'documents/synopsis.json',
+        sourceHash: 'hash',
+        sourceId: 'id',
+        capturedAt: '2026-08-18T00:00:00Z',
+        approval: 'none' as const,
+      },
+    }
+    expect(isMemoryRecordRelevantToSurface(synopsisRecord, 'whats-standing')).toBe(false)
+  })
+
+  it('includes synopsis records in synopsis surface', () => {
+    const synopsisRecord: Pick<any, 'source'> = {
+      source: {
+        workflow: 'writeros' as const,
+        sourceUri: 'documents/synopsis.json',
+        sourceHash: 'hash',
+        sourceId: 'id',
+        capturedAt: '2026-08-18T00:00:00Z',
+        approval: 'none' as const,
+      },
+    }
+    expect(isMemoryRecordRelevantToSurface(synopsisRecord, 'synopsis')).toBe(true)
+  })
+
+  it('returns false for writeros-room records on whats-standing surface', () => {
+    const roomRecord: Pick<any, 'source'> = {
+      source: {
+        workflow: 'writeros-room' as const,
+        sourceUri: 'some-room-uri',
+        sourceHash: 'hash',
+        sourceId: 'id',
+        capturedAt: '2026-08-18T00:00:00Z',
+        approval: 'none' as const,
+      },
+    }
+    expect(isMemoryRecordRelevantToSurface(roomRecord, 'whats-standing')).toBe(false)
   })
 })

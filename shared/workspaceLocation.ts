@@ -4,7 +4,7 @@ import { z } from 'zod'
 // in the work. It is assembled client-side, validated here, and rendered server-side by
 // fixed templates.
 
-export const LocationSurfaceSchema = z.enum(['script', 'outline', 'synopsis', 'treatment', 'story-bible'])
+export const LocationSurfaceSchema = z.enum(['script', 'outline', 'synopsis', 'treatment', 'story-bible', 'whats-standing'])
 export type LocationSurface = z.infer<typeof LocationSurfaceSchema>
 
 export const LocationSourceKindSchema = z.enum(['selected_text', 'editor_cursor', 'active_section', 'first_unanswered', 'none'])
