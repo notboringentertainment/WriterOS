@@ -267,7 +267,7 @@ describe('project memory schemas', () => {
 })
 
 describe('append-only project memory store', () => {
-  it('renders record-controlled projection text as escaped single-line Markdown', () => {
+  it('renders record-controlled projection text as prose that cannot break structure', () => {
     const active = {
       ...memoryRecord({
         id: 'mem-1\n# Forged ID',
@@ -300,44 +300,173 @@ describe('append-only project memory store', () => {
       }],
     } as ProjectMemorySnapshot
 
+    const provenance = '> Source: writeros · documents/story.md # Forged Source - forged source bullet'
+      + ` · Updated: ${capturedAt} · ID: mem-1 # Forged ID`
+
     expect(renderCanonProjection(snapshot)).toBe([
       '# Project Canon',
       '',
-      'Revision: 7',
+      `Revision: 7 · last changed ${capturedAt.slice(0, 10)}`,
       '',
-      '## Trusted canon \\# Forged Heading \\- forged bullet',
+      '1 settled decision.',
       '',
-      '- Memory ID: mem\\-1 \\# Forged ID',
-      '- Source: writeros · documents/story.md \\# Forged Source \\- forged source bullet',
-      `- Updated: ${capturedAt}`,
+      'Trusted canon',
+      '\\# Forged Heading',
+      '\\- forged bullet',
       '',
-      '1\\. Forged ordered item \\~\\~\\~ Detail \\#\\# Forged Detail \\> forged quote',
+      '1\\. Forged ordered item',
+      '\\~\\~\\~',
+      'Detail',
+      '\\## Forged Detail',
+      '\\> forged quote',
       '',
-    ].join('\n'))
+      provenance,
+    ].join('\n') + '\n')
+
     expect(renderReviewProjection(snapshot)).toBe([
       '# Project Memory Review',
       '',
-      'Revision: 7',
+      `Revision: 7 · last changed ${capturedAt.slice(0, 10)}`,
       '',
-      '# Candidates',
+      '## Awaiting your decision',
       '',
-      '## Candidate \\# Forged Candidate',
+      'Candidate',
+      '\\# Forged Candidate',
       '',
-      '- Memory ID: candidate\\-1',
-      '- Source: writeros · documents/story.md \\# Forged Source \\- forged source bullet',
-      `- Updated: ${capturedAt}`,
+      '1\\. Forged ordered item',
+      '\\~\\~\\~',
+      'Detail',
+      '\\## Forged Detail',
+      '\\> forged quote',
       '',
-      '1\\. Forged ordered item \\~\\~\\~ Detail \\#\\# Forged Detail \\> forged quote',
+      '> Source: writeros · documents/story.md # Forged Source - forged source bullet'
+        + ` · Updated: ${capturedAt} · ID: candidate-1`,
       '',
-      '# Open Conflicts',
+      '## Open conflicts',
       '',
-      '## conflict\\-1 \\# Forged Conflict ID',
+      'Mismatch',
+      '\\# Forged Conflict',
+      '\\- forged conflict bullet',
       '',
-      '- Left: mem\\-1 \\# Forged ID',
-      '- Right: candidate\\-1',
-      '- Reason: Mismatch \\# Forged Conflict \\- forged conflict bullet',
-      '',
-    ].join('\n'))
+      '> Conflict: conflict-1 # Forged Conflict ID · Left: mem-1 # Forged ID · Right: candidate-1',
+    ].join('\n') + '\n')
+  })
+
+  it('leaves ordinary prose unescaped so the canon stays readable', () => {
+    const snapshot = {
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 3,
+      records: [memoryRecord({
+        id: 'mem-readable',
+        status: 'active',
+        claim: 'One-sheet: a zoo trainer and the detective who chose the badge over her '
+          + '(also an open question) get a second shot — and won\'t stop squawking.',
+        source: source({ approval: 'explicit', sourceUri: 'documents/story.md#one-sheet' }),
+      })],
+      conflicts: [],
+    } as ProjectMemorySnapshot
+
+    const output = renderCanonProjection(snapshot)
+
+    // The bug this change fixes: hyphens and parens were escaped in running prose.
+    expect(output).toContain('One-sheet: a zoo trainer')
+    expect(output).toContain('(also an open question)')
+    expect(output).toContain('documents/story.md#one-sheet')
+    expect(output).not.toContain('\\-')
+    expect(output).not.toContain('\\(')
+  })
+
+  it('neutralises every block construct a claim could smuggle in', () => {
+    const hostile = [
+      '# heading',
+      '- bullet',
+      '+ bullet',
+      '* bullet',
+      '1. ordered',
+      '2) ordered',
+      '> quote',
+      '    indented code',
+      '```fence',
+      '~~~fence',
+      'a | b',
+      '<div>',
+      '</details>',
+      '<!-- comment -->',
+      'Title',
+      '===',
+      'Other',
+      '---',
+    ].join('\n')
+    const snapshot = {
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 1,
+      records: [memoryRecord({
+        id: 'mem-hostile',
+        status: 'active',
+        claim: hostile,
+        source: source({ approval: 'explicit' }),
+      })],
+      conflicts: [],
+    } as ProjectMemorySnapshot
+
+    const body = renderCanonProjection(snapshot)
+      .split('\n')
+      .slice(6) // past the document's own header lines
+
+    for (const line of body) {
+      if (line.startsWith('> Source:')) continue // the provenance line we emit ourselves
+      expect(line).not.toMatch(/^#/)
+      expect(line).not.toMatch(/^[-+*]\s/)
+      expect(line).not.toMatch(/^\d+[.)]\s/)
+      expect(line).not.toMatch(/^>/)
+      expect(line).not.toMatch(/^\s{4}\S/)
+      expect(line).not.toMatch(/^(```|~~~)/)
+      expect(line).not.toMatch(/^</)
+      expect(line).not.toMatch(/^[=-]{2,}$/)
+      expect(line).not.toMatch(/(^|[^\\])\|/) // pipes must be escaped, not absent
+    }
+  })
+
+  it('renders identically on repeated calls so the store never rewrites a stable file', () => {
+    const snapshot = {
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 9,
+      records: [
+        memoryRecord({ id: 'mem-a', status: 'active', claim: 'First', source: source({ approval: 'explicit' }) }),
+        memoryRecord({ id: 'mem-b', status: 'candidate', claim: 'Second', source: source() }),
+      ],
+      conflicts: [],
+    } as ProjectMemorySnapshot
+
+    expect(renderCanonProjection(snapshot)).toBe(renderCanonProjection(snapshot))
+    expect(renderReviewProjection(snapshot)).toBe(renderReviewProjection(snapshot))
+  })
+
+  it('never drops any part of a claim or detail', () => {
+    const claim = 'One call per dead person, ever. No repeats, no exceptions.'
+    const detail = 'Superseded by beats 9-11.'
+    const snapshot = {
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 2,
+      records: [memoryRecord({
+        id: 'mem-full',
+        status: 'active',
+        claim,
+        detail,
+        source: source({ approval: 'explicit' }),
+      })],
+      conflicts: [],
+    } as ProjectMemorySnapshot
+
+    const output = renderCanonProjection(snapshot)
+
+    expect(output).toContain(claim)
+    // The clause that says what a decision relates to must survive verbatim.
+    expect(output).toContain(detail)
   })
 
   it('lazily initializes an empty ledger and all derived projections', async () => {
