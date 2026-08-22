@@ -83,6 +83,32 @@ describe('ProjectMeetingPage', () => {
     expect(apiMock.startInterview).not.toHaveBeenCalled()
   })
 
+  it('lets the writer name the project from the intake page', async () => {
+    const onProjectTitleChange = vi.fn()
+    render(<ProjectMeetingPage projectId="p1" projectTitle="Untitled Project" projectTitleDraft="" onProjectTitleChange={onProjectTitleChange} documents={createEmptyDocuments()} onExit={vi.fn()} />)
+    const input = await screen.findByLabelText('Project title')
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+
+    fireEvent.change(input, { target: { value: 'Grave Affairs' } })
+    expect(input).toHaveValue('Grave Affairs')
+    expect(onProjectTitleChange).toHaveBeenLastCalledWith('Grave Affairs')
+  })
+
+  it('does not steal focus from a project that already has a title', async () => {
+    render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" projectTitleDraft="Ace Handler" onProjectTitleChange={vi.fn()} documents={createEmptyDocuments()} onExit={vi.fn()} />)
+    const input = await screen.findByLabelText('Project title')
+    expect(input).toHaveValue('Ace Handler')
+    expect(input).not.toHaveFocus()
+  })
+
+  it('hides the title field once the meeting is underway', async () => {
+    apiMock.fetchInterviewStatus.mockResolvedValue(statusOf('interviewing', question))
+    render(<ProjectMeetingPage projectId="p1" projectTitle="Ace Handler" projectTitleDraft="Ace Handler" onProjectTitleChange={vi.fn()} documents={createEmptyDocuments()} onExit={vi.fn()} />)
+    expect(await screen.findByText('What must stay true no matter what?')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Project title')).not.toBeInTheDocument()
+  })
+
   it('requires a seed before starting', async () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Begin the meeting' }))

@@ -18,6 +18,10 @@ export interface ProjectMeetingPageProps {
   projectId: string
   projectScopeKey?: string
   projectTitle?: string
+  /** Raw stored title ('' when unnamed). Drives the intake title field. */
+  projectTitleDraft?: string
+  /** When provided, the intake page offers a title field that writes through on every keystroke. */
+  onProjectTitleChange?: (title: string) => void
   documents: ProjectDocuments
   onExit: () => void
 }
@@ -27,9 +31,12 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, documents, onExit }: ProjectMeetingPageProps) {
+export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, projectTitleDraft, onProjectTitleChange, documents, onExit }: ProjectMeetingPageProps) {
   const interview = useInterviewSession(projectId, projectScopeKey)
   const [seedDraft, setSeedDraft] = useState('')
+  const [titleDraft, setTitleDraft] = useState(projectTitleDraft ?? '')
+  // Naming the project is job one: focus the field only when it is still empty.
+  const [autoFocusTitle] = useState(() => !(projectTitleDraft ?? '').trim())
   const [answerDraft, setAnswerDraft] = useState('')
   const [origin, setOrigin] = useState<InterviewAnswerOrigin>('seed')
   const [seedError, setSeedError] = useState<string | null>(null)
@@ -143,6 +150,22 @@ export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, d
       {!session && (
         <RitualStage stageKey="intake">
           <div style={styles.stack}>
+            {onProjectTitleChange && (
+              <label style={styles.titleField}>
+                <span style={styles.titleLabel}>Project title</span>
+                <input
+                  aria-label="Project title"
+                  placeholder="Untitled Project"
+                  value={titleDraft}
+                  autoFocus={autoFocusTitle}
+                  onChange={e => {
+                    setTitleDraft(e.target.value)
+                    onProjectTitleChange(e.target.value)
+                  }}
+                  style={styles.titleInput}
+                />
+              </label>
+            )}
             <textarea
               aria-label="Project Meeting seed"
               placeholder="Paste the seed or one-sentence idea…"
@@ -415,6 +438,30 @@ const styles: Record<string, React.CSSProperties> = {
   },
   diffItem: {
     display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--fg-muted)',
+  },
+  titleField: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  titleLabel: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    color: 'var(--fg-subtle)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+  },
+  titleInput: {
+    background: 'var(--surface-2)',
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+    color: 'var(--fg)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 20,
+    padding: '12px 16px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    width: '100%',
   },
   seedInput: {
     background: 'var(--surface-2)',

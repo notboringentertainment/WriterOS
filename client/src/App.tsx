@@ -1056,6 +1056,8 @@ export default function App() {
               projectId={project.activeProjectId}
               projectScopeKey={activeAgentProjectKey}
               projectTitle={getDisplayProjectTitle(project.state.meta.title)}
+              projectTitleDraft={project.state.meta.title}
+              onProjectTitleChange={title => project.setMeta({ title })}
               documents={project.state.documents}
               onExit={shellState.closeRitual}
             />
