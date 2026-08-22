@@ -37,3 +37,8 @@ export interface ProjectLibraryReadResponse {
 export interface ProjectLibrarySaveResponse {
   ref: ServerProjectRef
 }
+
+export interface ProjectLibraryRemoveResponse {
+  ok: true
+  alreadyMissing: boolean
+}

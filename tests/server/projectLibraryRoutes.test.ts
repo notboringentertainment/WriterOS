@@ -271,3 +271,43 @@ describe('project library HTTP routes', () => {
     expect(response.json).toEqual({ error: 'name-collision', message: 'A WriterOS project package with this name already exists.' })
   })
 })
+
+describe('project library delete route', () => {
+  it('deletes a project package and then reports it missing', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-routes-'))
+    temporaryRoots.push(root)
+    const store = await createProjectLibraryStore(root)
+    const port = await startApp(config({ rootPath: root }), store)
+    const project = makeProject()
+    await requestJson(port, `/api/project-library/projects/${project.id}`, {
+      method: 'PUT', headers: sameOriginHeaders, body: { project },
+    })
+
+    const deleted = await requestJson(port, `/api/project-library/projects/${project.id}`, {
+      method: 'DELETE', headers: sameOriginHeaders,
+    })
+    expect(deleted.status).toBe(200)
+    expect(deleted.json).toEqual({ ok: true, alreadyMissing: false })
+
+    const listed = await requestJson(port, '/api/project-library/projects', { headers: sameOriginHeaders })
+    expect(listed.json).toEqual({ entries: [] })
+
+    const again = await requestJson(port, `/api/project-library/projects/${project.id}`, {
+      method: 'DELETE', headers: sameOriginHeaders,
+    })
+    expect(again.status).toBe(404)
+    expect(again.json.error).toBe('not-found')
+    expect(again.text).not.toContain(root)
+  })
+
+  it('rejects unauthenticated delete requests', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-routes-'))
+    temporaryRoots.push(root)
+    const port = await startApp(config({ rootPath: root }), await createProjectLibraryStore(root))
+
+    const response = await requestJson(port, '/api/project-library/projects/anything', {
+      method: 'DELETE', headers: { Origin: 'http://127.0.0.1:5177' },
+    })
+    expect(response.status).toBe(401)
+  })
+})
