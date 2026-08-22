@@ -56,6 +56,7 @@ export interface ProjectLibraryStore {
   resolveProjectPackagePath(projectId: string): Promise<string>
   readProject(projectId: string): Promise<ProjectPackageReadResult>
   writeProject(project: StoredProject): Promise<ServerProjectRef>
+  removeProject(projectId: string): Promise<{ alreadyMissing: boolean }>
 }
 
 export interface ProjectLibraryFileOperations {
@@ -550,6 +551,34 @@ export async function createProjectLibraryStore(
           await packageWriteLock.release()
         } catch (releaseError) {
           if (!writeFailed) throw releaseError
+        }
+      }
+    },
+    async removeProject(projectId) {
+      const packageWriteLock = await acquirePackageWriteLock({
+        workspaceRoot: rootPath,
+        projectId,
+        testHooks: options.packageLockTestHooks,
+      })
+      let removeFailed = false
+      try {
+        await scanProjects()
+        const existing = projectPaths.get(projectId)
+        if (!existing) {
+          throw new ProjectLibraryStoreError('WriterOS project was not found.', 404, 'not-found')
+        }
+        const packagePath = await assertSafeExistingPath(rootPath, existing.packagePath)
+        await fileOperations.rm(packagePath, { recursive: true, force: true })
+        projectPaths.delete(projectId)
+        return { alreadyMissing: false }
+      } catch (error) {
+        removeFailed = true
+        throw error
+      } finally {
+        try {
+          await packageWriteLock.release()
+        } catch (releaseError) {
+          if (!removeFailed) throw releaseError
         }
       }
     },

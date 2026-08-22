@@ -72,6 +72,15 @@ export function registerProjectLibraryRoutes(
     }
   })
 
+  app.delete('/api/project-library/projects/:projectId', requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const result = await dataStore(config, store).removeProject(req.params.projectId)
+      return res.json({ ok: true, alreadyMissing: result.alreadyMissing })
+    } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
   app.put('/api/project-library/projects/:projectId', requireSameOrigin, requireSession, async (req, res) => {
     try {
       const data = SaveProjectRequestSchema.parse(req.body)

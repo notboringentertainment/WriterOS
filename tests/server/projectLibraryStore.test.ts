@@ -853,3 +853,39 @@ describe('server project library store', () => {
     expect(read.ok && read.project.state.meta.title).toBe('Salt Line Revised')
   })
 })
+
+describe('project library store removeProject', () => {
+  it('removes the package from disk and forgets the project id', async () => {
+    const root = await makeTemporaryDirectory()
+    const store = await createProjectLibraryStore(root)
+    const project = makeStoredProject()
+    const ref = await store.writeProject(project)
+    const packagePath = path.join(root, ref.packageName)
+
+    await expect(store.removeProject(project.id)).resolves.toEqual({ alreadyMissing: false })
+
+    await expect(readdir(root)).resolves.not.toContain(ref.packageName)
+    await expect(readdir(packagePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(store.readProject(project.id)).rejects.toMatchObject({ code: 'not-found', statusCode: 404 })
+    await expect(store.listProjects()).resolves.toEqual([])
+  })
+
+  it('reports an unknown project id as not found', async () => {
+    const root = await makeTemporaryDirectory()
+    const store = await createProjectLibraryStore(root)
+
+    await expect(store.removeProject('missing-project-id')).rejects.toMatchObject({ code: 'not-found', statusCode: 404 })
+  })
+
+  it('refuses to remove a symlinked package without following it', async () => {
+    const root = await makeTemporaryDirectory()
+    const outside = await makeTemporaryDirectory('writeros-outside-')
+    const project = makeStoredProject('Outside', 'a1b2c3d4-0000-4000-8000-000000000001')
+    const targetPath = await writeSerializedPackage(outside, 'Outside (a1b2c3d4).writeros', project)
+    await symlink(targetPath, path.join(root, 'Linked (a1b2c3d4).writeros'))
+    const store = await createProjectLibraryStore(root)
+
+    await expect(store.removeProject(project.id)).rejects.toMatchObject({ code: 'not-found' })
+    await expect(readdir(targetPath)).resolves.not.toEqual([])
+  })
+})

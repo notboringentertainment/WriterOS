@@ -77,7 +77,7 @@ describe('server project storage adapter', () => {
     expect(adapter.kind).toBe('server')
     expect(adapter.label).toBe('WriterOS Projects')
     expect(adapter.capabilities).toEqual({
-      removeProject: false,
+      removeProject: true,
       archiveProject: false,
       restoreProject: false,
       showProjectInFolder: false,
@@ -109,7 +109,6 @@ describe('server project storage adapter', () => {
     const adapter = await bootstrapServerProjectStorage(fetchMock)
     if (!adapter) throw new Error('expected server adapter')
 
-    await expect(adapter.removeProject(ref)).resolves.toMatchObject({ ok: false, reason: 'unsupported' })
     await expect(adapter.archiveProject(ref)).resolves.toMatchObject({ ok: false, reason: 'unsupported' })
     await expect(adapter.restoreProject(ref)).resolves.toMatchObject({ ok: false, reason: 'unsupported' })
     await expect(adapter.showProjectInFolder(ref)).resolves.toMatchObject({ ok: false, reason: 'unsupported' })
@@ -141,6 +140,50 @@ describe('server project storage adapter', () => {
         message: 'A WriterOS project package with this name already exists.',
       }))
       expect(JSON.stringify(error)).not.toContain('/private/project/root')
+    })
+  })
+})
+
+describe('server project storage adapter removeProject', () => {
+  function bootstrapResponse() {
+    return jsonResponse({ enabled: true, label: 'WriterOS Projects', sessionToken: 'secret-session-token' })
+  }
+
+  it('advertises removeProject and issues an authenticated DELETE', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(bootstrapResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true, alreadyMissing: false }))
+    const adapter = await bootstrapServerProjectStorage(fetchMock)
+    if (!adapter) throw new Error('expected server adapter')
+
+    expect(adapter.capabilities.removeProject).toBe(true)
+    await expect(adapter.removeProject(ref)).resolves.toEqual({ ok: true, folderAlreadyMissing: false })
+
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe('/api/project-library/projects/server-project-1234')
+    expect(init.method).toBe('DELETE')
+    expect(init.headers['X-WriterOS-Session']).toBe('secret-session-token')
+  })
+
+  it('treats a not-found response as already removed', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(bootstrapResponse())
+      .mockResolvedValueOnce(jsonResponse({ error: 'not-found', message: 'WriterOS project was not found.' }, 404))
+    const adapter = await bootstrapServerProjectStorage(fetchMock)
+    if (!adapter) throw new Error('expected server adapter')
+
+    await expect(adapter.removeProject(ref)).resolves.toEqual({ ok: true, folderAlreadyMissing: true })
+  })
+
+  it('returns a failed result instead of throwing on other errors', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(bootstrapResponse())
+      .mockResolvedValueOnce(jsonResponse({ error: 'unsafe-path', message: 'Project path is unsafe.' }, 400))
+    const adapter = await bootstrapServerProjectStorage(fetchMock)
+    if (!adapter) throw new Error('expected server adapter')
+
+    await expect(adapter.removeProject(ref)).resolves.toEqual({
+      ok: false, reason: 'failed', message: 'Project path is unsafe.',
     })
   })
 })

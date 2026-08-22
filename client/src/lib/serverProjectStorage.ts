@@ -2,6 +2,7 @@ import type {
   ProjectLibraryBootstrap,
   ProjectLibraryListResponse,
   ProjectLibraryReadResponse,
+  ProjectLibraryRemoveResponse,
   ProjectLibrarySaveResponse,
 } from '@shared/projectLibraryApi'
 import type { StoredProject } from './projectLibrary'
@@ -100,7 +101,7 @@ export async function bootstrapServerProjectStorage(
     label: bootstrap.label,
     defaultFolderLabel: bootstrap.label,
     capabilities: {
-      removeProject: false,
+      removeProject: true,
       archiveProject: false,
       restoreProject: false,
       showProjectInFolder: false,
@@ -137,8 +138,24 @@ export async function bootstrapServerProjectStorage(
       )
       return response.ref
     },
-    async removeProject() {
-      return unsupported('Removing projects is not available through the server project library yet.')
+    async removeProject(ref) {
+      try {
+        const response = await requestJson<ProjectLibraryRemoveResponse>(
+          fetchProjectLibrary,
+          projectPath(ref.id),
+          { method: 'DELETE', headers: sessionHeaders },
+        )
+        return { ok: true, folderAlreadyMissing: response.alreadyMissing }
+      } catch (error) {
+        if (error instanceof ServerProjectStorageError && error.code === 'not-found') {
+          return { ok: true, folderAlreadyMissing: true }
+        }
+        return {
+          ok: false,
+          reason: 'failed',
+          message: error instanceof Error ? error.message : 'WriterOS could not delete the project.',
+        }
+      }
     },
     async archiveProject() {
       return unsupported('Archiving projects is not available through the server project library yet.')
