@@ -2,7 +2,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { constants } from 'node:fs'
 import { lstat, open, rename, rm } from 'node:fs/promises'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPackage'
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
 import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
@@ -684,16 +684,20 @@ async function runImport(
   return 0
 }
 
-interface StaleVersionGroup {
+interface AnswerRepair {
   kind: PublishMemoryInput['kind']
   workflow: PublishMemoryInput['source']['workflow']
   sourceId: string
   winnerRecordId: string
   winnerSourceHash: string
+  /** Every active version of this source, the winner included. */
   retireRecordIds: string[]
+  /** Active open-question records of the same ticket whose open file is gone. */
+  closeQuestionIds: string[]
+  dedupeKey: string
 }
 
-interface SkippedVersionGroup {
+interface SkippedRepair {
   kind: PublishMemoryInput['kind']
   workflow: PublishMemoryInput['source']['workflow']
   sourceId: string
@@ -701,37 +705,72 @@ interface SkippedVersionGroup {
   reason: string
 }
 
+interface SkippedQuestion {
+  sourceId: string
+  recordIds: string[]
+  reason: string
+}
+
+type RepairSnapshot = Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>
+
 function versionAnchor(kind: string, workflow: string, sourceId: string): string {
   return `${kind}\0${workflow}\0${sourceId}`
 }
 
+function repairDedupeKey(workflow: string, sourceId: string, targetIds: readonly string[], closesQuestions: boolean): string {
+  if (!closesQuestions) return `maintenance:collapse:${workflow}:${sourceId}`
+  // A closure key must change with its targets: after a reopen, a later
+  // closure against the same answer bytes is a new publication, while a
+  // retry of the same closure stays idempotent.
+  const digest = createHash('sha256').update([...targetIds].sort().join('\n')).digest('hex')
+  return `maintenance:close:${workflow}:${sourceId}:${digest}`
+}
+
 /**
- * One-time repair for sources imported before versions superseded each other:
- * every active record sharing a (kind, workflow, sourceId) anchor is a version
- * of the same file. The winner is the single version whose hash matches the
- * file as it is now; anything else is skipped and reported, never guessed.
+ * One-time repair for sources imported before versions superseded each other
+ * and before answers closed their questions. Every active record sharing a
+ * (kind, workflow, sourceId) anchor is a version of the same file; the winner
+ * is the single version whose hash matches the file as it is now. For a
+ * resolved Wayfinder ticket the same publication also closes the ticket's
+ * open-question records when the open file is gone. Anything uncertain is
+ * skipped and reported, never guessed.
  */
-function planStaleVersionGroups(
-  snapshot: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
+function planAnswerRepairs(
+  snapshot: RepairSnapshot,
   currentVersions: readonly PublishMemoryInput[],
-): { groups: StaleVersionGroup[]; skipped: SkippedVersionGroup[] } {
+  ticketFiles: readonly string[] | undefined,
+): { groups: AnswerRepair[]; skipped: SkippedRepair[]; skippedQuestions: SkippedQuestion[] } {
   const currentHashByAnchor = new Map<string, string>()
+  const currentSourceIds = new Set<string>()
   for (const record of currentVersions) {
     currentHashByAnchor.set(
       versionAnchor(record.kind, record.source.workflow, record.source.sourceId),
       record.source.sourceHash,
     )
+    currentSourceIds.add(record.source.sourceId)
   }
-  const byAnchor = new Map<string, typeof snapshot.records>()
+  const files = ticketFiles === undefined ? undefined : new Set(ticketFiles)
+  const byAnchor = new Map<string, RepairSnapshot['records']>()
+  const questionsByOpenPath = new Map<string, RepairSnapshot['records']>()
   for (const record of snapshot.records) {
     if (record.status !== 'active') continue
     const anchor = versionAnchor(record.kind, record.source.workflow, record.source.sourceId)
     byAnchor.set(anchor, [...(byAnchor.get(anchor) ?? []), record])
+    if (
+      record.kind === 'open_question'
+      && record.source.workflow === 'story-wayfinder'
+      && record.source.sourceId.startsWith('tickets/')
+    ) {
+      const openPath = record.source.sourceId
+      questionsByOpenPath.set(openPath, [...(questionsByOpenPath.get(openPath) ?? []), record])
+    }
   }
-  const groups: StaleVersionGroup[] = []
-  const skipped: SkippedVersionGroup[] = []
-  for (const [anchor, members] of [...byAnchor.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
-    if (members.length < 2) continue
+  const groups: AnswerRepair[] = []
+  const skipped: SkippedRepair[] = []
+  const skippedQuestions: SkippedQuestion[] = []
+  const claimedOpenPaths = new Set<string>()
+  const sortedAnchors = [...byAnchor.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+  for (const [anchor, members] of sortedAnchors) {
     const first = members[0]
     const base = {
       kind: first.kind,
@@ -739,46 +778,98 @@ function planStaleVersionGroups(
       sourceId: first.source.sourceId,
       recordIds: members.map(record => record.id),
     }
+    const isAnswerAnchor = first.source.workflow === 'story-wayfinder'
+      && first.source.sourceId.startsWith('resolved/')
+      && (first.kind === 'canon' || first.kind === 'development')
+    const openPath = isAnswerAnchor ? `tickets/${first.source.sourceId.slice('resolved/'.length)}` : undefined
+    let questions: RepairSnapshot['records'] = []
+    if (openPath !== undefined && files !== undefined) {
+      const candidates = questionsByOpenPath.get(openPath) ?? []
+      if (candidates.length > 0) {
+        claimedOpenPaths.add(openPath)
+        if (files.has(openPath)) {
+          skippedQuestions.push({
+            sourceId: openPath,
+            recordIds: candidates.map(record => record.id),
+            reason: 'The open ticket file still exists beside the resolved one.',
+          })
+        } else {
+          questions = candidates
+        }
+      }
+    }
+    if (members.length < 2 && questions.length === 0) continue
+    const questionSkip = (reason: string) => {
+      if (questions.length > 0) {
+        skippedQuestions.push({ sourceId: openPath as string, recordIds: questions.map(record => record.id), reason })
+      }
+    }
     const currentHash = currentHashByAnchor.get(anchor)
     if (currentHash === undefined) {
-      skipped.push({ ...base, reason: 'The source file is not in the current preview.' })
+      if (members.length > 1) skipped.push({ ...base, reason: 'The source file is not in the current preview.' })
+      questionSkip('The resolved file is not in the current preview.')
       continue
     }
     const matches = members.filter(record => record.source.sourceHash === currentHash)
     if (matches.length === 0) {
-      skipped.push({ ...base, reason: 'The current file version has not been published.' })
+      if (members.length > 1) skipped.push({ ...base, reason: 'The current file version has not been published.' })
+      questionSkip('The current resolved file version has not been published.')
       continue
     }
     if (matches.length > 1) {
       skipped.push({ ...base, reason: 'More than one active record matches the current file version.' })
+      questionSkip('More than one active answer matches the current resolved file.')
       continue
     }
     const winner = matches[0]
     if (winner.source.authority !== undefined && 'verification' in winner.source.authority) {
-      skipped.push({ ...base, reason: 'The winner carries store-derived authority and cannot be republished.' })
+      if (members.length > 1) skipped.push({ ...base, reason: 'The winner carries store-derived authority and cannot be republished.' })
+      questionSkip('The answer carries store-derived authority and cannot be republished.')
       continue
     }
+    const retireRecordIds = members.map(record => record.id)
+    const closeQuestionIds = questions.map(record => record.id)
     groups.push({
       kind: winner.kind,
       workflow: winner.source.workflow,
       sourceId: winner.source.sourceId,
       winnerRecordId: winner.id,
       winnerSourceHash: winner.source.sourceHash,
-      retireRecordIds: members.map(record => record.id),
+      retireRecordIds,
+      closeQuestionIds,
+      dedupeKey: repairDedupeKey(
+        winner.source.workflow,
+        winner.source.sourceId,
+        [...retireRecordIds, ...closeQuestionIds],
+        closeQuestionIds.length > 0,
+      ),
     })
   }
-  return { groups, skipped }
+  if (files !== undefined) {
+    for (const [openPath, candidates] of [...questionsByOpenPath.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
+      if (claimedOpenPaths.has(openPath) || files.has(openPath)) continue
+      const resolvedPath = `resolved/${openPath.slice('tickets/'.length)}`
+      skippedQuestions.push({
+        sourceId: openPath,
+        recordIds: candidates.map(record => record.id),
+        reason: currentSourceIds.has(resolvedPath)
+          ? 'No active answer record exists for the resolved file.'
+          : 'The ticket file is gone and no resolved file exists for it.',
+      })
+    }
+  }
+  return { groups, skipped, skippedQuestions }
 }
 
 function maintenanceReplacementInput(
-  snapshot: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
-  group: StaleVersionGroup,
+  snapshot: RepairSnapshot,
+  group: AnswerRepair,
 ): PublishMemoryInput {
   const winner = snapshot.records.find(record => record.id === group.winnerRecordId)
   if (!winner) throw new CliInputError('The winning record disappeared before it could be republished.')
   return {
     projectId: winner.projectId,
-    dedupeKey: `maintenance:collapse:${winner.source.workflow}:${winner.source.sourceId}`,
+    dedupeKey: group.dedupeKey,
     kind: winner.kind,
     requestedStatus: 'active',
     claim: winner.claim,
@@ -789,8 +880,11 @@ function maintenanceReplacementInput(
     evidence: winner.evidence,
     safety: winner.safety,
     spoiler: winner.spoiler,
-    supersedes: group.retireRecordIds,
+    supersedes: [...group.retireRecordIds, ...group.closeQuestionIds],
     supersedesPriorVersions: false,
+    // The list Ben accepted was computed from this revision; refuse to apply
+    // it over a ledger that moved since.
+    expectedRevision: snapshot.revision,
   }
 }
 
@@ -835,19 +929,21 @@ async function runReconcileStale(
   if (!parsed.success || parsed.data.projectId !== snapshot.projectId || parsed.data.source !== 'story-wayfinder') {
     throw new CliInputError('Import preview is invalid for this project.')
   }
-  const plan = planStaleVersionGroups(snapshot, parsed.data.records)
+  const plan = planAnswerRepairs(snapshot, parsed.data.records, parsed.data.ticketFiles)
 
   if (dryRun) {
     io.stdout(`${JSON.stringify({
       revision: snapshot.revision,
       groups: plan.groups,
       skipped: plan.skipped,
+      skippedQuestions: plan.skippedQuestions,
     }, null, 2)}\n`)
     return 0
   }
 
   let applied = 0
   let idempotent = 0
+  let questionsClosed = 0
   let revision = snapshot.revision
   let latest = snapshot
   for (const group of plan.groups) {
@@ -856,7 +952,10 @@ async function runReconcileStale(
     try {
       await verifyManifest()
       result = await memoryStore.publish(projectPath, input)
-    } catch {
+    } catch (error) {
+      // The accepted list no longer matches the ledger: stop here and ask
+      // for a fresh dry-run rather than guessing.
+      if (error instanceof ProjectMemoryStoreError && error.code === 'revision-conflict') throw error
       let reconciled
       try {
         await project.verify()
@@ -878,12 +977,16 @@ async function runReconcileStale(
         lastRevision: reconciled.snapshot.revision,
       })
     }
-    if (result.published) applied += 1
-    else idempotent += 1
+    if (result.published) {
+      applied += 1
+      questionsClosed += result.record.supersedes.filter(id => group.closeQuestionIds.includes(id)).length
+    } else {
+      idempotent += 1
+    }
     revision = result.snapshot.revision
     latest = result.snapshot
   }
-  const retired = new Set(plan.groups.flatMap(group => group.retireRecordIds))
+  const retired = new Set(plan.groups.flatMap(group => [...group.retireRecordIds, ...group.closeQuestionIds]))
   const staleConflicts = latest.conflicts
     .filter(conflict => (
       conflict.status === 'open'
@@ -895,8 +998,10 @@ async function runReconcileStale(
     revision,
     applied,
     idempotent,
+    questionsClosed,
     groups: plan.groups,
     skipped: plan.skipped,
+    skippedQuestions: plan.skippedQuestions,
     staleConflicts,
   }, null, 2)}\n`)
   return 0
