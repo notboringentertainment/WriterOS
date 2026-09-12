@@ -49,12 +49,18 @@ function ticket(projectId: string, sourceId: string, hash: string, overrides: Re
   }
 }
 
-function preview(projectId: string, records: Record<string, unknown>[], ticketFiles?: string[]) {
+function preview(
+  projectId: string,
+  records: Record<string, unknown>[],
+  ticketFiles?: string[],
+  ticketQuestions?: Record<string, string>,
+) {
   return {
     source: 'story-wayfinder',
     projectId,
     records,
     ...(ticketFiles === undefined ? {} : { ticketFiles }),
+    ...(ticketQuestions === undefined ? {} : { ticketQuestions }),
     warnings: [],
     duplicates: 0,
     counts: {
@@ -444,6 +450,52 @@ describe('reconcile-stale durability', () => {
       ['tickets/d.md', 'q1', 'superseded'],
       ['resolved/d.md', 'a1', 'superseded'],
       ['resolved/d.md', 'a1', 'active'],
+    ])
+  })
+})
+
+describe('reconcile-stale rename check', () => {
+  it('closes an orphaned question whose ticket was renamed, and says where it went', async () => {
+    const projectId = 'reconcile-renamed'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, '04-climax', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/climax.md', ['a1'])
+    const current = preview(
+      projectId,
+      [ticket(projectId, 'resolved/climax.md', 'a1')],
+      ['resolved/climax.md'],
+      { 'resolved/climax.md': 'What is the 04-climax?' },
+    )
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output?.skippedQuestions).toEqual([])
+    expect(dry.output?.groups).toEqual([
+      expect.objectContaining({ sourceId: 'resolved/climax.md', renamedFrom: 'tickets/04-climax.md' }),
+    ])
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, questionsClosed: 1 })
+    expect((await rows(projectPath)).filter(([, , status]) => status === 'active')).toEqual([
+      ['resolved/climax.md', 'a1', 'active'],
+    ])
+  })
+
+  it('leaves two removed tickets with the same question text alone and says why', async () => {
+    const projectId = 'reconcile-renamed-ambiguous'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    for (const name of ['old-a', 'old-b']) {
+      await projectMemoryStore.publish(projectPath, { ...openQuestion(projectId, name, 'q1'), claim: 'What is the peak?' } as never)
+    }
+    await seedVersions(projectPath, projectId, 'resolved/peak.md', ['a1'])
+    const current = preview(
+      projectId,
+      [ticket(projectId, 'resolved/peak.md', 'a1')],
+      ['resolved/peak.md'],
+      { 'resolved/peak.md': 'What is the peak?' },
+    )
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output).toMatchObject({ groups: [] })
+    expect(dry.output?.skippedQuestions).toEqual([
+      expect.objectContaining({ sourceId: 'tickets/old-a.md', reason: 'More than one removed ticket has the same question text as resolved/peak.md.' }),
+      expect.objectContaining({ sourceId: 'tickets/old-b.md', reason: 'More than one removed ticket has the same question text as resolved/peak.md.' }),
     ])
   })
 })

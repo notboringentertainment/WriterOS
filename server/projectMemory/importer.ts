@@ -22,6 +22,8 @@ export interface ImportPreview {
    * ticket was skipped".
    */
   ticketFiles?: string[]
+  /** Wayfinder only: normalized Question text per `resolved/<name>` file. */
+  ticketQuestions?: Record<string, string>
 }
 
 export interface MemorySourceAdapter {

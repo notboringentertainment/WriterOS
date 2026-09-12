@@ -46,6 +46,7 @@ export interface ProjectMemoryImportPreview {
   duplicates: number
   counts: ProjectMemoryImportCounts
   ticketFiles?: string[]
+  ticketQuestions?: Record<string, string>
 }
 
 export interface ProjectMemoryCliDependencies {
@@ -401,6 +402,7 @@ const ImportPreviewSchema = z.object({
   duplicates: z.number().int().nonnegative(),
   counts: ProjectMemoryImportCountsSchema,
   ticketFiles: z.array(z.string().min(1).max(2_000)).max(10_000).optional(),
+  ticketQuestions: z.record(z.string().min(1).max(2_000), z.string().max(600)).optional(),
 }).strict().superRefine((preview, context) => {
   const expected: ProjectMemoryImportCounts = {
     activeCanon: preview.records.filter(record => (
@@ -435,6 +437,38 @@ async function loadImportPreview(input: {
   linkedSourceId?: string
 }): Promise<ProjectMemoryImportPreview> {
   return previewProjectMemoryImport(input)
+}
+
+type QuestionRecords = Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>['records']
+
+/**
+ * Rename check: a resolved ticket whose open file was renamed on the way to
+ * resolved/ has no basename match, but its Question text is unchanged. Find
+ * active open-question records whose file is gone and whose claim equals the
+ * resolved ticket's question text. One removed ticket path is a match; more
+ * than one is ambiguous and left alone.
+ */
+function findRenamedQuestions(
+  records: QuestionRecords,
+  resolvedSourceId: string,
+  questionText: string | undefined,
+  ticketFiles: ReadonlySet<string>,
+): { openPath: string; records: QuestionRecords } | { ambiguousPaths: string[] } | undefined {
+  if (!questionText) return undefined
+  const basenamePath = `tickets/${resolvedSourceId.slice('resolved/'.length)}`
+  const matches = records.filter(record => (
+    record.status === 'active'
+    && record.kind === 'open_question'
+    && record.source.workflow === 'story-wayfinder'
+    && record.source.sourceId.startsWith('tickets/')
+    && record.source.sourceId !== basenamePath
+    && !ticketFiles.has(record.source.sourceId)
+    && record.claim === questionText
+  ))
+  if (matches.length === 0) return undefined
+  const paths = [...new Set(matches.map(record => record.source.sourceId))].sort()
+  if (paths.length > 1) return { ambiguousPaths: paths }
+  return { openPath: paths[0], records: matches }
 }
 
 async function runImport(
@@ -543,9 +577,14 @@ async function runImport(
     record.requestedStatus === 'candidate' || record.safety === 'flagged'
   )
   const ambiguous: string[] = []
-  // Question ids to close for this record against the given snapshot, or
-  // undefined when the record is not a closing answer. Records the
-  // both-files-present case as ambiguous instead of closing.
+  const renamed: Array<{ from: string; to: string }> = []
+  const noteRenamed = (from: string, to: string) => {
+    if (!renamed.some(entry => entry.from === from && entry.to === to)) renamed.push({ from, to })
+  }
+  // Question ids to close for this record against the given snapshot.
+  // Records the both-files-present case as ambiguous instead of closing.
+  // With no basename match, the rename check looks for a removed ticket
+  // whose question text equals this resolved ticket's question.
   const closureTargets = (
     current: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
     record: PublishMemoryInput,
@@ -553,12 +592,26 @@ async function runImport(
     const openPath = openTicketPath(record)
     if (openPath === undefined) return []
     const questions = openQuestionsFor(current, openPath)
-    if (questions.length === 0) return []
-    if (ticketFiles.has(openPath)) {
+    if (questions.length > 0) {
+      if (ticketFiles.has(openPath)) {
+        if (!ambiguous.includes(record.source.sourceId)) ambiguous.push(record.source.sourceId)
+        return []
+      }
+      return questions.map(existing => existing.id)
+    }
+    const match = findRenamedQuestions(
+      current.records,
+      record.source.sourceId,
+      parsed.data.ticketQuestions?.[record.source.sourceId],
+      ticketFiles,
+    )
+    if (match === undefined) return []
+    if ('ambiguousPaths' in match) {
       if (!ambiguous.includes(record.source.sourceId)) ambiguous.push(record.source.sourceId)
       return []
     }
-    return questions.map(existing => existing.id)
+    noteRenamed(match.openPath, record.source.sourceId)
+    return match.records.map(existing => existing.id)
   }
 
   if (dryRun) {
@@ -590,6 +643,7 @@ async function runImport(
       supersessionsExpected,
       questionsClosedExpected,
       ambiguous,
+      renamed,
     }, null, 2)}\n`)
     return 0
   }
@@ -677,6 +731,7 @@ async function runImport(
     supersessions,
     questionsClosed,
     ambiguous,
+    renamed,
     duplicates,
     counts: { ...parsed.data.counts, duplicates },
     revision,
@@ -694,6 +749,8 @@ interface AnswerRepair {
   retireRecordIds: string[]
   /** Active open-question records of the same ticket whose open file is gone. */
   closeQuestionIds: string[]
+  /** Set when the questions were matched by question text after a rename. */
+  renamedFrom?: string
   dedupeKey: string
 }
 
@@ -739,6 +796,7 @@ function planAnswerRepairs(
   snapshot: RepairSnapshot,
   currentVersions: readonly PublishMemoryInput[],
   ticketFiles: readonly string[] | undefined,
+  ticketQuestions: Readonly<Record<string, string>> | undefined,
 ): { groups: AnswerRepair[]; skipped: SkippedRepair[]; skippedQuestions: SkippedQuestion[] } {
   const currentHashByAnchor = new Map<string, string>()
   const currentSourceIds = new Set<string>()
@@ -783,6 +841,7 @@ function planAnswerRepairs(
       && (first.kind === 'canon' || first.kind === 'development')
     const openPath = isAnswerAnchor ? `tickets/${first.source.sourceId.slice('resolved/'.length)}` : undefined
     let questions: RepairSnapshot['records'] = []
+    let renamedFrom: string | undefined
     if (openPath !== undefined && files !== undefined) {
       const candidates = questionsByOpenPath.get(openPath) ?? []
       if (candidates.length > 0) {
@@ -795,6 +854,27 @@ function planAnswerRepairs(
           })
         } else {
           questions = candidates
+        }
+      } else {
+        const match = findRenamedQuestions(
+          snapshot.records,
+          first.source.sourceId,
+          ticketQuestions?.[first.source.sourceId],
+          files,
+        )
+        if (match !== undefined && 'ambiguousPaths' in match) {
+          for (const ambiguousPath of match.ambiguousPaths) {
+            claimedOpenPaths.add(ambiguousPath)
+            skippedQuestions.push({
+              sourceId: ambiguousPath,
+              recordIds: (questionsByOpenPath.get(ambiguousPath) ?? []).map(record => record.id),
+              reason: `More than one removed ticket has the same question text as ${first.source.sourceId}.`,
+            })
+          }
+        } else if (match !== undefined) {
+          claimedOpenPaths.add(match.openPath)
+          questions = match.records
+          renamedFrom = match.openPath
         }
       }
     }
@@ -837,6 +917,7 @@ function planAnswerRepairs(
       winnerSourceHash: winner.source.sourceHash,
       retireRecordIds,
       closeQuestionIds,
+      ...(renamedFrom === undefined ? {} : { renamedFrom }),
       dedupeKey: repairDedupeKey(
         winner.source.workflow,
         winner.source.sourceId,
@@ -936,7 +1017,7 @@ async function runReconcileStale(
   if (!parsed.success || parsed.data.projectId !== snapshot.projectId || parsed.data.source !== 'story-wayfinder') {
     throw new CliInputError('Import preview is invalid for this project.')
   }
-  const plan = planAnswerRepairs(snapshot, parsed.data.records, parsed.data.ticketFiles)
+  const plan = planAnswerRepairs(snapshot, parsed.data.records, parsed.data.ticketFiles, parsed.data.ticketQuestions)
 
   if (dryRun) {
     io.stdout(`${JSON.stringify({

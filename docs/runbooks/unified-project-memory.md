@@ -480,7 +480,12 @@ nothing and is listed under `ambiguous`. `reconcile-stale` repairs questions
 orphaned before that rule in the same publication that collapses the
 answer's versions; the `groups` entries carry `closeQuestionIds`, and
 `skippedQuestions` lists tickets whose file is gone but which have no
-publishable answer (the writer decides those). Lifecycle: ordinary re-import
+publishable answer (the writer decides those). Rename check: when a ticket
+was renamed on its way to `resolved/`, both `import` and `reconcile-stale`
+match the removed open ticket to its resolved file by question text (the
+adapter reports `ticketQuestions`); the match is reported as `renamed` /
+`renamedFrom`. Two removed tickets with the same question text are left
+alone and reported. Lifecycle: ordinary re-import
 of an old answer file is a no-op by design, so a closure approved later
 against those same bytes goes through `reconcile-stale`, whose key changes
 with the target set.

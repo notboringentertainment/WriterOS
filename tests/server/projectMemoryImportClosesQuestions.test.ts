@@ -80,7 +80,12 @@ function homework(projectId: string, name: string, hash: string) {
   })
 }
 
-function preview(projectId: string, records: Record<string, unknown>[], ticketFiles?: string[]) {
+function preview(
+  projectId: string,
+  records: Record<string, unknown>[],
+  ticketFiles?: string[],
+  ticketQuestions?: Record<string, string>,
+) {
   return {
     source: 'story-wayfinder',
     projectId,
@@ -97,6 +102,7 @@ function preview(projectId: string, records: Record<string, unknown>[], ticketFi
       flagged: 0,
     },
     ...(ticketFiles === undefined ? {} : { ticketFiles }),
+    ...(ticketQuestions === undefined ? {} : { ticketQuestions }),
   }
 }
 
@@ -297,5 +303,43 @@ describe('import closes the open question of a resolved ticket', () => {
     await runImport(projectPath, sourceRoot, '--apply', resolved)
     const again = await runImport(projectPath, sourceRoot, '--apply', resolved)
     expect(again).toMatchObject({ applied: 0, supersessions: 0, questionsClosed: 0, duplicates: 1 })
+  })
+})
+
+describe('import rename check', () => {
+  it('closes the question of a ticket that was renamed on the way to resolved/', async () => {
+    const projectId = 'close-renamed'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await runImport(projectPath, sourceRoot, '--apply', preview(projectId, [question(projectId, '04-climax', 'q1')], ['tickets/04-climax.md']))
+    const resolved = preview(
+      projectId,
+      [answer(projectId, 'climax', 'a1')],
+      ['resolved/climax.md'],
+      { 'resolved/climax.md': 'What is the 04-climax?' },
+    )
+    const dry = await runImport(projectPath, sourceRoot, '--dry-run', resolved)
+    expect(dry).toMatchObject({ questionsClosedExpected: 1, renamed: [{ from: 'tickets/04-climax.md', to: 'resolved/climax.md' }] })
+    const applied = await runImport(projectPath, sourceRoot, '--apply', resolved)
+    expect(applied).toMatchObject({ questionsClosed: 1, renamed: [{ from: 'tickets/04-climax.md', to: 'resolved/climax.md' }] })
+    expect(await statuses(projectPath)).toEqual([
+      ['tickets/04-climax.md', 'q1', 'superseded'],
+      ['resolved/climax.md', 'a1', 'active'],
+    ])
+  })
+
+  it('does not match a renamed question whose file still exists, and reports two same-text candidates as ambiguous', async () => {
+    const projectId = 'close-renamed-ambiguous'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    const sameText = (name: string, hash: string) => ({ ...question(projectId, name, hash), claim: 'What is the peak?' })
+    await runImport(projectPath, sourceRoot, '--apply', preview(projectId, [sameText('old-a', 'q1'), sameText('old-b', 'q1'), sameText('live', 'q1')], ['tickets/old-a.md', 'tickets/old-b.md', 'tickets/live.md']))
+    const resolved = preview(
+      projectId,
+      [answer(projectId, 'peak', 'a1')],
+      ['resolved/peak.md', 'tickets/live.md'],
+      { 'resolved/peak.md': 'What is the peak?' },
+    )
+    const applied = await runImport(projectPath, sourceRoot, '--apply', resolved)
+    expect(applied).toMatchObject({ questionsClosed: 0, ambiguous: ['resolved/peak.md'], renamed: [] })
+    expect((await statuses(projectPath)).filter(([, , status]) => status === 'active')).toHaveLength(4)
   })
 })
