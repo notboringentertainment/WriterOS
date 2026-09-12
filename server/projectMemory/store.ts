@@ -717,9 +717,15 @@ function validateSupersessionTargets(
   targets: ProjectMemoryRecord[],
 ): void {
   for (const target of targets) {
-    if (target.status !== 'active' || target.kind !== winnerKind) {
+    // An answer closes its question: active canon or development may retire
+    // an active open question from the same workflow. Every other pairing
+    // keeps the same-kind rule.
+    const closesQuestion = target.kind === 'open_question'
+      && (winnerKind === 'canon' || winnerKind === 'development')
+      && target.source.workflow === winnerSource.workflow
+    if (target.status !== 'active' || (target.kind !== winnerKind && !closesQuestion)) {
       throw new ProjectMemoryStoreError(
-        'Supersession requires an active record of the same memory kind.',
+        'Supersession requires an active record of the same memory kind, or an open question closed by an answer from the same workflow.',
         'invalid-action',
       )
     }
@@ -1134,6 +1140,12 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
             await writeProjections(projectPath, replayed.snapshot, options.testHooks)
           }
           return { published: false, record, snapshot: replayed.snapshot }
+        }
+        if (input.expectedRevision !== undefined && input.expectedRevision !== replayed.snapshot.revision) {
+          throw new ProjectMemoryStoreError(
+            `Expected memory revision ${input.expectedRevision}, but current revision is ${replayed.snapshot.revision}.`,
+            'revision-conflict',
+          )
         }
 
         const event = createPublicationEvent(replayed.snapshot, input)

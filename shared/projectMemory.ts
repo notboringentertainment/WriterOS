@@ -187,6 +187,13 @@ export const PublishMemoryInputSchema = z.object({
    * still applies only if the new record lands active.
    */
   supersedesPriorVersions: z.boolean().default(false),
+  /**
+   * Pin the publication to the revision its caller-supplied targets were
+   * chosen from. The store refuses with 'revision-conflict' if the ledger
+   * has moved, except for an idempotent retry, which stays a no-op. Never
+   * persisted.
+   */
+  expectedRevision: z.number().int().nonnegative().optional(),
 }).strict().superRefine((input, context) => {
   if (input.requestedStatus === 'active' && input.safety === 'flagged') {
     context.addIssue({
