@@ -519,67 +519,155 @@ async function runImport(
   const records: PublishMemoryInput[] = parsed.data.records.map(record => (
     source === 'wayfinder' ? { ...record, supersedesPriorVersions: true } : record
   ))
+  // A resolved Wayfinder ticket closes the open-question record of the same
+  // ticket, but only when the open ticket file is really gone. ticketFiles
+  // lists every file the adapter saw, imported or not; a preview without it
+  // (older adapters, other workflows) closes nothing.
+  const ticketFiles = new Set(parsed.data.ticketFiles ?? [])
+  const openTicketPath = (record: PublishMemoryInput): string | undefined => {
+    if (source !== 'wayfinder' || parsed.data.ticketFiles === undefined) return undefined
+    if (record.kind !== 'canon' && record.kind !== 'development') return undefined
+    if (!record.source.sourceId.startsWith('resolved/')) return undefined
+    return `tickets/${record.source.sourceId.slice('resolved/'.length)}`
+  }
+  const openQuestionsFor = (
+    current: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
+    openPath: string,
+  ) => current.records.filter(existing => (
+    existing.status === 'active'
+    && existing.kind === 'open_question'
+    && existing.source.workflow === 'story-wayfinder'
+    && existing.source.sourceId === openPath
+  ))
+  const landsCandidate = (record: PublishMemoryInput) => (
+    record.requestedStatus === 'candidate' || record.safety === 'flagged'
+  )
+  const ambiguous: string[] = []
+  // Question ids to close for this record against the given snapshot, or
+  // undefined when the record is not a closing answer. Records the
+  // both-files-present case as ambiguous instead of closing.
+  const closureTargets = (
+    current: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
+    record: PublishMemoryInput,
+  ): string[] => {
+    const openPath = openTicketPath(record)
+    if (openPath === undefined) return []
+    const questions = openQuestionsFor(current, openPath)
+    if (questions.length === 0) return []
+    if (ticketFiles.has(openPath)) {
+      if (!ambiguous.includes(record.source.sourceId)) ambiguous.push(record.source.sourceId)
+      return []
+    }
+    return questions.map(existing => existing.id)
+  }
 
   if (dryRun) {
     // Estimate only: the store resolves prior versions under its lock at
     // apply time. A version that is already published is a no-op and
     // retires nothing, so check idempotency before counting predecessors.
-    const supersessionsExpected = records.reduce((total, record) => {
-      if (!record.supersedesPriorVersions) return total
+    let supersessionsExpected = 0
+    let questionsClosedExpected = 0
+    for (const record of records) {
+      if (!record.supersedesPriorVersions) continue
       // Supersession applies only when the record lands active; a requested
       // candidate or a safety-flagged record never retires anything.
-      if (record.requestedStatus === 'candidate' || record.safety === 'flagged') return total
+      if (landsCandidate(record)) continue
       const recordId = publicationRecordId(record.projectId, record.dedupeKey, record.source.sourceHash)
-      if (snapshot.records.some(existing => existing.id === recordId)) return total
-      return total + priorVersionRecords(snapshot, {
+      if (snapshot.records.some(existing => existing.id === recordId)) continue
+      const versions = priorVersionRecords(snapshot, {
         projectId: record.projectId,
         dedupeKey: record.dedupeKey,
         kind: record.kind,
         source: record.source,
       }).length
-    }, 0)
-    io.stdout(`${JSON.stringify({ ...parsed.data, records, supersessionsExpected }, null, 2)}\n`)
+      const questions = closureTargets(snapshot, record).length
+      supersessionsExpected += versions + questions
+      questionsClosedExpected += questions
+    }
+    io.stdout(`${JSON.stringify({
+      ...parsed.data,
+      records,
+      supersessionsExpected,
+      questionsClosedExpected,
+      ambiguous,
+    }, null, 2)}\n`)
     return 0
   }
 
   let applied = 0
   let idempotent = 0
   let supersessions = 0
+  let questionsClosed = 0
   let revision = snapshot.revision
+  let latest = snapshot
+  const MAX_REVISION_RETRIES = 3
   for (const record of records) {
     let result
-    try {
-      await verifyImportManifest()
-      result = await memoryStore.publish(projectPath, record)
-    } catch {
-      let reconciled
+    let questionIds = closureTargets(latest, record)
+    let input: PublishMemoryInput = questionIds.length === 0
+      ? record
+      : {
+        ...record,
+        supersedes: [...new Set([...(record.supersedes ?? []), ...questionIds])],
+        // Pin the closure to the snapshot its targets were chosen from; the
+        // store refuses if another writer moved the ledger in between.
+        expectedRevision: latest.revision,
+      }
+    for (let attempt = 1; ; attempt += 1) {
       try {
-        await project.verify()
-        reconciled = await memoryStore.reconcilePublication(projectPath, record)
-      } catch {
+        await verifyImportManifest()
+        result = await memoryStore.publish(projectPath, input)
+        break
+      } catch (error) {
+        if (
+          error instanceof ProjectMemoryStoreError
+          && error.code === 'revision-conflict'
+          && attempt < MAX_REVISION_RETRIES
+        ) {
+          await project.verify()
+          latest = await memoryStore.readSnapshot(projectPath)
+          questionIds = closureTargets(latest, record)
+          input = questionIds.length === 0
+            ? record
+            : {
+              ...record,
+              supersedes: [...new Set([...(record.supersedes ?? []), ...questionIds])],
+              expectedRevision: latest.revision,
+            }
+          continue
+        }
+        if (error instanceof ProjectMemoryStoreError && error.code === 'revision-conflict') throw error
+        let reconciled
+        try {
+          await project.verify()
+          reconciled = await memoryStore.reconcilePublication(projectPath, input)
+        } catch {
+          throw new CliImportPartialError({
+            durability: 'unknown',
+            lastKnownAppliedCount: applied,
+            lastKnownRevision: revision,
+          })
+        }
+        const durableApplied = (
+          reconciled.publication !== undefined
+          && reconciled.publication.eventRevision > revision
+        ) ? 1 : 0
         throw new CliImportPartialError({
-          durability: 'unknown',
-          lastKnownAppliedCount: applied,
-          lastKnownRevision: revision,
+          durability: 'reconciled',
+          appliedCount: applied + durableApplied,
+          lastRevision: reconciled.snapshot.revision,
         })
       }
-      const durableApplied = (
-        reconciled.publication !== undefined
-        && reconciled.publication.eventRevision > revision
-      ) ? 1 : 0
-      throw new CliImportPartialError({
-        durability: 'reconciled',
-        appliedCount: applied + durableApplied,
-        lastRevision: reconciled.snapshot.revision,
-      })
     }
     if (result.published) {
       applied += 1
       supersessions += result.record.supersedes.length
+      questionsClosed += result.record.supersedes.filter(id => questionIds.includes(id)).length
     } else {
       idempotent += 1
     }
-    revision = result.snapshot.revision
+    latest = result.snapshot
+    revision = latest.revision
   }
   const duplicates = parsed.data.duplicates + idempotent
   io.stdout(`${JSON.stringify({
@@ -587,6 +675,8 @@ async function runImport(
     records,
     applied,
     supersessions,
+    questionsClosed,
+    ambiguous,
     duplicates,
     counts: { ...parsed.data.counts, duplicates },
     revision,
