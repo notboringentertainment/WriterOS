@@ -188,7 +188,9 @@ no-op.
   28.5k), and test both.
 
 Decision (Ben, 2026-09-11): D6b, measured with spoilers included, as a
-separate change. Rationale: agent prompts today exclude spoilers, so the
+separate change. DONE on branch feat/canon-cap-markdown: the cap now measures
+the rendered Markdown with spoilers included; Bloodless measures 28,487 of
+64,000. Rationale: agent prompts today exclude spoilers, so the
 inclusive measurement (28,486 characters) conservatively budgets all canon
 and leaves 35,514 under the existing 64,000 cap.
 
