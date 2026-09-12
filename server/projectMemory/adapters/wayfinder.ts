@@ -177,6 +177,9 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
     const records: PublishMemoryInput[] = []
     const warnings: string[] = []
     const ticketFiles: string[] = []
+    // Question text per resolved ticket, normalized the same way an open
+    // ticket's claim is, so a renamed ticket can be matched to its question.
+    const ticketQuestions: Record<string, string> = {}
     const root = await rootMetadata(sourceRoot)
     if (root.hasToDelete) warnings.push('_to_delete: ignored undocumented directory')
     for (const filename of root.canonNotes) {
@@ -266,6 +269,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           && parsed.sections.has('Answer')
         const answer = parsed.sections.get('Answer')?.replace(/\s+/g, ' ').trim()
         const question = parsed.sections.get('Question')?.replace(/\s+/g, ' ').trim()
+        if (directory === 'resolved' && question) ticketQuestions[relativePath] = truncateImportText(question, 600)
         const missingResolvedAnswer = directory === 'resolved'
           && answer === undefined
           && scopedAnswer === undefined
@@ -499,6 +503,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
       duplicates: 0,
       counts: buildImportCounts(records, 0),
       ticketFiles,
+      ticketQuestions,
     }
   },
 }

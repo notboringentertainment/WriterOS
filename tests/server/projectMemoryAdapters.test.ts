@@ -351,6 +351,18 @@ resolved: 2026-08-03
 ## Answer
 Settled.
 `)
+    await writeSource(root, 'resolved/asked.md', `# Asked
+type: grill
+mode: hitl
+resolved: 2026-08-03
+
+## Question
+Which   signal
+calls the boats home?
+
+## Answer
+The foghorn.
+`)
     await writeSource(root, 'tickets/no-title.md', `type: grill
 mode: hitl
 created: 2026-08-05
@@ -378,10 +390,13 @@ Groundwork.
       sourceRoot: root,
     })
 
-    expect(preview.ticketFiles).toEqual(['resolved/answered.md', 'tickets/no-title.md', 'tickets/open.md'])
+    expect(preview.ticketFiles).toEqual(['resolved/answered.md', 'resolved/asked.md', 'tickets/no-title.md', 'tickets/open.md'])
+    // Question text is reported for resolved tickets only, normalized like an open ticket's claim.
+    expect(preview.ticketQuestions).toEqual({ 'resolved/asked.md': 'Which signal calls the boats home?' })
     expect(preview.records.map(record => record.source.sourceId)).toEqual([
       'assets/notes.md',
       'resolved/answered.md',
+      'resolved/asked.md',
       'tickets/open.md',
     ])
     expect(preview.warnings).toContain('tickets/no-title.md:1: missing H1 title; record not imported')
