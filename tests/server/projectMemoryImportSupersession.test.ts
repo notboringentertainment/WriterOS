@@ -117,8 +117,8 @@ describe('import supersedes prior versions of a Wayfinder ticket', () => {
 
     const candidate = ticketRecord(projectId, 'v2', { requestedStatus: 'candidate' })
     const dry = await runImport(projectPath, sourceRoot, '--dry-run', preview(projectId, [candidate]))
-    // The estimate counts predecessors; the store decides at apply time.
-    expect(dry.output).toMatchObject({ supersessionsExpected: 1 })
+    // A candidate never retires anything, so the estimate must say zero.
+    expect(dry.output).toMatchObject({ supersessionsExpected: 0 })
     const apply = await runImport(projectPath, sourceRoot, '--apply', preview(projectId, [candidate]))
     expect(apply.output).toMatchObject({ applied: 1, supersessions: 0 })
 

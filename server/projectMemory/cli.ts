@@ -524,6 +524,9 @@ async function runImport(
     // retires nothing, so check idempotency before counting predecessors.
     const supersessionsExpected = records.reduce((total, record) => {
       if (!record.supersedesPriorVersions) return total
+      // Supersession applies only when the record lands active; a requested
+      // candidate or a safety-flagged record never retires anything.
+      if (record.requestedStatus === 'candidate' || record.safety === 'flagged') return total
       const recordId = publicationRecordId(record.projectId, record.dedupeKey, record.source.sourceHash)
       if (snapshot.records.some(existing => existing.id === recordId)) return total
       return total + priorVersionRecords(snapshot, {
