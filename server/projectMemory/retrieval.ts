@@ -260,9 +260,12 @@ function assertCanonContextFits(
       record.source,
     ])),
   }
-  const jsonCharacters = JSON.stringify(context).length
-  const markdownCharacters = renderMemoryContextMarkdown(context).length
-  const measuredCharacters = Math.max(jsonCharacters, markdownCharacters)
+  // The cap budgets what agents read: the rendered Markdown block. It is
+  // measured with spoilers included so it bounds all canon, not only the
+  // spoiler-free view most prompts get. The JSON package is transport for the
+  // CLI and routes and is not what any prompt consumes, so it is not capped
+  // here (decision D6b, docs/plans/import-supersession-plan.md).
+  const measuredCharacters = renderMemoryContextMarkdown(context, { includeSpoilers: true }).length
   if (measuredCharacters > MAX_ACTIVE_CANON_CHARACTERS) {
     throw new ProjectMemoryRetrievalError(
       'canon_context_too_large',

@@ -263,6 +263,39 @@ describe('buildMemoryContext', () => {
     }
   })
 
+  it('measures the cap against the rendered Markdown, not the JSON transport', () => {
+    // Long source ids and hashes travel in the JSON package but are not
+    // rendered in the Markdown agents read, so this set is far over 64k as
+    // JSON and well under it as Markdown.
+    const jsonHeavyCanon = Array.from({ length: 80 }, (_, index) => record({
+      id: `canon-${String(index).padStart(3, '0')}`,
+      kind: 'canon',
+      status: 'active',
+      claim: 'Bound truth.',
+      source: source({
+        sourceId: `${String(index).padStart(4, '0')}-${'s'.repeat(480)}`,
+        sourceHash: `sha256:${'h'.repeat(480)}`,
+      }),
+    }))
+
+    const context = buildMemoryContext(snapshot(jsonHeavyCanon), { message: 'opening' })
+    expect(JSON.stringify(context).length).toBeGreaterThan(64_000)
+    expect(context.activeCanon).toHaveLength(80)
+  })
+
+  it('counts spoiler canon toward the cap even though default prompts hide it', () => {
+    const spoilerCanon = Array.from({ length: 107 }, (_, index) => record({
+      id: `spoiler-${String(index).padStart(3, '0')}`,
+      kind: 'canon',
+      status: 'active',
+      spoiler: true,
+      claim: 'x'.repeat(600),
+    }))
+
+    expect(() => buildMemoryContext(snapshot(spoilerCanon), { message: 'opening' }))
+      .toThrowError(/canon_context_too_large/)
+  })
+
   it('refuses canon whose IDs and citation rendering exceed the bound even when claims are tiny', () => {
     const oversizedIdentityCanon = Array.from({ length: 1_000 }, (_, index) => record({
       id: `${String(index).padStart(4, '0')}-${'i'.repeat(500)}`,
