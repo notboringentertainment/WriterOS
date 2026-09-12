@@ -472,5 +472,19 @@ id go stale); the old records stay in history as `superseded`. Re-running is
 a no-op, and a partial failure prints the same `import-partial` message as
 §3 and is retried the same way.
 
+**Open questions.** Since 2026-09-11 a Wayfinder import also closes the
+open-question record of a ticket when its resolved answer imports and the
+open ticket file is gone (the adapter reports every file it saw in
+`ticketFiles`). A ticket present in both `tickets/` and `resolved/` closes
+nothing and is listed under `ambiguous`. `reconcile-stale` repairs questions
+orphaned before that rule in the same publication that collapses the
+answer's versions; the `groups` entries carry `closeQuestionIds`, and
+`skippedQuestions` lists tickets whose file is gone but which have no
+publishable answer (the writer decides those). Lifecycle: ordinary re-import
+of an old answer file is a no-op by design, so a closure approved later
+against those same bytes goes through `reconcile-stale`, whose key changes
+with the target set.
+
 **Verify:** `npm run memory -- context` succeeds; `import --dry-run` for the
-same folder reports `supersessionsExpected: 0` and no new records.
+same folder reports `supersessionsExpected: 0`, `questionsClosedExpected: 0`
+and no new records.

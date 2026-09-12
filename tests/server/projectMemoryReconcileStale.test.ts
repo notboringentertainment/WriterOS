@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
-import { projectMemoryStore } from '../../server/projectMemory/store'
+import { createProjectMemoryStore, projectMemoryStore } from '../../server/projectMemory/store'
 import { runProjectMemoryCli } from '../../server/projectMemory/cli'
 
 const temporaryRoots: string[] = []
@@ -49,11 +49,12 @@ function ticket(projectId: string, sourceId: string, hash: string, overrides: Re
   }
 }
 
-function preview(projectId: string, records: Record<string, unknown>[]) {
+function preview(projectId: string, records: Record<string, unknown>[], ticketFiles?: string[]) {
   return {
     source: 'story-wayfinder',
     projectId,
     records,
+    ...(ticketFiles === undefined ? {} : { ticketFiles }),
     warnings: [],
     duplicates: 0,
     counts: {
@@ -237,5 +238,212 @@ describe('reconcile-stale', () => {
     )
     expect(code).toBe(2)
     expect(errors.join('')).toContain('Invalid memory command input.')
+  })
+})
+
+function openQuestion(projectId: string, name: string, hash: string) {
+  return {
+    projectId,
+    dedupeKey: `import:story-wayfinder:tickets/${name}:${hash}`,
+    kind: 'open_question',
+    requestedStatus: 'active',
+    claim: `What is the ${name}?`,
+    source: {
+      workflow: 'story-wayfinder',
+      sourceId: `tickets/${name}.md`,
+      sourceUri: `story-wayfinder:tickets/${name}.md`,
+      sourceHash: hash,
+      capturedAt: '2026-09-01T00:00:00.000Z',
+      approval: 'none',
+    },
+  }
+}
+
+async function seedQuestions(projectPath: string, projectId: string, name: string, hashes: string[]) {
+  for (const hash of hashes) {
+    await projectMemoryStore.publish(projectPath, openQuestion(projectId, name, hash) as never)
+  }
+}
+
+async function rows(projectPath: string) {
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+  return snapshot.records.map(record => [record.source.sourceId, record.source.sourceHash, record.status] as const)
+}
+
+describe('reconcile-stale closes orphaned questions', () => {
+  it('closes the question of a resolved ticket whose open file is gone', async () => {
+    const projectId = 'reconcile-close-one'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'x', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/x.md', ['a1'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/x.md', 'a1')], ['resolved/x.md'])
+
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output).toMatchObject({ skipped: [], skippedQuestions: [] })
+    const [group] = dry.output?.groups as Array<Record<string, unknown>>
+    expect(group).toMatchObject({ sourceId: 'resolved/x.md', winnerSourceHash: 'a1' })
+    expect(group.closeQuestionIds).toHaveLength(1)
+    expect(group.retireRecordIds).toHaveLength(1)
+    expect(String(group.dedupeKey)).toMatch(/^maintenance:close:story-wayfinder:resolved\/x\.md:[0-9a-f]{64}$/)
+
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, questionsClosed: 1, revision: 3, staleConflicts: [] })
+    expect(await rows(projectPath)).toEqual([
+      ['tickets/x.md', 'q1', 'superseded'],
+      ['resolved/x.md', 'a1', 'superseded'],
+      ['resolved/x.md', 'a1', 'active'],
+    ])
+    const again = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(again.output).toMatchObject({ applied: 0, groups: [], skippedQuestions: [] })
+  })
+
+  it('retires three answer versions and two question versions in one event', async () => {
+    const projectId = 'reconcile-close-many'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'm', ['q1', 'q2'])
+    await seedVersions(projectPath, projectId, 'resolved/m.md', ['a1', 'a2', 'a3'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/m.md', 'a3')], ['resolved/m.md'])
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    // The two question versions are closed by the answer repair, not
+    // reported as a skipped version group of their own.
+    expect(dry.output).toMatchObject({ skipped: [], skippedQuestions: [] })
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, questionsClosed: 2, revision: 6 })
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const active = after.records.filter(record => record.status === 'active')
+    expect(active).toHaveLength(1)
+    expect(active[0].supersedes).toHaveLength(5)
+    expect(active[0].claim).toBe('resolved/m.md version a3.')
+  })
+
+  it('skips an orphaned question with no answer and one whose open file still exists', async () => {
+    const projectId = 'reconcile-close-skip'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'deleted', ['q1'])
+    await seedQuestions(projectPath, projectId, 'unpublished', ['q1'])
+    await seedQuestions(projectPath, projectId, 'both', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/both.md', ['a1'])
+    await seedQuestions(projectPath, projectId, 'live', ['q1'])
+    const current = preview(projectId, [
+      ticket(projectId, 'resolved/unpublished.md', 'a9'),
+      ticket(projectId, 'resolved/both.md', 'a1'),
+      openQuestion(projectId, 'both', 'q1'),
+      openQuestion(projectId, 'live', 'q1'),
+    ], ['resolved/unpublished.md', 'resolved/both.md', 'tickets/both.md', 'tickets/live.md'])
+
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output).toMatchObject({ groups: [], skipped: [] })
+    expect(dry.output?.skippedQuestions).toEqual([
+      expect.objectContaining({ sourceId: 'tickets/both.md', reason: 'The open ticket file still exists beside the resolved one.' }),
+      expect.objectContaining({ sourceId: 'tickets/deleted.md', reason: 'The ticket file is gone and no resolved file exists for it.' }),
+      expect.objectContaining({ sourceId: 'tickets/unpublished.md', reason: 'No active answer record exists for the resolved file.' }),
+    ])
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 0, questionsClosed: 0 })
+    expect((await rows(projectPath)).filter(([, , status]) => status === 'active')).toHaveLength(5)
+  })
+
+  it('closes a new question after a reopen even when the old answer bytes are restored', async () => {
+    const projectId = 'reconcile-close-reopen'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'r', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/r.md', ['a1'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/r.md', 'a1')], ['resolved/r.md'])
+    const first = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(first.output).toMatchObject({ applied: 1, questionsClosed: 1 })
+
+    // Reopened with a new question version, later resolved back to the same bytes.
+    await seedQuestions(projectPath, projectId, 'r', ['q2'])
+    const reimport = await run('import', projectPath, sourceRoot, '--apply', current)
+    expect(reimport.output).toMatchObject({ applied: 0, questionsClosed: 0 })
+    const second = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(second.output).toMatchObject({ applied: 1, questionsClosed: 1 })
+    const groups = second.output?.groups as Array<Record<string, unknown>>
+    expect(groups[0].dedupeKey).not.toBe((first.output?.groups as Array<Record<string, unknown>>)[0].dedupeKey)
+    expect((await rows(projectPath)).filter(([, , status]) => status === 'active')).toEqual([
+      ['resolved/r.md', 'a1', 'active'],
+    ])
+  })
+
+  it('leaves an open conflict on a closed question and reports it', async () => {
+    const projectId = 'reconcile-close-conflict'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'k', ['q1'])
+    const q1 = (await projectMemoryStore.readSnapshotReadOnly(projectPath)).records[0]
+    await projectMemoryStore.publish(projectPath, {
+      ...openQuestion(projectId, 'rival', 'v1'),
+      conflictsWith: [q1.id],
+    } as never)
+    await seedVersions(projectPath, projectId, 'resolved/k.md', ['a1'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/k.md', 'a1'), openQuestion(projectId, 'rival', 'v1')], ['resolved/k.md', 'tickets/rival.md'])
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, questionsClosed: 1, staleConflicts: [] })
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    expect(after.conflicts[0]).toMatchObject({ status: 'open', leftRecordId: q1.id })
+    expect(after.records.find(record => record.id === q1.id)?.status).toBe('superseded')
+  })
+
+  it('refuses to apply an accepted list over a ledger that moved', async () => {
+    const projectId = 'reconcile-close-moved'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'z', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/z.md', ['a1'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/z.md', 'a1')], ['resolved/z.md'])
+    let interposed = 0
+    const moving = {
+      ...projectMemoryStore,
+      async publish(targetPath: string, input: never) {
+        if (interposed === 0) {
+          interposed += 1
+          await projectMemoryStore.publish(targetPath, openQuestion(projectId, 'z', 'q2') as never)
+        }
+        return projectMemoryStore.publish(targetPath, input)
+      },
+    }
+    const errors: string[] = []
+    const code = await runProjectMemoryCli(
+      ['reconcile-stale', '--source', 'wayfinder', '--from', sourceRoot, '--project', projectPath, '--apply'],
+      { stdout: () => undefined, stderr: (value: string) => errors.push(value) },
+      { importPreview: async () => current as never, memoryStore: moving as never },
+    )
+    expect(code).toBe(3)
+    expect((await rows(projectPath)).filter(([, , status]) => status === 'active')).toHaveLength(3)
+  })
+})
+
+describe('reconcile-stale durability', () => {
+  it('reconciles a closure appended before projection failure and retries without a second event', async () => {
+    const projectId = 'reconcile-close-durable'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedQuestions(projectPath, projectId, 'd', ['q1'])
+    await seedVersions(projectPath, projectId, 'resolved/d.md', ['a1'])
+    const current = preview(projectId, [ticket(projectId, 'resolved/d.md', 'a1')], ['resolved/d.md'])
+    let failures = 0
+    const failingStore = createProjectMemoryStore({
+      testHooks: {
+        beforeProjectionWrite: async (_projectPath, snapshot) => {
+          if (snapshot.revision === 3 && failures === 0) {
+            failures += 1
+            throw Object.assign(new Error('forced projection failure'), { code: 'EIO' })
+          }
+        },
+      },
+    })
+    const errors: string[] = []
+    const code = await runProjectMemoryCli(
+      ['reconcile-stale', '--source', 'wayfinder', '--from', sourceRoot, '--project', projectPath, '--apply'],
+      { stdout: () => undefined, stderr: (value: string) => errors.push(value) },
+      { importPreview: async () => current as never, memoryStore: failingStore },
+    )
+    expect(code).toBe(3)
+    expect(JSON.parse(errors.join(''))).toMatchObject({ error: 'import-partial', durability: 'reconciled', appliedCount: 1, lastRevision: 3 })
+
+    const retry = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(retry.output).toMatchObject({ applied: 0, groups: [], revision: 3 })
+    expect(await rows(projectPath)).toEqual([
+      ['tickets/d.md', 'q1', 'superseded'],
+      ['resolved/d.md', 'a1', 'superseded'],
+      ['resolved/d.md', 'a1', 'active'],
+    ])
   })
 })

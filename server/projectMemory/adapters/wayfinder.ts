@@ -176,6 +176,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
   async preview({ projectId, sourceRoot }): Promise<ImportPreview> {
     const records: PublishMemoryInput[] = []
     const warnings: string[] = []
+    const ticketFiles: string[] = []
     const root = await rootMetadata(sourceRoot)
     if (root.hasToDelete) warnings.push('_to_delete: ignored undocumented directory')
     for (const filename of root.canonNotes) {
@@ -195,6 +196,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
       }
       for (const filename of listing.files) {
         const relativePath = path.posix.join(directory, filename)
+        if (directory !== 'assets') ticketFiles.push(relativePath)
         const sourceFile = await readImportSource(path.join(ticketBase, directory, filename))
         const content = sourceFile.text
         const parsed = parseTicket(content)
@@ -496,6 +498,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
       warnings,
       duplicates: 0,
       counts: buildImportCounts(records, 0),
+      ticketFiles,
     }
   },
 }
