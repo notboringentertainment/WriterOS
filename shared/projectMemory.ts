@@ -179,6 +179,14 @@ export const PublishMemoryInputSchema = z.object({
   spoiler: z.boolean().default(false),
   conflictsWith: ReferenceListSchema.default([]),
   supersedes: ReferenceListSchema.default([]),
+  /**
+   * Replacement intent for versioned sources (an amended Wayfinder ticket).
+   * When true the store, under its own lock, adds every ACTIVE record with the
+   * same kind, workflow and sourceId to `supersedes`. The resolved ids are what
+   * the ledger event records; this flag itself is never persisted. Supersession
+   * still applies only if the new record lands active.
+   */
+  supersedesPriorVersions: z.boolean().default(false),
 }).strict().superRefine((input, context) => {
   if (input.requestedStatus === 'active' && input.safety === 'flagged') {
     context.addIssue({

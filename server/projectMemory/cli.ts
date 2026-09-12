@@ -7,7 +7,13 @@ import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPacka
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
 import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
 import { renderMemoryContextMarkdown } from './renderContext'
-import { ProjectMemoryStoreError, projectMemoryStore, type ProjectMemoryStore } from './store'
+import {
+  ProjectMemoryStoreError,
+  priorVersionRecords,
+  projectMemoryStore,
+  publicationRecordId,
+  type ProjectMemoryStore,
+} from './store'
 import type { MemoryContextPackage } from '../../shared/projectMemory'
 import {
   MemoryWorkflowSchema,
@@ -448,7 +454,12 @@ async function runImport(
   const sourceRoot = sourceGuard.path
   const memoryStore = dependencies.memoryStore ?? projectMemoryStore
   await project.verify()
-  const snapshot = await memoryStore.readSnapshot(projectPath)
+  // Dry-run promises a read-only preview: readSnapshot() can initialize the
+  // ledger, append migration events and repair projections, so it is only
+  // used on the apply path.
+  const snapshot = dryRun
+    ? await memoryStore.readSnapshotReadOnly(projectPath)
+    : await memoryStore.readSnapshot(projectPath)
   const manifest = await readSafeManifest(projectPath)
   if (manifest.projectId !== snapshot.projectId) {
     throw new CliInputError('The project manifest does not match project memory.')
@@ -500,15 +511,40 @@ async function runImport(
   })) {
     throw new CliInputError('Wayfinder active canon lacks eligible ticket authority.')
   }
+  // Wayfinder ticket files are versioned sources: an amended ticket replaces
+  // its earlier published version. Other adapters keep today's behaviour
+  // (PitchStudio source ids are ordinal and not stable across edits).
+  const records: PublishMemoryInput[] = parsed.data.records.map(record => (
+    source === 'wayfinder' ? { ...record, supersedesPriorVersions: true } : record
+  ))
+
   if (dryRun) {
-    io.stdout(`${JSON.stringify(parsed.data, null, 2)}\n`)
+    // Estimate only: the store resolves prior versions under its lock at
+    // apply time. A version that is already published is a no-op and
+    // retires nothing, so check idempotency before counting predecessors.
+    const supersessionsExpected = records.reduce((total, record) => {
+      if (!record.supersedesPriorVersions) return total
+      // Supersession applies only when the record lands active; a requested
+      // candidate or a safety-flagged record never retires anything.
+      if (record.requestedStatus === 'candidate' || record.safety === 'flagged') return total
+      const recordId = publicationRecordId(record.projectId, record.dedupeKey, record.source.sourceHash)
+      if (snapshot.records.some(existing => existing.id === recordId)) return total
+      return total + priorVersionRecords(snapshot, {
+        projectId: record.projectId,
+        dedupeKey: record.dedupeKey,
+        kind: record.kind,
+        source: record.source,
+      }).length
+    }, 0)
+    io.stdout(`${JSON.stringify({ ...parsed.data, records, supersessionsExpected }, null, 2)}\n`)
     return 0
   }
 
   let applied = 0
   let idempotent = 0
+  let supersessions = 0
   let revision = snapshot.revision
-  for (const record of parsed.data.records) {
+  for (const record of records) {
     let result
     try {
       await verifyImportManifest()
@@ -535,17 +571,241 @@ async function runImport(
         lastRevision: reconciled.snapshot.revision,
       })
     }
-    if (result.published) applied += 1
-    else idempotent += 1
+    if (result.published) {
+      applied += 1
+      supersessions += result.record.supersedes.length
+    } else {
+      idempotent += 1
+    }
     revision = result.snapshot.revision
   }
   const duplicates = parsed.data.duplicates + idempotent
   io.stdout(`${JSON.stringify({
     ...parsed.data,
+    records,
     applied,
+    supersessions,
     duplicates,
     counts: { ...parsed.data.counts, duplicates },
     revision,
+  }, null, 2)}\n`)
+  return 0
+}
+
+interface StaleVersionGroup {
+  kind: PublishMemoryInput['kind']
+  workflow: PublishMemoryInput['source']['workflow']
+  sourceId: string
+  winnerRecordId: string
+  winnerSourceHash: string
+  retireRecordIds: string[]
+}
+
+interface SkippedVersionGroup {
+  kind: PublishMemoryInput['kind']
+  workflow: PublishMemoryInput['source']['workflow']
+  sourceId: string
+  recordIds: string[]
+  reason: string
+}
+
+function versionAnchor(kind: string, workflow: string, sourceId: string): string {
+  return `${kind}\0${workflow}\0${sourceId}`
+}
+
+/**
+ * One-time repair for sources imported before versions superseded each other:
+ * every active record sharing a (kind, workflow, sourceId) anchor is a version
+ * of the same file. The winner is the single version whose hash matches the
+ * file as it is now; anything else is skipped and reported, never guessed.
+ */
+function planStaleVersionGroups(
+  snapshot: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
+  currentVersions: readonly PublishMemoryInput[],
+): { groups: StaleVersionGroup[]; skipped: SkippedVersionGroup[] } {
+  const currentHashByAnchor = new Map<string, string>()
+  for (const record of currentVersions) {
+    currentHashByAnchor.set(
+      versionAnchor(record.kind, record.source.workflow, record.source.sourceId),
+      record.source.sourceHash,
+    )
+  }
+  const byAnchor = new Map<string, typeof snapshot.records>()
+  for (const record of snapshot.records) {
+    if (record.status !== 'active') continue
+    const anchor = versionAnchor(record.kind, record.source.workflow, record.source.sourceId)
+    byAnchor.set(anchor, [...(byAnchor.get(anchor) ?? []), record])
+  }
+  const groups: StaleVersionGroup[] = []
+  const skipped: SkippedVersionGroup[] = []
+  for (const [anchor, members] of [...byAnchor.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
+    if (members.length < 2) continue
+    const first = members[0]
+    const base = {
+      kind: first.kind,
+      workflow: first.source.workflow,
+      sourceId: first.source.sourceId,
+      recordIds: members.map(record => record.id),
+    }
+    const currentHash = currentHashByAnchor.get(anchor)
+    if (currentHash === undefined) {
+      skipped.push({ ...base, reason: 'The source file is not in the current preview.' })
+      continue
+    }
+    const matches = members.filter(record => record.source.sourceHash === currentHash)
+    if (matches.length === 0) {
+      skipped.push({ ...base, reason: 'The current file version has not been published.' })
+      continue
+    }
+    if (matches.length > 1) {
+      skipped.push({ ...base, reason: 'More than one active record matches the current file version.' })
+      continue
+    }
+    const winner = matches[0]
+    if (winner.source.authority !== undefined && 'verification' in winner.source.authority) {
+      skipped.push({ ...base, reason: 'The winner carries store-derived authority and cannot be republished.' })
+      continue
+    }
+    groups.push({
+      kind: winner.kind,
+      workflow: winner.source.workflow,
+      sourceId: winner.source.sourceId,
+      winnerRecordId: winner.id,
+      winnerSourceHash: winner.source.sourceHash,
+      retireRecordIds: members.map(record => record.id),
+    })
+  }
+  return { groups, skipped }
+}
+
+function maintenanceReplacementInput(
+  snapshot: Awaited<ReturnType<ProjectMemoryStore['readSnapshotReadOnly']>>,
+  group: StaleVersionGroup,
+): PublishMemoryInput {
+  const winner = snapshot.records.find(record => record.id === group.winnerRecordId)
+  if (!winner) throw new CliInputError('The winning record disappeared before it could be republished.')
+  return {
+    projectId: winner.projectId,
+    dedupeKey: `maintenance:collapse:${winner.source.workflow}:${winner.source.sourceId}`,
+    kind: winner.kind,
+    requestedStatus: 'active',
+    claim: winner.claim,
+    ...(winner.detail === undefined ? {} : { detail: winner.detail }),
+    tags: winner.tags,
+    entities: winner.entities,
+    source: winner.source,
+    evidence: winner.evidence,
+    safety: winner.safety,
+    spoiler: winner.spoiler,
+    supersedes: group.retireRecordIds,
+    supersedesPriorVersions: false,
+  }
+}
+
+async function runReconcileStale(
+  args: ParsedArguments,
+  io: ProjectMemoryCliIo,
+  dependencies: ProjectMemoryCliDependencies,
+): Promise<number> {
+  assertAllowedOptions(args, ['project', 'source', 'from'], ['dry-run', 'apply'])
+  const dryRun = args.flags.has('dry-run')
+  const apply = args.flags.has('apply')
+  if (dryRun === apply) throw new CliInputError('Reconcile requires exactly one of --dry-run or --apply.')
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
+  const source = requiredValue(args, 'source')
+  if (source !== 'wayfinder') throw new CliInputError('Only the wayfinder source supports reconcile-stale.')
+  const sourceGuard = await guardExistingPath(requiredValue(args, 'from'), 'directory')
+  const memoryStore = dependencies.memoryStore ?? projectMemoryStore
+  await project.verify()
+  const snapshot = dryRun
+    ? await memoryStore.readSnapshotReadOnly(projectPath)
+    : await memoryStore.readSnapshot(projectPath)
+  const manifest = await readSafeManifest(projectPath)
+  if (manifest.projectId !== snapshot.projectId) {
+    throw new CliInputError('The project manifest does not match project memory.')
+  }
+  const verifyManifest = async () => {
+    await project.verify()
+    const current = await readSafeManifest(projectPath)
+    if (current.projectId !== snapshot.projectId) {
+      throw new CliInputError('The project identity changed during reconcile.')
+    }
+  }
+  const rawPreview = await (dependencies.importPreview ?? loadImportPreview)({
+    source,
+    projectId: snapshot.projectId,
+    sourceRoot: sourceGuard.path,
+  })
+  await sourceGuard.verify()
+  await verifyManifest()
+  const parsed = ImportPreviewSchema.safeParse(rawPreview)
+  if (!parsed.success || parsed.data.projectId !== snapshot.projectId || parsed.data.source !== 'story-wayfinder') {
+    throw new CliInputError('Import preview is invalid for this project.')
+  }
+  const plan = planStaleVersionGroups(snapshot, parsed.data.records)
+
+  if (dryRun) {
+    io.stdout(`${JSON.stringify({
+      revision: snapshot.revision,
+      groups: plan.groups,
+      skipped: plan.skipped,
+    }, null, 2)}\n`)
+    return 0
+  }
+
+  let applied = 0
+  let idempotent = 0
+  let revision = snapshot.revision
+  let latest = snapshot
+  for (const group of plan.groups) {
+    const input = maintenanceReplacementInput(latest, group)
+    let result
+    try {
+      await verifyManifest()
+      result = await memoryStore.publish(projectPath, input)
+    } catch {
+      let reconciled
+      try {
+        await project.verify()
+        reconciled = await memoryStore.reconcilePublication(projectPath, input)
+      } catch {
+        throw new CliImportPartialError({
+          durability: 'unknown',
+          lastKnownAppliedCount: applied,
+          lastKnownRevision: revision,
+        })
+      }
+      const durableApplied = (
+        reconciled.publication !== undefined
+        && reconciled.publication.eventRevision > revision
+      ) ? 1 : 0
+      throw new CliImportPartialError({
+        durability: 'reconciled',
+        appliedCount: applied + durableApplied,
+        lastRevision: reconciled.snapshot.revision,
+      })
+    }
+    if (result.published) applied += 1
+    else idempotent += 1
+    revision = result.snapshot.revision
+    latest = result.snapshot
+  }
+  const retired = new Set(plan.groups.flatMap(group => group.retireRecordIds))
+  const staleConflicts = latest.conflicts
+    .filter(conflict => (
+      conflict.status === 'open'
+      && retired.has(conflict.leftRecordId)
+      && retired.has(conflict.rightRecordId)
+    ))
+    .map(conflict => conflict.id)
+  io.stdout(`${JSON.stringify({
+    revision,
+    applied,
+    idempotent,
+    groups: plan.groups,
+    skipped: plan.skipped,
+    staleConflicts,
   }, null, 2)}\n`)
   return 0
 }
@@ -720,6 +980,7 @@ export async function runProjectMemoryCli(
     if (args.command === 'export') return await runExport(args, io)
     if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
+    if (args.command === 'reconcile-stale') return await runReconcileStale(args, io, dependencies)
     if (args.command === 'report') return await runReport(args, io)
     if (args.command === 'invalidate') return await runInvalidate(args, io)
     if (args.command === 'questions') return await runQuestions(args, io)

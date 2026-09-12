@@ -431,3 +431,46 @@ Synopsis/Outline/Treatment/Story Bible) is out of scope for V1 by ruling.
 not include `script`, and there's no separate script-patch failure mode to
 document here because the feature doesn't exist yet. If it's built later, it
 needs its own runbook entry once it has its own recovery/failure surface.
+
+## 6. Collapse stale versions of an imported ticket
+
+**Symptom:** `npm run memory -- context` fails with `canon_context_too_large`,
+and the snapshot shows several `active` records sharing one
+`source.sourceId` (the same Wayfinder ticket file published at different
+content hashes). Imports made before 2026-09-11 never superseded the earlier
+version of an amended ticket, so every amendment added an active copy.
+
+**What changed:** a Wayfinder import now publishes each record with
+`supersedesPriorVersions`, so the store retires every active record with the
+same kind, workflow and `sourceId` when the new version lands active. A
+version that imports as a candidate retires nothing. Other adapters are
+unchanged.
+
+**Repair records already duplicated:**
+
+```bash
+npm run memory -- reconcile-stale --project "<absolute .writeros path>" \
+  --source wayfinder --from "<project root>/wayfinder" --dry-run
+```
+
+Dry-run is read-only. It lists each duplicate group, the winner (the single
+active record whose hash matches the file as it is now) and the ids it would
+retire. Groups whose current file version was never published, whose file is
+missing from the source folder, or that match more than one record are
+listed under `skipped` with a reason and left alone. Read the winners and
+losers and accept the replacement before applying:
+
+```bash
+npm run memory -- reconcile-stale --project "<absolute .writeros path>" \
+  --source wayfinder --from "<project root>/wayfinder" --apply
+```
+
+Apply republishes each winner's full content under a
+`maintenance:collapse:<workflow>:<sourceId>` dedupe key that supersedes the
+whole group. The winner gets a new record id (annotations pinned to the old
+id go stale); the old records stay in history as `superseded`. Re-running is
+a no-op, and a partial failure prints the same `import-partial` message as
+§3 and is retried the same way.
+
+**Verify:** `npm run memory -- context` succeeds; `import --dry-run` for the
+same folder reports `supersessionsExpected: 0` and no new records.
