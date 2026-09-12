@@ -7,7 +7,13 @@ import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPacka
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
 import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
 import { renderMemoryContextMarkdown } from './renderContext'
-import { ProjectMemoryStoreError, projectMemoryStore, type ProjectMemoryStore } from './store'
+import {
+  ProjectMemoryStoreError,
+  priorVersionRecords,
+  projectMemoryStore,
+  publicationRecordId,
+  type ProjectMemoryStore,
+} from './store'
 import type { MemoryContextPackage } from '../../shared/projectMemory'
 import {
   MemoryWorkflowSchema,
@@ -448,7 +454,12 @@ async function runImport(
   const sourceRoot = sourceGuard.path
   const memoryStore = dependencies.memoryStore ?? projectMemoryStore
   await project.verify()
-  const snapshot = await memoryStore.readSnapshot(projectPath)
+  // Dry-run promises a read-only preview: readSnapshot() can initialize the
+  // ledger, append migration events and repair projections, so it is only
+  // used on the apply path.
+  const snapshot = dryRun
+    ? await memoryStore.readSnapshotReadOnly(projectPath)
+    : await memoryStore.readSnapshot(projectPath)
   const manifest = await readSafeManifest(projectPath)
   if (manifest.projectId !== snapshot.projectId) {
     throw new CliInputError('The project manifest does not match project memory.')
@@ -500,15 +511,37 @@ async function runImport(
   })) {
     throw new CliInputError('Wayfinder active canon lacks eligible ticket authority.')
   }
+  // Wayfinder ticket files are versioned sources: an amended ticket replaces
+  // its earlier published version. Other adapters keep today's behaviour
+  // (PitchStudio source ids are ordinal and not stable across edits).
+  const records: PublishMemoryInput[] = parsed.data.records.map(record => (
+    source === 'wayfinder' ? { ...record, supersedesPriorVersions: true } : record
+  ))
+
   if (dryRun) {
-    io.stdout(`${JSON.stringify(parsed.data, null, 2)}\n`)
+    // Estimate only: the store resolves prior versions under its lock at
+    // apply time. A version that is already published is a no-op and
+    // retires nothing, so check idempotency before counting predecessors.
+    const supersessionsExpected = records.reduce((total, record) => {
+      if (!record.supersedesPriorVersions) return total
+      const recordId = publicationRecordId(record.projectId, record.dedupeKey, record.source.sourceHash)
+      if (snapshot.records.some(existing => existing.id === recordId)) return total
+      return total + priorVersionRecords(snapshot, {
+        projectId: record.projectId,
+        dedupeKey: record.dedupeKey,
+        kind: record.kind,
+        source: record.source,
+      }).length
+    }, 0)
+    io.stdout(`${JSON.stringify({ ...parsed.data, records, supersessionsExpected }, null, 2)}\n`)
     return 0
   }
 
   let applied = 0
   let idempotent = 0
+  let supersessions = 0
   let revision = snapshot.revision
-  for (const record of parsed.data.records) {
+  for (const record of records) {
     let result
     try {
       await verifyImportManifest()
@@ -535,14 +568,20 @@ async function runImport(
         lastRevision: reconciled.snapshot.revision,
       })
     }
-    if (result.published) applied += 1
-    else idempotent += 1
+    if (result.published) {
+      applied += 1
+      supersessions += result.record.supersedes.length
+    } else {
+      idempotent += 1
+    }
     revision = result.snapshot.revision
   }
   const duplicates = parsed.data.duplicates + idempotent
   io.stdout(`${JSON.stringify({
     ...parsed.data,
+    records,
     applied,
+    supersessions,
     duplicates,
     counts: { ...parsed.data.counts, duplicates },
     revision,
