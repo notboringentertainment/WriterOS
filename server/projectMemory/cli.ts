@@ -858,7 +858,14 @@ function planAnswerRepairs(
       })
     }
   }
-  return { groups, skipped, skippedQuestions }
+  // A question-version group whose every record is closed by an answer
+  // repair is handled by that repair; do not also report it as skipped.
+  const closedIds = new Set(groups.flatMap(group => group.closeQuestionIds))
+  return {
+    groups,
+    skipped: skipped.filter(entry => !entry.recordIds.every(id => closedIds.has(id))),
+    skippedQuestions,
+  }
 }
 
 function maintenanceReplacementInput(

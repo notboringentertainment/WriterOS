@@ -303,6 +303,10 @@ describe('reconcile-stale closes orphaned questions', () => {
     await seedQuestions(projectPath, projectId, 'm', ['q1', 'q2'])
     await seedVersions(projectPath, projectId, 'resolved/m.md', ['a1', 'a2', 'a3'])
     const current = preview(projectId, [ticket(projectId, 'resolved/m.md', 'a3')], ['resolved/m.md'])
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    // The two question versions are closed by the answer repair, not
+    // reported as a skipped version group of their own.
+    expect(dry.output).toMatchObject({ skipped: [], skippedQuestions: [] })
     const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
     expect(applied.output).toMatchObject({ applied: 1, questionsClosed: 2, revision: 6 })
     const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
