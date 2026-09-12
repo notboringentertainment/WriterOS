@@ -162,6 +162,35 @@ function activeLegacyAuthorityRecordIds(snapshot: ProjectMemorySnapshot): string
   )).map(record => record.id)
 }
 
+/**
+ * The record id a publication of (projectId, dedupeKey, sourceHash) receives.
+ * Exported so read-only callers (import dry-run) can tell whether a version is
+ * already published without replaying the ledger's publication index.
+ */
+export function publicationRecordId(projectId: string, dedupeKey: string, sourceHash: string): string {
+  return stableId('mem', [projectId, dedupeKey, sourceHash])
+}
+
+/**
+ * Active records the incoming publication would replace when it asks for
+ * `supersedesPriorVersions`: same kind, workflow and sourceId. Kind must match
+ * because the store never lets one kind retire another; sourceUri is not part
+ * of the key because Buzz embeds the linked channel in it.
+ */
+export function priorVersionRecords(
+  snapshot: ProjectMemorySnapshot,
+  input: Pick<ParsedPublishMemoryInput, 'projectId' | 'dedupeKey' | 'kind' | 'source'>,
+): ProjectMemoryRecord[] {
+  const incomingId = publicationRecordId(input.projectId, input.dedupeKey, input.source.sourceHash)
+  return snapshot.records.filter(record => (
+    record.status === 'active'
+    && record.kind === input.kind
+    && record.source.workflow === input.source.workflow
+    && record.source.sourceId === input.source.sourceId
+    && record.id !== incomingId
+  ))
+}
+
 function stableId(prefix: string, parts: string[]): string {
   const digest = createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 32)
   return `${prefix}_${digest}`
@@ -356,6 +385,9 @@ function applyEvent(
     }
     if (!sameMembers(event.record.supersedes, event.supersededRecordIds)) {
       throw corruptLedger(lineNumber, 'published supersession links do not match the event mutation.')
+    }
+    if (event.supersededRecordIds.length > 0 && event.record.status !== 'active') {
+      throw corruptLedger(lineNumber, 'only an active publication may supersede records.')
     }
     if (state.publications.some(publication => (
       publication.dedupeKey === event.dedupeKey
@@ -875,8 +907,15 @@ function createPublicationEvent(
 ): Extract<ProjectMemoryEvent, { type: 'published' }> {
   const revision = snapshot.revision + 1
   const occurredAt = new Date().toISOString()
-  const recordId = stableId('mem', [input.projectId, input.dedupeKey, input.source.sourceHash])
-  const explicitTargets = requireSupersessionTargets(snapshot, recordId, input.supersedes)
+  const recordId = publicationRecordId(input.projectId, input.dedupeKey, input.source.sourceHash)
+  const priorVersionIds = input.supersedesPriorVersions
+    ? priorVersionRecords(snapshot, input).map(record => record.id)
+    : []
+  const explicitTargets = requireSupersessionTargets(
+    snapshot,
+    recordId,
+    unique([...input.supersedes, ...priorVersionIds]),
+  )
   validateSupersessionTargets(input.kind, input.source, explicitTargets)
 
   let automaticDocumentTargets: ProjectMemoryRecord[] = []
