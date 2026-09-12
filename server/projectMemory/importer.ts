@@ -15,6 +15,13 @@ export interface ImportPreview {
   warnings: string[]
   duplicates: number
   counts: ProjectMemoryImportCounts
+  /**
+   * Wayfinder only: every markdown filename seen under tickets/ and
+   * resolved/ (as `tickets/<name>` / `resolved/<name>`), whether or not it
+   * imported. Lets the CLI tell "the open ticket is gone" from "the open
+   * ticket was skipped".
+   */
+  ticketFiles?: string[]
 }
 
 export interface MemorySourceAdapter {

@@ -45,6 +45,7 @@ export interface ProjectMemoryImportPreview {
   warnings: string[]
   duplicates: number
   counts: ProjectMemoryImportCounts
+  ticketFiles?: string[]
 }
 
 export interface ProjectMemoryCliDependencies {
@@ -399,6 +400,7 @@ const ImportPreviewSchema = z.object({
   warnings: z.array(z.string()),
   duplicates: z.number().int().nonnegative(),
   counts: ProjectMemoryImportCountsSchema,
+  ticketFiles: z.array(z.string().min(1).max(2_000)).max(10_000).optional(),
 }).strict().superRefine((preview, context) => {
   const expected: ProjectMemoryImportCounts = {
     activeCanon: preview.records.filter(record => (

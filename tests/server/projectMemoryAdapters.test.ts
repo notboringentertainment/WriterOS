@@ -341,6 +341,52 @@ The lantern flashes twice before the ferry departs.
     }])
   })
 
+  it('lists every ticket and resolved filename it saw, including files it did not import', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-ticketfiles-')
+    await writeSource(root, 'resolved/answered.md', `# Answered
+type: grill
+mode: hitl
+resolved: 2026-08-03
+
+## Answer
+Settled.
+`)
+    await writeSource(root, 'tickets/no-title.md', `type: grill
+mode: hitl
+created: 2026-08-05
+
+## Question
+This file has no H1 and is not imported, but it still exists.
+`)
+    await writeSource(root, 'tickets/open.md', `# Open
+type: grill
+mode: hitl
+created: 2026-08-05
+
+## Question
+Still open?
+`)
+    await writeSource(root, 'assets/notes.md', `# Notes
+
+Groundwork.
+`)
+
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder',
+      projectId: 'project-wayfinder-ticketfiles',
+      sourceRoot: root,
+    })
+
+    expect(preview.ticketFiles).toEqual(['resolved/answered.md', 'tickets/no-title.md', 'tickets/open.md'])
+    expect(preview.records.map(record => record.source.sourceId)).toEqual([
+      'assets/notes.md',
+      'resolved/answered.md',
+      'tickets/open.md',
+    ])
+    expect(preview.warnings).toContain('tickets/no-title.md:1: missing H1 title; record not imported')
+  })
+
   it('keeps AFK and homework answers as development while open tickets remain questions', async () => {
     const root = await createSourceRoot('writeros-wayfinder-authority-')
     await writeSource(root, 'resolved/afk-grill.md', `# Explore the storm
