@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -341,5 +342,107 @@ describe('import rename check', () => {
     const applied = await runImport(projectPath, sourceRoot, '--apply', resolved)
     expect(applied).toMatchObject({ questionsClosed: 0, ambiguous: ['resolved/peak.md'], renamed: [] })
     expect((await statuses(projectPath)).filter(([, , status]) => status === 'active')).toHaveLength(4)
+  })
+})
+
+// These run the real wayfinder adapter over files, not an injected preview:
+// the scope-out behaviour lives in the adapter.
+async function runRealImport(projectPath: string, sourceRoot: string, mode: '--dry-run' | '--apply') {
+  const output: string[] = []
+  const errors: string[] = []
+  const code = await runProjectMemoryCli(
+    ['import', '--source', 'wayfinder', '--from', sourceRoot, '--project', projectPath, mode],
+    { stdout: (value: string) => output.push(value), stderr: (value: string) => errors.push(value) },
+    {},
+  )
+  if (code !== 0) throw new Error(`import exited ${code}: ${errors.join('')}`)
+  return JSON.parse(output.join('')) as Record<string, unknown>
+}
+
+const OPEN_BELL = `# Decide whether the bell speaks
+type: grill
+mode: hitl
+created: 2026-09-01
+
+## Question
+Does the bell speak?
+`
+
+const SCOPED_BELL = `# Decide whether the bell speaks
+type: grill
+mode: hitl
+created: 2026-09-01
+resolved: 2026-09-24
+
+## Question
+Does the bell speak?
+
+## Answer — scoped out
+The bell's voice is outside this draft.
+`
+
+async function writeTicket(sourceRoot: string, relativePath: string, text: string) {
+  await mkdir(path.dirname(path.join(sourceRoot, relativePath)), { recursive: true })
+  await writeFile(path.join(sourceRoot, relativePath), text)
+}
+
+async function shapes(projectPath: string) {
+  const snapshot = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+  return snapshot.records.map(record => [record.source.sourceId, record.kind, record.status, record.claim] as const)
+}
+
+describe('a scoped-out resolution closes its question', () => {
+  it('imports the scope-out as active development and retires the open question', async () => {
+    const projectId = 'close-scoped-out'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await writeTicket(sourceRoot, 'tickets/bell.md', OPEN_BELL)
+    expect(await runRealImport(projectPath, sourceRoot, '--apply')).toMatchObject({ applied: 1, questionsClosed: 0 })
+
+    await rm(path.join(sourceRoot, 'tickets', 'bell.md'))
+    await writeTicket(sourceRoot, 'resolved/bell.md', SCOPED_BELL)
+    const dry = await runRealImport(projectPath, sourceRoot, '--dry-run')
+    expect(dry).toMatchObject({ questionsClosedExpected: 1, ambiguous: [] })
+    const applied = await runRealImport(projectPath, sourceRoot, '--apply')
+    expect(applied).toMatchObject({ applied: 1, questionsClosed: 1, ambiguous: [] })
+    expect(await shapes(projectPath)).toEqual([
+      ['tickets/bell.md', 'open_question', 'superseded', 'Does the bell speak?'],
+      ['resolved/bell.md', 'development', 'active', 'Scoped out: Decide whether the bell speaks'],
+    ])
+    // Re-import is a no-op.
+    expect(await runRealImport(projectPath, sourceRoot, '--apply')).toMatchObject({ applied: 0, questionsClosed: 0 })
+  })
+
+  it('republishes a scope-out imported under the old candidate-question shape and closes its question', async () => {
+    const projectId = 'close-scoped-out-migration'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await writeTicket(sourceRoot, 'resolved/bell.md', SCOPED_BELL)
+    const current = await runRealImport(projectPath, sourceRoot, '--dry-run')
+    const scoped = (current.records as Array<Record<string, unknown>>)[0]
+    const source = scoped.source as Record<string, string>
+    // The pre-2026-09-24 adapter emitted the same bytes as a candidate open
+    // question under the plain key; seed the ledger that way.
+    const legacy = {
+      ...scoped,
+      dedupeKey: `import:story-wayfinder:${createHash('sha256')
+        .update(`story-wayfinder\0${source.sourceId}\0${source.sourceHash}`)
+        .digest('hex')}`,
+      kind: 'open_question',
+      requestedStatus: 'candidate',
+      claim: 'Does the bell speak?',
+      detail: "Scoped-out answer: The bell's voice is outside this draft.",
+    }
+    await runImport(projectPath, sourceRoot, '--apply', preview(projectId, [question(projectId, 'bell', 'q1'), legacy], ['tickets/bell.md', 'resolved/bell.md']))
+    expect(await shapes(projectPath)).toEqual([
+      ['tickets/bell.md', 'open_question', 'active', 'What is the bell?'],
+      ['resolved/bell.md', 'open_question', 'candidate', 'Does the bell speak?'],
+    ])
+
+    const applied = await runRealImport(projectPath, sourceRoot, '--apply')
+    expect(applied).toMatchObject({ applied: 1, questionsClosed: 1, duplicates: 0 })
+    expect(await shapes(projectPath)).toEqual([
+      ['tickets/bell.md', 'open_question', 'superseded', 'What is the bell?'],
+      ['resolved/bell.md', 'open_question', 'candidate', 'Does the bell speak?'],
+      ['resolved/bell.md', 'development', 'active', 'Scoped out: Decide whether the bell speaks'],
+    ])
   })
 })

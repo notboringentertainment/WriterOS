@@ -507,10 +507,10 @@ The clock is deliberately unresolved.
       },
       {
         sourceId: 'resolved/scoped.md',
-        kind: 'open_question',
-        requestedStatus: 'candidate',
-        claim: 'Does the bell speak?',
-        detail: "Scoped-out answer: The bell's voice is outside this draft.",
+        kind: 'development',
+        requestedStatus: 'active',
+        claim: 'Scoped out: Decide whether the bell speaks',
+        detail: "Scoped-out answer: The bell's voice is outside this draft.\n\nQuestion: Does the bell speak?",
       },
       {
         sourceId: 'tickets/reopened.md',
@@ -524,7 +524,16 @@ The clock is deliberately unresolved.
       'assets: absent (valid); no groundwork assets',
       'resolved/near-scoped.md:6: unrecognized scoped-out heading "Answer - scoped out"; imported as a development candidate',
     ])
-    expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 2, openQuestions: 2 })
+    expect(preview.counts).toMatchObject({ activeCanon: 0, candidates: 1, development: 2, openQuestions: 1 })
+    // The scope-out key differs from a plain answer's key for the same
+    // bytes, so a scope-out imported under the pre-2026-09-24 shape
+    // (candidate open question) republishes as a resolution.
+    const scoped = preview.records.find(record => record.source.sourceId === 'resolved/scoped.md')
+    const plainKeyForSameBytes = `import:story-wayfinder:${createHash('sha256')
+      .update(`story-wayfinder\0resolved/scoped.md\0${scoped?.source.sourceHash}`)
+      .digest('hex')}`
+    expect(scoped?.dedupeKey).toMatch(/^import:story-wayfinder:[0-9a-f]{64}$/)
+    expect(scoped?.dedupeKey).not.toBe(plainKeyForSameBytes)
   })
 
   it('warns on near or malformed superseded-answer headings without treating them as history', async () => {

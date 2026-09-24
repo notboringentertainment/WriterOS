@@ -281,8 +281,13 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         }
         const scoped = scopedAnswer !== undefined
         const nearScoped = nearScopedAnswer !== undefined
+        // A scoped-out ticket is a resolution, not a question: it lands as
+        // active development ("Scoped out: <title>") so that, like any
+        // answer, it closes the open-question record of the ticket it
+        // replaced. Only the exact heading earns this; near-miss headings
+        // stay reviewable candidates.
         const rawClaim = scoped
-          ? question || parsed.title
+          ? `Scoped out: ${parsed.title}`
           : nearScoped
             ? nearScopedAnswer?.replace(/\s+/g, ' ').trim() || parsed.title
             : directory === 'tickets'
@@ -292,7 +297,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             : answer || parsed.title
         if (!rawClaim) continue
         const kind = scoped
-          ? 'open_question'
+          ? 'development'
           : nearScoped
             ? 'development'
             : activeCanon
@@ -324,7 +329,10 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         // full answer must survive in `detail` alongside the superseded
         // text — never dropped in favor of history.
         const rawDetail = scoped
-          ? `Scoped-out answer: ${scopedAnswer?.replace(/\s+/g, ' ').trim()}`
+          ? [
+            `Scoped-out answer: ${scopedAnswer?.replace(/\s+/g, ' ').trim()}`,
+            ...(question ? [`Question: ${question}`] : []),
+          ].join('\n\n')
           : superseded
             ? (activeCanon && claim !== rawClaim
               ? `${rawClaim}\n\n${supersededText}`
@@ -339,17 +347,24 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             ? `${relativePath}:1: full answer exceeds 8000 characters; detail truncated but active canon retained`
             : `${relativePath}:1: detail truncated to 8000 characters`)
         }
-        const requestedStatus = scoped
-          || nearScoped
+        const requestedStatus = nearScoped
           || unsafeLine !== undefined
           || invalidTicketMetadata
           || missingResolvedAnswer
           ? 'candidate'
           : 'active'
         const sourceHash = sourceFile.sourceHash
+        // Scoped-out tickets carry a distinct key: before 2026-09-24 the same
+        // bytes imported as a candidate open question, and a publication is
+        // idempotent per (key, hash). The new key lets an already-imported
+        // scope-out republish in its resolution form; the old candidate row
+        // is left alone (the store never retires a candidate).
+        const dedupeKey = scoped
+          ? `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}\0scoped-out`)}`
+          : `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}`)}`
         records.push({
           projectId,
-          dedupeKey: `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}`)}`,
+          dedupeKey,
           kind,
           requestedStatus,
           claim,
