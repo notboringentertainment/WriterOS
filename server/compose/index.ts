@@ -2,6 +2,7 @@ import type { ModelProvider } from '../ai/modelProvider'
 import { createModelProvider } from '../ai/modelProvider'
 import { buildOutlineFactSheet } from '../../shared/compose/factSheet'
 import { getOutlineRecipe } from '../../shared/compose/recipe'
+import { resolveFeatureRoleUnitIds } from '../../shared/featureRoleBindings'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
 import { buildSynopsisFactSheet } from '../../shared/compose/synopsisFactSheet'
 import { getSynopsisRecipe } from '../../shared/compose/synopsisRecipe'
@@ -71,9 +72,10 @@ export type ComposeOutlineResult = ComposeResult
 
 export async function composeOutline(args: ComposeOutlineArgs): Promise<ComposeOutlineResult> {
   const provider = args.provider ?? createModelProvider()
-  const factSheet = buildOutlineFactSheet(args.content, args.format)
-  const recipe = getOutlineRecipe(args.format)
-  const sourceHash = computeOutlineSourceHash(args.content, args.format, args.identity)
+  const resolution = args.format === 'feature' ? resolveFeatureRoleUnitIds(args.content) : undefined
+  const factSheet = buildOutlineFactSheet(args.content, args.format, resolution)
+  const recipe = getOutlineRecipe(args.format, resolution)
+  const sourceHash = computeOutlineSourceHash(args.content, args.format, args.identity, resolution)
   return composeFromRecipe(provider, factSheet, recipe, args.format, sourceHash, args.projectMemoryPrompt)
 }
 

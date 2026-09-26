@@ -3,17 +3,19 @@ import { getOutlineReadiness } from '../../../shared/compose/readiness'
 import { buildOutlineFactSheet } from '../../../shared/compose/factSheet'
 import { getOutlineRecipe } from '../../../shared/compose/recipe'
 import { createEmptyOutlineContent } from '../../../shared/documents'
-import { createOutlineEpisode, setOutlinePath } from '../../../client/src/lib/outlineDeck'
+import { createOutlineEpisode, createOutlineUnit, setOutlinePath } from '../../../client/src/lib/outlineDeck'
+import { FEATURE_ROLES, resolveFeatureRoleUnitIds } from '../../../shared/featureRoleBindings'
 
-const recipe = getOutlineRecipe('feature')
+const scaffoldUnits = FEATURE_ROLES.map(role => createOutlineUnit(`feature.${role}`))
+const recipe = getOutlineRecipe('feature', resolveFeatureRoleUnitIds({ units: scaffoldUnits }))
 
 function build(paths: Record<string, string>) {
-  let c = createEmptyOutlineContent()
+  let c = { ...createEmptyOutlineContent(), units: scaffoldUnits }
   for (const [path, value] of Object.entries(paths)) c = setOutlinePath(c, path, value)
-  return buildOutlineFactSheet(c, 'feature')
+  return buildOutlineFactSheet(c, 'feature', resolveFeatureRoleUnitIds(c))
 }
 
-const seriesRecipe = getOutlineRecipe('series')
+const seriesRecipe = getOutlineRecipe('series', undefined)
 
 // setOutlinePath handles spine/seriesEngine/seasonArc (root.field); episodes are
 // an array, so seed them via createOutlineEpisode directly.
@@ -23,7 +25,7 @@ function buildSeries(paths: Record<string, string>, episode?: Partial<Record<'ho
   if (episode) {
     c = { ...c, episodes: [{ ...createOutlineEpisode(1), ...episode }] }
   }
-  return buildOutlineFactSheet(c, 'series')
+  return buildOutlineFactSheet(c, 'series', undefined)
 }
 
 describe('getOutlineReadiness (feature)', () => {
@@ -52,6 +54,35 @@ describe('getOutlineReadiness (feature)', () => {
       'units[id=feature.climax].whatHappens': 'She testifies.',
     }), recipe)
     expect(r.tier).toBe('rich')
+  })
+
+  it('counts an explicitly mapped beat and ignores unmapped authored beats', () => {
+    const mapped = {
+      ...createEmptyOutlineContent(),
+      spine: { ...createEmptyOutlineContent().spine, protagonist: 'Mara', centralOpposition: 'The Syndicate' },
+      units: [{ ...createOutlineUnit('feature.beat08'), whatHappens: 'A reversal.' }],
+      featureRoleUnitIds: { midpoint: 'feature.beat08' },
+    }
+    const mappedFs = buildOutlineFactSheet(mapped, 'feature', resolveFeatureRoleUnitIds(mapped))
+    expect(getOutlineReadiness(mappedFs, getOutlineRecipe('feature', resolveFeatureRoleUnitIds(mapped))).tier).toBe('partial')
+
+    const unmapped = { ...mapped, featureRoleUnitIds: undefined }
+    expect(getOutlineReadiness(mappedFs, getOutlineRecipe('feature', resolveFeatureRoleUnitIds(unmapped))).tier).toBe('sparse')
+  })
+
+  it('keeps fifteen authored units with no role map out of compose and readiness', () => {
+    const content = {
+      ...createEmptyOutlineContent(),
+      units: Array.from({ length: 15 }, (_, index) => ({
+        ...createOutlineUnit(`feature.beat${String(index + 1).padStart(2, '0')}`),
+        number: index + 1,
+        whatHappens: `Beat ${index + 1}`,
+      })),
+    }
+    const resolution = resolveFeatureRoleUnitIds(content)
+    const factSheet = buildOutlineFactSheet(content, 'feature', resolution)
+    expect(factSheet.fields).toEqual([])
+    expect(getOutlineReadiness(factSheet, getOutlineRecipe('feature', resolution)).tier).toBe('sparse')
   })
 })
 

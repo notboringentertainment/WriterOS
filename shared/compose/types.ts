@@ -39,6 +39,8 @@ export interface Recipe {
   recipeVersion: number
   sections: RecipeSection[]
   coreRequiredFieldIds: string[]
+  /** Feature outline OR-group: at least one resolved story beat must be answered. */
+  coreAlternativeFieldIds?: string[]
 }
 
 export type ReadinessTier = 'sparse' | 'partial' | 'rich'

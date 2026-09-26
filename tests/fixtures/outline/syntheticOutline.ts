@@ -1,9 +1,9 @@
 import { createEmptyOutlineContent } from '../../../shared/documents'
 import type { OutlineDocumentContent } from '../../../shared/documents'
-import { setOutlinePath } from '../../../client/src/lib/outlineDeck'
+import { createOutlineUnit, setOutlinePath } from '../../../client/src/lib/outlineDeck'
+import { FEATURE_ROLES } from '../../../shared/featureRoleBindings'
 
-// createEmptyOutlineContent() seeds units: [] — build via setOutlinePath, which
-// auto-creates feature units (createOutlineUnit) when writing units[id=...] paths.
+// Card edits update existing units only; this fixture explicitly seeds its targets.
 const PATHS: Record<string, string> = {
   'spine.protagonist': 'Vera Solano, a disgraced forensic auditor',
   'spine.externalGoal': 'clear her name by exposing the shell-company fraud',
@@ -26,7 +26,10 @@ const PATHS: Record<string, string> = {
   'units[id=feature.finalImage].whatHappens': 'Empty office, lights off, a subpoena on the desk.',
 }
 
-let content = createEmptyOutlineContent()
+let content = {
+  ...createEmptyOutlineContent(),
+  units: FEATURE_ROLES.map(role => createOutlineUnit(`feature.${role}`)),
+}
 for (const [path, value] of Object.entries(PATHS)) content = setOutlinePath(content, path, value)
 
 export const syntheticOutlineFeature: OutlineDocumentContent = content

@@ -1,5 +1,6 @@
 import React from 'react'
 import type { OutlineDocumentContent, OutlineEpisode } from '@shared/documents'
+import { resolveFeatureRoleUnitIds } from '@shared/featureRoleBindings'
 import type { OutlineDeckFormat } from '../../../lib/outlineDeck'
 import {
   getOutlineDeck,
@@ -25,7 +26,7 @@ export function OutlineEditView({
   onAddEpisode,
   onEpisodeFieldChange,
 }: OutlineEditViewProps) {
-  const deck = getOutlineDeck(format)
+  const deck = getOutlineDeck(format, format === 'feature' ? resolveFeatureRoleUnitIds(content) : undefined)
   let currentSection = ''
 
   return (

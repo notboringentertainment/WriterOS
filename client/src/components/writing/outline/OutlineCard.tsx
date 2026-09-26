@@ -21,7 +21,7 @@ export function OutlineCard({ card, content, onFieldChange }: OutlineCardProps) 
       <p style={styles.helper}>{card.helper}</p>
       <div style={styles.fields}>
         {bindings.map((binding, index) => (
-          <div key={binding.path} style={styles.fieldGroup}>
+          <div key={`${binding.path}-${index}`} style={styles.fieldGroup}>
             {composite && (
               <label style={styles.fieldLabel} htmlFor={`${card.id}-field-${index}`}>
                 {binding.label}
@@ -30,6 +30,7 @@ export function OutlineCard({ card, content, onFieldChange }: OutlineCardProps) 
             <textarea
               id={`${card.id}-field-${index}`}
               value={resolveOutlinePath(content, binding.path)}
+              disabled={!binding.path}
               placeholder={card.placeholder ?? ''}
               onChange={(event) => onFieldChange(binding.path, event.target.value)}
               style={styles.textarea}

@@ -4,7 +4,7 @@ import { OutlineDocumentView } from '../../client/src/components/writing/outline
 import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
 import { createEmptyOutlineContent } from '../../shared/documents'
-import { setOutlinePath } from '../../client/src/lib/outlineDeck'
+import { createOutlineUnit, setOutlinePath } from '../../client/src/lib/outlineDeck'
 import type { ComposedDocument } from '../../shared/compose/types'
 
 const identity = { title: 'T', genre: 'Drama' }
@@ -72,7 +72,7 @@ describe('OutlineDocumentView', () => {
   it('omits the "add ... for a fuller document" clause when nothing is omitted', () => {
     // Partial tier with no omitted sections: core met, every omittable section has
     // a field present, but a non-omittable section important field is unanswered.
-    let partial = createEmptyOutlineContent()
+    let partial = { ...createEmptyOutlineContent(), units: [createOutlineUnit('feature.incitingIncident')] }
     partial = setOutlinePath(partial, 'spine.protagonist', 'Vera Solano')
     partial = setOutlinePath(partial, 'spine.internalNeed', 'to trust people again')
     partial = setOutlinePath(partial, 'spine.centralOpposition', 'The Meridian Group')
