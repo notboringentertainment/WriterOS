@@ -344,10 +344,14 @@ export function migrateState(raw: unknown): ProjectState {
       ? (state.meta as Record<string, unknown>)
       : {}
   const rawDocuments = obj.documents
+  // The manifest wins when it names a format. Only legacy records without one
+  // may use the synopsis header as a fallback.
   const promotedFormat: ProjectFormat =
-    rawMeta.format === 'series' || rawSynopsisHeaderFormat(rawDocuments) === 'series'
-      ? 'series'
-      : normalizeProjectFormat(rawMeta.format)
+    rawMeta.format === 'feature' || rawMeta.format === 'series'
+      ? rawMeta.format
+      : rawSynopsisHeaderFormat(rawDocuments) === 'series'
+        ? 'series'
+        : normalizeProjectFormat(rawMeta.format)
   state.meta = {
     ...defaults.meta,
     ...rawMeta,

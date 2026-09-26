@@ -172,7 +172,7 @@ describe('migrateState', () => {
     expect(result.documents.synopsis.content.header.format).toBe('series')
   })
 
-  it('promotes legacy synopsis header series format to project format', () => {
+  it('keeps explicit feature format when a synopsis header says series', () => {
     const state = defaultProjectState() as any
     state.meta.format = 'feature'
     state.documents.synopsis.content.header.format = 'series'
@@ -183,9 +183,32 @@ describe('migrateState', () => {
 
     const result = migrateState(state)
 
-    expect(result.meta.format).toBe('series')
-    expect(result.documents.synopsis.content.header.format).toBe('series')
+    expect(result.meta.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe('feature')
     expect(result.documents.synopsis.content.series).toEqual(state.documents.synopsis.content.series)
+  })
+
+  it('keeps a manifest correction from series to feature across reloads', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    state.documents.synopsis.content.header.format = 'series'
+
+    const saved = JSON.parse(JSON.stringify(state))
+    saved.meta.format = 'feature'
+    const firstLoad = migrateState(saved)
+    const secondLoad = migrateState(JSON.parse(JSON.stringify(firstLoad)))
+
+    expect(firstLoad.meta.format).toBe('feature')
+    expect(secondLoad.meta.format).toBe('feature')
+    expect(secondLoad.documents.synopsis.content.header.format).toBe('feature')
+  })
+
+  it('uses a legacy series header only when manifest format is absent', () => {
+    const state = defaultProjectState() as any
+    delete state.meta.format
+    state.documents.synopsis.content.header.format = 'series'
+
+    expect(migrateState(state).meta.format).toBe('series')
   })
 
   it('normalizes stale synopsis header format mirrors during migration', () => {
