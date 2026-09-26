@@ -169,8 +169,8 @@ function synopsisLegacyToContent(legacy: ProjectState['synopsis']): SynopsisDocu
   return content
 }
 
-function outlineLegacyToContent(legacy: ProjectState['outline']): OutlineDocumentContent {
-  return mergeOutlineLegacyIntoContent(createEmptyOutlineContent(), legacy)
+function outlineLegacyToContent(legacy: ProjectState['outline'], format: ProjectFormat): OutlineDocumentContent {
+  return mergeOutlineLegacyIntoContent(createEmptyOutlineContent(), legacy, format)
 }
 
 function splitList(value: string): string[] {
@@ -476,36 +476,32 @@ export function outlineContentToTreatmentContent(
 export function mergeOutlineLegacyIntoContent(
   existing: OutlineDocumentContent,
   legacy: ProjectState['outline'],
+  format: ProjectFormat,
 ): OutlineDocumentContent {
   const content = normalizeOutlineContent(existing)
   const legacyById = new Map(legacy.beats.map(beat => [beat.id, beat]))
   const unitsById = new Map(content.units.map(unit => [unit.id, unit]))
 
-  for (const unitId of new Set(Object.values(LEGACY_TO_FEATURE_UNIT))) {
-    if (!unitsById.has(unitId)) {
-      const unit = createOutlineUnit(unitId)
-      unitsById.set(unitId, unit)
+  if (format === 'feature') {
+    for (const [legacyId, featureUnitId] of Object.entries(LEGACY_TO_FEATURE_UNIT)) {
+      const legacyBeat = legacyById.get(legacyId)
+      if (!legacyBeat || (!legacyBeat.notes.trim() && legacyBeat.linkedSceneIds.length === 0)) continue
+
+      const unit = unitsById.get(featureUnitId) ?? createOutlineUnit(featureUnitId)
+      const linkedSceneIds = Array.from(new Set([...unit.linkedSceneIds, ...legacyBeat.linkedSceneIds]))
+      unitsById.set(featureUnitId, {
+        ...unit,
+        linkedSceneIds,
+        whatHappens: unit.whatHappens.trim()
+          ? unit.whatHappens
+          : joinNotes([
+              unit.whatHappens,
+              ...legacy.beats
+                .filter(beat => LEGACY_TO_FEATURE_UNIT[beat.id] === featureUnitId)
+                .map(beat => beat.notes),
+            ]),
+      })
     }
-  }
-
-  for (const [legacyId, featureUnitId] of Object.entries(LEGACY_TO_FEATURE_UNIT)) {
-    const legacyBeat = legacyById.get(legacyId)
-    if (!legacyBeat?.notes.trim()) continue
-
-    const unit = unitsById.get(featureUnitId) ?? createOutlineUnit(featureUnitId)
-    const linkedSceneIds = Array.from(new Set([...unit.linkedSceneIds, ...legacyBeat.linkedSceneIds]))
-    unitsById.set(featureUnitId, {
-      ...unit,
-      linkedSceneIds,
-      whatHappens: unit.whatHappens.trim()
-        ? unit.whatHappens
-        : joinNotes([
-            unit.whatHappens,
-            ...legacy.beats
-              .filter(beat => LEGACY_TO_FEATURE_UNIT[beat.id] === featureUnitId)
-              .map(beat => beat.notes),
-          ]),
-    })
   }
 
   const themeBeat = legacyById.get('theme-stated')
@@ -540,7 +536,7 @@ export function legacyToDocuments(state: ProjectState, now: NowFn = () => new Da
       revision: 0,
       mode: 'beat_sheet_save_the_cat',
       updatedAt: ts,
-      content: outlineLegacyToContent(state.outline),
+      content: outlineLegacyToContent(state.outline, state.meta.format),
     },
     treatment: {
       version: DOCUMENT_SCHEMA_VERSION,

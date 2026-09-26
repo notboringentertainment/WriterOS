@@ -4,10 +4,12 @@ import {
   documentStoryBibleToLegacy,
   documentsToLegacy,
   legacyToDocuments,
+  mergeOutlineLegacyIntoContent,
   mirrorSynopsisFromLegacy,
   storyBibleLegacyToContent,
 } from '../../client/src/lib/documentMigration'
 import {
+  createEmptyOutlineContent,
   createEmptySynopsisContent,
   createEmptySeriesContent,
   DOCUMENT_SCHEMA_VERSION,
@@ -51,6 +53,27 @@ describe('legacyToDocuments — synopsis', () => {
 })
 
 describe('legacyToDocuments — outline', () => {
+  it('does not seed empty legacy beats into the outline', () => {
+    const legacy = defaultProjectState()
+    expect(legacyToDocuments(legacy, now).outline.content.units).toEqual([])
+    expect(mergeOutlineLegacyIntoContent(createEmptyOutlineContent(), legacy.outline, 'feature').units).toEqual([])
+  })
+
+  it('does not create feature units from series legacy beats', () => {
+    const legacy = defaultProjectState()
+    legacy.meta.format = 'series'
+    legacy.outline.beats[0].notes = 'A pilot opening.'
+    expect(legacyToDocuments(legacy, now).outline.content.units).toEqual([])
+  })
+
+  it('keeps a link-only feature beat without seeding unrelated units', () => {
+    const legacy = defaultProjectState()
+    legacy.outline.beats[0].linkedSceneIds = ['scene-1']
+    const units = legacyToDocuments(legacy, now).outline.content.units
+    expect(units.map(unit => unit.id)).toEqual(['feature.openingNormalWorld'])
+    expect(units[0].linkedSceneIds).toEqual(['scene-1'])
+  })
+
   it('preserves beat type as outline mode', () => {
     const legacy = defaultProjectState()
     const docs = legacyToDocuments(legacy, now)

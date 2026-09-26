@@ -406,7 +406,7 @@ export function migrateState(raw: unknown): ProjectState {
   )
   const outlineContent =
     version < 4
-      ? mergeOutlineLegacyIntoContent(normalizedOutlineContent, (state as unknown as ProjectState).outline)
+      ? mergeOutlineLegacyIntoContent(normalizedOutlineContent, (state as unknown as ProjectState).outline, promotedFormat)
       : normalizedOutlineContent
   const normalizedTreatmentContent = normalizeTreatmentContent(
     migratedDocuments.treatment.content as Partial<ProjectDocuments['treatment']['content']>,

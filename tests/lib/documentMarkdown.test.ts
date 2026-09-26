@@ -13,6 +13,7 @@ import {
   treatmentToMarkdown,
   documentsToMarkdown,
 } from '../../client/src/lib/documentMarkdown'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 
 const FIXED_TS = '2026-05-15T00:00:00.000Z'
 const now = () => FIXED_TS
@@ -48,6 +49,19 @@ describe('synopsisToMarkdown', () => {
 })
 
 describe('outlineToMarkdown', () => {
+  it('renders series beats and movement names without empty feature scaffold', () => {
+    const content = createEmptyOutlineContent()
+    content.units = [
+      createOutlineUnit('feature.openingNormalWorld'),
+      { ...createOutlineUnit('pilot.beat01'), number: 1, title: 'The arrival', actOrSequence: 'Movement one', whatHappens: 'The case begins.' },
+    ]
+    const doc = { version: 1, revision: 0, mode: 'beat_sheet_save_the_cat' as const, updatedAt: FIXED_TS, content }
+    const md = outlineToMarkdown(doc, 'series')
+    expect(md).toContain('The arrival')
+    expect(md).toContain('Movement one')
+    expect(md).not.toContain('Opening / Normal world')
+  })
+
   it('emits a unit per outline unit', () => {
     const content = createEmptyOutlineContent()
     content.units = [
@@ -82,7 +96,7 @@ describe('outlineToMarkdown', () => {
         draftNotes: '',
       },
     ]
-    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
+    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content }, 'feature')
     expect(md).toMatch(/1\. Opening[\s\S]+2\. Catalyst/)
   })
 
@@ -105,7 +119,7 @@ describe('outlineToMarkdown', () => {
         draftNotes: '',
       },
     ]
-    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content })
+    const md = outlineToMarkdown({ version: 1, revision: 0, mode: 'beat_sheet_save_the_cat', updatedAt: FIXED_TS, content }, 'feature')
     expect(md).not.toContain('Conflict:')
     expect(md).not.toContain('Turn:')
   })
@@ -148,7 +162,7 @@ describe('treatmentToMarkdown', () => {
 describe('documentsToMarkdown', () => {
   it('returns one Markdown string per surface in stable order', () => {
     const docs = createEmptyDocuments(now)
-    const bundle = documentsToMarkdown(docs)
+    const bundle = documentsToMarkdown(docs, 'feature')
     expect(Object.keys(bundle)).toEqual(['synopsis', 'outline', 'treatment', 'storyBible'])
     for (const md of Object.values(bundle)) {
       expect(typeof md).toBe('string')

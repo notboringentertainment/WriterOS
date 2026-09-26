@@ -6,6 +6,8 @@ import type {
   TreatmentDocumentContent,
   StoryBibleDocumentContent,
 } from '@shared/documents'
+import type { ProjectFormat } from '@shared/projectFormat'
+import { visibleOutlineUnits } from './outlineDeck'
 
 function lines(...xs: (string | undefined | false)[]): string {
   return xs.filter(Boolean).join('\n')
@@ -47,9 +49,9 @@ export function synopsisToMarkdown(doc: AuthoredDocumentState<SynopsisDocumentCo
   ).trim() + '\n'
 }
 
-export function outlineToMarkdown(doc: AuthoredDocumentState<OutlineDocumentContent>): string {
+export function outlineToMarkdown(doc: AuthoredDocumentState<OutlineDocumentContent>, format: ProjectFormat): string {
   const content = doc.content
-  const unitBlocks = content.units.map(unit => {
+  const unitBlocks = visibleOutlineUnits(content, format).map(unit => {
     const lineParts = [`### ${unit.number}. ${unit.title || '(untitled)'}`]
     if (unit.actOrSequence) lineParts.push(`*${unit.actOrSequence}*`)
     if (unit.whatHappens) lineParts.push(unit.whatHappens)
@@ -145,10 +147,10 @@ export function storyBibleToMarkdown(doc: AuthoredDocumentState<StoryBibleDocume
   ).trim() + '\n'
 }
 
-export function documentsToMarkdown(docs: ProjectDocuments): Record<keyof ProjectDocuments, string> {
+export function documentsToMarkdown(docs: ProjectDocuments, format: ProjectFormat): Record<keyof ProjectDocuments, string> {
   return {
     synopsis: synopsisToMarkdown(docs.synopsis),
-    outline: outlineToMarkdown(docs.outline),
+    outline: outlineToMarkdown(docs.outline, format),
     treatment: treatmentToMarkdown(docs.treatment),
     storyBible: storyBibleToMarkdown(docs.storyBible),
   }
