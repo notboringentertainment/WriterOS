@@ -84,6 +84,54 @@ The harbor district is sealed after midnight.
     expect(await readFile(path.join(root, relativePath), 'utf8')).toBe(ticket)
   })
 
+  it('keeps a pointer-only resolved answer out of active canon without demoting story answers', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-pointer-')
+    await writeSource(root, 'resolved/duplicate.md', `# The duplicate (duplicate — answered in wf-7a1c92e4)
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Question
+Is this a duplicate of wf-7a1c92e4?
+
+## Answer
+See wf-7a1c92e4. Ratified 2026-08-29 (look_lock receipt 87454bdf-6305-4d82-8a64-1d075e86102e).
+`)
+    await writeSource(root, 'resolved/story.md', `# The harbor rule
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Answer
+See wf-7a1c92e4 for the earlier design. The harbor closes after midnight.
+`)
+    await writeSource(root, 'resolved/simple-pointer.md', `# Another duplicate
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Answer
+See wf-7a1c92e4.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'pointer-fixture', sourceRoot: root,
+    })
+
+    expect(preview.counts.activeCanon).toBe(1)
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/duplicate.md')).toMatchObject({
+      kind: 'development',
+      requestedStatus: 'candidate',
+      claim: 'See wf-7a1c92e4. Ratified 2026-08-29 (look_lock receipt 87454bdf-6305-4d82-8a64-1d075e86102e).',
+    })
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/simple-pointer.md')).toMatchObject({
+      kind: 'development', requestedStatus: 'candidate', claim: 'See wf-7a1c92e4.',
+    })
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/story.md')).toMatchObject({
+      kind: 'canon', requestedStatus: 'active',
+    })
+  })
+
   it('never demotes ratified canon for prose length — gists the claim and keeps the full answer in detail', async () => {
     const root = await createSourceRoot('writeros-wayfinder-faithful-canon-')
     const omittedException = ' Except the rescue boat may cross.'

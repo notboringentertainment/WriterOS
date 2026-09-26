@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -444,5 +444,9 @@ describe('a scoped-out resolution closes its question', () => {
       ['resolved/bell.md', 'open_question', 'candidate', 'Does the bell speak?'],
       ['resolved/bell.md', 'development', 'active', 'Scoped out: Decide whether the bell speaks'],
     ])
+    const review = await readFile(path.join(projectPath, 'memory', 'review.md'), 'utf8')
+    expect(review).not.toContain('## Awaiting your decision')
+    expect(review).toContain('## Scoped-out answers on file')
+    expect(review).toContain("Scoped-out answer: The bell's voice is outside this draft.")
   })
 })

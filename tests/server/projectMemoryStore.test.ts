@@ -352,6 +352,43 @@ describe('append-only project memory store', () => {
     ].join('\n') + '\n')
   })
 
+  it('keeps four scoped-out Wayfinder rows out of decisions while leaving 16 open rows visible', () => {
+    // Dates and source paths mirror the four rows in Bloodless and Grave Affairs review.md.
+    const scopedRows = [
+      ['resolved/17-betrayer-in-network.md', 'Ben, 2026-09-24: the beat does not survive.'],
+      ['resolved/19-old-partner-target.md', 'Ben, 2026-09-24: the beat does not exist.'],
+      ['resolved/did-sheila-kill-her-husbands.md', 'Ben, 2026-07-26: not a storyline.'],
+      ['resolved/what-is-the-finesse-job-network.md', 'Beyond the destination. Ben ruled 2026-07-30.'],
+    ] as const
+    const scoped = scopedRows.map(([sourceId, answer], index) => memoryRecord({
+      id: `scoped-${index + 1}`,
+      kind: 'open_question',
+      claim: `Closed question ${index + 1}`,
+      detail: `Scoped-out answer: ${answer}`,
+      source: { ...wayfinderSource('grill', 'hitl'), sourceId, sourceUri: `story-wayfinder:${sourceId}` },
+    }))
+    const open = Array.from({ length: 16 }, (_, index) => memoryRecord({
+      id: `psyop-${index + 1}`,
+      kind: 'open_question',
+      claim: `PSYOP open question ${index + 1}`,
+      detail: 'Needs Ben\'s decision.',
+      source: wayfinderSource('grill', 'hitl'),
+    }))
+    const snapshot = (records: ReturnType<typeof memoryRecord>[]) => ({
+      schemaVersion: 1, projectId: 'fixture', revision: 1, records, conflicts: [],
+    }) as ProjectMemorySnapshot
+
+    const scopedReview = renderReviewProjection(snapshot(scoped))
+    expect(scopedReview).not.toContain('## Awaiting your decision')
+    expect(scopedReview).toContain('## Scoped-out answers on file')
+    expect((scopedReview.match(/Scoped-out answer:/g) ?? [])).toHaveLength(4)
+
+    const psyopReview = renderReviewProjection(snapshot(open))
+    expect(psyopReview).toContain('## Awaiting your decision')
+    expect(psyopReview).not.toContain('## Scoped-out answers on file')
+    expect((psyopReview.match(/PSYOP open question \d+/g) ?? [])).toHaveLength(16)
+  })
+
   it('leaves ordinary prose unescaped so the canon stays readable', () => {
     const snapshot = {
       schemaVersion: 1,

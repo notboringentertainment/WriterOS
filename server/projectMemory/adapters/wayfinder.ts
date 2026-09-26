@@ -17,6 +17,11 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+// A cross-reference and its receipt identify another answer; neither states a story fact.
+function isPointerOnlyAnswer(answer: string): boolean {
+  return /^see\s+wf-[a-z0-9]{8}\.?(?:\s+ratified\s+\d{4}-\d{2}-\d{2}\s+\(look_lock receipt [a-f0-9-]{36}\)\.?)?$/i.test(answer)
+}
+
 function parseTicket(content: string): {
   title: string
   headers: Map<string, string>
@@ -261,24 +266,27 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             `${relativePath}:${unsafeLine}: prompt-injection pattern detected; active authority withheld`,
           )
         }
+        const answer = parsed.sections.get('Answer')?.replace(/\s+/g, ' ').trim()
+        const question = parsed.sections.get('Question')?.replace(/\s+/g, ' ').trim()
+        if (directory === 'resolved' && question) ticketQuestions[relativePath] = truncateImportText(question, 600)
+        const missingResolvedAnswer = directory === 'resolved'
+          && (answer === undefined || isPointerOnlyAnswer(answer))
+          && scopedAnswer === undefined
+          && nearScopedAnswer === undefined
+        if (missingResolvedAnswer) {
+          warnings.push(
+            answer === undefined
+              ? `${relativePath}:1: resolved ticket has no recognized Answer; imported as a development candidate`
+              : `${relativePath}:1: resolved ticket has a pointer-only Answer; imported as a development candidate`,
+          )
+        }
         const activeCanon = directory === 'resolved'
           && (verifiedType === 'grill' || verifiedType === 'sketch')
           && verifiedMode === 'hitl'
           && scopedAnswer === undefined
           && nearScopedHeading === undefined
           && parsed.sections.has('Answer')
-        const answer = parsed.sections.get('Answer')?.replace(/\s+/g, ' ').trim()
-        const question = parsed.sections.get('Question')?.replace(/\s+/g, ' ').trim()
-        if (directory === 'resolved' && question) ticketQuestions[relativePath] = truncateImportText(question, 600)
-        const missingResolvedAnswer = directory === 'resolved'
-          && answer === undefined
-          && scopedAnswer === undefined
-          && nearScopedAnswer === undefined
-        if (missingResolvedAnswer) {
-          warnings.push(
-            `${relativePath}:1: resolved ticket has no recognized Answer; imported as a development candidate`,
-          )
-        }
+          && !missingResolvedAnswer
         const scoped = scopedAnswer !== undefined
         const nearScoped = nearScopedAnswer !== undefined
         // A scoped-out ticket is a resolution, not a question: it lands as
