@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { selectSurfaceStructure, selectConsoleState, surfaceLabel } from '../../client/src/lib/leftZone'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 
 describe('surfaceLabel', () => {
   it('maps every surface to a human label', () => {
@@ -13,6 +14,18 @@ describe('surfaceLabel', () => {
 })
 
 describe('selectSurfaceStructure', () => {
+  it('shows series movement beats without counting empty feature scaffold', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    state.documents.outline.content.units = [
+      createOutlineUnit('feature.openingNormalWorld'),
+      { ...createOutlineUnit('pilot.beat01'), number: 1, title: 'The arrival', actOrSequence: 'Movement one', whatHappens: 'The case begins.' },
+    ]
+    const structure = selectSurfaceStructure('outline', state)
+    expect(structure.nodes).toEqual([{ id: 'pilot.beat01', label: 'The arrival', detail: 'Movement one' }])
+    expect(selectConsoleState(state, 'outline', null).counts).toEqual([{ label: 'beats', value: 1 }])
+  })
+
   it('renders an honest empty state for outline with no beats', () => {
     const state = defaultProjectState()
     state.documents.outline.content.units = []

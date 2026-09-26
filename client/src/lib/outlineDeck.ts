@@ -271,6 +271,12 @@ export function isAuthoredOutlineUnit(unit: OutlineUnit): boolean {
       Object.values(unit.aiProduction).some(value => value.trim().length > 0))
 }
 
+export function visibleOutlineUnits(content: OutlineDocumentContent, format: OutlineDeckFormat): OutlineUnit[] {
+  return format === 'series'
+    ? content.units.filter(unit => !FEATURE_UNIT_BY_ID.has(unit.id) || isAuthoredOutlineUnit(unit))
+    : content.units
+}
+
 function findOrCreateUnit(units: OutlineUnit[], id: string): OutlineUnit[] {
   if (units.some(unit => unit.id === id)) return units
   return [...units, createOutlineUnit(id)].sort((a, b) => a.number - b.number)

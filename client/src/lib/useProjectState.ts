@@ -33,7 +33,7 @@ import {
   createEmptyTreatmentContent,
   DOCUMENT_SCHEMA_VERSION,
 } from '@shared/documents'
-import { documentsToLegacy, mergeOutlineLegacyIntoContent, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
+import { documentsToLegacy, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import type { ComposedDocument } from '@shared/compose/types'
 import { computeOutlineSourceHash } from '@shared/compose/sourceHash'
@@ -315,20 +315,9 @@ export function useProjectState() {
         ...s.outline,
         beats: s.outline.beats.map(b => b.id === beatId ? { ...b, ...patch } : b),
       }
-      const nextOutlineDoc = {
-        ...s.documents.outline,
-        revision: s.documents.outline.revision + 1,
-        updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
-        content: mergeOutlineLegacyIntoContent(s.documents.outline.content, outline),
-      }
-      return {
-        ...s,
-        outline,
-        documents: {
-          ...s.documents,
-          outline: nextOutlineDoc,
-        },
-      }
+      // Legacy beats are a compatibility view. The document is the authored source;
+      // only versioned migration may import legacy beats into it.
+      return { ...s, outline }
     })
   }, [update])
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
-import { defaultProjectState } from '../../client/src/lib/projectState'
+import { defaultProjectState, loadProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
@@ -302,6 +302,50 @@ describe('useProjectState', () => {
     act(() => result.current.setBeat('midpoint', { notes: 'Hero wins battle, loses war' }))
     const midpoint = result.current.state.outline.beats.find(b => b.id === 'midpoint')
     expect(midpoint?.notes).toBe('Hero wins battle, loses war')
+  })
+
+  it('does not re-seed a cleared series outline from a legacy beat edit', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.clearOutline())
+    act(() => result.current.setBeat('midpoint', { notes: 'A legacy note.' }))
+    expect(result.current.state.documents.outline.content.units).toEqual([])
+    expect(result.current.state.outline.beats.find(beat => beat.id === 'midpoint')?.notes).toBe('A legacy note.')
+  })
+
+  it('does not re-seed a cleared feature outline from a legacy beat edit', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.clearOutline())
+    const revision = result.current.state.documents.outline.revision
+    act(() => result.current.setBeat('midpoint', { notes: 'A legacy note.' }))
+    expect(result.current.state.documents.outline.content.units).toEqual([])
+    expect(result.current.state.documents.outline.revision).toBe(revision)
+  })
+
+  it('preserves fourteen authored beats and six spine fields after a legacy edit and storage round trip', () => {
+    const { result } = renderHook(() => useProjectState())
+    act(() => result.current.setProjectFormat('series'))
+    act(() => result.current.setOutlineDocument(content => ({
+      ...content,
+      spine: {
+        ...content.spine,
+        protagonist: 'Lead', externalGoal: 'Find the truth', internalNeed: 'Trust',
+        centralOpposition: 'The institution', coreStakes: 'Family', theme: 'Mercy',
+      },
+      units: Array.from({ length: 14 }, (_, index) => ({
+        ...createOutlineUnit(`pilot.beat${index + 1}`),
+        number: index + 1,
+        title: `Beat ${index + 1}`,
+        actOrSequence: `Movement ${Math.floor(index / 4) + 1}`,
+        whatHappens: `Action ${index + 1}`,
+      })),
+    })))
+    const authored = structuredClone(result.current.state.documents.outline.content)
+    act(() => result.current.setBeat('midpoint', { notes: 'Old view edit.' }))
+    expect(result.current.state.documents.outline.content).toEqual(authored)
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.outline.content).toEqual(authored)
+    expect(loadProjectState().documents.outline.content).toEqual(authored)
   })
 
   it('clearOutline resets beat notes, links, and order, then persists the change', () => {

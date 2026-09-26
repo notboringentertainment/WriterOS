@@ -1,5 +1,6 @@
 import type { ProjectState } from './projectState'
 import { getDisplayProjectTitle } from './projectIdentity'
+import { visibleOutlineUnits } from './outlineDeck'
 import {
   type ActiveTab,
   getDefaultPersona,
@@ -85,7 +86,7 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
     }
 
     case 'outline': {
-      const units = state.documents.outline.content.units
+      const units = visibleOutlineUnits(state.documents.outline.content, state.meta.format)
       const nodes: StructureNode[] = units.map(u => ({
         id: u.id,
         label: labelOr(u.title, 'Beat', u.number),
@@ -173,7 +174,7 @@ function surfaceCounts(surface: ActiveTab, state: ProjectState): ConsoleCount[] 
     case 'script':
       return [{ label: 'scenes', value: state.script.scenes.length }]
     case 'outline':
-      return [{ label: 'beats', value: state.documents.outline.content.units.length }]
+      return [{ label: 'beats', value: visibleOutlineUnits(state.documents.outline.content, state.meta.format).length }]
     case 'treatment':
       return [{ label: 'characters', value: state.documents.treatment.content.mainCharacters.length }]
     case 'story-bible':
