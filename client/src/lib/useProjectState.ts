@@ -507,9 +507,10 @@ export function useProjectState() {
     update(s => {
       const empty = createEmptyOutlineContent()
       const outlineFormat = normalizeProjectFormat(s.meta.format)
+      const keepFoundations = options.keep === 'foundations'
       const currentContent = normalizeOutlineContent(s.documents.outline.content)
       const content =
-        options.keep === 'foundations'
+        keepFoundations
           ? {
               ...empty,
               spine: { ...currentContent.spine },
@@ -518,14 +519,15 @@ export function useProjectState() {
                 ? {
                     seriesEngine: { ...currentContent.seriesEngine },
                     seasonArc: { ...currentContent.seasonArc },
+                    episodes: currentContent.episodes,
                   }
                 : {}),
             }
           : empty
       const nextOutlineDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
-        revision: 0,
-        mode: 'beat_sheet_save_the_cat' as const,
+        revision: keepFoundations ? s.documents.outline.revision : 0,
+        mode: keepFoundations ? s.documents.outline.mode : 'beat_sheet_save_the_cat' as const,
         updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
         content,
       }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProjectState } from '../../client/src/lib/useProjectState'
-import { defaultProjectState } from '../../client/src/lib/projectState'
+import { defaultProjectState, loadProjectState, saveProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
@@ -317,6 +317,30 @@ describe('useProjectState', () => {
     expect(stored.outline).toEqual(result.current.state.outline)
   })
 
+  it('keep foundations retains the existing outline revision', () => {
+    const state = defaultProjectState()
+    state.documents.outline.revision = 9
+    saveProjectState(state)
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.clearOutline({ keep: 'foundations' }))
+
+    expect(result.current.state.documents.outline.revision).toBe(9)
+    expect(loadProjectState().documents.outline.revision).toBe(9)
+  })
+
+  it('keep foundations retains a custom outline mode', () => {
+    const state = defaultProjectState()
+    state.documents.outline.mode = 'custom'
+    saveProjectState(state)
+    const { result } = renderHook(() => useProjectState())
+
+    act(() => result.current.clearOutline({ keep: 'foundations' }))
+
+    expect(result.current.state.documents.outline.mode).toBe('custom')
+    expect(loadProjectState().documents.outline.mode).toBe('custom')
+  })
+
   it('setOutlineDocument mirrors series outline context into legacy beats for Oliver', () => {
     const { result } = renderHook(() => useProjectState())
 
@@ -376,7 +400,19 @@ describe('useProjectState', () => {
     expect(result.current.state.documents.outline.content.spine.protagonist).toBe('Sara')
     expect(result.current.state.documents.outline.content.seriesEngine.showPitch).toBe('A sealed-city thriller about bargaining with truth.')
     expect(result.current.state.documents.outline.content.seasonArc.seasonQuestion).toBe('Who gets to leave?')
-    expect(result.current.state.documents.outline.content.episodes).toEqual([])
+    expect(result.current.state.documents.outline.content.episodes).toEqual([
+      {
+        id: 'episode-101',
+        number: 101,
+        label: 'Episode 101',
+        title: '',
+        hookLogline: 'A body appears where no one can enter.',
+        aStory: '',
+        bcStory: '',
+        changeByEnd: '',
+        endingHook: '',
+      },
+    ])
   })
 
   it('keep foundations preserves fourteen authored beats and six spine answers while clearing scaffolds', () => {
