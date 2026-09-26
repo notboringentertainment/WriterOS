@@ -38,7 +38,7 @@ import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectForma
 import type { ComposedDocument } from '@shared/compose/types'
 import { computeOutlineSourceHash } from '@shared/compose/sourceHash'
 import { pickIdentity } from '@shared/compose/identity'
-import { createOutlineEpisode } from './outlineDeck'
+import { createOutlineEpisode, isAuthoredOutlineUnit } from './outlineDeck'
 import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
 
 export interface ImportedScriptPayload {
@@ -513,6 +513,7 @@ export function useProjectState() {
           ? {
               ...empty,
               spine: { ...currentContent.spine },
+              units: currentContent.units.filter(isAuthoredOutlineUnit),
               ...(outlineFormat === 'series'
                 ? {
                     seriesEngine: { ...currentContent.seriesEngine },

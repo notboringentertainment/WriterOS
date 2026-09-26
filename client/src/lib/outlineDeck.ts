@@ -258,6 +258,19 @@ export function createOutlineUnit(id: string): OutlineUnit {
   }
 }
 
+// Seeded feature units have labels and positions, but no authored story content.
+export function isAuthoredOutlineUnit(unit: OutlineUnit): boolean {
+  const scaffold = createOutlineUnit(unit.id)
+  return unit.title.trim() !== scaffold.title ||
+    unit.actOrSequence.trim() !== scaffold.actOrSequence ||
+    [unit.location, unit.whatHappens, unit.conflict, unit.turn, unit.consequence,
+      unit.whyNext, unit.draftNotes].some(value => value.trim().length > 0) ||
+    unit.characters.some(value => value.trim().length > 0) ||
+    unit.linkedSceneIds.length > 0 ||
+    (unit.aiProduction !== undefined &&
+      Object.values(unit.aiProduction).some(value => value.trim().length > 0))
+}
+
 function findOrCreateUnit(units: OutlineUnit[], id: string): OutlineUnit[] {
   if (units.some(unit => unit.id === id)) return units
   return [...units, createOutlineUnit(id)].sort((a, b) => a.number - b.number)

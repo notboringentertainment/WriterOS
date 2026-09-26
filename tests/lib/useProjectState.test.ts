@@ -5,6 +5,7 @@ import { defaultProjectState } from '../../client/src/lib/projectState'
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import {
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
@@ -376,6 +377,62 @@ describe('useProjectState', () => {
     expect(result.current.state.documents.outline.content.seriesEngine.showPitch).toBe('A sealed-city thriller about bargaining with truth.')
     expect(result.current.state.documents.outline.content.seasonArc.seasonQuestion).toBe('Who gets to leave?')
     expect(result.current.state.documents.outline.content.episodes).toEqual([])
+  })
+
+  it('keep foundations preserves fourteen authored beats and six spine answers while clearing scaffolds', () => {
+    const { result } = renderHook(() => useProjectState())
+    const authoredUnits = Array.from({ length: 14 }, (_, index) => ({
+      ...createOutlineUnit(`pilot.beat${String(index + 1).padStart(2, '0')}`),
+      number: index + 1,
+      title: index < 3 ? `pilot.beat${String(index + 1).padStart(2, '0')}` : `Pilot beat ${index + 1}`,
+      whatHappens: index < 3 ? '' : `Story event ${index + 1}`,
+      draftNotes: index === 0 ? 'A draft note only' : '',
+      characters: index === 1 ? ['Lead'] : [],
+      linkedSceneIds: index === 2 ? ['scene-3'] : [],
+    }))
+    const scaffoldUnits = [
+      'feature.openingNormalWorld', 'feature.incitingIncident',
+      'feature.actOneBreak', 'feature.actTwoA', 'feature.midpoint',
+      'feature.allIsLostWithSubplot', 'feature.climax', 'feature.finalImage',
+    ].map(createOutlineUnit)
+
+    act(() => result.current.setOutlineDocument(content => ({
+      ...content,
+      spine: {
+        ...content.spine,
+        protagonist: 'Protagonist',
+        externalGoal: 'Goal',
+        internalNeed: 'Need',
+        centralOpposition: 'Opposition',
+        coreStakes: 'Stakes',
+        theme: 'Theme',
+      },
+      units: [...scaffoldUnits, ...authoredUnits],
+    })))
+    act(() => result.current.clearOutline({ keep: 'foundations' }))
+
+    const cleared = result.current.state.documents.outline.content
+    expect(cleared.units).toEqual(authoredUnits)
+    expect(Object.values(cleared.spine).filter(Boolean)).toHaveLength(6)
+    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
+    expect(stored.documents.outline.content.units).toEqual(authoredUnits)
+    expect(Object.values(stored.documents.outline.content.spine).filter(Boolean)).toHaveLength(6)
+  })
+
+  it('keep foundations clears an outline containing only eight scaffold units', () => {
+    const { result } = renderHook(() => useProjectState())
+    const scaffoldIds = [
+      'feature.openingNormalWorld', 'feature.incitingIncident',
+      'feature.actOneBreak', 'feature.actTwoA', 'feature.midpoint',
+      'feature.allIsLostWithSubplot', 'feature.climax', 'feature.finalImage',
+    ]
+    act(() => result.current.setOutlineDocument(content => ({
+      ...content,
+      units: scaffoldIds.map(createOutlineUnit),
+    })))
+    act(() => result.current.clearOutline({ keep: 'foundations' }))
+
+    expect(result.current.state.documents.outline.content.units).toEqual([])
   })
 
   it('reorderBeats moves one beat to another valid position', () => {
