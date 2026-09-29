@@ -5,7 +5,7 @@ import { defaultProjectState, loadProjectState, saveProjectState } from '../../c
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
-import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { createOutlineUnit, setOutlinePath } from '../../client/src/lib/outlineDeck'
 import {
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
@@ -488,11 +488,16 @@ describe('useProjectState', () => {
         theme: 'Theme',
       },
       units: [...scaffoldUnits, ...authoredUnits],
+      featureRoleUnitIds: {
+        openingNormalWorld: 'pilot.beat01',
+        midpoint: 'feature.midpoint',
+      },
     })))
     act(() => result.current.clearOutline({ keep: 'foundations' }))
 
     const cleared = result.current.state.documents.outline.content
     expect(cleared.units).toEqual(authoredUnits)
+    expect(cleared.featureRoleUnitIds).toEqual({ openingNormalWorld: 'pilot.beat01' })
     expect(Object.values(cleared.spine).filter(Boolean)).toHaveLength(6)
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.documents.outline.content.units).toEqual(authoredUnits)
@@ -509,10 +514,16 @@ describe('useProjectState', () => {
     act(() => result.current.setOutlineDocument(content => ({
       ...content,
       units: scaffoldIds.map(createOutlineUnit),
+      featureRoleUnitIds: { openingNormalWorld: 'feature.openingNormalWorld' },
     })))
     act(() => result.current.clearOutline({ keep: 'foundations' }))
 
     expect(result.current.state.documents.outline.content.units).toEqual([])
+    expect(result.current.state.documents.outline.content.featureRoleUnitIds).toBeUndefined()
+    act(() => result.current.setOutlineDocument(content =>
+      setOutlinePath(content, 'units[id=feature.midpoint].whatHappens', 'A new turn.'),
+    ))
+    expect(result.current.state.documents.outline.content.units).toHaveLength(8)
   })
 
   it('reorderBeats moves one beat to another valid position', () => {

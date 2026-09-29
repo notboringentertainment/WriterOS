@@ -317,8 +317,16 @@ export function resolveOutlinePath(content: OutlineDocumentContent, path: string
 export function setOutlinePath(content: OutlineDocumentContent, path: string, value: string): OutlineDocumentContent {
   const unitPath = parseUnitPath(path)
   if (unitPath) {
-    if (!content.units.some(unit => unit.id === unitPath.id)) return content
-    const units = content.units.map(unit =>
+    const stockOnly = content.featureRoleUnitIds === undefined &&
+      content.units.every(unit => FEATURE_UNIT_BY_ID.has(unit.id))
+    const startingUnits = stockOnly && FEATURE_UNIT_BY_ID.has(unitPath.id) &&
+      !content.units.some(unit => unit.id === unitPath.id)
+      ? content.units.length === 0
+        ? FEATURE_UNITS.map(unit => createOutlineUnit(unit.id))
+        : [...content.units, createOutlineUnit(unitPath.id)].sort((a, b) => a.number - b.number)
+      : content.units
+    if (!startingUnits.some(unit => unit.id === unitPath.id)) return content
+    const units = startingUnits.map(unit =>
       unit.id === unitPath.id ? { ...unit, [unitPath.field]: value } : unit,
     )
     return { ...content, units }
