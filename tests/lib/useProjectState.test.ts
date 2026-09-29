@@ -452,11 +452,16 @@ describe('useProjectState', () => {
         theme: 'Theme',
       },
       units: [...scaffoldUnits, ...authoredUnits],
+      featureRoleUnitIds: {
+        openingNormalWorld: 'pilot.beat01',
+        midpoint: 'feature.midpoint',
+      },
     })))
     act(() => result.current.clearOutline({ keep: 'foundations' }))
 
     const cleared = result.current.state.documents.outline.content
     expect(cleared.units).toEqual(authoredUnits)
+    expect(cleared.featureRoleUnitIds).toEqual({ openingNormalWorld: 'pilot.beat01' })
     expect(Object.values(cleared.spine).filter(Boolean)).toHaveLength(6)
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.documents.outline.content.units).toEqual(authoredUnits)

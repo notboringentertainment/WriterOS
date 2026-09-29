@@ -45,6 +45,18 @@ describe('outlineDeck', () => {
     })
   })
 
+  it('lets the first card edit initialize an empty feature outline', () => {
+    const blank = createEmptyOutlineContent()
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(blank))
+    const opening = deck.find(card => card.id === 'feature.openingNormalWorld')!
+    const path = getOutlineCardBindings(opening)[0].path
+
+    expect(path).toBe('units[id=feature.openingNormalWorld].whatHappens')
+    const edited = setOutlinePath(blank, path, 'A quiet morning.')
+    expect(edited.units).toHaveLength(8)
+    expect(edited.units.find(unit => unit.id === 'feature.openingNormalWorld')?.whatHappens).toBe('A quiet morning.')
+  })
+
   it('binds feature cards to explicitly mapped unit IDs', () => {
     const content = {
       ...createEmptyOutlineContent(),

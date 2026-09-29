@@ -17,6 +17,7 @@ export function resolveFeatureRoleUnitIds(content: {
     const candidate = content.featureRoleUnitIds === undefined
       ? `feature.${role}`
       : content.featureRoleUnitIds[role]
-    return [role, candidate && ids.has(candidate) ? candidate : undefined]
+    const blankTemplate = content.featureRoleUnitIds === undefined && content.units.length === 0
+    return [role, candidate && (ids.has(candidate) || blankTemplate) ? candidate : undefined]
   })) as FeatureRoleResolution
 }

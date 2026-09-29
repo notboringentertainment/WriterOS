@@ -497,12 +497,21 @@ export function useProjectState() {
       const empty = createEmptyOutlineContent()
       const outlineFormat = normalizeProjectFormat(s.meta.format)
       const currentContent = normalizeOutlineContent(s.documents.outline.content)
+      const authoredUnits = currentContent.units.filter(isAuthoredOutlineUnit)
+      const authoredIds = new Set(authoredUnits.map(unit => unit.id))
       const content =
         options.keep === 'foundations'
           ? {
               ...empty,
               spine: { ...currentContent.spine },
-              units: currentContent.units.filter(isAuthoredOutlineUnit),
+              units: authoredUnits,
+              ...(outlineFormat === 'feature' && currentContent.featureRoleUnitIds !== undefined
+                ? {
+                    featureRoleUnitIds: Object.fromEntries(
+                      Object.entries(currentContent.featureRoleUnitIds).filter(([, id]) => id && authoredIds.has(id)),
+                    ),
+                  }
+                : {}),
               ...(outlineFormat === 'series'
                 ? {
                     seriesEngine: { ...currentContent.seriesEngine },

@@ -70,7 +70,7 @@ describe('getOutlineReadiness (feature)', () => {
     expect(getOutlineReadiness(mappedFs, getOutlineRecipe('feature', resolveFeatureRoleUnitIds(unmapped))).tier).toBe('sparse')
   })
 
-  it('keeps fifteen authored units with no role map out of compose and readiness', () => {
+  it('retains fifteen authored facts without a map but keeps composition gated', () => {
     const content = {
       ...createEmptyOutlineContent(),
       units: Array.from({ length: 15 }, (_, index) => ({
@@ -81,7 +81,8 @@ describe('getOutlineReadiness (feature)', () => {
     }
     const resolution = resolveFeatureRoleUnitIds(content)
     const factSheet = buildOutlineFactSheet(content, 'feature', resolution)
-    expect(factSheet.fields).toEqual([])
+    expect(factSheet.fields).toHaveLength(15)
+    expect(factSheet.fields[0].id).toBe('feature.beat01.whatHappens')
     expect(getOutlineReadiness(factSheet, getOutlineRecipe('feature', resolution)).tier).toBe('sparse')
   })
 })

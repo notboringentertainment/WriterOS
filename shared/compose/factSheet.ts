@@ -48,11 +48,8 @@ export function buildOutlineFactSheet(
 
   if (format === 'feature') {
     const boundIds = new Set(Object.values(resolution ?? {}).filter((id): id is string => Boolean(id)))
-    // The eighth stock unit has no edit-card role, but the old no-map fact sheet
-    // still included it. Keep that existing scaffold behavior without assigning a role.
-    if (content.featureRoleUnitIds === undefined) boundIds.add('feature.actTwoA')
     for (const unit of content.units) {
-      if (!boundIds.has(unit.id)) continue
+      if (content.featureRoleUnitIds !== undefined && !boundIds.has(unit.id)) continue
       for (const fld of UNIT_FIELDS) {
         push(`${unit.id}.${String(fld)}`, `${unit.title} — ${titleCase(String(fld))}`, 'prose', unit[fld])
       }

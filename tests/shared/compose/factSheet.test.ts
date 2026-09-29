@@ -45,13 +45,13 @@ describe('buildOutlineFactSheet', () => {
     expect(fs.fields.find(f => f.id === 'episodes.1.hookLogline')?.value).toBe('A body is found.')
   })
 
-  it('excludes unbound feature units but includes explicitly mapped units', () => {
+  it('keeps custom feature unit facts without a map and limits explicit maps to bound units', () => {
     const content = {
       ...createEmptyOutlineContent(),
       units: [{ ...createOutlineUnit('feature.beat08'), whatHappens: 'A reversal.' }],
     }
-    const unbound = buildOutlineFactSheet(content, 'feature', resolveFeatureRoleUnitIds(content))
-    expect(unbound.fields).toEqual([])
+    const legacy = buildOutlineFactSheet(content, 'feature', resolveFeatureRoleUnitIds(content))
+    expect(legacy.fields.map(field => field.id)).toEqual(['feature.beat08.whatHappens'])
 
     const mapped = { ...content, featureRoleUnitIds: { midpoint: 'feature.beat08' } }
     const bound = buildOutlineFactSheet(mapped, 'feature', resolveFeatureRoleUnitIds(mapped))
