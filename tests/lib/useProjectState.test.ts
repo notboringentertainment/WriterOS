@@ -5,7 +5,7 @@ import { defaultProjectState, loadProjectState } from '../../client/src/lib/proj
 import type { TranscriptMessage, ScriptScene } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { documentsToLegacy } from '../../client/src/lib/documentMigration'
-import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
+import { createOutlineUnit, setOutlinePath } from '../../client/src/lib/outlineDeck'
 import {
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
@@ -478,10 +478,16 @@ describe('useProjectState', () => {
     act(() => result.current.setOutlineDocument(content => ({
       ...content,
       units: scaffoldIds.map(createOutlineUnit),
+      featureRoleUnitIds: { openingNormalWorld: 'feature.openingNormalWorld' },
     })))
     act(() => result.current.clearOutline({ keep: 'foundations' }))
 
     expect(result.current.state.documents.outline.content.units).toEqual([])
+    expect(result.current.state.documents.outline.content.featureRoleUnitIds).toBeUndefined()
+    act(() => result.current.setOutlineDocument(content =>
+      setOutlinePath(content, 'units[id=feature.midpoint].whatHappens', 'A new turn.'),
+    ))
+    expect(result.current.state.documents.outline.content.units).toHaveLength(8)
   })
 
   it('reorderBeats moves one beat to another valid position', () => {

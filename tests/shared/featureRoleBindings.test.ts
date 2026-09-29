@@ -4,14 +4,14 @@ import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { resolveFeatureRoleUnitIds } from '../../shared/featureRoleBindings'
 
 describe('resolveFeatureRoleUnitIds', () => {
-  it('keeps the literal template ID contract when the map is absent', () => {
+  it('offers missing stock roles when a partial stock outline has no map', () => {
     const content = {
       ...createEmptyOutlineContent(),
       units: [createOutlineUnit('feature.midpoint')],
     }
     const roles = resolveFeatureRoleUnitIds(content)
     expect(roles.midpoint).toBe('feature.midpoint')
-    expect(roles.climax).toBeUndefined()
+    expect(roles.climax).toBe('feature.climax')
   })
 
   it('uses only explicit IDs when a map is present and permits shared units', () => {

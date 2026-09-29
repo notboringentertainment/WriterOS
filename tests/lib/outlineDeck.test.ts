@@ -57,6 +57,35 @@ describe('outlineDeck', () => {
     expect(edited.units.find(unit => unit.id === 'feature.openingNormalWorld')?.whatHappens).toBe('A quiet morning.')
   })
 
+  it('lets a partial stock outline fill a missing card without adding the other stock units', () => {
+    const partial = {
+      ...createEmptyOutlineContent(),
+      units: [{ ...createOutlineUnit('feature.openingNormalWorld'), whatHappens: 'A quiet morning.' }],
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(partial))
+    const inciting = deck.find(card => card.id === 'feature.incitingIncident')!
+    const path = getOutlineCardBindings(inciting)[0].path
+
+    expect(path).toBe('units[id=feature.incitingIncident].whatHappens')
+    const edited = setOutlinePath(partial, path, 'A letter arrives.')
+    expect(edited.units.map(unit => unit.id)).toEqual([
+      'feature.openingNormalWorld', 'feature.incitingIncident',
+    ])
+    expect(edited.units[1].whatHappens).toBe('A letter arrives.')
+  })
+
+  it('does not create a stock unit when any custom unit is present', () => {
+    const mixed = {
+      ...createEmptyOutlineContent(),
+      units: [createOutlineUnit('feature.openingNormalWorld'), createOutlineUnit('custom.beat02')],
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(mixed))
+    const inciting = deck.find(card => card.id === 'feature.incitingIncident')!
+
+    expect(getOutlineCardBindings(inciting)[0].path).toBe('')
+    expect(setOutlinePath(mixed, 'units[id=feature.incitingIncident].whatHappens', 'Do not insert')).toBe(mixed)
+  })
+
   it('binds feature cards to explicitly mapped unit IDs', () => {
     const content = {
       ...createEmptyOutlineContent(),
