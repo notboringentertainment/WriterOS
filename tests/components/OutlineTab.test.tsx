@@ -90,7 +90,7 @@ describe('OutlineTab', () => {
     }
 
     renderOutline({ document, onClear })
-    fireEvent.click(screen.getByRole('button', { name: 'Clear outline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear answers' }))
     fireEvent.click(screen.getByRole('button', { name: 'Clear everything' }))
 
     expect(onClear).toHaveBeenCalledWith({ keep: 'all' })
@@ -98,7 +98,7 @@ describe('OutlineTab', () => {
 
   it('disables clear outline when the outline is empty', () => {
     renderOutline()
-    expect(screen.getByRole('button', { name: 'Clear outline' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Clear answers' })).toBeDisabled()
   })
 
   it('hides clear outline while Document view is selected', () => {
@@ -107,7 +107,7 @@ describe('OutlineTab', () => {
       viewPreferences: { activeView: 'document' as const },
     }
     renderOutline({ document, onClear: vi.fn() })
-    expect(screen.queryByRole('button', { name: 'Clear outline' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear answers' })).not.toBeInTheDocument()
   })
 
   it('renders project format selector when format props are supplied', () => {
@@ -207,7 +207,7 @@ describe('OutlineTab Document View', () => {
 
     // Document View, ready + uncomposed: edit-mode card questions are gone.
     expect(screen.queryByText('Who are we following?')).not.toBeInTheDocument()
-    const cta = screen.getByRole('button', { name: /compose this outline/i })
+    const cta = screen.getByRole('button', { name: /compose this beat sheet/i })
     expect(cta).toBeEnabled()
 
     fireEvent.click(cta)
@@ -230,7 +230,7 @@ describe('OutlineTab Document View', () => {
     }))
 
     const { rerender } = render(<DocumentHarness projectId="folder-outline-1" />)
-    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+    fireEvent.click(screen.getByRole('button', { name: /compose this beat sheet/i }))
 
     expect(await screen.findByText(/project memory disabled/i)).toBeInTheDocument()
     rerender(<DocumentHarness projectId="folder-outline-2" />)
@@ -247,10 +247,10 @@ describe('OutlineTab Document View', () => {
     vi.stubGlobal('fetch', fetchMock)
     const onComposed = vi.fn()
     const { rerender } = render(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-A" onComposedSpy={onComposed} />)
-    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+    fireEvent.click(screen.getByRole('button', { name: /compose this beat sheet/i }))
 
     rerender(<DocumentHarness projectId={undefined} projectScopeKey="browser:outline-B" onComposedSpy={onComposed} />)
-    const composeB = screen.getByRole('button', { name: /compose this outline/i })
+    const composeB = screen.getByRole('button', { name: /compose this beat sheet/i })
     expect(composeB).toBeEnabled()
     fireEvent.click(composeB)
     await act(async () => pendingA.resolve({
@@ -277,7 +277,7 @@ describe('OutlineTab Document View', () => {
 
     render(<DocumentHarness />)
 
-    const cta = screen.getByRole('button', { name: /compose this outline/i })
+    const cta = screen.getByRole('button', { name: /compose this beat sheet/i })
     fireEvent.click(cta)
     fireEvent.click(cta)
 
@@ -290,7 +290,7 @@ describe('OutlineTab Document View', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<DocumentHarness />)
-    fireEvent.click(screen.getByRole('button', { name: /compose this outline/i }))
+    fireEvent.click(screen.getByRole('button', { name: /compose this beat sheet/i }))
 
     // Does not get stuck on the composing placeholder; error + retry return.
     await waitFor(() => expect(screen.getByText(/could not compose/i)).toBeInTheDocument())

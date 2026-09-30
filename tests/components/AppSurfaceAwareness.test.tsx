@@ -44,7 +44,7 @@ describe('App surface awareness — live request path', () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
     fireEvent.click(screen.getByTitle('Morgan')) // open the rail
 
     const input = screen.getByPlaceholderText('Message Morgan…')
@@ -66,7 +66,7 @@ describe('App surface awareness — live request path', () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
     fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
     fireEvent.click(screen.getAllByText('Zoe')[0]) // select the Zoe specialist
 
@@ -86,7 +86,7 @@ describe('App surface awareness — live request path', () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
     fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
 
     const input = await screen.findByPlaceholderText('Say something to the room…')

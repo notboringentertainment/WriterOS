@@ -47,13 +47,13 @@ export function OutlineDocumentView(props: OutlineDocumentViewProps) {
   if (state.kind === 'below_readiness') {
     return (
       <div style={pageStyle}>
-        <p style={bodyStyle}>Add a few more answers before composing your Outline.</p>
+        <p style={bodyStyle}>Add a few more answers before composing your Beat Sheet.</p>
         {state.missingCoreLabels.length > 0 && (
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {state.missingCoreLabels.map(l => <li key={l} style={bodyStyle}>{l}</li>)}
           </ul>
         )}
-        <button type="button" disabled onClick={onCompose}>Compose this Outline</button>
+        <button type="button" disabled onClick={onCompose}>Compose this Beat Sheet</button>
       </div>
     )
   }
@@ -71,7 +71,7 @@ export function OutlineDocumentView(props: OutlineDocumentViewProps) {
         {state.omittedSectionHeadings.length > 0 && (
           <p style={metaStyle}>Some sections will be omitted until you add more: {state.omittedSectionHeadings.join(', ')}.</p>
         )}
-        <button type="button" onClick={onCompose}>Compose this Outline</button>
+        <button type="button" onClick={onCompose}>Compose this Beat Sheet</button>
       </div>
     )
   }

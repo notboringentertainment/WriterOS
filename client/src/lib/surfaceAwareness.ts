@@ -39,7 +39,7 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
           }))),
         }
       })
-      return buildIntakeSurface('outline', 'Outline', format, questions)
+      return buildIntakeSurface('outline', 'Beat Sheet', format, questions)
     }
 
     case 'synopsis': {

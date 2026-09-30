@@ -47,7 +47,7 @@ export interface ConsoleState {
 const SURFACE_LABELS: Record<ActiveTab, string> = {
   script: 'Script',
   synopsis: 'Synopsis',
-  outline: 'Outline',
+  outline: 'Beat Sheet',
   treatment: 'Treatment',
   'story-bible': 'Story Bible',
   'whats-standing': "What's Standing",
@@ -97,7 +97,7 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
         heading,
         nodes,
         empty: nodes.length === 0,
-        emptyHint: nodes.length === 0 ? 'No beats yet — build the outline.' : undefined,
+        emptyHint: nodes.length === 0 ? 'No beats yet.' : undefined,
       }
     }
 

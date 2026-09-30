@@ -141,9 +141,9 @@ export function OutlineTab({
       <div style={styles.header}>
         <div style={styles.titleRow}>
           <div>
-            <h2 style={styles.title}>Outline</h2>
+            <h2 style={styles.title}>Beat Sheet</h2>
             <p style={styles.subtitle}>
-              Shape the story before pages lock it in.
+              What Story-drive ratified, and what the camera sees.
             </p>
           </div>
           <div style={styles.titleControls}>
@@ -165,9 +165,9 @@ export function OutlineTab({
                 }}
                 onClick={() => setClearDialogOpen(true)}
                 disabled={!hasContent}
-                title="Clear outline"
+                title="Clear answers"
               >
-                Clear outline
+                Clear answers
               </button>
             )}
           </div>

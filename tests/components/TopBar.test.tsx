@@ -17,7 +17,7 @@ describe('TopBar', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('Script')).toBeInTheDocument()
     expect(screen.getByText('Story Bible')).toBeInTheDocument()
-    expect(screen.getByText('Outline')).toBeInTheDocument()
+    expect(screen.getByText('Beat Sheet')).toBeInTheDocument()
     expect(screen.getByText('Treatment')).toBeInTheDocument()
     expect(screen.getByText('Synopsis')).toBeInTheDocument()
   })
@@ -34,7 +34,7 @@ describe('TopBar', () => {
 
   it('marks active tab with aria-selected true', () => {
     render(<TopBar {...defaultProps} activeTab="outline" />)
-    expect(screen.getByRole('tab', { name: 'Outline' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Beat Sheet' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Script' })).toHaveAttribute('aria-selected', 'false')
   })
 

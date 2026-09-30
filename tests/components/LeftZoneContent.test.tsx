@@ -8,7 +8,7 @@ describe('StructureSpine', () => {
   it('renders the surface heading and its nodes with details', () => {
     const structure: SurfaceStructure = {
       surface: 'outline',
-      heading: 'Outline',
+      heading: 'Beat Sheet',
       empty: false,
       nodes: [
         { id: 'a', label: 'Cold open', detail: 'Act 1' },
@@ -16,7 +16,7 @@ describe('StructureSpine', () => {
       ],
     }
     render(<StructureSpine structure={structure} />)
-    expect(screen.getByText('Outline')).toBeInTheDocument()
+    expect(screen.getByText('Beat Sheet')).toBeInTheDocument()
     expect(screen.getByText('Cold open')).toBeInTheDocument()
     expect(screen.getByText('Act 1')).toBeInTheDocument()
     expect(screen.getByText('Beat 2')).toBeInTheDocument()
@@ -40,14 +40,14 @@ describe('ContextConsole', () => {
     const state: ConsoleState = {
       title: 'The Long Hallway',
       surface: 'outline',
-      surfaceLabel: 'Outline',
+      surfaceLabel: 'Beat Sheet',
       persona: 'Morgan (@Oliver)',
       counts: [{ label: 'beats', value: 12 }],
     }
     render(<ContextConsole state={state} />)
     const region = screen.getByLabelText('Project state')
     expect(within(region).getByText('The Long Hallway')).toBeInTheDocument()
-    expect(within(region).getByText('Outline')).toBeInTheDocument()
+    expect(within(region).getByText('Beat Sheet')).toBeInTheDocument()
     expect(within(region).getByText('Morgan (@Oliver)')).toBeInTheDocument()
     expect(within(region).getByText('12')).toBeInTheDocument()
     expect(within(region).getByText('beats')).toBeInTheDocument()

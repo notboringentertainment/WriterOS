@@ -64,7 +64,7 @@ export function outlineToMarkdown(doc: AuthoredDocumentState<OutlineDocumentCont
   })
 
   return lines(
-    '# Outline',
+    '# Beat Sheet',
     unitBlocks.length ? unitBlocks.join('\n\n') : undefined,
   ).trim() + '\n'
 }

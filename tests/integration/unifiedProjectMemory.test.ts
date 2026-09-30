@@ -884,7 +884,7 @@ describe('outline patch preview/apply/save', () => {
     let patchProposal: MemoryGroundedPatchProposal | undefined
     try {
       const outlineSurface = {
-        kind: 'intake' as const, surface: 'outline' as const, surfaceTitle: 'Outline', format: 'feature' as const,
+        kind: 'intake' as const, surface: 'outline' as const, surfaceTitle: 'Beat Sheet', format: 'feature' as const,
         questions: [], nextQuestion: null, selectionSource: 'first_unanswered' as const,
         answeredCount: 0, totalCount: 0, nextRecommendedAction: 'all_answered' as const,
       }

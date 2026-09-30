@@ -9,7 +9,7 @@ import type { MemoryWorkflow } from '@shared/projectMemory'
 
 const SURFACE_LABELS: Record<StructuredDocumentSurface, string> = {
   synopsis: 'Synopsis',
-  outline: 'Outline',
+  outline: 'Beat Sheet',
   treatment: 'Treatment',
   storyBible: 'Story Bible',
 }
