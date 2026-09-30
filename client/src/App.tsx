@@ -209,6 +209,8 @@ export default function App() {
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
+  const activeFolderProjectIdRef = useRef(activeFolderProjectId)
+  activeFolderProjectIdRef.current = activeFolderProjectId
   const activeAgentProjectKey = activeFolderProjectId
     ? `folder:${activeFolderProjectId}`
     : `browser:${project.activeProjectId ?? ''}`
@@ -407,9 +409,12 @@ export default function App() {
   const handleRefreshBeatSheet = useCallback(async () => {
     const client = projectFolder.beatSheet
     if (!client || !activeFolderProjectId) return
-    const { beatSheet, outline } = await client.refresh(activeFolderProjectId)
+    const requestedProjectId = activeFolderProjectId
+    const { beatSheet, outline } = await client.refresh(requestedProjectId)
+    // The writer may have switched projects while the request was in flight.
+    if (activeFolderProjectIdRef.current !== requestedProjectId) return
     if (outline) project.replaceOutlineDocument(outline)
-    setBeatSheetStatus({ projectId: activeFolderProjectId, status: beatSheet })
+    setBeatSheetStatus({ projectId: requestedProjectId, status: beatSheet })
   }, [activeFolderProjectId, project, projectFolder.beatSheet])
 
   const handleCheckBeatSheetStatus = useCallback(async () => {

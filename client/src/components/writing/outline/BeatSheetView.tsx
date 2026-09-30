@@ -18,6 +18,7 @@ export interface BeatSheetViewProps {
   refreshing: boolean
   onContentChange: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
   changedSince?: boolean
+  refreshError?: string | null
 }
 
 // Task 8 fills this slot with the per-beat Lookbook questions.
@@ -44,6 +45,7 @@ export function BeatSheetView({
   refreshing,
   onContentChange,
   changedSince,
+  refreshError,
 }: BeatSheetViewProps) {
   let currentSection = ''
   let currentMovement: string | null = null
@@ -54,6 +56,7 @@ export function BeatSheetView({
         <BeatSheetStatusLine
           status={status}
           changedSince={changedSince}
+          errorMessage={refreshError}
           refreshing={refreshing}
           onRefresh={onRefresh}
         />

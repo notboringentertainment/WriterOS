@@ -4,6 +4,7 @@ import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 interface BeatSheetStatusLineProps {
   status: BeatSheetSyncStatusResponse
   changedSince?: boolean
+  errorMessage?: string | null
   refreshing: boolean
   onRefresh: () => void | Promise<void>
 }
@@ -43,16 +44,17 @@ function statusText(status: BeatSheetSyncStatusResponse, changedSince: boolean):
   }
 }
 
-export function BeatSheetStatusLine({ status, changedSince = false, refreshing, onRefresh }: BeatSheetStatusLineProps) {
+export function BeatSheetStatusLine({ status, changedSince = false, errorMessage = null, refreshing, onRefresh }: BeatSheetStatusLineProps) {
   if (status.kind === 'not-linked') return null
   return (
     <div style={styles.row} role="status">
       <span style={styles.text}>{statusText(status, changedSince)}</span>
+      {errorMessage && <span role="alert" style={styles.error}>{errorMessage}</span>}
       <button
         type="button"
         style={{ ...styles.button, ...(refreshing ? styles.buttonDisabled : {}) }}
         disabled={refreshing}
-        onClick={() => { void onRefresh() }}
+        onClick={() => { void Promise.resolve(onRefresh()).catch(() => undefined) }}
       >
         Refresh
       </button>
@@ -85,5 +87,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '7px 10px',
     cursor: 'pointer',
   },
+  error: { fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--danger, #b3261e)', flexBasis: '100%' },
   buttonDisabled: { opacity: 0.45, cursor: 'not-allowed' },
 }

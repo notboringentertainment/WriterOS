@@ -514,7 +514,7 @@ export function useProjectState() {
       const empty = createEmptyOutlineContent()
       const outlineFormat = normalizeProjectFormat(s.meta.format)
       const currentContent = normalizeOutlineContent(s.documents.outline.content)
-      const content =
+      const baseContent =
         options.keep === 'foundations'
           ? {
               ...empty,
@@ -528,6 +528,10 @@ export function useProjectState() {
                 : {}),
             }
           : empty
+      // Synced beats belong to Story-drive: clearing answers never drops them.
+      const content = currentContent.beatSheetSource
+        ? { ...baseContent, units: currentContent.units, beatSheetSource: currentContent.beatSheetSource }
+        : baseContent
       const nextOutlineDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
         revision: 0,

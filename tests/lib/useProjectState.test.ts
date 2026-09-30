@@ -383,6 +383,25 @@ describe('useProjectState', () => {
     expect(result.current.state.outline.beats.find(beat => beat.id === 'midpoint')?.notes).toContain('The mayor is protecting the wrong person.')
   })
 
+  it('clearOutline keeps synced beats and their source while clearing answers', () => {
+    const source = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-09-29T17:42:00.000Z', beatCount: 1, label: null }
+    const units = [{ ...createOutlineUnit('sample-beat'), title: 'Sample beat', whatHappens: 'Something happens.' }]
+    for (const keep of ['all', 'foundations'] as const) {
+      const { result } = renderHook(() => useProjectState())
+      act(() => result.current.setOutlineDocument(content => ({
+        ...content,
+        spine: { ...content.spine, protagonist: 'Sara' },
+        units,
+        beatSheetSource: source,
+      })))
+      act(() => result.current.clearOutline({ keep }))
+      const cleared = result.current.state.documents.outline.content
+      expect(cleared.units).toEqual(units)
+      expect(cleared.beatSheetSource).toEqual(source)
+      expect(cleared.spine.protagonist).toBe(keep === 'all' ? '' : 'Sara')
+    }
+  })
+
   it('clearOutline keep foundations preserves series engine and season spine for series projects', () => {
     const { result } = renderHook(() => useProjectState())
 

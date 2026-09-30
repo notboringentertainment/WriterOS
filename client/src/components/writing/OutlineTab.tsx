@@ -70,6 +70,7 @@ export function OutlineTab({
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
   const [refreshing, setRefreshing] = useState(false)
   const [changedSince, setChangedSince] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const isComposingRef = useRef(false)
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
@@ -82,9 +83,13 @@ export function OutlineTab({
   const handleRefreshBeatSheet = useCallback(async () => {
     if (!onRefreshBeatSheet) return
     setRefreshing(true)
+    setRefreshError(null)
     try {
       await onRefreshBeatSheet()
       setChangedSince(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error'
+      setRefreshError(`Refresh failed: ${message}. Showing the last synced beats.`)
     } finally {
       setRefreshing(false)
     }
@@ -95,6 +100,7 @@ export function OutlineTab({
   checkStatusRef.current = onCheckBeatSheetStatus
   useEffect(() => {
     setChangedSince(false)
+    setRefreshError(null)
     if (!isLinked || !checkStatusRef.current) return
     let cancelled = false
     checkStatusRef.current()
@@ -218,6 +224,7 @@ export function OutlineTab({
             content={document.content}
             status={beatSheetStatus}
             changedSince={changedSince}
+            refreshError={refreshError}
             lookbook={undefined}
             onRefresh={handleRefreshBeatSheet}
             onAskQuestions={async () => undefined}
@@ -233,6 +240,7 @@ export function OutlineTab({
               <BeatSheetStatusLine
                 status={beatSheetStatus}
                 changedSince={changedSince}
+                errorMessage={refreshError}
                 refreshing={refreshing}
                 onRefresh={handleRefreshBeatSheet}
               />

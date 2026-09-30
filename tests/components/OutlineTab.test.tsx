@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useState, type ComponentProps } from 'react'
 import { OutlineTab } from '../../client/src/components/writing/OutlineTab'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
@@ -17,6 +18,22 @@ function deferred<T>() {
 
 describe('OutlineTab', () => {
   const defaultDocument = defaultProjectState().documents.outline
+
+  function baseProps(overrides: Partial<ComponentProps<typeof OutlineTab>> = {}): ComponentProps<typeof OutlineTab> {
+    return {
+      document: defaultDocument,
+      projectFormat: 'feature',
+      identity: { title: 'T', genre: 'Drama' },
+      onProjectFormatChange: vi.fn(),
+      onContentChange: vi.fn(),
+      onAddEpisode: vi.fn(),
+      onEpisodeFieldChange: vi.fn(),
+      onViewPreferencesPatch: vi.fn(),
+      onComposed: vi.fn(),
+      onClear: vi.fn(),
+      ...overrides,
+    }
+  }
 
   function renderOutline(overrides: Partial<ComponentProps<typeof OutlineTab>> = {}) {
     const props: ComponentProps<typeof OutlineTab> = {
@@ -138,6 +155,62 @@ describe('OutlineTab', () => {
       'Episode 102',
       'Episode 103',
     ])
+  })
+
+  describe('Story-drive wiring', () => {
+    const linked = { kind: 'unchanged' as const, ticket: 'T-1', syncedAt: '2026-09-29T17:42:00.000Z', beatCount: 1 }
+    const syncedDocument = {
+      ...defaultDocument,
+      content: {
+        ...defaultDocument.content,
+        units: [{ ...createOutlineUnit('sample-beat'), number: 1, title: 'Sample beat', whatHappens: 'Original text.' }],
+        beatSheetSource: { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-09-29T17:42:00.000Z', beatCount: 1, label: null },
+      },
+    }
+    const suffix = /Story-drive has changed since/
+
+    it('turns refreshing on during the call and off after, and clears the changed-since suffix', async () => {
+      const gate = deferred<void>()
+      const onRefreshBeatSheet = vi.fn(() => gate.promise)
+      const onCheckBeatSheetStatus = vi.fn().mockResolvedValue({ ...linked, kind: 'updated', added: [], removed: [], changed: [] })
+      renderOutline({ document: syncedDocument, beatSheetStatus: linked, onRefreshBeatSheet, onCheckBeatSheetStatus })
+
+      expect(await screen.findByText(suffix)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+      await act(async () => { gate.resolve() })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled())
+      expect(screen.queryByText(suffix)).not.toBeInTheDocument()
+    })
+
+    it('shows a refresh failure, re-enables the button, and leaves the beats alone', async () => {
+      const onRefreshBeatSheet = vi.fn().mockRejectedValue(new Error('server down'))
+      renderOutline({ document: syncedDocument, beatSheetStatus: linked, onRefreshBeatSheet })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+      expect(await screen.findByText('Refresh failed: server down. Showing the last synced beats.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
+      expect(screen.getByText('Original text.')).toBeInTheDocument()
+    })
+
+    it('checks status once for a linked project and never for null or not-linked', async () => {
+      const check = vi.fn().mockResolvedValue(linked)
+      const { unmount } = render(<OutlineTab {...baseProps({ beatSheetStatus: linked, onCheckBeatSheetStatus: check })} />)
+      await waitFor(() => expect(check).toHaveBeenCalledTimes(1))
+      unmount()
+
+      const skipped = vi.fn()
+      render(<OutlineTab {...baseProps({ beatSheetStatus: null, onCheckBeatSheetStatus: skipped })} />)
+      render(<OutlineTab {...baseProps({ beatSheetStatus: { kind: 'not-linked' }, onCheckBeatSheetStatus: skipped })} />)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      expect(skipped).not.toHaveBeenCalled()
+    })
+
+    it('renders the status line without a synced beat sheet when linked', () => {
+      renderOutline({ beatSheetStatus: { kind: 'no-beat-sheet' }, onRefreshBeatSheet: vi.fn() })
+      expect(screen.getByRole('status')).toHaveTextContent('Linked to Story-drive, but no ratified beat sheet yet.')
+      expect(screen.getByText('Who are we following?')).toBeInTheDocument()
+    })
   })
 })
 
