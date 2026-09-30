@@ -164,7 +164,7 @@ describe('validateLookSpecForPromotion', () => {
     const spec = { ...character(), hair: 'cropped, like a İstanbul sailor' }
     const result = validateLookSpecForPromotion(spec)
     expect(result.ok).toBe(true)
-    if (result.ok) {
+    if (result.ok && result.spec.entity_kind === 'character') {
       expect(result.spec.hair).toBe('cropped, like a İstanbul sailor')
       expect(lookHash(result.spec)).toBe(lookHash(spec))
     }
