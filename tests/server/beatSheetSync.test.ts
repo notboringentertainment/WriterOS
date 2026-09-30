@@ -173,12 +173,48 @@ describe('syncBeatSheet', () => {
     doc.content.units[1].linkedSceneIds = ['scene-1']
     doc.content.units[1].location = 'Kitchen'
     doc.content.units[1].characters = ['Someone']
+    doc.content.units[1].conflict = 'C'
+    doc.content.units[1].turn = 'T'
+    doc.content.units[1].consequence = 'Q'
+    doc.content.units[1].whyNext = 'W'
+    doc.content.units[1].aiProduction = { productionDifficulty: 'd', requiredReferences: 'r', continuityRisks: 'c', promptNotes: 'p', assetStatus: 'a' }
     await writeFile(outlinePath(), JSON.stringify(doc, null, 2), 'utf8')
     await writeFile(path.join(drive, DECISION), `${await readFile(FIXTURE, 'utf8')}\n`, 'utf8')
     const result = await syncBeatSheet(opts)
     expect(result.status.kind).toBe('updated')
     const unit = result.outline!.content.units[1]
-    expect(unit).toMatchObject({ id: 'beat.the-dinner', draftNotes: 'keep me', linkedSceneIds: ['scene-1'], location: 'Kitchen', characters: ['Someone'] })
+    expect(unit).toMatchObject({ id: 'beat.the-dinner', draftNotes: 'keep me', linkedSceneIds: ['scene-1'], location: 'Kitchen', characters: ['Someone'], conflict: 'C', turn: 'T', consequence: 'Q', whyNext: 'W', aiProduction: doc.content.units[1].aiProduction })
+  })
+
+  it('refuses a symlinked decision file under resolved/', async () => {
+    const outside = path.join(await tmp('writeros-sync-outside-'), 'secret.md')
+    await writeFile(outside, await readFile(FIXTURE, 'utf8'), 'utf8')
+    await rm(path.join(drive, DECISION))
+    await symlink(outside, path.join(drive, 'wayfinder/resolved/x.md'))
+    const before = await readFile(outlinePath(), 'utf8')
+    expect((await syncBeatSheet(opts)).status.kind).toBe('unavailable')
+    await writeStoryDriveLink(workspace, PROJECT_ID, { root: drive, beatSheet: 'resolved/x.md' })
+    expect((await syncBeatSheet(opts)).status.kind).toBe('unavailable')
+    expect(await readFile(outlinePath(), 'utf8')).toBe(before)
+  })
+
+  it('refuses a symlinked resolved/ directory', async () => {
+    const outsideDir = await tmp('writeros-sync-outdir-')
+    await writeFile(path.join(outsideDir, 'a.md'), await readFile(FIXTURE, 'utf8'), 'utf8')
+    await rm(path.join(drive, 'wayfinder/resolved'), { recursive: true })
+    await symlink(outsideDir, path.join(drive, 'wayfinder/resolved'))
+    const before = await readFile(outlinePath(), 'utf8')
+    expect((await syncBeatSheet(opts)).status.kind).toBe('unavailable')
+    expect(await readFile(outlinePath(), 'utf8')).toBe(before)
+  })
+
+  it('uses the pointer without scanning even when two resolved files declare beat-sheet', async () => {
+    await writeFile(path.join(drive, 'wayfinder/resolved/second.md'), await readFile(FIXTURE, 'utf8'), 'utf8')
+    await writeStoryDriveLink(workspace, PROJECT_ID, { root: drive, beatSheet: 'resolved/synthetic-beat-sheet.md' })
+    let scanned = false
+    const result = await syncBeatSheet({ ...opts, readdir: async () => { scanned = true; return [] } })
+    expect(result.status.kind).toBe('updated')
+    expect(scanned).toBe(false)
   })
 
   it('reports added/removed/changed keys when the file changes', async () => {

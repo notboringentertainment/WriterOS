@@ -88,6 +88,20 @@ async function ticketRoot(sourceRoot: string): Promise<string> {
   return sourceRoot
 }
 
+/** lstat a Story-drive entry: false when it does not exist, throws when it is a symlink. */
+async function refuseSymlink(target: string): Promise<boolean> {
+  try {
+    const stats = await lstat(target)
+    if (stats.isSymbolicLink()) {
+      throw new UnsafeProjectMemoryPathError('The Story-drive folder contains a symbolic link.')
+    }
+    return true
+  } catch (error) {
+    if (isEnoent(error)) return false
+    throw error
+  }
+}
+
 async function atomicReplace(filePath: string, contents: string): Promise<void> {
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -120,10 +134,13 @@ async function locateDecision(
   read: (p: string) => Promise<string>,
   list: () => Promise<string[]>,
   exists: (p: string) => Promise<boolean>,
+  refuseSymlink: (p: string) => Promise<boolean>,
 ): Promise<Located> {
   if (pointer) {
+    await refuseSymlink(path.join(ticketDir, 'resolved'))
     if (await exists(path.join(ticketDir, pointer))) return { kind: 'found', ticket: pointer }
     const moved = `tickets/${path.basename(pointer)}`
+    await refuseSymlink(path.join(ticketDir, 'tickets'))
     if (await exists(path.join(ticketDir, moved))) {
       return {
         kind: 'reopened',
@@ -136,6 +153,7 @@ async function locateDecision(
 
   let names: string[]
   try {
+    if (!await refuseSymlink(path.join(ticketDir, 'resolved'))) return { kind: 'no-beat-sheet' }
     names = await list()
   } catch (error) {
     if (isEnoent(error)) return { kind: 'no-beat-sheet' }
@@ -143,6 +161,7 @@ async function locateDecision(
   }
   const declared: string[] = []
   for (const name of names.filter(entry => entry.endsWith('.md')).sort()) {
+    await refuseSymlink(path.join(ticketDir, 'resolved', name))
     const head = (await read(path.join(ticketDir, 'resolved', name))).split('\n').slice(0, HEADER_LINES).join('\n')
     if (isBeatSheetDeclared(head)) declared.push(`resolved/${name}`)
   }
@@ -153,7 +172,10 @@ async function locateDecision(
   return { kind: 'found', ticket: declared[0] }
 }
 
-const CARRIED_FIELDS = ['location', 'characters', 'linkedSceneIds', 'draftNotes', 'aiProduction'] as const
+const CARRIED_FIELDS = [
+  'location', 'characters', 'conflict', 'turn', 'consequence', 'whyNext',
+  'linkedSceneIds', 'draftNotes', 'aiProduction',
+] as const
 
 export function planBeatUnits(
   existing: OutlineDocumentContent,
@@ -228,15 +250,8 @@ export async function syncBeatSheet(options: BeatSheetSyncOptions): Promise<Beat
         link.beatSheet,
         p => timed(() => read(p)),
         () => timed(() => list(path.join(ticketDir, 'resolved'))),
-        async p => {
-          try {
-            await timed(() => read(p))
-            return true
-          } catch (error) {
-            if (isEnoent(error)) return false
-            throw error
-          }
-        },
+        p => timed(() => refuseSymlink(p)),
+        p => timed(() => refuseSymlink(p)),
       )
       if (located.kind === 'no-beat-sheet') return { status: { kind: 'no-beat-sheet' } }
       if (located.kind === 'ambiguous') return { status: located }
