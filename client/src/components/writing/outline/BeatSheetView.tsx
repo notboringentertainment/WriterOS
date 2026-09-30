@@ -90,6 +90,8 @@ export function BeatSheetView({
         )
       })}
 
+      <h3 style={styles.sectionTitle}>Beat Sheet</h3>
+
       {content.units.map(unit => {
         const showMovement = unit.actOrSequence !== currentMovement
         currentMovement = unit.actOrSequence

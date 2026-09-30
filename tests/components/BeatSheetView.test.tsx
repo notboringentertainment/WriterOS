@@ -57,6 +57,12 @@ describe('BeatSheetView', () => {
     expect(screen.queryByDisplayValue('A quiet street at dawn.')).toBeNull()
   })
 
+  it('names the sections on screen: one Beat Sheet heading and a Lookbook label under every beat', () => {
+    renderView()
+    expect(screen.getByRole('heading', { level: 3, name: 'Beat Sheet' })).toBeInTheDocument()
+    expect(screen.getAllByText('Lookbook')).toHaveLength(content.units.length)
+  })
+
   it('keeps the Foundations cards above the beats', () => {
     renderView()
     const first = SERIES_FOUNDATIONS[0]

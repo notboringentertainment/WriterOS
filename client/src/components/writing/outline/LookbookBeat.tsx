@@ -31,6 +31,7 @@ export function LookbookBeat({
 
   return (
     <div style={styles.wrap}>
+      <p style={styles.label}>Lookbook</p>
       {live.map(question => (
         <div key={question.id} style={styles.question}>
           <label style={styles.prompt} htmlFor={`lookbook-${beatKey}-${question.id}`}>
@@ -63,6 +64,15 @@ export function LookbookBeat({
 
 const styles: Record<string, React.CSSProperties> = {
   wrap: { marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 },
+  label: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--fg-muted)',
+    margin: 0,
+  },
   question: { display: 'flex', flexDirection: 'column', gap: 6 },
   prompt: { fontFamily: 'var(--font-body)', fontSize: 13, fontStyle: 'italic', color: 'var(--fg-muted)' },
   answer: {
