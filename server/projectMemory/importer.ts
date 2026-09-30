@@ -126,19 +126,7 @@ export function buildImportCounts(
   }
 }
 
-const IMPERATIVE_PATTERNS = [
-  /@\w+/i,
-  /\bignore (all |any )?(previous|prior|above)\b/i,
-  /\byou (must|should|will) now\b/i,
-  /\bsystem prompt\b/i,
-  /\bnew instructions?\b/i,
-]
-
-export function promptInjectionLine(content: string): number | undefined {
-  const lines = content.replace(/\r\n?/g, '\n').split('\n')
-  const index = lines.findIndex(line => IMPERATIVE_PATTERNS.some(pattern => pattern.test(line)))
-  return index < 0 ? undefined : index + 1
-}
+export { promptInjectionLine } from '../../shared/injectionPatterns'
 
 export function truncateImportText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value

@@ -1,0 +1,28 @@
+{
+  "version": "1.1",
+  "entity_kind": "location",
+  "entity_id": "vector-station",
+  "fictional_subject_attestation": true,
+  "minor": false,
+  "prompt_safe_description": "A salt-crusted orbital refuelling station of ribbed steel corridors, sodium-lit and humming, with frost blooming along every window seam and cargo netting slung between the pillars.",
+  "continuity_risks": [
+    "frost pattern must match between angles"
+  ],
+  "negative_lines": [],
+  "spoiler": true,
+  "depends_on": [],
+  "shape_only": false,
+  "establishing_view": "wide down the main corridor toward the airlock",
+  "time_of_day_default": "night",
+  "palette_anchors": [
+    "sodium amber",
+    "frost white",
+    "gunmetal"
+  ],
+  "architecture_or_terrain": "ribbed steel corridors",
+  "dressing": [
+    "cargo netting",
+    "a \"no smoking\" sign\twith a tab"
+  ],
+  "weather_or_light_rules": "always sodium-lit, never daylight"
+}
