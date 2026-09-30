@@ -1,0 +1,120 @@
+import type { Express } from 'express'
+import { z } from 'zod'
+import { createModelProvider, type ModelProvider } from '../ai/modelProvider'
+import { extractFirstJsonObject } from '../ai/openaiService'
+import type { ProjectLibraryConfig } from '../projectLibrary/config'
+import { authenticated, sameOrigin } from '../projectLibrary/security'
+import { ProjectLibraryStoreError, type ProjectLibraryStore } from '../projectLibrary/store'
+import {
+  ProjectMemoryAgentUnavailableError,
+  buildAgentMemoryContext,
+  finalizeAgentMemoryText,
+  type ProjectMemoryProvider,
+} from '../projectMemory/agentContext'
+import { LookbookQuestionsRequestSchema } from '../../shared/lookbook'
+import { buildLookbookSystemPrompt, buildLookbookUserMessage } from './buildLookbookPrompt'
+
+const ModelOutputSchema = z.object({
+  questions: z.array(z.object({ prompt: z.string().min(8).max(240) })).max(5),
+  nothingToSee: z.boolean(),
+})
+
+type ModelOutput = z.infer<typeof ModelOutputSchema>
+
+function validOutput(value: unknown): ModelOutput | null {
+  const parsed = ModelOutputSchema.safeParse(value)
+  if (!parsed.success) return null
+  const { questions, nothingToSee } = parsed.data
+  if (questions.length === 0) return nothingToSee ? parsed.data : null
+  if (questions.length < 3 || nothingToSee) return null
+  return parsed.data
+}
+
+async function askZoe(
+  provider: ModelProvider,
+  system: string,
+  user: string,
+): Promise<{ ok: true; output: ModelOutput } | { ok: false; reason: string }> {
+  let lastErr = 'unknown'
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let raw: string
+    try {
+      raw = await provider.generateResponse({
+        systemPrompt: system,
+        messages: [{ role: 'user', content: user }],
+        temperature: 0.7,
+        maxTokens: 800,
+      })
+    } catch (error) {
+      lastErr = error instanceof Error ? error.message : 'provider error'
+      continue
+    }
+    const jsonText = extractFirstJsonObject(raw)
+    let value: unknown = null
+    try { value = jsonText ? JSON.parse(jsonText) : null } catch { value = null }
+    const output = validOutput(value)
+    if (output) return { ok: true, output }
+    lastErr = 'invalid model JSON'
+  }
+  return { ok: false, reason: lastErr }
+}
+
+export function registerLookbookRoutes(
+  app: Express,
+  config: ProjectLibraryConfig,
+  store: ProjectLibraryStore | null,
+  memoryProvider: ProjectMemoryProvider | null = null,
+): void {
+  app.post('/api/lookbook/:projectId/questions', sameOrigin(config), authenticated(config), async (req, res) => {
+    try {
+      const body = LookbookQuestionsRequestSchema.safeParse(req.body)
+      if (!body.success) return res.status(400).json({ error: 'invalid_request' })
+      if (!config.enabled || !store) {
+        return res.status(503).json({ error: 'disabled', message: 'Server project library is disabled.' })
+      }
+      const modelProvider = createModelProvider()
+      if (!modelProvider.isConfigured()) {
+        return res.status(503).json({ error: 'lookbook_unavailable', reason: 'No model configured.' })
+      }
+
+      const projectId = req.params.projectId
+      const read = await store.readProject(projectId)
+      if (!read.ok) return res.status(422).json({ error: 'lookbook_failed', reason: 'The project package could not be read.' })
+      const project = read.project
+      const unit = project.state.documents.outline.content.units.find(u => u.id === body.data.beatKey)
+      if (!unit) return res.status(404).json({ error: 'beat_not_found' })
+      const existingPrompts = (project.state.documents.lookbook?.beats[body.data.beatKey]?.questions ?? [])
+        .filter(q => !q.dismissedAt)
+        .map(q => q.prompt)
+
+      const memory = await buildAgentMemoryContext(memoryProvider, projectId, {
+        message: unit.whatHappens,
+        surface: 'outline',
+        personaId: 'zoe',
+      })
+      const result = await askZoe(
+        modelProvider,
+        buildLookbookSystemPrompt(memory.prompt),
+        buildLookbookUserMessage({
+          movement: unit.actOrSequence,
+          title: unit.title,
+          body: unit.whatHappens,
+          existingPrompts,
+        }),
+      )
+      if (!result.ok) return res.status(422).json({ error: 'lookbook_failed', reason: result.reason })
+
+      const { receipt } = finalizeAgentMemoryText('', memory)
+      return res.json({ ...result.output, memoryReceipt: receipt })
+    } catch (error) {
+      if (error instanceof ProjectLibraryStoreError) {
+        return res.status(error.statusCode).json({ error: error.code, message: error.message })
+      }
+      if (error instanceof ProjectMemoryAgentUnavailableError) {
+        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message })
+      }
+      console.error('Lookbook questions failed:', error instanceof Error ? error.message : error)
+      return res.status(500).json({ error: 'lookbook_failed', reason: 'Zoe could not write questions.' })
+    }
+  })
+}

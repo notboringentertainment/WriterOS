@@ -1,11 +1,5 @@
-import { MemoryReceiptSchema, type MemoryReceipt } from '@shared/schema'
-import { z } from 'zod'
-
-const LookbookQuestionsResponseSchema = z.object({
-  questions: z.array(z.object({ prompt: z.string() })),
-  nothingToSee: z.boolean(),
-  memoryReceipt: MemoryReceiptSchema.optional(),
-})
+import { LookbookQuestionsResponseSchema } from '@shared/lookbook'
+import type { MemoryReceipt } from '@shared/schema'
 
 export interface LookbookQuestionsResult {
   questions: Array<{ prompt: string }>

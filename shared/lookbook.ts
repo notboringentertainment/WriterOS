@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MemoryReceiptSchema } from './schema'
 
 export const LookbookQuestionSchema = z.object({
   id: z.string().min(1),
@@ -20,3 +21,16 @@ export function hasLookbookContent(doc: LookbookDocument | undefined): boolean {
 export function orphanedBeatKeys(doc: LookbookDocument, liveKeys: ReadonlySet<string>): string[] {
   return Object.keys(doc.beats).filter(key => !liveKeys.has(key)).sort()
 }
+
+export const LookbookQuestionsRequestSchema = z.object({
+  beatKey: z.string().min(1),
+  clientRequestId: z.string().min(1),
+}).strict()
+export type LookbookQuestionsRequest = z.infer<typeof LookbookQuestionsRequestSchema>
+
+export const LookbookQuestionsResponseSchema = z.object({
+  questions: z.array(z.object({ prompt: z.string() })),
+  nothingToSee: z.boolean(),
+  memoryReceipt: MemoryReceiptSchema.optional(),
+})
+export type LookbookQuestionsResponse = z.infer<typeof LookbookQuestionsResponseSchema>
