@@ -12,7 +12,7 @@
 
 import { z } from 'zod'
 import { IMPERATIVE_PATTERNS } from './injectionPatterns'
-import { PY_WHITESPACE_CLASS, findRealPersonName } from './realPersonPatterns'
+import { PY_WHITESPACE_CLASS, findRealPersonName, foldPythonCaseEquivalents } from './realPersonPatterns'
 
 export const LOOK_SPEC_VERSIONS = ['1.0', '1.1'] as const
 export const DESCRIPTION_MIN_WORDS = 20
@@ -188,7 +188,10 @@ export function validateLookSpecForPromotion(
   stringLeaves(raw, [], leaves)
   for (const [path, value] of leaves) {
     const lines = value.replace(/\r\n?/g, '\n').split('\n')
-    const injected = lines.find(candidate => IMPERATIVE_PATTERNS.some(pattern => pattern.test(candidate)) || UNICODE_MENTION.test(candidate))
+    const injected = lines.find(candidate => {
+      const folded = foldPythonCaseEquivalents(candidate)
+      return IMPERATIVE_PATTERNS.some(pattern => pattern.test(folded)) || UNICODE_MENTION.test(candidate)
+    })
     if (injected !== undefined) {
       problems.push({ path, message: `${path} reads like an instruction to the model ("${injected.slice(0, 80)}"); rephrase it as description.` })
     }
