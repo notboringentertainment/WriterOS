@@ -23,6 +23,8 @@ import { BeatSheetStatusLine } from './outline/BeatSheetStatusLine'
 import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 import type { MemoryReceipt } from '@shared/schema'
+import type { LookbookDocument } from '@shared/lookbook'
+import { applyLookbookAsk, dismissLookbookQuestion, removeLookbookBeat, setLookbookAnswer } from '../../lib/lookbookEdits'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
@@ -45,6 +47,10 @@ interface OutlineTabProps {
   beatSheetStatus?: BeatSheetSyncStatusResponse | null
   onRefreshBeatSheet?: () => Promise<void>
   onCheckBeatSheetStatus?: () => Promise<BeatSheetSyncStatusResponse>
+  lookbook?: LookbookDocument
+  onLookbookChange?: (updater: (doc: LookbookDocument) => LookbookDocument) => void
+  /** Asks Zoe about one beat; only present for server-linked projects. */
+  onRequestLookbookQuestions?: (beatKey: string) => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean }>
 }
 
 export function OutlineTab({
@@ -63,6 +69,9 @@ export function OutlineTab({
   beatSheetStatus = null,
   onRefreshBeatSheet,
   onCheckBeatSheetStatus,
+  lookbook,
+  onLookbookChange,
+  onRequestLookbookQuestions,
 }: OutlineTabProps) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
@@ -108,6 +117,17 @@ export function OutlineTab({
       .catch(() => undefined)
     return () => { cancelled = true }
   }, [effectiveProjectScopeKey, isLinked])
+
+  const handleAskQuestions = useCallback(async (beatKey: string) => {
+    if (!onRequestLookbookQuestions) throw new Error('Zoe is not available for this project.')
+    const unit = document.content.units.find(candidate => candidate.id === beatKey)
+    if (!unit) throw new Error('That beat is no longer in the Beat Sheet.')
+    const result = await onRequestLookbookQuestions(beatKey)
+    const prompts = result.questions.map(question => question.prompt).filter(prompt => prompt.trim().length > 0)
+    const now = new Date().toISOString()
+    onLookbookChange?.(doc => applyLookbookAsk(doc, beatKey, unit.title, prompts, now))
+    return { nothingToSee: prompts.length === 0 }
+  }, [document.content.units, onLookbookChange, onRequestLookbookQuestions])
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
@@ -225,12 +245,14 @@ export function OutlineTab({
             status={beatSheetStatus}
             changedSince={changedSince}
             refreshError={refreshError}
-            lookbook={undefined}
+            lookbook={lookbook}
             onRefresh={handleRefreshBeatSheet}
-            onAskQuestions={async () => undefined}
-            onAnswer={() => undefined}
-            onDismiss={() => undefined}
-            onRemoveOrphan={() => undefined}
+            onAskQuestions={handleAskQuestions}
+            onAnswer={(beatKey, questionId, answer) =>
+              onLookbookChange?.(doc => setLookbookAnswer(doc, beatKey, questionId, answer))}
+            onDismiss={(beatKey, questionId) =>
+              onLookbookChange?.(doc => dismissLookbookQuestion(doc, beatKey, questionId, new Date().toISOString()))}
+            onRemoveOrphan={beatKey => onLookbookChange?.(doc => removeLookbookBeat(doc, beatKey))}
             refreshing={refreshing}
             onContentChange={onContentChange}
           />

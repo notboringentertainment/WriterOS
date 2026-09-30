@@ -417,6 +417,12 @@ export default function App() {
     setBeatSheetStatus({ projectId: requestedProjectId, status: beatSheet })
   }, [activeFolderProjectId, project, projectFolder.beatSheet])
 
+  const handleRequestLookbookQuestions = useCallback(async (beatKey: string) => {
+    const client = projectFolder.lookbook
+    if (!client || !activeFolderProjectId) throw new Error('Zoe is not available for this project.')
+    return client.questions(activeFolderProjectId, beatKey)
+  }, [activeFolderProjectId, projectFolder.lookbook])
+
   const handleCheckBeatSheetStatus = useCallback(async () => {
     const client = projectFolder.beatSheet
     if (!client || !activeFolderProjectId) throw new Error('Beat sheet status is not available.')
@@ -1012,6 +1018,9 @@ export default function App() {
             beatSheetStatus={beatSheetStatus && beatSheetStatus.projectId === activeFolderProjectId ? beatSheetStatus.status : null}
             onRefreshBeatSheet={handleRefreshBeatSheet}
             onCheckBeatSheetStatus={handleCheckBeatSheetStatus}
+            lookbook={project.state.documents.lookbook}
+            onLookbookChange={project.setLookbook}
+            onRequestLookbookQuestions={projectFolder.lookbook && activeFolderProjectId ? handleRequestLookbookQuestions : undefined}
           />
         )
       case 'treatment':

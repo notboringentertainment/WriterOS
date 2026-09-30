@@ -16,6 +16,7 @@ import {
 } from './projectLibrary'
 import type { MigrationMarker, StoredProject } from './projectLibrary'
 import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene, TitlePageMetadata } from './projectState'
+import { emptyLookbook, type LookbookDocument } from '@shared/lookbook'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
@@ -356,6 +357,16 @@ export function useProjectState() {
           outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
         }
       })
+    },
+    [update],
+  )
+
+  const setLookbook = useCallback(
+    (updater: (doc: LookbookDocument) => LookbookDocument) => {
+      update(s => ({
+        ...s,
+        documents: { ...s.documents, lookbook: updater(s.documents.lookbook ?? emptyLookbook()) },
+      }))
     },
     [update],
   )
@@ -879,6 +890,7 @@ export function useProjectState() {
     setBeat,
     setOutlineDocument,
     replaceOutlineDocument,
+    setLookbook,
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,

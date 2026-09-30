@@ -9,6 +9,7 @@ import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
 import { getOutlineRecipe } from '../../shared/compose/recipe'
 import type { AuthoredDocumentState, OutlineDocumentContent } from '../../shared/documents'
 import type { ComposedDocument } from '../../shared/compose/types'
+import { emptyLookbook, type LookbookDocument } from '../../shared/lookbook'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -191,6 +192,66 @@ describe('OutlineTab', () => {
       expect(await screen.findByText('Refresh failed: server down. Showing the last synced beats.')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
       expect(screen.getByText('Original text.')).toBeInTheDocument()
+    })
+
+    describe('Lookbook wiring', () => {
+      function LookbookHarness({ ask, persisted }: { ask: () => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean }>; persisted: { current: LookbookDocument | undefined } }) {
+        const [lookbook, setLookbookState] = useState<LookbookDocument | undefined>(undefined)
+        return (
+          <OutlineTab
+            {...baseProps({ document: syncedDocument, beatSheetStatus: linked })}
+            lookbook={lookbook}
+            onLookbookChange={updater => setLookbookState(current => {
+              const next = updater(current ?? emptyLookbook())
+              persisted.current = next
+              return next
+            })}
+            onRequestLookbookQuestions={ask}
+          />
+        )
+      }
+
+      it('an ask that returns two prompts shows two answer boxes and persists them; dismiss keeps the question in the document', async () => {
+        const persisted: { current: LookbookDocument | undefined } = { current: undefined }
+        const ask = vi.fn().mockResolvedValue({ questions: [{ prompt: 'What is the light?' }, { prompt: 'What is on the table?' }], nothingToSee: false })
+        render(<LookbookHarness ask={ask} persisted={persisted} />)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Ask Zoe what this looks like' }))
+        expect(await screen.findByText('What is the light?')).toBeInTheDocument()
+        expect(screen.getAllByPlaceholderText('In your own words')).toHaveLength(2)
+        const stored = persisted.current!.beats['sample-beat']
+        expect(stored.titleAtAsk).toBe('Sample beat')
+        expect(stored.questions.map(q => q.prompt)).toEqual(['What is the light?', 'What is on the table?'])
+        expect(stored.questions[0]).toMatchObject({ askedBy: 'zoe', answer: '' })
+        expect(stored.questions[0].id).toMatch(/^lb_[0-9a-f]+$/)
+
+        fireEvent.change(screen.getAllByPlaceholderText('In your own words')[0], { target: { value: 'Grey.' } })
+        expect(persisted.current!.beats['sample-beat'].questions[0].answer).toBe('Grey.')
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0])
+        expect(screen.queryByText('What is the light?')).not.toBeInTheDocument()
+        const after = persisted.current!.beats['sample-beat'].questions
+        expect(after).toHaveLength(2)
+        expect(after[0].dismissedAt).toBeTruthy()
+      })
+
+      it('a failed ask shows the error and persists nothing', async () => {
+        const persisted: { current: LookbookDocument | undefined } = { current: undefined }
+        render(<LookbookHarness ask={vi.fn().mockRejectedValue(new Error('offline'))} persisted={persisted} />)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Ask Zoe what this looks like' }))
+        expect(await screen.findByText(/offline/)).toBeInTheDocument()
+        expect(persisted.current).toBeUndefined()
+      })
+
+      it('zero prompts records the beat and shows the nothing-to-see line', async () => {
+        const persisted: { current: LookbookDocument | undefined } = { current: undefined }
+        render(<LookbookHarness ask={vi.fn().mockResolvedValue({ questions: [], nothingToSee: true })} persisted={persisted} />)
+
+        fireEvent.click(screen.getByRole('button', { name: 'Ask Zoe what this looks like' }))
+        expect(await screen.findByText('Zoe found nothing to see here yet.')).toBeInTheDocument()
+        expect(persisted.current!.beats['sample-beat']).toEqual({ titleAtAsk: 'Sample beat', questions: [] })
+      })
     })
 
     it('checks status once for a linked project and never for null or not-linked', async () => {

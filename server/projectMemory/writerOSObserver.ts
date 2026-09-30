@@ -120,6 +120,7 @@ export function detectDocumentChanges(
 ): DocumentChangeUnit[] {
   const changes: DocumentChangeUnit[] = []
 
+  // documents/lookbook.json is working notes, never analysed.
   for (const [surface, relativePath] of Object.entries(WRITEROS_DOCUMENT_PATHS)) {
     const currentRaw = currentFiles[relativePath]
     if (currentRaw === undefined) continue

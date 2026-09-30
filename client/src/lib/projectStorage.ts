@@ -1,4 +1,5 @@
 import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
+import type { LookbookQuestionsResult } from './lookbookClient'
 import {
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
@@ -120,6 +121,10 @@ export interface ProjectStorageBeatSheetClient {
   status(projectId: string): Promise<BeatSheetSyncStatusResponse>
 }
 
+export interface ProjectStorageLookbookClient {
+  questions(projectId: string, beatKey: string): Promise<LookbookQuestionsResult>
+}
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access' | 'server'
   label: string
@@ -129,6 +134,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   readProject(ref: TRef): Promise<ProjectStorageReadResult>
   /** Present only on the server adapter, which holds the session token. */
   beatSheet?: ProjectStorageBeatSheetClient
+  lookbook?: ProjectStorageLookbookClient
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>

@@ -7,6 +7,7 @@ import type {
   ProjectLibraryRemoveResponse,
   ProjectLibrarySaveResponse,
 } from '@shared/projectLibraryApi'
+import { postLookbookQuestions } from './lookbookClient'
 import { getBeatSheetStatus, postBeatSheetRefresh } from './beatSheetClient'
 import type { StoredProject } from './projectLibrary'
 import type { ProjectStorageAdapter } from './projectStorage'
@@ -138,6 +139,13 @@ export async function bootstrapServerProjectStorage(
     beatSheet: {
       refresh: projectId => postBeatSheetRefresh(projectId, bootstrap.sessionToken),
       status: projectId => getBeatSheetStatus(projectId, bootstrap.sessionToken),
+    },
+    lookbook: {
+      questions: (projectId, beatKey) =>
+        postLookbookQuestions(projectId, bootstrap.sessionToken, {
+          beatKey,
+          clientRequestId: `lbreq_${crypto.randomUUID()}`,
+        }),
     },
     async writeProject(project: StoredProject) {
       const response = await requestJson<ProjectLibrarySaveResponse>(
