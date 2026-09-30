@@ -63,6 +63,28 @@ Residual risks are implementation risks, not plan blockers: the existing OpenMon
 
 VERDICT: APPROVED
 
-## Outcome
+## Outcome (superseded by Round 4)
 
 APPROVED after 3 rounds (2 REVISE, 1 APPROVED). No code written. Residual (implementation, not plan): OpenMontage code is ticket-shaped today; fieldSources is an audit, not proof.
+
+## Round 4 — Claude code check, then Codex (gpt-5.5), 2026-09-30 afternoon
+
+Claude checked the approved plan against the code and found F1 (rollback false: record and ledger schemas are strict), F2 (export refused after any unrelated memory write because ingest required revision equality), F3 (stale Task 8 / RFC 8785 references; real-person check optional), F4 (stacked on an unmerged branch). Codex, read-only, confirmed F1 and F3, confirmed the F2 failure path (corrected "almost always" to "one unrelated write suffices"), rated F4 partly (stacking fine if the parent lands first), and added three findings. Claude verified each new one in code before accepting:
+
+- A → B → A returns the superseded A: confirmed, `store.ts:1133` dedupes on key + sourceHash across all history before revision/supersession.
+- `1e21` must match yet must be refused: confirmed, OpenMontage emits `1e+21`, and the plan refuses unsafe integers.
+- Universal envelope discrimination breaks retirement: confirmed, `gate_approve.py:352` builds `{action, entity_kind, look_hash}`. Also `IngestedLook` requires `source_ticket_ref` and has no `source_ref` (`look_ingest.py:63`).
+
+### Claude's response to Round 4
+
+Accepted all. Task 2 deploys alone as the rollback floor; freshness checked per record against `snapshot.json` with Codex's stronger binding (active canon, look_spec payload, recomputed hash, spec and reference equal, single active look per entity) and a stated local-trust assumption; `promotionOpId` per click as the dedupe key; vectors split into `match` and `refuse`; real-person patterns ported from `tools/prompt_builder.py` and described as documented patterns only; activate-only envelope checks with retire untouched; `IngestedLook` fields optional, exactly one set; parent branch lands first, then rebase and re-verify. Rejected: none. Not re-reviewed yet.
+
+## Round 5 — Codex (gpt-5.5), then Claude code check
+
+Codex: REVISE. OK on rollback floor (the reader release must include Task 1's schema), vectors, activate-only envelope checks, prompt_builder source. PROBLEM on: export completeness (an A-only export stays valid after B's export hook fails); promotionOpId binding (same op id with a different hash republishes; changed reference silently returns the old record; a retry fails `unknown-citation` if a cited record went inactive, because citations are checked before dedupe); `build_look_packet` emits a null `source_ticket_ref` for WriterOS looks. Fallout: test helper `activate_look` passes `promotion_refs: []` + `source_ticket_ref: None`; vector wording still says "every vector"; Review Focus 1 overpromises.
+
+Claude verified each in code (look_ingest.py:672, look_lock_helpers.py:153, store.ts:1133, store.ts:408–418) and found one more that neither round caught: all five Bloodless look_lock receipts, and today's builders (look_ingest.py:619, gate_approve.py:383), carry `promotion_refs: []` beside `source_ticket_ref`. The Round 4 rule "promotion_refs must be absent on a wayfinder envelope" would refuse the next wayfinder ratification. validate_envelope runs only at minting (receipts.py:296), so existing receipts are safe.
+
+### Claude's response to Round 5
+
+Accepted: export set must equal the active look set (highest-revision file read if two exist), with a Re-export button and `exportWritten: false` so the "stale" message has an action; retry lookup by op id before any other check, 409 `op-reused` on changed content; `build_look_packet` emits only the set source; helper fixed without weakening the rule; wording fixes. Changed: wayfinder wire form stays `source_ticket_ref` + `promotion_refs: []`, byte-identical to today. Declined: refusing looks with an open memory conflict; WriterOS treats them as active and Ben's terminal approval weighs it. Not re-reviewed.
