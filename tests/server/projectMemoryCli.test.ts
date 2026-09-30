@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -958,5 +958,200 @@ The bell sounds once at sunrise.
 
     expect(exitCode).toBe(2)
     expect(await projectMemoryStore.readSnapshot(projectPath)).toMatchObject({ revision: 0, records: [] })
+  })
+
+  describe('Story-drive beat sheet', () => {
+    const fixture = path.resolve('tests/fixtures/beatSheet/synthetic-beat-sheet.md')
+    const quiet = { stdout: () => undefined, stderr: () => undefined }
+
+    async function storyDrive(parent: string, name = 'story-drive') {
+      const root = path.join(parent, name)
+      const ticket = path.join(root, 'wayfinder', 'resolved', 'synthetic-beat-sheet.md')
+      await mkdir(path.dirname(ticket), { recursive: true })
+      await copyFile(fixture, ticket)
+      return { root, ticket }
+    }
+
+    async function run(argv: string[]) {
+      const { runProjectMemoryCli } = await import('../../server/projectMemory/cli')
+      const stdout: string[] = []
+      const stderr: string[] = []
+      const code = await runProjectMemoryCli(argv, {
+        stdout: value => stdout.push(value),
+        stderr: value => stderr.push(value),
+      })
+      return { code, stdout: stdout.join(''), stderr: stderr.join('') }
+    }
+
+    const readRegistry = async (root: string) => JSON.parse(
+      await readFile(path.join(root, '.writeros-story-drive-links.json'), 'utf8'),
+    )
+
+    it('link-source wayfinder writes the registry beside the packages and leaves project.json bytes identical', async () => {
+      const { root, projectPath } = await createProject('cli-beats-link')
+      const drive = await storyDrive(root)
+      const before = await readFile(path.join(projectPath, 'project.json'))
+
+      const result = await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root,
+        '--beat-sheet', 'resolved/synthetic-beat-sheet.md',
+      ])
+
+      expect(result.code).toBe(0)
+      const printed = JSON.parse(result.stdout)
+      expect(printed).toMatchObject({
+        linked: true, workflow: 'wayfinder', beatSheet: 'resolved/synthetic-beat-sheet.md',
+      })
+      expect(await readRegistry(root)).toEqual({
+        version: 1,
+        links: { 'cli-beats-link': { root: printed.root, beatSheet: 'resolved/synthetic-beat-sheet.md' } },
+      })
+      expect(path.basename(printed.root)).toBe('story-drive')
+      expect(Buffer.compare(await readFile(path.join(projectPath, 'project.json')), before)).toBe(0)
+    })
+
+    it('link-source refuses a relative --from and a --beat-sheet outside resolved/', async () => {
+      const { root, projectPath } = await createProject('cli-beats-refuse')
+      const drive = await storyDrive(root)
+
+      const relative = await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', 'story-drive',
+      ])
+      const outside = await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root,
+        '--beat-sheet', 'tickets/synthetic-beat-sheet.md',
+      ])
+      const traversal = await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root,
+        '--beat-sheet', 'resolved/../secret.md',
+      ])
+
+      expect([relative.code, outside.code, traversal.code]).toEqual([2, 2, 2])
+      await expect(readFile(path.join(root, '.writeros-story-drive-links.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    })
+
+    it('link-source wayfinder does not disturb an existing buzzChannelId in project.json', async () => {
+      const { root, projectPath } = await createProject('cli-beats-buzz')
+      const drive = await storyDrive(root)
+      const channel = '7ac91c24-09da-4b21-a093-f09aef717270'
+      expect((await run([
+        'link-source', '--project', projectPath, '--workflow', 'buzz', '--source-id', channel,
+      ])).code).toBe(0)
+      const before = await readFile(path.join(projectPath, 'project.json'))
+
+      const result = await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root,
+      ])
+
+      expect(result.code).toBe(0)
+      expect(Buffer.compare(await readFile(path.join(projectPath, 'project.json')), before)).toBe(0)
+      expect(JSON.parse(await readFile(path.join(projectPath, 'project.json'), 'utf8')))
+        .toMatchObject({ sources: { buzzChannelId: channel } })
+    })
+
+    it('sync-beats --dry-run prints updated and writes nothing', async () => {
+      const { root, projectPath } = await createProject('cli-beats-dry')
+      const drive = await storyDrive(root)
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root])
+      const outlinePath = path.join(projectPath, 'documents/outline.json')
+      const before = await readFile(outlinePath)
+
+      const result = await run(['sync-beats', '--project', projectPath, '--dry-run'])
+
+      expect(result.code).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({ kind: 'updated', beatCount: 3 })
+      expect(Buffer.compare(await readFile(outlinePath), before)).toBe(0)
+    })
+
+    it('sync-beats --apply writes the outline and a second run prints unchanged', async () => {
+      const { root, projectPath } = await createProject('cli-beats-apply')
+      const drive = await storyDrive(root)
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root])
+      const outlinePath = path.join(projectPath, 'documents/outline.json')
+
+      const first = await run(['sync-beats', '--project', projectPath, '--apply'])
+      const outline = JSON.parse(await readFile(outlinePath, 'utf8'))
+      const second = await run(['sync-beats', '--project', projectPath, '--apply'])
+      const noMode = await run(['sync-beats', '--project', projectPath])
+
+      expect(first.code).toBe(0)
+      expect(JSON.parse(first.stdout)).toMatchObject({ kind: 'updated', beatCount: 3 })
+      expect(outline.content.units).toHaveLength(3)
+      expect(outline.content.beatSheetSource).toMatchObject({ ticket: 'resolved/synthetic-beat-sheet.md', beatCount: 3 })
+      expect(second.code).toBe(0)
+      expect(JSON.parse(second.stdout)).toMatchObject({ kind: 'unchanged', beatCount: 3 })
+      expect(noMode.code).toBe(2)
+    })
+
+    it('sync-beats exits 2 on malformed and leaves outline bytes identical', async () => {
+      const { root, projectPath } = await createProject('cli-beats-malformed')
+      const drive = await storyDrive(root)
+      await writeFile(drive.ticket, '# Lay the pilot beat sheet\ntype: grill\nmode: hitl\nbeat-sheet: pilot\n\n## Answer\n\nNo playing order here.\n')
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root])
+      const outlinePath = path.join(projectPath, 'documents/outline.json')
+      const before = await readFile(outlinePath)
+
+      const result = await run(['sync-beats', '--project', projectPath, '--apply'])
+
+      expect(result.code).toBe(2)
+      expect(JSON.parse(result.stdout)).toMatchObject({ kind: 'malformed', ticket: 'resolved/synthetic-beat-sheet.md' })
+      expect(Buffer.compare(await readFile(outlinePath), before)).toBe(0)
+    })
+
+    it('sync-beats exits 2 with not-linked for an unregistered package', async () => {
+      const { projectPath } = await createProject('cli-beats-unlinked')
+      const result = await run(['sync-beats', '--project', projectPath, '--dry-run'])
+      expect(result.code).toBe(2)
+      expect(JSON.parse(result.stdout)).toEqual({ kind: 'not-linked' })
+    })
+
+    it('import --source wayfinder --apply syncs beats after publishing canon', async () => {
+      const { root, projectPath } = await createProject('cli-beats-import')
+      const drive = await storyDrive(root)
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', drive.root])
+      const outlinePath = path.join(projectPath, 'documents/outline.json')
+
+      const beforeDry = await readFile(outlinePath)
+      const dry = await run(['import', '--source', 'wayfinder', '--from', drive.root, '--project', projectPath, '--dry-run'])
+      const afterDry = await readFile(outlinePath)
+      const applied = await run(['import', '--source', 'wayfinder', '--from', drive.root, '--project', projectPath, '--apply'])
+
+      expect(dry.code).toBe(0)
+      expect(JSON.parse(dry.stdout).beatSheet).toMatchObject({ kind: 'updated', beatCount: 3 })
+      expect(Buffer.compare(afterDry, beforeDry)).toBe(0)
+      expect(applied.code).toBe(0)
+      const printed = JSON.parse(applied.stdout)
+      expect(printed.applied).toBeGreaterThan(0)
+      expect(printed).toMatchObject({ source: 'story-wayfinder', beatSheet: { kind: 'updated', beatCount: 3 } })
+      expect(JSON.parse(await readFile(outlinePath, 'utf8')).content.units).toHaveLength(3)
+    })
+
+    it('import of an unregistered package reports not-linked', async () => {
+      const { root, projectPath } = await createProject('cli-beats-import-unlinked')
+      const drive = await storyDrive(root)
+      const result = await run(['import', '--source', 'wayfinder', '--from', drive.root, '--project', projectPath, '--apply'])
+      expect(result.code).toBe(0)
+      expect(JSON.parse(result.stdout).beatSheet).toEqual({ kind: 'not-linked' })
+    })
+
+    it('import fails when --from differs from the registered root and succeeds with --relink', async () => {
+      const { root, projectPath } = await createProject('cli-beats-relink')
+      const first = await storyDrive(root, 'story-drive-a')
+      const second = await storyDrive(root, 'story-drive-b')
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', first.root])
+      const command = ['import', '--source', 'wayfinder', '--from', second.root, '--project', projectPath, '--apply']
+
+      const refused = await run(command)
+      const registryAfterRefusal = await readRegistry(root)
+      const relinked = await run([...command, '--relink'])
+      const registryAfterRelink = await readRegistry(root)
+
+      expect(refused.code).toBe(2)
+      expect(refused.stdout).toBe('')
+      expect(registryAfterRefusal.links['cli-beats-relink'].root).toMatch(/story-drive-a$/)
+      expect(relinked.code).toBe(0)
+      expect(registryAfterRelink.links['cli-beats-relink'].root).toMatch(/story-drive-b$/)
+      expect(JSON.parse(relinked.stdout).beatSheet).toMatchObject({ kind: 'updated' })
+    })
   })
 })
