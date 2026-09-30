@@ -490,6 +490,12 @@ of an old answer file is a no-op by design, so a closure approved later
 against those same bytes goes through `reconcile-stale`, whose key changes
 with the target set.
 
+**Duplicate tickets.** Put `duplicate-of: wf-7a1c92e4` in the header below a
+ticket's title, replacing the example ID with the ticket it duplicates. The
+importer skips that ticket regardless of the wording in its answer and warns
+if the reference is malformed. This prevents a new memory record; it does not
+retire any record imported before the declaration was added.
+
 **Verify:** `npm run memory -- context` succeeds; `import --dry-run` for the
 same folder reports `supersessionsExpected: 0`, `questionsClosedExpected: 0`
 and no new records.

@@ -212,6 +212,15 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           warnings.push(`${relativePath}:1: missing H1 title; record not imported`)
           continue
         }
+        const duplicateOf = directory === 'assets' ? undefined : parsed.headers.get('duplicate-of')
+        if (duplicateOf !== undefined) {
+          const line = content.replace(/\r\n?/g, '\n').split('\n')
+            .findIndex(value => /^duplicate-of:/i.test(value)) + 1
+          warnings.push(/^wf-[a-z0-9]{8}$/i.test(duplicateOf)
+            ? `${relativePath}:${line}: duplicate of ${duplicateOf}; record not imported`
+            : `${relativePath}:${line}: invalid duplicate-of ticket reference; record not imported`)
+          continue
+        }
         const unsafeLine = promptInjectionLine(content)
         const ticketType = parsed.headers.get('type')
         const mode = parsed.headers.get('mode')

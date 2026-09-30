@@ -132,6 +132,68 @@ See wf-7a1c92e4.
     })
   })
 
+  it('omits declared duplicate tickets regardless of their answer wording', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-declared-duplicate-')
+    await writeSource(root, 'resolved/duplicate.md', `# Duplicate harbor decision
+duplicate-of: wf-7a1c92e4
+type: grill
+mode: hitl
+
+## Answer
+Duplicate of wf-7a1c92e4. This refers to the sound lock.
+`)
+    await writeSource(root, 'tickets/another-duplicate.md', `# Already answered
+duplicate-of: wf-a91e3c20
+type: sketch
+mode: hitl
+
+## Question
+Should the signal be blue?
+
+## Answer
+Answered in the earlier ticket.
+`)
+    await writeSource(root, 'resolved/story.md', `# Harbor rule
+type: grill
+mode: hitl
+
+## Answer
+The harbor closes after midnight.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'declared-duplicate-fixture', sourceRoot: root,
+    })
+
+    expect(preview.records.map(record => record.source.sourceId)).toEqual(['resolved/story.md'])
+    expect(preview.records[0]).toMatchObject({ kind: 'canon', requestedStatus: 'active' })
+    expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0, openQuestions: 0 })
+    expect(preview.ticketFiles).toEqual([
+      'resolved/duplicate.md', 'resolved/story.md', 'tickets/another-duplicate.md',
+    ])
+  })
+
+  it('does not treat a malformed duplicate declaration as story authority', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-invalid-duplicate-')
+    await writeSource(root, 'resolved/bad-reference.md', `# Duplicate harbor decision
+duplicate-of: another ticket
+type: grill
+mode: hitl
+
+## Answer
+The harbor closes after midnight.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'invalid-duplicate-fixture', sourceRoot: root,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toContain(
+      'resolved/bad-reference.md:2: invalid duplicate-of ticket reference; record not imported',
+    )
+  })
+
   it('never demotes ratified canon for prose length — gists the claim and keeps the full answer in detail', async () => {
     const root = await createSourceRoot('writeros-wayfinder-faithful-canon-')
     const omittedException = ' Except the rescue boat may cross.'
