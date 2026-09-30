@@ -17,6 +17,7 @@ import {
   finalizeAgentMemoryText,
   type ProjectMemoryProvider,
 } from '../projectMemory/agentContext';
+import { roomError } from './roomLog';
 
 const CASEY_ID = 'casey';
 const LANE_NOTES_CAP = 3400;
@@ -132,7 +133,7 @@ export async function runCaseyDigest(input: {
       outputTokens: response.usage?.output_tokens ?? undefined,
     });
   } catch (error) {
-    console.error('[room.digest] Casey digest failed:', error);
+    roomError('[room.digest] Casey digest failed:', error);
     await store.insertLedger({ projectId, agentId: CASEY_ID, action: 'errored', triggerEvent: event.id });
     if (error instanceof RoomMemoryError) throw error;
   }

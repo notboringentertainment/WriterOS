@@ -12,6 +12,7 @@ import { isRoomConfigured } from './supabaseClient';
 import { decideSpeakers } from './wakeRules';
 import { RoomMemoryError } from './memoryContract';
 import type { ProjectMemoryProvider } from '../projectMemory/agentContext';
+import { roomError } from './roomLog';
 
 const TICK_MS = 5_000;
 const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -53,7 +54,7 @@ async function processEvents(memoryProvider?: ProjectMemoryProvider | null): Pro
         }
         completed.add(speakerKey);
       } catch (error) {
-        console.error(`[room.scheduler] turn failed (${speaker.agentId}, ${event.kind}):`, error);
+        roomError(`[room.scheduler] turn failed (${speaker.agentId}, ${event.kind}):`, error);
         if (error instanceof RoomMemoryError) {
           if (retries < 3) {
             await store.requeueRoomEvent(event.id, {
@@ -88,7 +89,7 @@ async function tick(memoryProvider?: ProjectMemoryProvider | null): Promise<void
     await maybeEmitIdleTicks();
     await processEvents(memoryProvider);
   } catch (error) {
-    console.error('[room.scheduler] tick failed:', error);
+    roomError('[room.scheduler] tick failed:', error);
   } finally {
     ticking = false;
   }
