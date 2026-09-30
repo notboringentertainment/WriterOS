@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { lookHash } from './canonicalJson'
+import { LOOK_SPEC_VERSIONS, LookSpecSchema } from './lookSpec'
 
 export const MemoryKindSchema = z.enum([
   'canon',
@@ -102,6 +104,56 @@ export const MemoryEvidenceSchema = z.object({
   locator: z.string().min(1).max(2_000).optional(),
 }).strict()
 
+export const LookReferenceModeSchema = z.enum(['none', 'generated-elsewhere', 'casting-inspiration'])
+export type LookReferenceMode = z.infer<typeof LookReferenceModeSchema>
+
+/**
+ * Typed payload a record can carry beside its prose. The first variant is a
+ * promoted look (look sessions plan, L2): the validated look_spec block, its
+ * look_hash (sha256 of the OpenMontage-compatible canonical JSON, checked here
+ * so a hand-edited ledger line is a corrupt ledger), and the writer's reference
+ * image mode, which lives beside the block and never enters the hash.
+ */
+export const MemoryPayloadSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('look_spec'),
+    version: z.enum(LOOK_SPEC_VERSIONS),
+    spec: LookSpecSchema,
+    lookHash: z.string().regex(/^[0-9a-f]{64}$/),
+    reference: LookReferenceModeSchema,
+  }).strict(),
+]).superRefine((payload, context) => {
+  if (payload.version !== payload.spec.version) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['version'],
+      message: 'Look payload version must match the look block version.',
+    })
+  }
+  if (payload.lookHash !== lookHash(payload.spec)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['lookHash'],
+      message: 'Look payload lookHash does not match its look block.',
+    })
+  }
+})
+export type MemoryPayload = z.infer<typeof MemoryPayloadSchema>
+
+function payloadKindIssue(
+  kind: z.infer<typeof MemoryKindSchema>,
+  payload: MemoryPayload | undefined,
+  context: z.RefinementCtx,
+): void {
+  if (payload?.kind === 'look_spec' && kind !== 'canon') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['payload'],
+      message: 'A look payload can only be carried by a canon record.',
+    })
+  }
+}
+
 export const ProjectMemoryRecordSchema = z.object({
   id: IdentifierSchema,
   projectId: IdentifierSchema,
@@ -118,7 +170,9 @@ export const ProjectMemoryRecordSchema = z.object({
   supersedes: ReferenceListSchema,
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
+  payload: MemoryPayloadSchema.optional(),
 }).strict().superRefine((record, context) => {
+  payloadKindIssue(record.kind, record.payload, context)
   if (record.status === 'active' && record.safety === 'flagged') {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -194,7 +248,9 @@ export const PublishMemoryInputSchema = z.object({
    * persisted.
    */
   expectedRevision: z.number().int().nonnegative().optional(),
+  payload: MemoryPayloadSchema.optional(),
 }).strict().superRefine((input, context) => {
+  payloadKindIssue(input.kind, input.payload, context)
   if (input.requestedStatus === 'active' && input.safety === 'flagged') {
     context.addIssue({
       code: z.ZodIssueCode.custom,
