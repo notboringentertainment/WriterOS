@@ -59,7 +59,8 @@ export type BeatSheetRefreshResponse = z.infer<typeof BeatSheetRefreshResponseSc
 
 export interface ProjectLibraryReadResponse {
   result: ProjectPackageReadResult
-  beatSheet: BeatSheetSyncStatusResponse
+  /** Absent when talking to a server that predates the Beat Sheet. */
+  beatSheet?: BeatSheetSyncStatusResponse | null
 }
 
 export interface ProjectLibrarySaveResponse {

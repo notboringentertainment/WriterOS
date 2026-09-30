@@ -22,7 +22,7 @@ const readResult = {
 }
 
 describe('server adapter read', () => {
-  it('returns beatSheet from the GET body and throws on a body without it', async () => {
+  it('returns beatSheet from the GET body and treats a body without it as none', async () => {
     const synced = {
       kind: 'unchanged',
       ticket: 'T-1',
@@ -40,7 +40,9 @@ describe('server adapter read', () => {
     expect(read.beatSheet).toEqual(synced)
     expect(read.result).toEqual(readResult)
 
-    await expect(adapter.readProject(ref)).rejects.toMatchObject({ code: 'invalid-response' })
+    const legacy = await adapter.readProject(ref)
+    expect(legacy.beatSheet).toBeNull()
+    expect(legacy.result).toEqual(readResult)
   })
 
   it('sends the session token on the refresh and status calls', async () => {

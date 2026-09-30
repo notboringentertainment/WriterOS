@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { serializeWriterOSProjectPackage } from '../../client/src/lib/projectPackage'
+import { LookbookDocumentSchema } from '../../shared/lookbook'
 import { SaveProjectRequestSchema } from '../../shared/projectLibraryApi'
 import type { ProjectLibraryConfig } from './config'
 import { authenticated, sameOrigin } from './security'
@@ -89,6 +90,15 @@ export function registerProjectLibraryRoutes(
       const data = SaveProjectRequestSchema.parse(req.body)
       if (req.params.projectId !== data.project.id) {
         throw new ProjectLibraryStoreError('URL project id must match request project id.', 400, 'id-mismatch')
+      }
+      // migrateState drops an invalid Lookbook from state; refuse the save so a
+      // damaged payload can never be mistaken for "no Lookbook" and touch disk.
+      const rawLookbook = (data.project.state as { documents?: { lookbook?: unknown } } | undefined)?.documents?.lookbook
+      if (rawLookbook !== undefined && !LookbookDocumentSchema.safeParse(rawLookbook).success) {
+        return res.status(400).json({
+          error: 'invalid-lookbook',
+          message: 'The Lookbook in this save is not valid; nothing was written.',
+        })
       }
       const project: StoredProject = {
         ...data.project,

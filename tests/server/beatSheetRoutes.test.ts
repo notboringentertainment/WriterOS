@@ -264,4 +264,36 @@ describe('lookbook server round trip', () => {
     expect(put2.status).toBe(200)
     expect(await readFile(lookbookFile, 'utf8')).toBe(bytesBefore)
   })
+
+  it('a PUT with no lookbook key after a save that had one leaves the file present and identical', async () => {
+    const project = makeProject()
+    project.state.documents.lookbook = {
+      version: 1,
+      beats: { 'beat.the-dinner': { titleAtAsk: 'The dinner.', questions: [
+        { id: 'lb_1', prompt: 'What is on the table?', answer: 'Bread.', askedBy: 'zoe', createdAt: '2026-09-01T00:00:00.000Z' },
+      ] } },
+    }
+    expect((await requestJson(base, { method: 'PUT', body: { project } })).status).toBe(200)
+    const lookbookFile = path.join(packagePath, 'documents/lookbook.json')
+    const bytesBefore = await readFile(lookbookFile, 'utf8')
+
+    const unaware = makeProject()
+    unaware.state.meta.genre = 'Drama'
+    expect((await requestJson(base, { method: 'PUT', body: { project: unaware } })).status).toBe(200)
+    expect(await readFile(lookbookFile, 'utf8')).toBe(bytesBefore)
+  })
+
+  it('a PUT carrying an invalid lookbook answers 400 invalid-lookbook and writes nothing', async () => {
+    const before = await tree(packagePath)
+    const project = makeProject()
+    project.state.meta.title = 'Should not land'
+    ;(project.state.documents as any).lookbook = { version: 2, beats: 'nope' }
+    const put = await requestJson(base, { method: 'PUT', body: { project } })
+    expect(put.status).toBe(400)
+    expect(put.json).toEqual({
+      error: 'invalid-lookbook',
+      message: 'The Lookbook in this save is not valid; nothing was written.',
+    })
+    expect(await tree(packagePath)).toEqual(before)
+  })
 })

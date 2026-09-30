@@ -493,10 +493,6 @@ export async function createProjectLibraryStore(
             await preserveManifestSources(stagingPath, serialized.files)
           }
           await writeStagedPackage(stagingPath, serialized.files)
-          if (serialized.files[WRITEROS_LOOKBOOK_PATH] === undefined) {
-            // copyExistingPackageTree carried any old lookbook forward; the payload has none.
-            await removePath(path.join(stagingPath, WRITEROS_LOOKBOOK_PATH), { force: true })
-          }
           await validateStagedPackage(rootPath, stagingPath)
 
           try {

@@ -327,7 +327,17 @@ export function useProjectState() {
     (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => {
       update(s => {
         const outlineFormat = normalizeProjectFormat(s.meta.format)
-        const nextContent = updater(normalizeOutlineContent(s.documents.outline.content))
+        const currentContent = normalizeOutlineContent(s.documents.outline.content)
+        let nextContent = updater(currentContent)
+        // A synced Beat Sheet is server-owned: no writer (memory patches, cards, ...)
+        // may rewrite its beats or provenance on screen.
+        if (currentContent.beatSheetSource) {
+          nextContent = {
+            ...nextContent,
+            units: currentContent.units,
+            beatSheetSource: currentContent.beatSheetSource,
+          }
+        }
         const nextOutlineDoc = {
           ...s.documents.outline,
           revision: s.documents.outline.revision + 1,
@@ -350,7 +360,20 @@ export function useProjectState() {
     (doc: AuthoredDocumentState<OutlineDocumentContent>) => {
       update(s => {
         const outlineFormat = normalizeProjectFormat(s.meta.format)
-        const nextDocuments = { ...s.documents, outline: doc }
+        const current = s.documents.outline
+        // Only the server-owned parts come from the server document; anything the
+        // writer just typed elsewhere in the outline (spine, arcs, episodes) stays.
+        const merged = {
+          ...current,
+          revision: Math.max(current.revision, doc.revision),
+          updatedAt: doc.updatedAt,
+          content: {
+            ...current.content,
+            units: doc.content.units,
+            beatSheetSource: doc.content.beatSheetSource,
+          },
+        }
+        const nextDocuments = { ...s.documents, outline: merged }
         return {
           ...s,
           documents: nextDocuments,

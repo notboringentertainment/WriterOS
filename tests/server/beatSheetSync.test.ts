@@ -159,6 +159,26 @@ describe('syncBeatSheet', () => {
     expect((await syncBeatSheet(opts)).status.kind).toBe('reopened')
   })
 
+  it('reports reopened when a header-declared decision that was synced moves to tickets/', async () => {
+    expect((await syncBeatSheet(opts)).status.kind).toBe('updated')
+    await rename(path.join(drive, DECISION), path.join(drive, 'wayfinder/tickets/synthetic-beat-sheet.md'))
+    const before = await readFile(outlinePath(), 'utf8')
+    const result = await syncBeatSheet(opts)
+    expect(result.status).toMatchObject({ kind: 'reopened', ticket: 'resolved/synthetic-beat-sheet.md' })
+    expect(await readFile(outlinePath(), 'utf8')).toBe(before)
+  })
+
+  it('reports no-beat-sheet (not reopened) when nothing was ever synced and nothing is declared', async () => {
+    await rename(path.join(drive, DECISION), path.join(drive, 'wayfinder/tickets/synthetic-beat-sheet.md'))
+    expect((await syncBeatSheet(opts)).status.kind).toBe('no-beat-sheet')
+  })
+
+  it('gives a fixed plain sentence for a missing pointed file, never a path', async () => {
+    await writeStoryDriveLink(workspace, PROJECT_ID, { root: drive, beatSheet: 'resolved/gone.md' })
+    const result = await syncBeatSheet(opts)
+    expect(result.status).toEqual({ kind: 'unavailable', ticket: 'resolved/gone.md', message: 'Story-drive file not found.' })
+  })
+
   it('reports ambiguous when two resolved files declare beat-sheet', async () => {
     await writeFile(path.join(drive, 'wayfinder/resolved/second.md'), await readFile(FIXTURE, 'utf8'), 'utf8')
     const before = await readFile(outlinePath(), 'utf8')

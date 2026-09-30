@@ -49,8 +49,19 @@ class DeadlineError extends Error {
   }
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined
+}
+
+/** Fixed plain sentences only: never a raw error, never a filesystem path. */
+function plainMessage(error: unknown): string {
+  if (error instanceof DeadlineError) return DEADLINE_MESSAGE
+  if (error instanceof UnsafeProjectMemoryPathError) return 'Story-drive path is not safe to read.'
+  const code = errorCode(error)
+  if (code === 'ENOENT' || code === 'ENOTDIR') return 'Story-drive file not found.'
+  if (code === 'lock-timeout') return 'The project was busy; try again.'
+  if (code === 'EACCES' || code === 'EPERM') return 'Story-drive folder is not readable.'
+  return 'Story-drive could not be read.'
 }
 
 function isEnoent(error: unknown): boolean {
@@ -135,6 +146,7 @@ async function locateDecision(
   list: () => Promise<string[]>,
   exists: (p: string) => Promise<boolean>,
   refuseSymlink: (p: string) => Promise<boolean>,
+  previousTicket?: string,
 ): Promise<Located> {
   if (pointer) {
     await refuseSymlink(path.join(ticketDir, 'resolved'))
@@ -151,12 +163,27 @@ async function locateDecision(
     return { kind: 'found', ticket: pointer } // the read below reports the missing file as unavailable
   }
 
+  // Nothing declared any more: if what we last synced now sits in tickets/, it was reopened.
+  const nothingDeclared = async (): Promise<Located> => {
+    if (previousTicket) {
+      await refuseSymlink(path.join(ticketDir, 'tickets'))
+      if (await exists(path.join(ticketDir, `tickets/${path.basename(previousTicket)}`))) {
+        return {
+          kind: 'reopened',
+          ticket: previousTicket,
+          message: 'The beat-sheet decision was reopened in Story-drive; the beats here are left as they were.',
+        }
+      }
+    }
+    return { kind: 'no-beat-sheet' }
+  }
+
   let names: string[]
   try {
-    if (!await refuseSymlink(path.join(ticketDir, 'resolved'))) return { kind: 'no-beat-sheet' }
+    if (!await refuseSymlink(path.join(ticketDir, 'resolved'))) return await nothingDeclared()
     names = await list()
   } catch (error) {
-    if (isEnoent(error)) return { kind: 'no-beat-sheet' }
+    if (isEnoent(error)) return await nothingDeclared()
     throw error
   }
   const declared: string[] = []
@@ -165,7 +192,7 @@ async function locateDecision(
     const head = (await read(path.join(ticketDir, 'resolved', name))).split('\n').slice(0, HEADER_LINES).join('\n')
     if (isBeatSheetDeclared(head)) declared.push(`resolved/${name}`)
   }
-  if (declared.length === 0) return { kind: 'no-beat-sheet' }
+  if (declared.length === 0) return nothingDeclared()
   if (declared.length > 1) {
     return { kind: 'ambiguous', message: `More than one resolved decision declares a beat sheet: ${declared.join(', ')}.` }
   }
@@ -231,7 +258,7 @@ export async function syncBeatSheet(options: BeatSheetSyncOptions): Promise<Beat
     const deadline = Date.now() + (options.timeoutMs ?? 1500)
     const timed = <T>(op: () => Promise<T>): Promise<T> => withDeadline(deadline, op())
     const unavailable = (error: unknown): BeatSheetSyncResult =>
-      ({ status: { kind: 'unavailable', ticket: link.beatSheet ?? null, message: messageOf(error) } })
+      ({ status: { kind: 'unavailable', ticket: link.beatSheet ?? null, message: plainMessage(error) } })
 
     let root: SafeExistingPath
     try {
@@ -240,6 +267,11 @@ export async function syncBeatSheet(options: BeatSheetSyncOptions): Promise<Beat
     } catch (error) {
       return unavailable(error)
     }
+
+    const outlinePath = path.join(options.packagePath, 'documents/outline.json')
+    const outlineDoc = AuthoredDocumentStateSchema(OutlineDocumentContentSchema)
+      .parse(JSON.parse(await fsReadFile(outlinePath, 'utf8')))
+    const content = outlineDoc.content
 
     let located: Located
     let bytes: string
@@ -252,6 +284,7 @@ export async function syncBeatSheet(options: BeatSheetSyncOptions): Promise<Beat
         () => timed(() => list(path.join(ticketDir, 'resolved'))),
         p => timed(() => refuseSymlink(p)),
         p => timed(() => refuseSymlink(p)),
+        content.beatSheetSource?.ticket,
       )
       if (located.kind === 'no-beat-sheet') return { status: { kind: 'no-beat-sheet' } }
       if (located.kind === 'ambiguous') return { status: located }
@@ -263,10 +296,6 @@ export async function syncBeatSheet(options: BeatSheetSyncOptions): Promise<Beat
     }
 
     const sourceHash = createHash('sha256').update(bytes).digest('hex')
-    const outlinePath = path.join(options.packagePath, 'documents/outline.json')
-    const outlineDoc = AuthoredDocumentStateSchema(OutlineDocumentContentSchema)
-      .parse(JSON.parse(await fsReadFile(outlinePath, 'utf8')))
-    const content = outlineDoc.content
     if (content.beatSheetSource?.sourceHash === sourceHash) {
       return {
         status: {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents'
-import { LookbookDocumentSchema, hasLookbookContent } from '@shared/lookbook'
+import { LookbookDocumentSchema } from '@shared/lookbook'
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import { documentsToLegacy } from './documentMigration'
 import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
@@ -275,7 +275,7 @@ export function serializeWriterOSProjectPackage(
     [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
   }
 
-  if (hasLookbookContent(state.documents.lookbook)) {
+  if (state.documents.lookbook !== undefined) {
     files[WRITEROS_LOOKBOOK_PATH] = stringifyPackageJson(state.documents.lookbook)
   }
 

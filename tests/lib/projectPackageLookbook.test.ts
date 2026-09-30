@@ -14,9 +14,16 @@ function lookbookWithOneAnswer() {
 }
 
 describe('lookbook package file', () => {
-  it('is not written when the project has no lookbook content', () => {
+  it('is not written when the project lookbook is undefined', () => {
     const files = serializeWriterOSProjectPackage(storedProject()).files
     expect(files[WRITEROS_LOOKBOOK_PATH]).toBeUndefined()
+  })
+  it('is written when defined, even with zero questions', () => {
+    const state = defaultProjectState()
+    state.documents.lookbook = emptyLookbook()
+    const files = serializeWriterOSProjectPackage(storedProject(state)).files
+    expect(files[WRITEROS_LOOKBOOK_PATH]).toBeDefined()
+    expect(JSON.parse(files[WRITEROS_LOOKBOOK_PATH] as string)).toEqual(emptyLookbook())
   })
   it('is written once it has content, and read back', () => {
     const state = defaultProjectState()

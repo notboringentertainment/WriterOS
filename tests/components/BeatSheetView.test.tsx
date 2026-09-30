@@ -123,6 +123,18 @@ describe('BeatSheetView', () => {
     }
   })
 
+  it('status line copy for ambiguous and no-beat-sheet', () => {
+    const cases: Array<[Parameters<typeof renderView>[0], string]> = [
+      [{ status: { kind: 'ambiguous', message: 'two files' } }, 'More than one decision claims to be the beat sheet. Nothing changed.'],
+      [{ status: { kind: 'no-beat-sheet' } }, 'Linked to Story-drive, but no ratified beat sheet yet.'],
+    ]
+    for (const [overrides, expected] of cases) {
+      const { unmount } = renderView(overrides)
+      expect(screen.getByRole('status')).toHaveTextContent(expected)
+      unmount()
+    }
+  })
+
   it('Refresh calls onRefresh and disables while refreshing', () => {
     const { props, unmount } = renderView()
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))

@@ -900,7 +900,7 @@ describe('project library store removeProject', () => {
       },
     }
 
-    it('writeProject removes documents/lookbook.json from the package when the payload has no lookbook content', async () => {
+    it('writeProject keeps the on-disk documents/lookbook.json when the payload has no lookbook key', async () => {
       const root = await makeTemporaryDirectory()
       const store = await createProjectLibraryStore(root)
       const project = makeStoredProject()
@@ -909,9 +909,10 @@ describe('project library store removeProject', () => {
       const packagePath = await store.resolveProjectPackagePath(project.id)
       await expect(readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')).resolves.toContain('What is the light?')
 
-      const cleared = makeStoredProject()
-      await store.writeProject(cleared)
-      await expect(readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      const before = await readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')
+      const unaware = makeStoredProject()
+      await store.writeProject(unaware)
+      await expect(readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')).resolves.toBe(before)
     })
 
     it('writeProject keeps documents/lookbook.json when the payload has lookbook content', async () => {

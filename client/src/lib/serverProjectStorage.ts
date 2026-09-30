@@ -125,15 +125,19 @@ export async function bootstrapServerProjectStorage(
         projectPath(ref.id),
         { headers: sessionHeaders },
       )
-      const parsedStatus = BeatSheetSyncStatusSchema.safeParse(response?.beatSheet)
-      if (!response || !response.result || !parsedStatus.success) {
+      // A server that predates the Beat Sheet sends no beatSheet field: treat it as none.
+      const rawStatus = response?.beatSheet
+      const parsedStatus = rawStatus === undefined || rawStatus === null
+        ? null
+        : BeatSheetSyncStatusSchema.safeParse(rawStatus)
+      if (!response || !response.result || (parsedStatus && !parsedStatus.success)) {
         throw new ServerProjectStorageError(
           'WriterOS project library returned an invalid response.',
           200,
           'invalid-response',
         )
       }
-      const beatSheet: BeatSheetSyncStatusResponse = parsedStatus.data
+      const beatSheet: BeatSheetSyncStatusResponse | null = parsedStatus?.success ? parsedStatus.data : null
       return { result: response.result, beatSheet }
     },
     beatSheet: {
