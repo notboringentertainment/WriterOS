@@ -42,6 +42,7 @@ type ProjectMemoryErrorCode =
   | 'project-mismatch'
   | 'corrupt-ledger'
   | 'invalid-input'
+  | 'invalid-payload'
   | 'revision-conflict'
   | 'not-found'
   | 'invalid-action'
@@ -964,6 +965,7 @@ function createPublicationEvent(
     supersedes: appliedSupersessionIds,
     createdAt: occurredAt,
     updatedAt: occurredAt,
+    ...(input.payload === undefined ? {} : { payload: input.payload }),
   }
   const conflicts: ProjectMemoryConflict[] = unresolvedTargets.map(target => ({
     id: stableId('conflict', [target.id, recordId]),
@@ -1117,7 +1119,11 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
     async publish(projectPath, rawInput) {
       const parsed = PublishMemoryInputSchema.safeParse(rawInput)
       if (!parsed.success) {
-        throw new ProjectMemoryStoreError(parsed.error.issues[0]?.message ?? 'Invalid memory publication.', 'invalid-input')
+        const issue = parsed.error.issues[0]
+        throw new ProjectMemoryStoreError(
+          issue?.message ?? 'Invalid memory publication.',
+          issue?.path[0] === 'payload' ? 'invalid-payload' : 'invalid-input',
+        )
       }
       const input = parsed.data
 
