@@ -1,3 +1,4 @@
+import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_WRITEROS_PROJECTS_FOLDER_LABEL,
@@ -78,6 +79,7 @@ export interface WriterOSFolderProjectOpenResult {
   project: StoredProject
   packageName: string
   warnings: string[]
+  beatSheet: BeatSheetSyncStatusResponse | null
 }
 
 type ReadyFileSystemProjectEntry = Extract<ProjectStorageListEntry<FileSystemAccessProjectRef>, { status: 'ready' }>
@@ -249,7 +251,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       throw new Error(message)
     }
 
-    const result = await adapter.readProject(entry.ref)
+    const { result, beatSheet } = await adapter.readProject(entry.ref)
     if (!result.ok) {
       setStatus('error')
       setErrorMessage(result.error.message)
@@ -261,6 +263,7 @@ export function useWriterOSProjectsFolder(): WriterOSProjectsFolderState {
       project: result.project,
       packageName: entry.ref.packageName,
       warnings: result.warnings,
+      beatSheet,
     }
   }, [requireFolderPermission, updateProjectRefs])
 

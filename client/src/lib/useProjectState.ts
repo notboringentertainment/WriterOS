@@ -21,6 +21,7 @@ import type {
   SynopsisDocumentContent,
   StoryBibleDocumentContent,
   OutlineDocumentContent,
+  AuthoredDocumentState,
   OutlineEpisode,
   TreatmentDocumentContent,
   DocumentViewPreferences,
@@ -333,6 +334,22 @@ export function useProjectState() {
           content: nextContent,
         }
         const nextDocuments = { ...s.documents, outline: nextOutlineDoc }
+        return {
+          ...s,
+          documents: nextDocuments,
+          outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
+        }
+      })
+    },
+    [update],
+  )
+
+  // Server-written outlines only (Story-drive sync): no revision bump, no timestamp change.
+  const replaceOutlineDocument = useCallback(
+    (doc: AuthoredDocumentState<OutlineDocumentContent>) => {
+      update(s => {
+        const outlineFormat = normalizeProjectFormat(s.meta.format)
+        const nextDocuments = { ...s.documents, outline: doc }
         return {
           ...s,
           documents: nextDocuments,
@@ -857,6 +874,7 @@ export function useProjectState() {
     migrateStoryBibleLegacyToDocument,
     setBeat,
     setOutlineDocument,
+    replaceOutlineDocument,
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,

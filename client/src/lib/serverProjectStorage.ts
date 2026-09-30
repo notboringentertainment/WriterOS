@@ -1,10 +1,13 @@
+import { BeatSheetSyncStatusSchema } from '@shared/projectLibraryApi'
 import type {
+  BeatSheetSyncStatusResponse,
   ProjectLibraryBootstrap,
   ProjectLibraryListResponse,
   ProjectLibraryReadResponse,
   ProjectLibraryRemoveResponse,
   ProjectLibrarySaveResponse,
 } from '@shared/projectLibraryApi'
+import { getBeatSheetStatus, postBeatSheetRefresh } from './beatSheetClient'
 import type { StoredProject } from './projectLibrary'
 import type { ProjectStorageAdapter } from './projectStorage'
 
@@ -121,7 +124,20 @@ export async function bootstrapServerProjectStorage(
         projectPath(ref.id),
         { headers: sessionHeaders },
       )
-      return response.result
+      const parsedStatus = BeatSheetSyncStatusSchema.safeParse(response?.beatSheet)
+      if (!response || !response.result || !parsedStatus.success) {
+        throw new ServerProjectStorageError(
+          'WriterOS project library returned an invalid response.',
+          200,
+          'invalid-response',
+        )
+      }
+      const beatSheet: BeatSheetSyncStatusResponse = parsedStatus.data
+      return { result: response.result, beatSheet }
+    },
+    beatSheet: {
+      refresh: projectId => postBeatSheetRefresh(projectId, bootstrap.sessionToken),
+      status: projectId => getBeatSheetStatus(projectId, bootstrap.sessionToken),
     },
     async writeProject(project: StoredProject) {
       const response = await requestJson<ProjectLibrarySaveResponse>(

@@ -169,8 +169,9 @@ describe('File System Access project storage adapter', () => {
 
     const ref = await adapter.writeProject(makeStoredProject())
     const list = await adapter.listProjects()
-    const read = await adapter.readProject(ref)
+    const { result: read, beatSheet } = await adapter.readProject(ref)
 
+    expect(beatSheet).toBeNull()
     expect(ref.packageName).toBe('The Salt Line (8f4e2c9a).writeros')
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({
@@ -314,7 +315,7 @@ describe('File System Access project storage adapter', () => {
     const vaultFile = await (await result.ref.handle.getDirectoryHandle('vault')).getFileHandle('craft-notes.md')
     expect(await (await vaultFile.getFile()).text()).toBe('# keep me')
 
-    const read = await adapter.readProject(result.ref)
+    const { result: read } = await adapter.readProject(result.ref)
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.error.message)
     expect(read.project.id).toBe(result.ref.id)
@@ -647,7 +648,7 @@ describe('File System Access project storage adapter', () => {
     }
 
     const ref = await adapter.writeProject(project)
-    const read = await adapter.readProject(ref)
+    const { result: read } = await adapter.readProject(ref)
 
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.error.message)

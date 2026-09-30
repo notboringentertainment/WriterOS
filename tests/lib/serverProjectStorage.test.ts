@@ -63,7 +63,7 @@ describe('server project storage adapter', () => {
         sessionToken: 'secret-session-token',
       }))
       .mockResolvedValueOnce(jsonResponse({ entries: [readyEntry] }))
-      .mockResolvedValueOnce(jsonResponse({ result: readResult }))
+      .mockResolvedValueOnce(jsonResponse({ result: readResult, beatSheet: { kind: 'not-linked' } }))
       .mockResolvedValueOnce(jsonResponse({ ref }))
 
     const adapter = await bootstrapServerProjectStorage(fetchMock)
@@ -71,7 +71,7 @@ describe('server project storage adapter', () => {
     if (!adapter) throw new Error('expected server adapter')
 
     await expect(adapter.listProjects()).resolves.toEqual([readyEntry])
-    await expect(adapter.readProject(ref)).resolves.toEqual(readResult)
+    await expect(adapter.readProject(ref)).resolves.toEqual({ result: readResult, beatSheet: { kind: 'not-linked' } })
     await expect(adapter.writeProject(project, ref)).resolves.toEqual(ref)
 
     expect(adapter.kind).toBe('server')

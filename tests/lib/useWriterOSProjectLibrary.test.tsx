@@ -130,10 +130,13 @@ describe('useWriterOSProjectLibrary', () => {
     const ref = makeRef(project)
     mocks.listProjects.mockResolvedValue([{ status: 'ready', ref, warnings: [] }])
     mocks.readProject.mockResolvedValue({
-      ok: true,
-      manifest: { format: 'writeros-project', version: 1, projectId: project.id },
-      project,
-      warnings: ['older package'],
+      result: {
+        ok: true,
+        manifest: { format: 'writeros-project', version: 1, projectId: project.id },
+        project,
+        warnings: ['older package'],
+      },
+      beatSheet: { kind: 'not-linked' },
     })
     mocks.writeProject.mockResolvedValue(ref)
     const { result } = renderHook(() => useWriterOSProjectLibrary())
@@ -143,6 +146,7 @@ describe('useWriterOSProjectLibrary', () => {
       project,
       packageName: ref.packageName,
       warnings: ['older package'],
+      beatSheet: { kind: 'not-linked' },
     })
     await act(async () => {
       await expect(result.current.writeProject(project)).resolves.toMatchObject({

@@ -16,7 +16,10 @@ import {
   seedEpisodes101To103,
 } from '../../lib/outlineDeck'
 import { requestOutlineCompose } from '../../lib/composeClient'
+import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import { OutlineEditView } from './outline/OutlineEditView'
+import { BeatSheetView } from './outline/BeatSheetView'
+import { BeatSheetStatusLine } from './outline/BeatSheetStatusLine'
 import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 import type { MemoryReceipt } from '@shared/schema'
@@ -38,6 +41,10 @@ interface OutlineTabProps {
   onViewPreferencesPatch: (patch: Partial<DocumentViewPreferences>) => void
   onComposed: (composed: ComposedDocument) => void
   onClear?: (options?: { keep?: 'all' | 'foundations' }) => void
+  /** Story-drive sync status; null/undefined for projects without a server link. */
+  beatSheetStatus?: BeatSheetSyncStatusResponse | null
+  onRefreshBeatSheet?: () => Promise<void>
+  onCheckBeatSheetStatus?: () => Promise<BeatSheetSyncStatusResponse>
 }
 
 export function OutlineTab({
@@ -53,17 +60,48 @@ export function OutlineTab({
   onViewPreferencesPatch,
   onComposed,
   onClear,
+  beatSheetStatus = null,
+  onRefreshBeatSheet,
+  onCheckBeatSheetStatus,
 }: OutlineTabProps) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
+  const [refreshing, setRefreshing] = useState(false)
+  const [changedSince, setChangedSince] = useState(false)
   const isComposingRef = useRef(false)
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
+
+  const isLinked = beatSheetStatus !== null && beatSheetStatus.kind !== 'not-linked'
+
+  const handleRefreshBeatSheet = useCallback(async () => {
+    if (!onRefreshBeatSheet) return
+    setRefreshing(true)
+    try {
+      await onRefreshBeatSheet()
+      setChangedSince(false)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [onRefreshBeatSheet])
+
+  // One background check per opened project: has Story-drive moved since the last sync?
+  const checkStatusRef = useRef(onCheckBeatSheetStatus)
+  checkStatusRef.current = onCheckBeatSheetStatus
+  useEffect(() => {
+    setChangedSince(false)
+    if (!isLinked || !checkStatusRef.current) return
+    let cancelled = false
+    checkStatusRef.current()
+      .then(next => { if (!cancelled && next.kind === 'updated') setChangedSince(true) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [effectiveProjectScopeKey, isLinked])
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
@@ -175,13 +213,39 @@ export function OutlineTab({
       </div>
 
       {activeView === 'edit' ? (
-        <OutlineEditView
-          format={activeFormat}
-          content={document.content}
-          onContentChange={onContentChange}
-          onAddEpisode={onAddEpisode}
-          onEpisodeFieldChange={onEpisodeFieldChange}
-        />
+        document.content.beatSheetSource ? (
+          <BeatSheetView
+            content={document.content}
+            status={beatSheetStatus}
+            changedSince={changedSince}
+            lookbook={undefined}
+            onRefresh={handleRefreshBeatSheet}
+            onAskQuestions={async () => undefined}
+            onAnswer={() => undefined}
+            onDismiss={() => undefined}
+            onRemoveOrphan={() => undefined}
+            refreshing={refreshing}
+            onContentChange={onContentChange}
+          />
+        ) : (
+          <>
+            {beatSheetStatus && beatSheetStatus.kind !== 'not-linked' && (
+              <BeatSheetStatusLine
+                status={beatSheetStatus}
+                changedSince={changedSince}
+                refreshing={refreshing}
+                onRefresh={handleRefreshBeatSheet}
+              />
+            )}
+            <OutlineEditView
+              format={activeFormat}
+              content={document.content}
+              onContentChange={onContentChange}
+              onAddEpisode={onAddEpisode}
+              onEpisodeFieldChange={onEpisodeFieldChange}
+            />
+          </>
+        )
       ) : (
         <OutlineDocumentView
           content={document.content}
