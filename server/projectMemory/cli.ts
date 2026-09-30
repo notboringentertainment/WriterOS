@@ -562,6 +562,7 @@ async function runImport(
   }
   const relink = args.flags.has('relink')
   if (relink && source !== 'wayfinder') throw new CliInputError('--relink applies to the Wayfinder import only.')
+  if (relink && dryRun) throw new CliInputError('--relink requires --apply; a dry run never writes.')
   if (source === 'wayfinder') {
     const registered = (await readStoryDriveLinks(path.dirname(projectPath))).links[manifest.projectId]
     if (registered && registered.root !== sourceGuard.canonicalPath) {
@@ -570,7 +571,10 @@ async function runImport(
           '--from differs from the registered Story-drive folder; pass --relink to update the registry, or use the registered folder.',
         )
       }
-      await writeStoryDriveLink(path.dirname(projectPath), manifest.projectId, { root: sourceGuard.canonicalPath })
+      await writeStoryDriveLink(path.dirname(projectPath), manifest.projectId, {
+        root: sourceGuard.canonicalPath,
+        ...(registered.beatSheet ? { beatSheet: registered.beatSheet } : {}),
+      })
     }
   }
   const syncBeats = async (): Promise<{ beatSheet: BeatSheetSyncStatus } | Record<string, never>> => {

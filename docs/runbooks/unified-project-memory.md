@@ -500,7 +500,7 @@ retire any record imported before the declaration was added.
 same folder reports `supersessionsExpected: 0`, `questionsClosedExpected: 0`
 and no new records.
 
-## 7. Beat sheet from Story-drive
+## 10. Beat sheet from Story-drive
 
 A package can take its outline beats from a Story-drive beat-sheet decision.
 The link lives in `.writeros-story-drive-links.json`, beside the packages (not
@@ -514,4 +514,4 @@ inside any package): `{ "version": 1, "links": { "<projectId>": { "root": "<abso
 
 Status kinds: `not-linked` (no registry entry), `no-beat-sheet` (folder has no beat-sheet decision), `unchanged` (source bytes match the last sync), `updated` (beats written, or would be on dry-run), `unavailable` (folder missing, unreadable or timed out), `malformed` (decision cannot be parsed; outline untouched), `reopened` (the decision is back in `tickets/`), `ambiguous` (more than one candidate decision; name one with `--beat-sheet`).
 
-`--relink`: if the package is registered and `import --from` names a different folder, import fails with exit 2 rather than silently sync from the wrong place. Pass `--relink` to update the registry to the new folder (this drops any pinned `beatSheet`), or use the registered folder.
+`--relink`: if the package is registered and `import --from` names a different folder, import fails with exit 2 rather than silently sync from the wrong place. Pass `--relink` (with `--apply`; a dry run never writes) to update the registry's folder, keeping any pinned `beatSheet`, or use the registered folder.

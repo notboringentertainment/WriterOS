@@ -1153,5 +1153,41 @@ The bell sounds once at sunrise.
       expect(registryAfterRelink.links['cli-beats-relink'].root).toMatch(/story-drive-b$/)
       expect(JSON.parse(relinked.stdout).beatSheet).toMatchObject({ kind: 'updated' })
     })
+
+    it('import --dry-run --relink fails and leaves the registry bytes unchanged', async () => {
+      const { root, projectPath } = await createProject('cli-beats-relink-dry')
+      const first = await storyDrive(root, 'story-drive-a')
+      const second = await storyDrive(root, 'story-drive-b')
+      await run(['link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', first.root])
+      const registryPath = path.join(root, '.writeros-story-drive-links.json')
+      const before = await readFile(registryPath)
+
+      const result = await run([
+        'import', '--source', 'wayfinder', '--from', second.root, '--project', projectPath, '--dry-run', '--relink',
+      ])
+
+      expect(result.code).toBe(2)
+      expect(result.stdout).toBe('')
+      expect(Buffer.compare(await readFile(registryPath), before)).toBe(0)
+    })
+
+    it('--relink replaces only the registry root and keeps the beatSheet pointer', async () => {
+      const { root, projectPath } = await createProject('cli-beats-relink-pointer')
+      const first = await storyDrive(root, 'story-drive-a')
+      const second = await storyDrive(root, 'story-drive-b')
+      await run([
+        'link-source', '--project', projectPath, '--workflow', 'wayfinder', '--from', first.root,
+        '--beat-sheet', 'resolved/synthetic-beat-sheet.md',
+      ])
+
+      const result = await run([
+        'import', '--source', 'wayfinder', '--from', second.root, '--project', projectPath, '--apply', '--relink',
+      ])
+
+      expect(result.code).toBe(0)
+      const link = (await readRegistry(root)).links['cli-beats-relink-pointer']
+      expect(link.root).toMatch(/story-drive-b$/)
+      expect(link.beatSheet).toBe('resolved/synthetic-beat-sheet.md')
+    })
   })
 })
