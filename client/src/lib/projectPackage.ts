@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents'
+import { LookbookDocumentSchema, hasLookbookContent } from '@shared/lookbook'
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import { documentsToLegacy } from './documentMigration'
 import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
@@ -30,6 +31,7 @@ export const WRITEROS_DOCUMENT_PATHS = {
   treatment: 'documents/treatment.json',
   storyBible: 'documents/story-bible.json',
 } as const
+export const WRITEROS_LOOKBOOK_PATH = 'documents/lookbook.json'
 export const WRITEROS_TRANSCRIPT_PATHS = {
   writingPartner: 'transcripts/writing-partner.json',
   specialists: 'transcripts/specialists.json',
@@ -273,6 +275,10 @@ export function serializeWriterOSProjectPackage(
     [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
   }
 
+  if (hasLookbookContent(state.documents.lookbook)) {
+    files[WRITEROS_LOOKBOOK_PATH] = stringifyPackageJson(state.documents.lookbook)
+  }
+
   const rawFdxSource =
     state.meta.sourceImport?.rawSource
     ?? (packageSourceImport && 'rawSource' in packageSourceImport ? packageSourceImport.rawSource : undefined)
@@ -368,6 +374,24 @@ function parseDocuments(files: Record<string, string | undefined>): { ok: true; 
         message: zodMessage(parsedDocuments.error),
       },
     }
+  }
+
+  const rawLookbook = files[WRITEROS_LOOKBOOK_PATH]
+  if (typeof rawLookbook === 'string') {
+    const parsedJson = parseJsonFile(WRITEROS_LOOKBOOK_PATH, rawLookbook)
+    if (!parsedJson.ok) return { ok: false, error: parsedJson.error }
+    const parsedLookbook = LookbookDocumentSchema.safeParse(parsedJson.value)
+    if (!parsedLookbook.success) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-json',
+          path: WRITEROS_LOOKBOOK_PATH,
+          message: 'documents/lookbook.json is not a valid Lookbook.',
+        },
+      }
+    }
+    return { ok: true, documents: { ...parsedDocuments.data, lookbook: parsedLookbook.data } }
   }
 
   return { ok: true, documents: parsedDocuments.data }
