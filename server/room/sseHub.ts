@@ -3,6 +3,7 @@
 
 import type { Response } from 'express';
 import type { RoomSseEvent } from './types';
+import { roomError } from './roomLog';
 
 const clients = new Map<string, Set<Response>>();
 
@@ -41,7 +42,7 @@ export function broadcast(projectId: string, event: RoomSseEvent): void {
     try {
       res.write(frame);
     } catch (error) {
-      console.error('[room.sseHub] broadcast write failed:', error);
+      roomError('[room.sseHub] broadcast write failed:', error);
     }
   }
 }
