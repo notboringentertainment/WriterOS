@@ -420,7 +420,11 @@ export default function App() {
   const handleRequestLookbookQuestions = useCallback(async (beatKey: string) => {
     const client = projectFolder.lookbook
     if (!client || !activeFolderProjectId) throw new Error('Zoe is not available for this project.')
-    return client.questions(activeFolderProjectId, beatKey)
+    const requestedProjectId = activeFolderProjectId
+    const result = await client.questions(requestedProjectId, beatKey)
+    // The writer may have switched projects while Zoe was answering: drop the result silently.
+    if (activeFolderProjectIdRef.current !== requestedProjectId) return null
+    return result
   }, [activeFolderProjectId, projectFolder.lookbook])
 
   const handleCheckBeatSheetStatus = useCallback(async () => {

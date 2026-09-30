@@ -49,8 +49,8 @@ interface OutlineTabProps {
   onCheckBeatSheetStatus?: () => Promise<BeatSheetSyncStatusResponse>
   lookbook?: LookbookDocument
   onLookbookChange?: (updater: (doc: LookbookDocument) => LookbookDocument) => void
-  /** Asks Zoe about one beat; only present for server-linked projects. */
-  onRequestLookbookQuestions?: (beatKey: string) => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean }>
+  /** Asks Zoe about one beat; only present for server-linked projects. Resolves null when the result is stale (project switched) and must be ignored. */
+  onRequestLookbookQuestions?: (beatKey: string) => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean } | null>
 }
 
 export function OutlineTab({
@@ -123,6 +123,7 @@ export function OutlineTab({
     const unit = document.content.units.find(candidate => candidate.id === beatKey)
     if (!unit) throw new Error('That beat is no longer in the Beat Sheet.')
     const result = await onRequestLookbookQuestions(beatKey)
+    if (!result) return undefined
     const prompts = result.questions.map(question => question.prompt).filter(prompt => prompt.trim().length > 0)
     const now = new Date().toISOString()
     onLookbookChange?.(doc => applyLookbookAsk(doc, beatKey, unit.title, prompts, now))
