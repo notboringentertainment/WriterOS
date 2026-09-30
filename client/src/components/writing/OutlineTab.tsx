@@ -118,7 +118,7 @@ export function OutlineTab({
 
     if (currentHasFormatAnswers) {
       const confirmed = window.confirm(
-        `Switching to ${next} will hide your ${activeFormat} outline answers. They'll be kept and restored if you switch back.`,
+        `Switching to ${next} will hide your ${activeFormat} answers. They'll be kept and restored if you switch back.`,
       )
       if (!confirmed) return
     }
