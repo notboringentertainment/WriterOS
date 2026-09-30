@@ -31,7 +31,7 @@ describe('buildSurfaceAwareness', () => {
     expect(sa.kind).toBe('intake')
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('outline')
-    expect(sa.surfaceTitle).toBe('Outline')
+    expect(sa.surfaceTitle).toBe('Beat Sheet')
     expect(sa.format).toBe('feature')
     expect(sa.totalCount).toBe(FEATURE_DECK.length)
     expect(sa.answeredCount).toBe(0)
