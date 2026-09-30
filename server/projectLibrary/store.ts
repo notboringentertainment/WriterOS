@@ -19,6 +19,7 @@ import {
   serializeWriterOSProjectPackage,
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
+  WRITEROS_LOOKBOOK_PATH,
   WRITEROS_PACKAGE_EXTENSION,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_FACTS_PATH,
@@ -491,6 +492,10 @@ export async function createProjectLibraryStore(
             await preserveManifestSources(stagingPath, serialized.files)
           }
           await writeStagedPackage(stagingPath, serialized.files)
+          if (serialized.files[WRITEROS_LOOKBOOK_PATH] === undefined) {
+            // copyExistingPackageTree carried any old lookbook forward; the payload has none.
+            await removePath(path.join(stagingPath, WRITEROS_LOOKBOOK_PATH), { force: true })
+          }
           await validateStagedPackage(rootPath, stagingPath)
 
           try {

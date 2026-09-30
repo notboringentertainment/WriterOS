@@ -1,3 +1,4 @@
+import { registerBeatSheetRoutes } from './projectLibrary/beatSheetRoutes';
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
@@ -1044,6 +1045,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
       : null;
   registerProjectLibraryRoutes(app, projectLibraryConfig, projectLibraryStore);
   registerProjectMemoryRoutes(app, projectLibraryConfig, projectLibraryStore);
+  registerBeatSheetRoutes(app, projectLibraryConfig, projectLibraryStore);
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
