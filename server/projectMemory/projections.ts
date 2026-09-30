@@ -138,6 +138,11 @@ function fenced(language: string, body: string): string[] {
   return [`${fence}${language}`, body, fence]
 }
 
+/** A look block as JSON-quoted YAML (also used as the record's detail for agent context). */
+export function renderLookYaml(spec: unknown): string {
+  return yamlLines(spec, '').join('\n')
+}
+
 function renderRecord(record: ProjectMemoryRecord): string[] {
   const lines = [escapeBlock(record.claim)]
   if (record.payload?.kind === 'look_spec') {
@@ -147,7 +152,7 @@ function renderRecord(record: ProjectMemoryRecord): string[] {
       '',
       `Look — ${escapedMetadata(spec.entity_id)} (${spec.entity_kind}) · look_hash ${lookHash.slice(0, 12)}`,
       '',
-      ...fenced('yaml', yamlLines(spec, '').join('\n')),
+      ...fenced('yaml', renderLookYaml(spec)),
     )
   } else if (record.detail) {
     lines.push('', escapeBlock(record.detail))

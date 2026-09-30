@@ -419,6 +419,8 @@ export interface PublishResult {
   published: boolean
   record: ProjectMemoryRecord
   snapshot: ProjectMemorySnapshot
+  /** Set when a publish's afterCommit hook threw; the publication itself stands. */
+  afterCommitError?: string
 }
 
 export interface MemoryContextPackage {
