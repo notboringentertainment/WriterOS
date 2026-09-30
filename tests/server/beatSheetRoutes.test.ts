@@ -240,3 +240,28 @@ describe('keepServerOwnedBeatFields', () => {
     expect(keepServerOwnedBeatFields(null, incoming)).toEqual({ project: incoming, replaced: false })
   })
 })
+
+describe('lookbook server round trip', () => {
+  it('GET returns the stored lookbook and saving it back leaves documents/lookbook.json byte-identical', async () => {
+    const project = makeProject()
+    project.state.documents.lookbook = {
+      version: 1,
+      beats: { 'beat.the-dinner': { titleAtAsk: 'The dinner.', questions: [
+        { id: 'lb_1', prompt: 'What is on the table when the scene opens?', answer: 'Bread and a lamp.', askedBy: 'zoe', createdAt: '2026-09-01T00:00:00.000Z' },
+      ] } },
+    }
+    const put1 = await requestJson(base, { method: 'PUT', body: { project } })
+    expect(put1.status).toBe(200)
+    const lookbookFile = path.join(packagePath, 'documents/lookbook.json')
+    const bytesBefore = await readFile(lookbookFile, 'utf8')
+
+    const got = await requestJson(base)
+    expect(got.status).toBe(200)
+    const returned = got.json.result.project
+    expect(returned.state.documents.lookbook.beats['beat.the-dinner'].questions[0].answer).toBe('Bread and a lamp.')
+
+    const put2 = await requestJson(base, { method: 'PUT', body: { project: returned } })
+    expect(put2.status).toBe(200)
+    expect(await readFile(lookbookFile, 'utf8')).toBe(bytesBefore)
+  })
+})

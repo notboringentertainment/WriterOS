@@ -8,9 +8,11 @@ import { ProjectLibraryStoreError, type ProjectLibraryStore } from '../projectLi
 import {
   ProjectMemoryAgentUnavailableError,
   buildAgentMemoryContext,
+  type AgentMemoryContext,
   finalizeAgentMemoryText,
   type ProjectMemoryProvider,
 } from '../projectMemory/agentContext'
+import type { MemoryReceipt } from '../../shared/schema'
 import { LookbookQuestionsRequestSchema } from '../../shared/lookbook'
 import { buildLookbookSystemPrompt, buildLookbookUserMessage } from './buildLookbookPrompt'
 
@@ -21,20 +23,43 @@ const ModelOutputSchema = z.object({
 
 type ModelOutput = z.infer<typeof ModelOutputSchema>
 
-function validOutput(value: unknown): ModelOutput | null {
+type Citation = MemoryReceipt['citations'][number]
+interface FinalOutput { output: ModelOutput; citations: Citation[] }
+
+function validOutput(value: unknown, memory: AgentMemoryContext): FinalOutput | null {
   const parsed = ModelOutputSchema.safeParse(value)
   if (!parsed.success) return null
   const { questions, nothingToSee } = parsed.data
-  if (questions.length === 0) return nothingToSee ? parsed.data : null
+  if (questions.length === 0) return nothingToSee ? { output: parsed.data, citations: [] } : null
   if (questions.length < 3 || nothingToSee) return null
-  return parsed.data
+
+  // Run every prompt through the memory citation filter: unauthorised tokens are
+  // stripped, authorised ones are recorded in the receipt and kept out of the text.
+  const citations = new Map<string, Citation>()
+  const finalised: Array<{ prompt: string }> = []
+  for (const question of questions) {
+    const result = finalizeAgentMemoryText(question.prompt, memory)
+    let text = result.text
+    for (const citation of result.receipt.citations) {
+      citations.set(citation.id, citation)
+      text = text.split(citation.id).join(' ')
+    }
+    text = text.replace(/\s+/g, ' ').trim()
+    if (text.length < 8 || text.length > 240) return null
+    finalised.push({ prompt: text })
+  }
+  return {
+    output: { questions: finalised, nothingToSee },
+    citations: [...citations.values()].sort((a, b) => a.id.localeCompare(b.id)),
+  }
 }
 
 async function askZoe(
   provider: ModelProvider,
   system: string,
   user: string,
-): Promise<{ ok: true; output: ModelOutput } | { ok: false; reason: string }> {
+  memory: AgentMemoryContext,
+): Promise<({ ok: true } & FinalOutput) | { ok: false; reason: string }> {
   let lastErr = 'unknown'
   for (let attempt = 0; attempt < 2; attempt++) {
     let raw: string
@@ -52,8 +77,8 @@ async function askZoe(
     const jsonText = extractFirstJsonObject(raw)
     let value: unknown = null
     try { value = jsonText ? JSON.parse(jsonText) : null } catch { value = null }
-    const output = validOutput(value)
-    if (output) return { ok: true, output }
+    const final = validOutput(value, memory)
+    if (final) return { ok: true, ...final }
     lastErr = 'invalid model JSON'
   }
   return { ok: false, reason: lastErr }
@@ -101,11 +126,12 @@ export function registerLookbookRoutes(
           body: unit.whatHappens,
           existingPrompts,
         }),
+        memory,
       )
       if (!result.ok) return res.status(422).json({ error: 'lookbook_failed', reason: result.reason })
 
       const { receipt } = finalizeAgentMemoryText('', memory)
-      return res.json({ ...result.output, memoryReceipt: receipt })
+      return res.json({ ...result.output, memoryReceipt: { ...receipt, citations: result.citations } })
     } catch (error) {
       if (error instanceof ProjectLibraryStoreError) {
         return res.status(error.statusCode).json({ error: error.code, message: error.message })
