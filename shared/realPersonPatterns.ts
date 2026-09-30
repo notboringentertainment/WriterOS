@@ -35,6 +35,21 @@ export const REAL_PERSON_NAME_PATTERNS: readonly RegExp[] = SOURCES.map(
   ({ source, ignoreCase }) => new RegExp(source, ignoreCase ? 'i' : ''),
 )
 
+// Python's re.IGNORECASE treats exactly these four non-ASCII characters as
+// ASCII letters (enumerated over every code point with Python 3.10); JS /i
+// treats none of them so. Fold them before any case-insensitive scan so
+// "İgnore previous" or "looks like İvan Smith" is refused here as it is in
+// OpenMontage. Scanning only: stored text and look_hash are untouched.
+export const PYTHON_CASE_FOLDS: Readonly<Record<string, string>> = {
+  'İ': 'i', // İ LATIN CAPITAL LETTER I WITH DOT ABOVE
+  'ı': 'i', // ı LATIN SMALL LETTER DOTLESS I
+  'ſ': 's', // ſ LATIN SMALL LETTER LONG S
+  'K': 'k', // K KELVIN SIGN
+}
+export function foldPythonCaseEquivalents(value: string): string {
+  return value.replace(/[İıſK]/g, ch => PYTHON_CASE_FOLDS[ch])
+}
+
 /** sha256 of the sources joined by newlines, each case-insensitive one suffixed "\0i" (as OpenMontage pins it). */
 export function realPersonPatternsSha256(): string {
   return sha256Hex(SOURCES.map(({ source, ignoreCase }) => source + (ignoreCase ? '\u0000i' : '')).join('\n'))
@@ -73,7 +88,7 @@ export function findRealPersonName(text: string): string | undefined {
   const neutralized = normalized.replace(/["`{}[\]<>|\\]/g, ch => DELIMITER_MAP[ch])
   for (const candidate of [normalized, neutralized]) {
     for (const pattern of REAL_PERSON_NAME_PATTERNS) {
-      const match = pattern.exec(candidate)
+      const match = pattern.exec(pattern.ignoreCase ? foldPythonCaseEquivalents(candidate) : candidate)
       if (match) return match[0]
     }
   }
