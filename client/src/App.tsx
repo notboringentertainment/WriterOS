@@ -66,7 +66,7 @@ import type { LookSessionContext } from '@shared/looks'
 import { LookPanel } from './components/writing/looks/LookPanel'
 import { LookSessionsProvider } from './lib/lookSessionsContext'
 import {
-  addDraftCitations,
+  applyZoeReplyToDraft,
   clearDraftField,
   draftFor,
   draftSummary,
@@ -1032,9 +1032,10 @@ export default function App() {
         },
       })
       project.addMessage('zoe', makeMessage('assistant', response.message, PERSONAS.zoe?.name ?? 'Zoe', { memoryReceipt: response.memoryReceipt, lookSessionId: sessionId }))
-      // Citations only: the reply's text never reaches the draft.
-      const cited = response.memoryReceipt?.citations.map(citation => citation.id) ?? []
-      if (cited.length > 0) project.setLooks(doc => addDraftCitations(doc, target, cited, new Date().toISOString()))
+      // Citations only: the reply's text never reaches the draft (applyZoeReplyToDraft).
+      if ((response.memoryReceipt?.citations.length ?? 0) > 0) {
+        project.setLooks(doc => applyZoeReplyToDraft(doc, target, response, new Date().toISOString()))
+      }
     } catch (error) {
       if (isAbortError(error)) return
       project.addMessage('zoe', makeMessage('assistant', 'Connection error — please try again.', PERSONAS.zoe?.name ?? 'Zoe', { lookSessionId: sessionId }))

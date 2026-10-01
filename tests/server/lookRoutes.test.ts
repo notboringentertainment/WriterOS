@@ -281,6 +281,17 @@ describe('POST /api/looks/:projectId/promote', () => {
     expect(injected.json.error).toBe('invalid-look')
   })
 
+  it('refuses a documented real-person name pattern at Promote (Review Focus 1)', async () => {
+    const base = String(characterDraft().prompt_safe_description)
+    for (const phrase of ['who looks like Harrison Ford', 'played by Meryl Streep', 'looks like \u0130van Smith']) {
+      const response = await promote(characterDraft({ prompt_safe_description: `${base} ${phrase}` }))
+      expect(response.status).toBe(400)
+      expect(response.json.error).toBe('invalid-look')
+      expect(response.json.problems.map((problem: { message: string }) => problem.message).join('\n')).toMatch(/real person/)
+    }
+    expect((await snapshot()).records).toHaveLength(0)
+  })
+
   it('refuses unknown and inactive citations', async () => {
     const unknown = await promote(characterDraft(), { citedRecordIds: [`mem_${'0'.repeat(32)}`] })
     expect(unknown.status).toBe(400)

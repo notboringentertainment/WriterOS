@@ -92,6 +92,21 @@ export function addDraftCitations(doc: LooksDocument, target: LookTarget, ids: r
   })
 }
 
+/**
+ * What a Zoe reply may change in the draft: only the memory citations on its
+ * receipt (Promote derives depends_on from them). Her text never reaches the
+ * spec or provenance; this is the one place a reply touches the draft.
+ */
+export function applyZoeReplyToDraft(
+  doc: LooksDocument,
+  target: LookTarget,
+  reply: { message: string; memoryReceipt?: { citations: Array<{ id: string }> } },
+  now: string,
+): LooksDocument {
+  const cited = reply.memoryReceipt?.citations.map(citation => citation.id) ?? []
+  return addDraftCitations(doc, target, cited, now)
+}
+
 export function removeDraft(doc: LooksDocument, target: LookTarget): LooksDocument {
   const key = lookDraftKey(target.entityKind, target.entityId)
   if (!doc.drafts[key]) return doc

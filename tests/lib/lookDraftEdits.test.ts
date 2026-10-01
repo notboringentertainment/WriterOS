@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDraftCitations, candidateSpec, clearDraftField, draftSummary, ensureDraft, filledFields, promotedLooksNamedIn,
+  addDraftCitations, applyZoeReplyToDraft, candidateSpec, clearDraftField, draftSummary, ensureDraft, filledFields, promotedLooksNamedIn,
   removeDraft, setDraftField, slugifyEntityName, type LookTarget,
 } from '../../client/src/lib/lookDraftEdits'
 import { emptyLooks, LooksDocumentSchema } from '../../shared/looks'
@@ -44,6 +44,21 @@ describe('look draft edits', () => {
     expect(filledFields(draft)).toEqual(['entity_id', 'props'])
     expect(draftSummary(draft)).toContain('props:\n  - wrench')
     expect(removeDraft(doc, target).drafts).toEqual({})
+  })
+
+  it('a Zoe reply with field values changes only the citations (Review Focus 4)', () => {
+    let doc = ensureDraft(emptyLooks(), target, 's1', NOW)
+    doc = setDraftField(doc, target, 'hair', 'cropped', NOW)
+    const before = doc.drafts['character:vector-engineer']
+    const after = applyZoeReplyToDraft(doc, target, {
+      message: 'Her hair is grey.\nhair: grey\n{"hair":"grey","age_band":"forties"}',
+      memoryReceipt: { citations: [{ id: 'mem_cited' }] },
+    }, NOW).drafts['character:vector-engineer']
+    expect(after.spec).toEqual(before.spec)
+    expect(after.fieldSources).toEqual(before.fieldSources)
+    expect(after.reference).toBe(before.reference)
+    expect(after.citedRecordIds).toEqual(['mem_cited'])
+    expect(applyZoeReplyToDraft(doc, target, { message: 'hair: grey' }, NOW)).toBe(doc)
   })
 
   it('slugs names and finds promoted looks named in beat text by whole word', () => {
