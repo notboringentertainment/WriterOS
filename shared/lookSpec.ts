@@ -221,7 +221,7 @@ const FACE_WORD = new RegExp(
 )
 const FIREWALL_TEXT_FIELDS = [
   'prompt_safe_description', 'continuity_risks', 'negative_lines', 'props',
-  'hair', 'build', 'default_wardrobe', 'wardrobe_variants', 'era_and_class_signals',
+  'hair', 'build', 'default_wardrobe', 'wardrobe_variants', 'era_and_class_signals', 'heritage_note',
 ] as const
 
 export function findFirewallProblems(spec: unknown, reference: string): LookSpecProblem[] {

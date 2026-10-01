@@ -44,6 +44,7 @@ describe('reference-image firewall', () => {
       ['default_wardrobe', { pieces: ['scarf over the chin'] }],
       ['wardrobe_variants', [{ name: 'night', when: 'hood hides the face' }]],
       ['era_and_class_signals', 'weathered skin of a dock worker'],
+      ['heritage_note', 'her mother\'s cheekbones'],
     ] as const) {
       expect(findFirewallProblems({ ...clean, [field]: value }, 'casting-inspiration').length, field).toBe(1)
     }

@@ -128,3 +128,14 @@ Each finding was checked against the code before any change.
 | 8 | Zero-width characters dodge the instruction check | Only deliberate odd input; OpenMontage still refuses it at render with a clear error. Deferred. |
 
 Verification: `npm run test:run` 2861 passed / 10 skipped; `npm run check` clean; `npm run build` done.
+
+## CodeRabbit review of PR #74 (2026-10-01)
+
+| Comment | Outcome |
+|---|---|
+| Browser-folder adapter does not read lookbook/looks on reopen | Real (files stay on disk; drafts just don't load in that mode). Fixed: both paths read. |
+| Casting firewall skips heritage_note | Real: OpenMontage renders it. Fixed (reverses the Codex-round exclusion). |
+| `lookSending` cleared after a project switch | Skipped: only a spinner flag, worst case it clears a moment early. |
+| Re-export error text from body | Skipped: wording only. |
+| `filledFields` into Zoe's prompt | Skipped: field names from the writer's own authenticated client; Zoe's output never reaches the draft. |
+| Retry returns revision 0 if export repair fails | Skipped: the client ignores that number and refreshes memory itself. |

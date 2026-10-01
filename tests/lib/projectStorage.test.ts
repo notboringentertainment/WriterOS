@@ -9,6 +9,8 @@ import {
   type WriterOSFileSystemWritableChunk,
 } from '../../client/src/lib/projectStorage'
 import { defaultProjectState } from '../../client/src/lib/projectState'
+import { ensureDraft } from '../../client/src/lib/lookDraftEdits'
+import { emptyLooks } from '../../shared/looks'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 
 function chunkToBytes(data: WriterOSFileSystemWritableChunk): Uint8Array {
@@ -185,6 +187,17 @@ describe('File System Access project storage adapter', () => {
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.error.message)
     expect(read.project.state.script.scenes[0].heading).toBe('EXT. BEACH - DAWN')
+  })
+
+  it('a reopened package keeps its look drafts', async () => {
+    const root = new FakeDirectoryHandle('WriterOS Projects')
+    const adapter = createFileSystemAccessProjectStorageAdapter(root)
+    const project = makeStoredProject()
+    project.state.documents.looks = ensureDraft(emptyLooks(), { entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer' }, 's1', '2026-10-01T00:00:00.000Z')
+    const ref = await adapter.writeProject(project)
+    const { result: read } = await adapter.readProject(ref)
+    if (!read.ok) throw new Error(read.error.message)
+    expect(Object.keys(read.project.state.documents.looks?.drafts ?? {})).toEqual(['character:vector-engineer'])
   })
 
   it('keeps corrupt project folders visible as corrupt list entries', async () => {
