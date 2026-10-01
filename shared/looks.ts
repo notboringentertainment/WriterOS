@@ -87,3 +87,44 @@ export const LookSessionContextSchema = z.object({
   draftSummary: z.string().max(4000),
 }).strict()
 export type LookSessionContext = z.infer<typeof LookSessionContextSchema>
+
+/**
+ * One unpromoted look draft (Task 5): working notes, same rules as the
+ * Lookbook file. Only the Look panel's form writes `spec` and `fieldSources`;
+ * a model reply never does (Task 6).
+ */
+export const LookDraftSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  entityKind: z.enum(LOOK_ENTITY_KINDS),
+  entityName: z.string().min(1).max(200),
+  reference: LookSessionContextSchema.shape.reference,
+  spec: z.record(z.string(), z.unknown()),
+  fieldSources: z.record(z.string(), z.literal('writer')),
+  citedRecordIds: z.array(z.string().min(1).max(500)).max(24),
+  updatedAt: z.string().min(1),
+}).strict()
+export type LookDraft = z.infer<typeof LookDraftSchema>
+
+/** documents/looks.json. Drafts are keyed `${entityKind}:${entityId}`. */
+export const LooksDocumentSchema = z.object({
+  version: z.literal(1),
+  drafts: z.record(
+    z.string().regex(/^(character|location):[a-z0-9-]+$/, 'draft keys are <kind>:<entity-id>'),
+    LookDraftSchema,
+  ),
+}).strict().superRefine((doc, context) => {
+  for (const [key, draft] of Object.entries(doc.drafts)) {
+    if (!key.startsWith(`${draft.entityKind}:`)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['drafts', key], message: 'A draft key must start with its entity kind.' })
+    }
+  }
+})
+export type LooksDocument = z.infer<typeof LooksDocumentSchema>
+
+export function emptyLooks(): LooksDocument {
+  return { version: 1, drafts: {} }
+}
+
+export function lookDraftKey(entityKind: LookDraft['entityKind'], entityId: string): string {
+  return `${entityKind}:${entityId}`
+}

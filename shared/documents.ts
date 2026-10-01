@@ -1,4 +1,5 @@
 import type { LookbookDocument } from './lookbook'
+import type { LooksDocument } from './looks'
 import { z } from 'zod'
 import { ComposedDocumentSchema } from './compose/schemas'
 import type { ComposedDocument } from './compose/types'
@@ -597,6 +598,7 @@ export interface ProjectDocuments {
   treatment: AuthoredDocumentState<TreatmentDocumentContent>
   storyBible: AuthoredDocumentState<StoryBibleDocumentContent>
   lookbook?: LookbookDocument
+  looks?: LooksDocument
 }
 
 export const DOCUMENT_SCHEMA_VERSION = 2
