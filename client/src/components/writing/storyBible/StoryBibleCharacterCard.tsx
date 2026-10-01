@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { StoryBibleCharacter } from '@shared/documents'
+import { CharacterLookButton } from '../looks/LookEntryButton'
 
 export interface StoryBibleCharacterCardProps {
   character: StoryBibleCharacter
@@ -178,6 +179,7 @@ export function StoryBibleCharacterCard({
         >
           {expanded ? 'Close' : 'Open'}
         </button>
+        <CharacterLookButton name={character.name} />
         <button
           type="button"
           style={removeArmed ? dangerButtonStyle : buttonStyle}

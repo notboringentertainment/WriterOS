@@ -6,7 +6,8 @@ export type StoryBibleSection = 'characters' | 'world' | 'themes' | 'tone' | 'ru
 // Full-bleed identity ritual takeovers: writer-level (Voice Profile) and
 // project-level (Project Meeting). Checked before homeActive when rendering, so
 // closing a ritual restores whatever surface was underneath.
-export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | 'memory' | null
+// 'look' is the Look panel (look sessions, Task 6): Zoe's look interview beside the look form.
+export type ActiveRitual = 'projectMeeting' | 'voiceProfile' | 'memory' | 'look' | null
 
 export function useShellState() {
   const [homeActive, setHomeActive] = useState(true)

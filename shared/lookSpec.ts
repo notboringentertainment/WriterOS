@@ -204,3 +204,66 @@ export function validateLookSpecForPromotion(
   if (problems.length > 0 || !parsed.success) return { ok: false, problems }
   return { ok: true, spec: parsed.data }
 }
+
+/**
+ * Reference-image firewall (look sessions plan, Global Constraints). When the
+ * writer's reference is a real person (`casting-inspiration`), the block may
+ * describe type only: no distinguishing marks and no facial vocabulary in the
+ * free-text fields a generator reads.
+ */
+export const FACE_VOCABULARY = [
+  'eye', 'eyes', 'nose', 'jaw', 'lips', 'mouth', 'cheek', 'cheekbones', 'chin', 'brow', 'eyebrow',
+  'face', 'facial', 'smile', 'teeth', 'complexion', 'skin', 'freckle', 'scar on the face', 'dimple', 'wrinkle',
+] as const
+const FACE_WORD = new RegExp(
+  `\\b(${FACE_VOCABULARY.map(word => word.replace(/ /g, '\\s+')).join('|')})(e?s)?\\b`,
+  'i',
+)
+const FIREWALL_TEXT_FIELDS = [
+  'prompt_safe_description', 'continuity_risks', 'negative_lines', 'props',
+  'hair', 'build', 'default_wardrobe', 'wardrobe_variants', 'era_and_class_signals', 'heritage_note',
+] as const
+
+export function findFirewallProblems(spec: unknown, reference: string): LookSpecProblem[] {
+  if (reference !== 'casting-inspiration' || !spec || typeof spec !== 'object') return []
+  const raw = spec as Record<string, unknown>
+  const problems: LookSpecProblem[] = []
+  if (Array.isArray(raw.distinguishing_marks) && raw.distinguishing_marks.length > 0) {
+    problems.push({
+      path: 'distinguishing_marks',
+      message: 'With a real person as the reference, distinguishing marks must stay empty.',
+    })
+  }
+  for (const field of FIREWALL_TEXT_FIELDS) {
+    const leaves: Array<[string, string]> = []
+    stringLeaves(raw[field], [field], leaves)
+    for (const [path, value] of leaves) {
+      const hit = FACE_WORD.exec(foldPythonCaseEquivalents(canonicalizeSpaces(value)))
+      if (hit) {
+        problems.push({
+          path,
+          message: `With a real person as the reference, describe type only; "${hit[0]}" describes the face.`,
+        })
+      }
+    }
+  }
+  return problems
+}
+
+function canonicalizeSpaces(value: string): string {
+  return value.replace(new RegExp(`[${PY_WHITESPACE_CLASS}]+`, 'gu'), ' ')
+}
+
+/**
+ * Trim spaces at the start and end of every string in a look block, at any
+ * depth. Applied when a look is checked and promoted (never while the writer
+ * is typing), on both client and server, so the hash is of the trimmed text.
+ */
+export function trimLookStrings<T>(value: T): T {
+  if (typeof value === 'string') return value.trim() as unknown as T
+  if (Array.isArray(value)) return value.map(item => trimLookStrings(item)) as unknown as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, trimLookStrings(member)])) as T
+  }
+  return value
+}

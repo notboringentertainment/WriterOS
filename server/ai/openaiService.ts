@@ -1,3 +1,5 @@
+import { buildLookContract } from '../looks/buildLookContract'
+import type { LookSessionContext } from '../../shared/looks'
 import { AssessmentProfile, StoryMemory, Persona } from "@shared/schema";
 import { buildRoomAwarenessBlock, PERSONAS } from "@shared/personas";
 import type { VoiceProfileDocument } from "@shared/voiceProfile";
@@ -802,6 +804,7 @@ export function createPersonaSystemPrompt(
   voiceProfile?: VoiceProfileDocument,
   responseMode: 'json' | 'tool' = 'json',
   agentMemory?: AgentMemoryContext,
+  lookSession?: LookSessionContext,
 ): string {
     const contextSummary = createContextSummary(storyMemory, persona.id, userMessage);
     const isMorgan = persona.id === 'writingPartner';
@@ -933,6 +936,9 @@ IMPORTANT: Respond with JSON in this format:
 }`;
 
       case 'zoe':
+        // Look session (look sessions plan, Task 4): the look contract replaces the
+        // world-building block and response format. Without one, unchanged.
+        if (lookSession) return `${basePrompt}\n${buildLookContract(lookSession)}`
         return `${basePrompt}
 - Specialize in world-building, setting creation, and consistency
 - Help with fantasy/sci-fi systems, cultural rules, and immersive settings
@@ -1114,6 +1120,7 @@ export class OpenAIService {
     conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
     voiceProfile?: VoiceProfileDocument,
     agentMemory?: AgentMemoryContext,
+    lookSession?: LookSessionContext,
   ): Promise<PersonaResponse> {
     try {
       // Morgan runs on the Claude-native tool-loop runtime, not the single-shot
@@ -1143,7 +1150,7 @@ export class OpenAIService {
         return { message: result.message, suggestions: result.suggestions, debug: result.debug };
       }
 
-      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile, agentMemory);
+      return await this.generateSingleShotPersonaResponse(persona, userMessage, userProfile, storyMemory, conversationHistory, voiceProfile, agentMemory, lookSession);
     } catch (error) {
       console.error('AI provider error:', error);
       return {
@@ -1160,8 +1167,9 @@ export class OpenAIService {
     conversationHistory: Array<{role: 'user' | 'assistant', content: string}>,
     voiceProfile?: VoiceProfileDocument,
     agentMemory?: AgentMemoryContext,
+    lookSession?: LookSessionContext,
   ): Promise<PersonaResponse> {
-    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'json', agentMemory);
+    const systemPrompt = createPersonaSystemPrompt(persona, userProfile, storyMemory, userMessage, voiceProfile, 'json', agentMemory, lookSession);
 
     const messages: ModelMessage[] = [
       ...conversationHistory.slice(-6).map(msg => ({

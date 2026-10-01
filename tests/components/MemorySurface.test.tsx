@@ -299,33 +299,30 @@ describe('MemorySurface', () => {
     expect(within(row).getByText('Spoiler')).toBeInTheDocument()
   })
 
-  it('promotes a plain (non-canon) candidate without requiring confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm')
+  it('offers no Promote on a background note (non-canon candidate) and says why, while still offering Reject', async () => {
+    const stub = createMemoryFetchStub({ snapshot: baseSnapshot() })
+    render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
+    const row = (await screen.findByText(developmentCandidate.claim)).closest('article') as HTMLElement
+    expect(within(row).queryByRole('button', { name: 'Promote' })).not.toBeInTheDocument()
+    expect(within(row).getByText(/background note WriterOS made, not a story decision/)).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+
+  it('promotes an explicitly approved canon candidate, and shows a refusal beside that record in plain words', async () => {
     const stub = createMemoryFetchStub({
       snapshot: baseSnapshot(),
       onAction: action => {
-        expect(action).toEqual({
-          type: 'promote',
-          recordId: developmentCandidate.id,
-          expectedRevision: 5,
-          supersedes: [],
-        })
-        const next = baseSnapshot({
-          revision: 6,
-          records: [activeCanon, canonCandidate, { ...developmentCandidate, status: 'active' }, flaggedCandidate, spoilerCanon, openQuestion],
-        })
-        stub.setSnapshot(next)
-        return { status: 200, body: { snapshot: next } }
+        expect(action).toMatchObject({ type: 'promote', recordId: canonCandidate.id })
+        return { status: 400, body: { error: 'invalid-action', message: 'WriterOS could not promote this record.' } }
       },
     })
     render(<Harness projectId="story-project-1" onExit={vi.fn()} fetchImpl={stub.fetchImpl} />)
-
     fireEvent.click(await screen.findByRole('tab', { name: 'Review' }))
-    const row = (await screen.findByText(developmentCandidate.claim)).closest('article') as HTMLElement
+    const row = await screen.findByRole('article', { name: `Memory record: ${canonCandidate.claim}` })
     fireEvent.click(within(row).getByRole('button', { name: 'Promote' }))
-
-    await waitFor(() => expect(confirmSpy).not.toHaveBeenCalled())
     await waitFor(() => expect(stub.calls.some(call => call.url.endsWith('/actions'))).toBe(true))
+    expect(await within(row).findByRole('alert')).toBeInTheDocument()
   })
 
   it('requires confirmation before replacing active canon, and does nothing when the writer cancels', async () => {

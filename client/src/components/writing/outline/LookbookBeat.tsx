@@ -1,5 +1,6 @@
 import React from 'react'
 import type { LookbookDocument } from '@shared/lookbook'
+import { LookEntryButton } from '../looks/LookEntryButton'
 
 type LookbookBeatData = LookbookDocument['beats'][string]
 
@@ -56,6 +57,7 @@ export function LookbookBeat({
         <button type="button" style={styles.askButton} disabled={asking} onClick={() => { void onAsk() }}>
           {hasQuestions ? 'Ask Zoe for more' : 'Ask Zoe what this looks like'}
         </button>
+        <LookEntryButton beatTitle={beatTitle} />
         {askError && <span role="alert" style={styles.error}>{askError}</span>}
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   type MemorySource,
   type PublishMemoryInput,
   type PublishResult,
+  canPromoteMemoryRecord,
 } from '../../shared/projectMemory'
 import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from '../projectLibrary/packageLock'
 import { renderCanonProjection, renderReviewProjection } from './projections'
@@ -85,7 +86,22 @@ export interface ProjectMemoryStore {
    * calling the locked variant from there would deadlock. Never call this unlocked.
    */
   readSnapshotReadOnlyInHeldLock(projectPath: string, projectId: string): Promise<ProjectMemorySnapshot>
-  publish(projectPath: string, input: PublishMemoryInput): Promise<PublishResult>
+  publish(projectPath: string, input: PublishMemoryInput, options?: PublishOptions): Promise<PublishResult>
+  /**
+   * The record a past publication with this dedupe key created, if any (the
+   * most recent when the key was published more than once). Read-only.
+   */
+  findPublication(projectPath: string, projectId: string, dedupeKey: string): Promise<ProjectMemoryRecord | undefined>
+  /**
+   * Run `operation` with the current snapshot while holding the package lock,
+   * so derived files it writes cannot interleave with a publication. Read-only
+   * replay; the operation owns any writes it makes.
+   */
+  withLockedSnapshot<T>(
+    projectPath: string,
+    projectId: string,
+    operation: (snapshot: ProjectMemorySnapshot) => Promise<T>,
+  ): Promise<T>
   reconcilePublication(
     projectPath: string,
     input: PublishMemoryInput,
@@ -103,6 +119,16 @@ export interface ProjectMemoryStoreTestHooks {
   beforeProjectionWrite?(projectPath: string, snapshot: ProjectMemorySnapshot): Promise<void>
   /** @internal Deterministic package-lock race injection for regression tests. */
   packageLock?: PackageWriteLockTestHooks
+}
+
+export interface PublishOptions {
+  /**
+   * Runs inside the package lock after the ledger append and projections are
+   * written, with the committed snapshot. A throw is caught and reported as
+   * `afterCommitError`; it never undoes the publication. Not run for an
+   * idempotent retry (nothing was committed).
+   */
+  afterCommit?(snapshot: ProjectMemorySnapshot, revision: number): Promise<void>
 }
 
 export interface ProjectMemoryStoreOptions {
@@ -637,7 +663,7 @@ async function replayLedgerWithMigrations(
   }
 }
 
-async function atomicReplace(filePath: string, contents: string): Promise<void> {
+export async function atomicReplace(filePath: string, contents: string): Promise<void> {
   const temporaryPath = path.join(
     path.dirname(filePath),
     `.${path.basename(filePath)}.${randomBytes(12).toString('hex')}.tmp`,
@@ -765,12 +791,6 @@ function sourceCanActivateCanon(source: MemorySource): boolean {
 // unratified imports stay review-only. Wayfinder sources activated this way
 // get a store-stamped promotion marker (never publishable) so the record's
 // pedigree stays honest.
-function recordCanPromote(record: ProjectMemoryRecord): boolean {
-  return record.status === 'candidate'
-    && record.safety === 'clear'
-    && record.source.approval === 'explicit'
-}
-
 function needsPromotionAuthorityStamp(source: MemorySource): boolean {
   return source.workflow === 'story-wayfinder' && !sourceCanActivateCanon(source)
 }
@@ -804,7 +824,7 @@ function derivePromotionMutation(
   supersedes: string[],
 ): PromotionMutation {
   const record = requireRecord(snapshot, recordId)
-  if (record.kind !== 'canon' || !recordCanPromote(record)) {
+  if (!canPromoteMemoryRecord(record)) {
     throw new ProjectMemoryStoreError(
       'Only a clear, explicitly approved canon candidate may be promoted.',
       'invalid-action',
@@ -1116,7 +1136,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       return replayed.snapshot
     },
 
-    async publish(projectPath, rawInput) {
+    async publish(projectPath, rawInput, publishOptions = {}) {
       const parsed = PublishMemoryInputSchema.safeParse(rawInput)
       if (!parsed.success) {
         const issue = parsed.error.issues[0]
@@ -1158,8 +1178,44 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot, options.testHooks)
-        return { published: true, record: event.record, snapshot: next.snapshot }
+        let afterCommitError: string | undefined
+        if (publishOptions.afterCommit) {
+          try {
+            await publishOptions.afterCommit(next.snapshot, event.revision)
+          } catch (error) {
+            afterCommitError = error instanceof Error ? error.message : String(error)
+          }
+        }
+        return {
+          published: true,
+          record: event.record,
+          snapshot: next.snapshot,
+          ...(afterCommitError === undefined ? {} : { afterCommitError }),
+        }
       }, input.projectId, options.testHooks?.packageLock)
+    },
+
+    async findPublication(projectPath, projectId, dedupeKey) {
+      return withProjectLock(projectPath, async lockedProjectId => {
+        const ledgerPath = path.join(projectPath, MEMORY_DIRECTORY, LEDGER_FILE)
+        try {
+          await assertRegularFile(ledgerPath)
+        } catch (error) {
+          if (isNodeError(error, 'ENOENT')) return undefined
+          throw error
+        }
+        const replayed = await replayLedger(ledgerPath, lockedProjectId)
+        const matches = replayed.publications.filter(publication => publication.dedupeKey === dedupeKey)
+        const latest = matches[matches.length - 1]
+        return latest === undefined ? undefined : requireRecord(replayed.snapshot, latest.recordId)
+      }, projectId, options.testHooks?.packageLock)
+    },
+
+    async withLockedSnapshot(projectPath, projectId, operation) {
+      return withProjectLock(projectPath, async lockedProjectId => {
+        const snapshot = await this.readSnapshotReadOnlyInHeldLock(projectPath, lockedProjectId)
+        return operation(snapshot)
+      }, projectId, options.testHooks?.packageLock)
     },
 
     async reconcilePublication(projectPath, rawInput) {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents'
 import { LookbookDocumentSchema } from '@shared/lookbook'
+import { LooksDocumentSchema } from '@shared/looks'
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import { documentsToLegacy } from './documentMigration'
 import { getDisplayProjectTitle, normalizeProjectTitle } from './projectIdentity'
@@ -32,6 +33,7 @@ export const WRITEROS_DOCUMENT_PATHS = {
   storyBible: 'documents/story-bible.json',
 } as const
 export const WRITEROS_LOOKBOOK_PATH = 'documents/lookbook.json'
+export const WRITEROS_LOOKS_PATH = 'documents/looks.json'
 export const WRITEROS_TRANSCRIPT_PATHS = {
   writingPartner: 'transcripts/writing-partner.json',
   specialists: 'transcripts/specialists.json',
@@ -278,6 +280,9 @@ export function serializeWriterOSProjectPackage(
   if (state.documents.lookbook !== undefined) {
     files[WRITEROS_LOOKBOOK_PATH] = stringifyPackageJson(state.documents.lookbook)
   }
+  if (state.documents.looks !== undefined) {
+    files[WRITEROS_LOOKS_PATH] = stringifyPackageJson(state.documents.looks)
+  }
 
   const rawFdxSource =
     state.meta.sourceImport?.rawSource
@@ -376,6 +381,8 @@ function parseDocuments(files: Record<string, string | undefined>): { ok: true; 
     }
   }
 
+  let documents: ProjectDocuments = parsedDocuments.data
+
   const rawLookbook = files[WRITEROS_LOOKBOOK_PATH]
   if (typeof rawLookbook === 'string') {
     const parsedJson = parseJsonFile(WRITEROS_LOOKBOOK_PATH, rawLookbook)
@@ -391,10 +398,28 @@ function parseDocuments(files: Record<string, string | undefined>): { ok: true; 
         },
       }
     }
-    return { ok: true, documents: { ...parsedDocuments.data, lookbook: parsedLookbook.data } }
+    documents = { ...documents, lookbook: parsedLookbook.data }
   }
 
-  return { ok: true, documents: parsedDocuments.data }
+  const rawLooks = files[WRITEROS_LOOKS_PATH]
+  if (typeof rawLooks === 'string') {
+    const parsedJson = parseJsonFile(WRITEROS_LOOKS_PATH, rawLooks)
+    if (!parsedJson.ok) return { ok: false, error: parsedJson.error }
+    const parsedLooks = LooksDocumentSchema.safeParse(parsedJson.value)
+    if (!parsedLooks.success) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-json',
+          path: WRITEROS_LOOKS_PATH,
+          message: 'documents/looks.json is not a valid set of look drafts.',
+        },
+      }
+    }
+    documents = { ...documents, looks: parsedLooks.data }
+  }
+
+  return { ok: true, documents }
 }
 
 function parseTitlePageMetadata(files: Record<string, string | undefined>): { ok: true; titlePage: TitlePageMetadata } | { ok: false; error: ProjectPackageReadError } {

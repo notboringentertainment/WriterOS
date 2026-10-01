@@ -10,6 +10,7 @@ import {
 } from './documentMigration'
 import { createEmptySeriesContent, type AuthoredDocumentState, type ProjectDocuments } from '@shared/documents'
 import { LookbookDocumentSchema } from '@shared/lookbook'
+import { LooksDocumentSchema } from '@shared/looks'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import type { MemoryReceipt } from '@shared/schema'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
@@ -28,6 +29,8 @@ export interface TranscriptMessage {
   ts: number
   capabilityReceipt?: CapabilityReceipt
   memoryReceipt?: MemoryReceipt
+  /** Set on Zoe messages that belong to a look session; shown only in the Look panel. */
+  lookSessionId?: string
 }
 
 export interface ScriptScene {
@@ -408,6 +411,9 @@ export function migrateState(raw: unknown): ProjectState {
     lookbook: LookbookDocumentSchema.safeParse(rawMigratedDocuments.lookbook).success
       ? rawMigratedDocuments.lookbook
       : undefined,
+    looks: LooksDocumentSchema.safeParse(rawMigratedDocuments.looks).success
+      ? rawMigratedDocuments.looks
+      : undefined,
   }
   const normalizedOutlineContent = normalizeOutlineContent(
     migratedDocuments.outline.content as Partial<ProjectDocuments['outline']['content']>,
@@ -468,6 +474,7 @@ export function saveProjectState(state: ProjectState): void {
       treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
       ...(state.documents.lookbook ? { lookbook: state.documents.lookbook } : {}),
+      ...(state.documents.looks ? { looks: state.documents.looks } : {}),
     },
   })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))

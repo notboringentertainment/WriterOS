@@ -63,7 +63,8 @@ export function WritersRoom({
 
   const specialistId: SpecialistId = selectedId === 'room' ? 'oliver' : selectedId
   const persona = PERSONAS[specialistId]
-  const transcript = projectState.agents[specialistId].transcript
+  // Look-session messages live in Zoe's transcript but belong to the Look panel.
+  const transcript = projectState.agents[specialistId].transcript.filter(message => !message.lookSessionId)
 
   // Auto-scroll the specialist transcript to the latest message — on new
   // messages and when switching specialists (which swaps the whole transcript).

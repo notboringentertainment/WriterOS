@@ -4,6 +4,7 @@ import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { serializeWriterOSProjectPackage } from '../../client/src/lib/projectPackage'
 import { LookbookDocumentSchema } from '../../shared/lookbook'
+import { LooksDocumentSchema } from '../../shared/looks'
 import { SaveProjectRequestSchema } from '../../shared/projectLibraryApi'
 import type { ProjectLibraryConfig } from './config'
 import { authenticated, sameOrigin } from './security'
@@ -98,6 +99,14 @@ export function registerProjectLibraryRoutes(
         return res.status(400).json({
           error: 'invalid-lookbook',
           message: 'The Lookbook in this save is not valid; nothing was written.',
+        })
+      }
+      // Same rule for look drafts (documents/looks.json).
+      const rawLooks = (data.project.state as { documents?: { looks?: unknown } } | undefined)?.documents?.looks
+      if (rawLooks !== undefined && !LooksDocumentSchema.safeParse(rawLooks).success) {
+        return res.status(400).json({
+          error: 'invalid-looks',
+          message: 'The look drafts in this save are not valid; nothing was written.',
         })
       }
       const project: StoredProject = {

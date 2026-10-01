@@ -1,8 +1,12 @@
 import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import type { LookbookQuestionsResult } from './lookbookClient'
+import type { LookExportResponse, LookPromoteRequest } from '@shared/looks'
+import type { LookPromoteOutcome } from './looksClient'
 import {
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
+  WRITEROS_LOOKBOOK_PATH,
+  WRITEROS_LOOKS_PATH,
   WRITEROS_PACKAGE_EXTENSION,
   WRITEROS_PROJECT_MANIFEST_PATH,
   WRITEROS_SCRIPT_HTML_PATH,
@@ -125,6 +129,11 @@ export interface ProjectStorageLookbookClient {
   questions(projectId: string, beatKey: string): Promise<LookbookQuestionsResult>
 }
 
+export interface ProjectStorageLooksClient {
+  promote(projectId: string, body: LookPromoteRequest): Promise<LookPromoteOutcome>
+  reexport(projectId: string): Promise<LookExportResponse>
+}
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access' | 'server'
   label: string
@@ -135,6 +144,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   /** Present only on the server adapter, which holds the session token. */
   beatSheet?: ProjectStorageBeatSheetClient
   lookbook?: ProjectStorageLookbookClient
+  looks?: ProjectStorageLooksClient
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
@@ -354,6 +364,8 @@ async function readProjectPackageFiles(handle: WriterOSFileSystemDirectoryHandle
     WRITEROS_DOCUMENT_PATHS.outline,
     WRITEROS_DOCUMENT_PATHS.treatment,
     WRITEROS_DOCUMENT_PATHS.storyBible,
+    WRITEROS_LOOKBOOK_PATH,
+    WRITEROS_LOOKS_PATH,
     WRITEROS_TRANSCRIPT_PATHS.writingPartner,
     WRITEROS_TRANSCRIPT_PATHS.specialists,
   ]

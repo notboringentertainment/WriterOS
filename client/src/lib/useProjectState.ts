@@ -17,6 +17,7 @@ import {
 import type { MigrationMarker, StoredProject } from './projectLibrary'
 import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene, TitlePageMetadata } from './projectState'
 import { emptyLookbook, type LookbookDocument } from '@shared/lookbook'
+import { emptyLooks, type LooksDocument } from '@shared/looks'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
@@ -389,6 +390,18 @@ export function useProjectState() {
       update(s => ({
         ...s,
         documents: { ...s.documents, lookbook: updater(s.documents.lookbook ?? emptyLookbook()) },
+      }))
+    },
+    [update],
+  )
+
+  // Look drafts (documents/looks.json). Only the Look panel's form and the
+  // promote-success path call this; a model reply never does.
+  const setLooks = useCallback(
+    (updater: (doc: LooksDocument) => LooksDocument) => {
+      update(s => ({
+        ...s,
+        documents: { ...s.documents, looks: updater(s.documents.looks ?? emptyLooks()) },
       }))
     },
     [update],
@@ -925,6 +938,7 @@ export function useProjectState() {
     setOutlineDocument,
     replaceOutlineDocument,
     setLookbook,
+    setLooks,
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,

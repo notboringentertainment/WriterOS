@@ -1,5 +1,7 @@
 import { registerBeatSheetRoutes } from './projectLibrary/beatSheetRoutes';
 import { registerLookbookRoutes } from './lookbook/lookbookRoutes';
+import { registerLookRoutes } from './looks/lookRoutes';
+import { LookSessionContextSchema } from '../shared/looks';
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { OpenAIService, type PersonaResponse } from "./ai/openaiService";
@@ -433,6 +435,11 @@ const wpChatSchema = z.object({
     revision: z.number().int().nonnegative(),
     content: z.unknown(),
   }).optional().catch(undefined),
+  // Look sessions (Task 4): present only when Zoe is running a look interview
+  // in the Look panel. A malformed context fails the request (this route's
+  // catch-all), never silently dropped — dropping it would let Zoe answer as a
+  // world-builder and propose values.
+  lookSession: LookSessionContextSchema.optional(),
 });
 
 export const openSwarmWritingPartnerSchema = z.object({
@@ -1048,6 +1055,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
   registerProjectMemoryRoutes(app, projectLibraryConfig, projectLibraryStore);
   registerBeatSheetRoutes(app, projectLibraryConfig, projectLibraryStore);
   registerLookbookRoutes(app, projectLibraryConfig, projectLibraryStore, agentMemoryProvider);
+  registerLookRoutes(app, projectLibraryConfig, projectLibraryStore);
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
@@ -1222,6 +1230,7 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
           data.conversationHistory,
           data.voiceProfile,
           memory,
+          data.lookSession,
         ),
         attemptStructuredDocumentPatch({
           projectId: data.projectId,
