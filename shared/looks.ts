@@ -6,6 +6,7 @@ import { EntityIdSchema, LookSpecSchema } from './lookSpec'
 import { LookReferenceModeSchema } from './projectMemory'
 
 export const LOOK_ENTITY_KINDS = ['character', 'location'] as const
+export type LookEntityKind = typeof LOOK_ENTITY_KINDS[number]
 
 /**
  * Top-level spec fields the server sets itself, so they need no writer

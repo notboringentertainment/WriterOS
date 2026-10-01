@@ -62,6 +62,22 @@ import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
 import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProposals'
 import type { RoomProposal } from './lib/roomApi'
+import type { LookSessionContext } from '@shared/looks'
+import { LookPanel } from './components/writing/looks/LookPanel'
+import { LookSessionsProvider } from './lib/lookSessionsContext'
+import {
+  addDraftCitations,
+  clearDraftField,
+  draftFor,
+  draftSummary,
+  ensureDraft,
+  filledFields,
+  promotedLooks,
+  removeDraft,
+  setDraftField,
+  setDraftReference,
+  type LookTarget,
+} from './lib/lookDraftEdits'
 
 type ScriptSnapshot = {
   rawHtml: string
@@ -80,14 +96,18 @@ function makeMessage(
   // `id` lets a caller know a message's id before it lands in the transcript
   // (Task 10: so a patch proposal arriving with this response can be tied to
   // this exact message for the "kept as suggestion" chip).
-  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt; id?: string } = {}
+  options: { capabilityReceipt?: CapabilityReceipt; memoryReceipt?: MemoryReceipt; id?: string; lookSessionId?: string } = {}
 ): TranscriptMessage {
   const { id, ...rest } = options
   return { id: id ?? crypto.randomUUID(), role, content, speaker, ts: Date.now(), ...rest }
 }
 
-function historyFromTranscript(transcript: TranscriptMessage[]) {
-  return transcript.slice(-6).map(m => ({ role: m.role, content: m.content }))
+function historyFromTranscript(transcript: TranscriptMessage[], lookSessionId?: string) {
+  // A look session sees only its own messages; ordinary chat never sees look-session ones.
+  return transcript
+    .filter(m => (lookSessionId ? m.lookSessionId === lookSessionId : !m.lookSessionId))
+    .slice(-6)
+    .map(m => ({ role: m.role, content: m.content }))
 }
 
 function formatFdxImportError(error: unknown) {
@@ -108,6 +128,8 @@ async function postWPChat(body: {
   // debounced folder autosave that can lag behind it, which made every Apply
   // refuse as stale with advice ("Refresh") that could never fix it.
   documentSnapshot?: { surface: StructuredDocumentSurface; revision: number; content: unknown }
+  // Look sessions (Task 4): never sent together with documentSnapshot.
+  lookSession?: LookSessionContext
 }): Promise<{ message: string; suggestions?: string[]; memoryReceipt?: MemoryReceipt; patchProposal?: MemoryGroundedPatchProposal }> {
   const res = await fetch('/api/wp-chat', {
     method: 'POST',
@@ -228,8 +250,29 @@ export default function App() {
   // sit unseen until the next project switch; refreshing on every Memory-open
   // picks that up whenever the writer actually looks.
   useEffect(() => {
-    if (shellState.ritual === 'memory') void projectMemory.refresh()
+    if (shellState.ritual === 'memory' || shellState.ritual === 'look') void projectMemory.refresh()
   }, [shellState.ritual, projectMemory.refresh])
+
+  // Look sessions (Task 6). The target and its session id survive a promotion,
+  // which removes the draft, so the panel can still show the conversation.
+  const [lookSession, setLookSession] = useState<{ target: LookTarget; sessionId: string } | null>(null)
+  const [lookSending, setLookSending] = useState(false)
+  const openLook = useCallback((target: LookTarget) => {
+    const existing = draftFor(project.state.documents.looks, target)
+    const sessionId = existing?.sessionId ?? `look_${crypto.randomUUID()}`
+    if (!existing) project.setLooks(doc => ensureDraft(doc, target, sessionId, new Date().toISOString()))
+    setLookSession({ target, sessionId })
+    shellState.openRitual('look')
+  }, [project, shellState.openRitual])
+  const characterNames = useMemo(
+    () => project.state.documents.storyBible.content.characters.map(c => c.name.trim()).filter(Boolean),
+    [project.state.documents.storyBible.content.characters],
+  )
+  const activePromotedLooks = useMemo(() => promotedLooks(projectMemory.snapshot), [projectMemory.snapshot])
+  const lookSessionsValue = useMemo(
+    () => ({ openLook, characterNames, promotedLooks: activePromotedLooks }),
+    [openLook, characterNames, activePromotedLooks],
+  )
   const activeAgentProjectKeyRef = useRef(activeAgentProjectKey)
   const wpRequestGenerationRef = useRef(0)
   activeAgentProjectKeyRef.current = activeAgentProjectKey
@@ -962,6 +1005,44 @@ export default function App() {
     }
   }, [buildFreshProjectContext, project, shellState.activeTab, shellState.storyBibleSection])
 
+  const handleLookSend = useCallback(async (text: string) => {
+    if (!lookSession || !project.activeProjectId) return
+    const { target, sessionId } = lookSession
+    const draft = draftFor(project.state.documents.looks, target)
+    const conversationHistory = historyFromTranscript(project.state.agents.zoe.transcript, sessionId)
+    project.addMessage('zoe', makeMessage('user', text, 'Writer', { lookSessionId: sessionId }))
+    setLookSending(true)
+    try {
+      const projectContext = buildFreshProjectContext(text)
+      const response = await postWPChat({
+        projectId: project.activeProjectId,
+        personaId: 'zoe',
+        message: text,
+        projectContext,
+        conversationHistory,
+        voiceProfile: loadCompletedVoiceProfile(),
+        lookSession: {
+          sessionId,
+          entityKind: target.entityKind,
+          entityId: typeof draft?.spec.entity_id === 'string' && draft.spec.entity_id ? draft.spec.entity_id : target.entityId,
+          entityName: target.entityName,
+          reference: draft?.reference ?? 'unasked',
+          filledFields: filledFields(draft).slice(0, 64),
+          draftSummary: draftSummary(draft),
+        },
+      })
+      project.addMessage('zoe', makeMessage('assistant', response.message, PERSONAS.zoe?.name ?? 'Zoe', { memoryReceipt: response.memoryReceipt, lookSessionId: sessionId }))
+      // Citations only: the reply's text never reaches the draft.
+      const cited = response.memoryReceipt?.citations.map(citation => citation.id) ?? []
+      if (cited.length > 0) project.setLooks(doc => addDraftCitations(doc, target, cited, new Date().toISOString()))
+    } catch (error) {
+      if (isAbortError(error)) return
+      project.addMessage('zoe', makeMessage('assistant', 'Connection error — please try again.', PERSONAS.zoe?.name ?? 'Zoe', { lookSessionId: sessionId }))
+    } finally {
+      setLookSending(false)
+    }
+  }, [buildFreshProjectContext, lookSession, project])
+
   const renderActiveSurface = () => {
     switch (shellState.activeTab) {
       case 'script':
@@ -1103,6 +1184,37 @@ export default function App() {
             />
           </div>
         </div>
+      )
+    }
+
+    if (shellState.ritual === 'look' && lookSession) {
+      const { target, sessionId } = lookSession
+      const draft = draftFor(project.state.documents.looks, target)
+      const entityId = typeof draft?.spec.entity_id === 'string' && draft.spec.entity_id ? draft.spec.entity_id : target.entityId
+      const looksClient = projectFolder.looks
+      const now = () => new Date().toISOString()
+      return (
+        <LookPanel
+          key={sessionId}
+          target={target}
+          draft={draft}
+          messages={project.state.agents.zoe.transcript.filter(message => message.lookSessionId === sessionId)}
+          sending={lookSending}
+          onSend={text => { void handleLookSend(text) }}
+          prior={activePromotedLooks.find(look => look.entityKind === target.entityKind && look.entityId === entityId)}
+          memoryRevision={projectMemory.browserOnly ? undefined : projectMemory.snapshot?.revision}
+          onField={(field, value) => project.setLooks(doc => setDraftField(doc, target, field, value, now()))}
+          onClear={field => project.setLooks(doc => clearDraftField(doc, target, field, now()))}
+          onReference={reference => project.setLooks(doc => setDraftReference(doc, target, reference, now()))}
+          promote={looksClient && activeFolderProjectId ? body => looksClient.promote(activeFolderProjectId, body) : undefined}
+          reexport={looksClient && activeFolderProjectId ? async () => { await looksClient.reexport(activeFolderProjectId) } : undefined}
+          onPromoted={() => {
+            project.setLooks(doc => removeDraft(doc, target))
+            void projectMemory.refresh()
+          }}
+          onMemoryStale={() => { void projectMemory.refresh() }}
+          onExit={shellState.closeRitual}
+        />
       )
     }
 
@@ -1265,7 +1377,9 @@ export default function App() {
       onExportSeed={handleExportSeed}
       railProps={railProps}
     >
-      {renderCenter()}
+      <LookSessionsProvider value={lookSessionsValue}>
+        {renderCenter()}
+      </LookSessionsProvider>
     </Shell>
   )
 }

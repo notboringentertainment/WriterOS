@@ -45,7 +45,9 @@ describe('buildLookContract', () => {
       expect(text).toContain(rule)
     }
     expect(text).toContain('never infer heritage')
-    expect(text).toContain('"suggestions": ["up to three next questions"]')
+    expect(text).toContain('exactly two keys, "message" and "suggestions"')
+    // No placeholder prose a model could echo back as its reply.
+    expect(text).not.toMatch(/"message":\s*"/)
   })
 
   it('asks the reference-image question first, in the plan\'s words, until it is answered', () => {

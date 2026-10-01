@@ -8,6 +8,7 @@ import type {
   ProjectLibrarySaveResponse,
 } from '@shared/projectLibraryApi'
 import { postLookbookQuestions } from './lookbookClient'
+import { getLookExport, postLookPromote } from './looksClient'
 import { getBeatSheetStatus, postBeatSheetRefresh } from './beatSheetClient'
 import type { StoredProject } from './projectLibrary'
 import type { ProjectStorageAdapter } from './projectStorage'
@@ -150,6 +151,10 @@ export async function bootstrapServerProjectStorage(
           beatKey,
           clientRequestId: `lbreq_${crypto.randomUUID()}`,
         }),
+    },
+    looks: {
+      promote: (projectId, body) => postLookPromote(projectId, bootstrap.sessionToken, body),
+      reexport: projectId => getLookExport(projectId, bootstrap.sessionToken),
     },
     async writeProject(project: StoredProject) {
       const response = await requestJson<ProjectLibrarySaveResponse>(

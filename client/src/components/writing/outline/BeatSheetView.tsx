@@ -6,6 +6,7 @@ import { SERIES_FOUNDATIONS, setOutlinePath } from '../../../lib/outlineDeck'
 import { OutlineCard } from './OutlineCard'
 import { BeatSheetStatusLine } from './BeatSheetStatusLine'
 import { LookbookBeat } from './LookbookBeat'
+import { PromotedLooksLine } from '../looks/LookEntryButton'
 
 export interface BeatSheetViewProps {
   content: OutlineDocumentContent
@@ -103,6 +104,11 @@ export function BeatSheetView({
             <article style={styles.beat}>
               <h4 style={styles.beatTitle}>{`${unit.number}. ${unit.title}`}</h4>
               <p style={styles.beatBody}>{unit.whatHappens}</p>
+              <PromotedLooksLine text={[
+                unit.title,
+                unit.whatHappens,
+                ...(lookbook?.beats[unit.id]?.questions ?? []).filter(question => !question.dismissedAt).map(question => question.answer),
+              ].join('\n')} />
               <LookbookBeat
                 beatKey={unit.id}
                 beatTitle={unit.title}

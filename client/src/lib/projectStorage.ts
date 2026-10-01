@@ -1,5 +1,7 @@
 import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import type { LookbookQuestionsResult } from './lookbookClient'
+import type { LookExportResponse, LookPromoteRequest } from '@shared/looks'
+import type { LookPromoteOutcome } from './looksClient'
 import {
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
@@ -125,6 +127,11 @@ export interface ProjectStorageLookbookClient {
   questions(projectId: string, beatKey: string): Promise<LookbookQuestionsResult>
 }
 
+export interface ProjectStorageLooksClient {
+  promote(projectId: string, body: LookPromoteRequest): Promise<LookPromoteOutcome>
+  reexport(projectId: string): Promise<LookExportResponse>
+}
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access' | 'server'
   label: string
@@ -135,6 +142,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   /** Present only on the server adapter, which holds the session token. */
   beatSheet?: ProjectStorageBeatSheetClient
   lookbook?: ProjectStorageLookbookClient
+  looks?: ProjectStorageLooksClient
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>

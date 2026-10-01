@@ -14,7 +14,8 @@ import {
 } from '../projectMemory/agentContext'
 import type { MemoryReceipt } from '../../shared/schema'
 import { LookbookQuestionsRequestSchema } from '../../shared/lookbook'
-import { buildLookbookSystemPrompt, buildLookbookUserMessage } from './buildLookbookPrompt'
+import { buildLookbookSystemPrompt, buildLookbookUserMessage, type PromotedLookSummary } from './buildLookbookPrompt'
+import { projectMemoryStore } from '../projectMemory/store'
 
 const ModelOutputSchema = z.object({
   questions: z.array(z.object({ prompt: z.string().min(8).max(240) })).max(5),
@@ -112,6 +113,23 @@ export function registerLookbookRoutes(
         .filter(q => !q.dismissedAt)
         .map(q => q.prompt)
 
+      // Promoted looks, so Zoe does not re-ask what a look already decided. Never fatal.
+      let promotedLooks: PromotedLookSummary[] = []
+      try {
+        const snapshot = await projectMemoryStore.readSnapshotReadOnly(await store.resolveProjectPackagePath(projectId), projectId)
+        promotedLooks = snapshot.records.flatMap(record => {
+          if (record.kind !== 'canon' || record.status !== 'active' || record.payload?.kind !== 'look_spec') return []
+          const spec = record.payload.spec
+          return [{
+            kind: spec.entity_kind,
+            name: record.entities[0] ?? spec.entity_id,
+            summary: spec.prompt_safe_description.split(/(?<=[.!?])\s+/)[0] ?? '',
+          }]
+        })
+      } catch {
+        promotedLooks = []
+      }
+
       const memory = await buildAgentMemoryContext(memoryProvider, projectId, {
         message: unit.whatHappens,
         surface: 'outline',
@@ -119,12 +137,13 @@ export function registerLookbookRoutes(
       })
       const result = await askZoe(
         modelProvider,
-        buildLookbookSystemPrompt(memory.prompt),
+        buildLookbookSystemPrompt(memory.prompt, promotedLooks.length > 0),
         buildLookbookUserMessage({
           movement: unit.actOrSequence,
           title: unit.title,
           body: unit.whatHappens,
           existingPrompts,
+          promotedLooks,
         }),
         memory,
       )

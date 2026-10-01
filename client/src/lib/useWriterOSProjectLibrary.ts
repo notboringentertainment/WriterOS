@@ -6,6 +6,7 @@ import {
   type DuplicateProjectResult,
   type ProjectStorageBeatSheetClient,
   type ProjectStorageLookbookClient,
+  type ProjectStorageLooksClient,
   type ProjectStorageCapabilities,
   type ProjectStorageListEntry,
   type ProjectStorageProjectRef,
@@ -113,6 +114,7 @@ export interface WriterOSProjectLibraryState {
   /** Server-backed libraries only: Story-drive beat sheet refresh/status. */
   beatSheet?: ProjectStorageBeatSheetClient | null
   lookbook?: ProjectStorageLookbookClient | null
+  looks?: ProjectStorageLooksClient | null
   writeProject: (project: StoredProject) => Promise<WriterOSFolderProject>
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<ProjectStorageProjectRef>>
@@ -333,6 +335,7 @@ export function useWriterOSProjectLibrary(): WriterOSProjectLibraryState {
     openProject,
     beatSheet: adapter.beatSheet ?? null,
     lookbook: adapter.lookbook ?? null,
+    looks: adapter.looks ?? null,
     writeProject,
     deleteProject,
     archiveProject,

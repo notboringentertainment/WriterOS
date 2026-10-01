@@ -29,6 +29,8 @@ export interface TranscriptMessage {
   ts: number
   capabilityReceipt?: CapabilityReceipt
   memoryReceipt?: MemoryReceipt
+  /** Set on Zoe messages that belong to a look session; shown only in the Look panel. */
+  lookSessionId?: string
 }
 
 export interface ScriptScene {
