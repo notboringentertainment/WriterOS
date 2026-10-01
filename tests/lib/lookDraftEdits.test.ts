@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDraftCitations, applyZoeReplyToDraft, candidateSpec, isPristineDraft, matchesPromotedLook, startDraftFromPromoted, clearDraftField, draftSummary, ensureDraft, filledFields, promotedLooksNamedIn,
-  removeDraft, setDraftField, setDraftReference, slugifyEntityName, type LookTarget,
+  promotedLookFor, removeDraft, setDraftField, setDraftReference, slugifyEntityName, type LookTarget,
 } from '../../client/src/lib/lookDraftEdits'
 import { emptyLooks, LooksDocumentSchema } from '../../shared/looks'
 
@@ -43,7 +43,7 @@ describe('look draft edits', () => {
     expect(candidateSpec(draft)).toEqual({ entity_kind: 'character', entity_id: 'vector-engineer', props: ['wrench'], version: '1.1', depends_on: [] })
     expect(filledFields(draft)).toEqual(['entity_id', 'props'])
     expect(draftSummary(draft)).toContain('props:\n  - wrench')
-    expect(removeDraft(doc, target).drafts).toEqual({})
+    expect(removeDraft(doc, target, 's1').drafts).toEqual({})
   })
 
   it('a Zoe reply with field values changes only the citations (Review Focus 4)', () => {
@@ -53,12 +53,12 @@ describe('look draft edits', () => {
     const after = applyZoeReplyToDraft(doc, target, {
       message: 'Her hair is grey.\nhair: grey\n{"hair":"grey","age_band":"forties"}',
       memoryReceipt: { citations: [{ id: 'mem_cited' }] },
-    }, NOW).drafts['character:vector-engineer']
+    }, NOW, 's1').drafts['character:vector-engineer']
     expect(after.spec).toEqual(before.spec)
     expect(after.fieldSources).toEqual(before.fieldSources)
     expect(after.reference).toBe(before.reference)
     expect(after.citedRecordIds).toEqual(['mem_cited'])
-    expect(applyZoeReplyToDraft(doc, target, { message: 'hair: grey' }, NOW)).toBe(doc)
+    expect(applyZoeReplyToDraft(doc, target, { message: 'hair: grey' }, NOW, 's1')).toBe(doc)
   })
 
   it('starting from the promoted look copies the writer\'s own answers, marked writer-typed, and only still-active citations', () => {
@@ -102,5 +102,30 @@ describe('look draft edits', () => {
     const looks = [{ recordId: 'm', entityKind: 'character' as const, entityId: 'ash', entityName: 'Ash', lookHash: 'x', reference: 'none' as const, spec: {} as never }]
     expect(promotedLooksNamedIn(looks, 'Ash walks in.')).toHaveLength(1)
     expect(promotedLooksNamedIn(looks, 'The ashtray is full.')).toHaveLength(0)
+  })
+
+  it('a late promotion or Zoe reply leaves a newer draft for the same entity alone', () => {
+    let doc = ensureDraft(emptyLooks(), target, 's-new', NOW)
+    expect(removeDraft(doc, target, 's-old')).toBe(doc)
+    expect(applyZoeReplyToDraft(doc, target, { message: 'x', memoryReceipt: { citations: [{ id: 'mem_old' }] } }, NOW, 's-old')).toBe(doc)
+    doc = applyZoeReplyToDraft(doc, target, { message: 'x', memoryReceipt: { citations: [{ id: 'mem_new' }] } }, NOW, 's-new')
+    expect(doc.drafts['character:vector-engineer'].citedRecordIds).toEqual(['mem_new'])
+  })
+
+  it('a new citation still lands once the draft holds 24', () => {
+    let doc = ensureDraft(emptyLooks(), target, 's1', NOW)
+    doc = addDraftCitations(doc, target, Array.from({ length: 24 }, (_, i) => `mem_${i}`), NOW)
+    doc = addDraftCitations(doc, target, ['mem_new'], NOW)
+    const ids = doc.drafts['character:vector-engineer'].citedRecordIds
+    expect(ids).toHaveLength(24)
+    expect(ids.at(-1)).toBe('mem_new')
+  })
+
+  it('finds the promoted look for a reopened entity even when its id was changed before promoting', () => {
+    const look = { recordId: 'm', entityKind: 'character' as const, entityId: 'custom-joe', entityName: 'Joe', lookHash: 'x', reference: 'none' as const, spec: {} as never }
+    const joe: LookTarget = { entityKind: 'character', entityId: 'joe', entityName: 'Joe' }
+    expect(promotedLookFor([look], joe, 'joe')).toBe(look)
+    expect(promotedLookFor([look], joe, 'custom-joe')).toBe(look)
+    expect(promotedLookFor([look], { ...joe, entityName: 'Joanna', entityId: 'joanna' }, 'joanna')).toBeUndefined()
   })
 })

@@ -219,7 +219,10 @@ const FACE_WORD = new RegExp(
   `\\b(${FACE_VOCABULARY.map(word => word.replace(/ /g, '\\s+')).join('|')})(e?s)?\\b`,
   'i',
 )
-const FIREWALL_TEXT_FIELDS = ['prompt_safe_description', 'continuity_risks', 'negative_lines', 'props'] as const
+const FIREWALL_TEXT_FIELDS = [
+  'prompt_safe_description', 'continuity_risks', 'negative_lines', 'props',
+  'hair', 'build', 'default_wardrobe', 'wardrobe_variants', 'era_and_class_signals',
+] as const
 
 export function findFirewallProblems(spec: unknown, reference: string): LookSpecProblem[] {
   if (reference !== 'casting-inspiration' || !spec || typeof spec !== 'object') return []

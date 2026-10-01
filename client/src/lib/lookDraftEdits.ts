@@ -88,7 +88,7 @@ export function addDraftCitations(doc: LooksDocument, target: LookTarget, ids: r
   if (ids.length === 0) return doc
   return updateDraft(doc, target, now, draft => {
     const merged = [...new Set([...draft.citedRecordIds, ...ids])].slice(-24)
-    return merged.length === draft.citedRecordIds.length ? draft : { ...draft, citedRecordIds: merged }
+    return merged.join('\n') === draft.citedRecordIds.join('\n') ? draft : { ...draft, citedRecordIds: merged }
   })
 }
 
@@ -102,14 +102,18 @@ export function applyZoeReplyToDraft(
   target: LookTarget,
   reply: { message: string; memoryReceipt?: { citations: Array<{ id: string }> } },
   now: string,
+  sessionId: string,
 ): LooksDocument {
+  // A reply that arrives after the writer moved on belongs to an older session.
+  if (draftFor(doc, target)?.sessionId !== sessionId) return doc
   const cited = reply.memoryReceipt?.citations.map(citation => citation.id) ?? []
   return addDraftCitations(doc, target, cited, now)
 }
 
-export function removeDraft(doc: LooksDocument, target: LookTarget): LooksDocument {
+/** Remove the draft promoted in `sessionId`; a newer draft for the same entity stays. */
+export function removeDraft(doc: LooksDocument, target: LookTarget, sessionId: string): LooksDocument {
   const key = lookDraftKey(target.entityKind, target.entityId)
-  if (!doc.drafts[key]) return doc
+  if (doc.drafts[key]?.sessionId !== sessionId) return doc
   const { [key]: _removed, ...drafts } = doc.drafts
   return { ...doc, drafts }
 }
@@ -230,4 +234,15 @@ export function promotedLooksNamedIn(looks: readonly PromotedLook[], text: strin
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu').test(text)
   })
+}
+
+/**
+ * The promoted look a reopened entity continues: by the id in use, else by
+ * name, so a look promoted under an id the writer changed is still found (and
+ * a new Promote supersedes it rather than starting a second entity).
+ */
+export function promotedLookFor(looks: readonly PromotedLook[], target: LookTarget, entityId: string): PromotedLook | undefined {
+  const sameKind = looks.filter(look => look.entityKind === target.entityKind)
+  return sameKind.find(look => look.entityId === entityId)
+    ?? sameKind.find(look => look.entityName.trim().toLowerCase() === target.entityName.trim().toLowerCase())
 }

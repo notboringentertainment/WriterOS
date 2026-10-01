@@ -111,3 +111,20 @@ Scratch only: WriterOS test build on port 5198 against a scratch library (projec
 - **Background memory analysis raises false conflicts against promoted looks** (found 2026-09-30 in the Task 6 visual check). Naming a Story Bible character "Vector Courier" made the WriterOS observer publish the document fact "The character's name is now Vector Courier" with an open conflict against that character's promoted look record, though the two do not disagree. In a real project this is review noise sitting beside a look awaiting ratification (OpenMontage deliberately does not refuse a look with an open WriterOS conflict). Likely fix: the observer/analyzer should not name look_spec canon records as conflict targets, or should treat them as reference-only. Ben approved logging it; to be handled after Task 12.
 - **Task 10 deviation: pinned manifests are frozen.** The plan said to edit `pipeline_defs/authored-film@1.5.yaml` (~line 167). That file's bytes are bound by signed `pipeline_migration` receipts (Bloodless pins 1.5 at `881e1f02…`), so any edit makes every pinned project refuse to run until the writer signs a new migration. The wording went into the director docs instead (OpenMontage `look-lock-director.md`, `WORKFLOW.md`), which tell directors to read the 1.5 review focus as "a wayfinder ticket or a WriterOS promotion"; the manifest wording waits for the next version.
 - **Flaky test on the parent branch**: `tests/server/beatSheetRoutes.test.ts` "a PUT with no lookbook key…" fails about one full run in three with ENOTEMPTY on temp-dir cleanup (cleanup races a background memory write). Fix on feat/beat-sheet-lookbook before it merges.
+
+## Codex code review of the WriterOS diff (2026-10-01) — verdict FIX FIRST
+
+Each finding was checked against the code before any change.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | Late Promote / Zoe reply edits a newer draft or another project | Real (worse than stated: a stale callback saves under the old project id). Fixed: panel ignores results after it closes; App checks the project key before acting; `removeDraft` and `applyZoeReplyToDraft` act only on the matching session id. |
+| 2 | Stale client save erases newer look drafts | Not fixed. Same whole-package last-save-wins behaviour every document already has; only the client writes `looks.json`. A looks-only revision scheme is new design for a two-open-copies case. Deferred. |
+| 3 | Casting firewall skips hair, build, wardrobe, era text | Real. Fixed: firewall covers every generator-read free-text field (heritage note left out on purpose: writer-stated, D16). |
+| 4 | Concurrent reuse of one op id with different content | Not reachable from the app (Promote is disabled while sending; op ids are fresh UUIDs). Deferred. |
+| 5 | Typing a wardrobe variant rewrites the text after one letter | Real ("wet: rain" became "w: et: rain"). Fixed: typed text kept while it still means the stored list. |
+| 6 | Changed entity id lost after Promote (command and reopen) | Real. Fixed: command shows the promoted id; reopening finds the promoted look by id, else by name. |
+| 7 | 25th citation dropped at the 24 cap | Real. Fixed: compares ids, not length. |
+| 8 | Zero-width characters dodge the instruction check | Only deliberate odd input; OpenMontage still refuses it at render with a clear error. Deferred. |
+
+Verification: `npm run test:run` 2861 passed / 10 skipped; `npm run check` clean; `npm run build` done.

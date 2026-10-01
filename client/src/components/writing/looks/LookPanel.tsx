@@ -40,7 +40,7 @@ type PromoteState =
   | { kind: 'sending' }
   | { kind: 'refused'; message: string; problems: LookSpecProblem[] }
   | { kind: 'unanswered'; message: string }
-  | { kind: 'promoted'; response: LookPromoteResponse }
+  | { kind: 'promoted'; response: LookPromoteResponse; entityId: string }
 
 const labelFor = (path: string) => LOOK_FIELD_LABELS[path.split(/[.[]/)[0]] ?? path
 
@@ -78,6 +78,10 @@ export function LookPanel(props: LookPanelProps) {
   const [reexportNote, setReexportNote] = useState<string | null>(null)
   // One id per Promote click; kept only while that click is unanswered, so a retry reuses it.
   const pendingOpId = useRef<string | null>(null)
+  // A promotion that finishes after the panel closed (another look, another
+  // project) must not touch whatever draft is open by then.
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
   const transcriptRef = useRef<HTMLDivElement>(null)
   const sideBySide = useSideBySide()
 
@@ -124,9 +128,10 @@ export function LookPanel(props: LookPanelProps) {
         expectedRevision: memoryRevision,
         promotionOpId: pendingOpId.current,
       })
+      if (!mounted.current) return
       pendingOpId.current = null
       if (outcome.ok) {
-        setState({ kind: 'promoted', response: outcome.response })
+        setState({ kind: 'promoted', response: outcome.response, entityId: String(spec.entity_id ?? target.entityId) })
         onPromoted(outcome.response)
         return
       }
@@ -137,6 +142,7 @@ export function LookPanel(props: LookPanelProps) {
       }
       setState({ kind: 'refused', message: outcome.message, problems: outcome.problems })
     } catch (error) {
+      if (!mounted.current) return
       if (error instanceof LookRequestUnanswered) {
         setState({ kind: 'unanswered', message: `${error.message} Click Promote again to retry the same promotion.` })
         return
@@ -249,7 +255,7 @@ export function LookPanel(props: LookPanelProps) {
                   Promoted · look_hash <code style={styles.code}>{promoted.lookHash.slice(0, 12)}</code> · awaiting Front Lot ratification
                 </p>
                 <p style={styles.hint}>
-                  Next, in OpenMontage: <code style={styles.code}>look_run.py --entity {draft?.spec.entity_id as string ?? target.entityId} --source writeros</code>,
+                  Next, in OpenMontage: <code style={styles.code}>look_run.py --entity {state.kind === 'promoted' ? state.entityId : target.entityId} --source writeros</code>,
                   then approve the gate in a terminal.
                 </p>
                 {!promoted.exportWritten && (

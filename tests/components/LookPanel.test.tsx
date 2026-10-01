@@ -224,3 +224,41 @@ describe('Writers Room', () => {
     expect(screen.queryByText('Look question')).toBeNull()
   })
 })
+
+describe('Look review fixes', () => {
+  it('after Promote, the next-step command names the id the writer promoted, not the opening id', async () => {
+    const promote = vi.fn().mockResolvedValue({ ok: true, response: {
+      recordId: 'mem_x', lookHash: 'a'.repeat(64), memoryRevision: 4, exportPath: 'memory/exports/look-locks-4.json',
+      exportWritten: true, supersededRecordId: null, retried: false } })
+    const draft = { ...completeCharacter(), spec: { ...completeCharacter().spec, entity_id: 'custom-joe' } }
+    const { props, rerender } = renderPanel({ draft, promote })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Promote to canon' })) })
+    rerender(<LookPanel {...props} draft={undefined} />)
+    expect(screen.getByText(/--entity custom-joe/)).toBeInTheDocument()
+  })
+
+  it('a promotion that finishes after the panel closed does not call back', async () => {
+    let resolve!: (value: unknown) => void
+    const promote = vi.fn().mockReturnValue(new Promise(r => { resolve = r }))
+    const { props, unmount } = renderPanel({ draft: completeCharacter(), promote })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Promote to canon' })) })
+    unmount()
+    await act(async () => { resolve({ ok: true, response: {
+      recordId: 'mem_x', lookHash: 'a'.repeat(64), memoryRevision: 4, exportPath: 'p', exportWritten: true, supersededRecordId: null, retried: false } }) })
+    expect(props.onPromoted).not.toHaveBeenCalled()
+  })
+
+  it('typing a wardrobe variant letter by letter keeps exactly what was typed', () => {
+    let draft = draftWith(character)
+    const onField = vi.fn((field: string, value: unknown) => {
+      draft = { ...draft, spec: { ...draft.spec, [field]: value } }
+      view.rerender(<LookPanel {...view.props} draft={draft} onField={onField} />)
+    })
+    const view = renderPanel({ draft, onField })
+    const box = () => screen.getByLabelText('Wardrobe variants') as HTMLTextAreaElement
+    for (const ch of 'wet: rain') fireEvent.change(box(), { target: { value: box().value + ch } })
+    expect(box().value).toBe('wet: rain')
+    expect(draft.spec.wardrobe_variants).toEqual([{ name: 'wet', when: 'rain' }])
+  })
+})
+

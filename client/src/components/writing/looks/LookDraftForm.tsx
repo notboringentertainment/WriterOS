@@ -64,15 +64,23 @@ export function isMissingField(problem: LookSpecProblem): boolean {
 
 const humanize = (value: string) => value.replace(/_/g, ' ').replace(/^\w/, ch => ch.toUpperCase())
 
-function useListText(values: unknown, toText: (items: unknown[]) => string) {
+function useListText(values: unknown, toText: (items: unknown[]) => string, parse: (text: string) => unknown[]) {
   const external = Array.isArray(values) ? toText(values) : ''
+  const stored = JSON.stringify(Array.isArray(values) ? values : [])
   const [text, setText] = useState(external)
   useEffect(() => {
-    // Keep a trailing newline the writer is typing; resync only when the stored list really changed.
-    setText(current => (current.replace(/\n+$/, '') === external ? current : external))
+    // Keep what the writer is typing while it still means the stored list;
+    // resync only when the list was replaced from elsewhere.
+    setText(current => (JSON.stringify(parse(current)) === stored ? current : external))
   }, [external])
   return [text, setText] as const
 }
+
+const parseListLines = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean)
+const parseVariantLines = (text: string) => parseListLines(text).map(line => {
+  const at = line.indexOf(':')
+  return at < 0 ? { name: line, when: '' } : { name: line.slice(0, at).trim(), when: line.slice(at + 1).trim() }
+})
 
 function FieldShell({ id, label, hint, problem, children }: { id: string; label: string; hint?: string; problem?: string; children: React.ReactNode }) {
   return (
@@ -269,14 +277,14 @@ function ListField({ id, label, hint, value, allowNone, problem, disabled, onCha
   id: string; label: string; hint?: string; value: unknown; allowNone?: boolean; problem?: string; disabled?: boolean
   onChange: (items: string[] | null) => void
 }) {
-  const [text, setText] = useListText(value, items => items.map(String).join('\n'))
+  const [text, setText] = useListText(value, items => items.map(String).join('\n'), parseListLines)
   const isNone = allowNone && Array.isArray(value) && value.length === 0
   return (
     <FieldShell id={id} label={label} hint={hint ?? 'One per line.'} problem={problem}>
       <textarea id={id} style={styles.textarea} rows={3} value={text} disabled={disabled || isNone}
         onChange={event => {
           setText(event.target.value)
-          const items = event.target.value.split('\n').map(line => line.trim()).filter(Boolean)
+          const items = parseListLines(event.target.value)
           onChange(items.length > 0 ? items : null)
         }} />
       {allowNone && (
@@ -306,17 +314,14 @@ function VariantsField({ id, value, problem, disabled, onChange }: { id: string;
   const [text, setText] = useListText(value, items => items.map(item => {
     const v = item as { name?: string; when?: string }
     return `${v.name ?? ''}: ${v.when ?? ''}`
-  }).join('\n'))
+  }).join('\n'), parseVariantLines)
   const isNone = Array.isArray(value) && value.length === 0
   return (
     <FieldShell id={id} label="Wardrobe variants" hint="One per line, as name: when it is worn." problem={problem}>
       <textarea id={id} style={styles.textarea} rows={2} value={text} disabled={disabled || isNone}
         onChange={event => {
           setText(event.target.value)
-          const items = event.target.value.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
-            const at = line.indexOf(':')
-            return at < 0 ? { name: line, when: '' } : { name: line.slice(0, at).trim(), when: line.slice(at + 1).trim() }
-          })
+          const items = parseVariantLines(event.target.value)
           onChange(items.length > 0 ? items : null)
         }} />
       <label style={styles.noneToggle}>

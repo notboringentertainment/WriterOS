@@ -35,4 +35,18 @@ describe('reference-image firewall', () => {
     const clean = { ...character(), distinguishing_marks: [], prompt_safe_description: 'Surface wear, a skinny tie, a noseband on the horse, a chinook wind.' }
     expect(findFirewallProblems(clean, 'casting-inspiration')).toEqual([])
   })
+
+  it('checks every free-text field the generator reads, not just the description', () => {
+    const clean = { ...character(), distinguishing_marks: [], prompt_safe_description: 'A tall courier in a rust coat.' }
+    for (const [field, value] of [
+      ['hair', 'cropped hair above blue eyes and a sharp jaw'],
+      ['build', { kind: 'lean', note: 'narrow face' }],
+      ['default_wardrobe', { pieces: ['scarf over the chin'] }],
+      ['wardrobe_variants', [{ name: 'night', when: 'hood hides the face' }]],
+      ['era_and_class_signals', 'weathered skin of a dock worker'],
+    ] as const) {
+      expect(findFirewallProblems({ ...clean, [field]: value }, 'casting-inspiration').length, field).toBe(1)
+    }
+  })
 })
+

@@ -73,6 +73,7 @@ import {
   ensureDraft,
   filledFields,
   promotedLooks,
+  promotedLookFor,
   removeDraft,
   setDraftField,
   setDraftReference,
@@ -1009,6 +1010,7 @@ export default function App() {
   const handleLookSend = useCallback(async (text: string) => {
     if (!lookSession || !project.activeProjectId) return
     const { target, sessionId } = lookSession
+    const requestProjectKey = activeAgentProjectKeyRef.current
     const draft = draftFor(project.state.documents.looks, target)
     const conversationHistory = historyFromTranscript(project.state.agents.zoe.transcript, sessionId)
     project.addMessage('zoe', makeMessage('user', text, 'Writer', { lookSessionId: sessionId }))
@@ -1032,13 +1034,15 @@ export default function App() {
           draftSummary: draftSummary(draft),
         },
       })
+      // A reply that lands after a project switch belongs to the old project.
+      if (activeAgentProjectKeyRef.current !== requestProjectKey) return
       project.addMessage('zoe', makeMessage('assistant', response.message, PERSONAS.zoe?.name ?? 'Zoe', { memoryReceipt: response.memoryReceipt, lookSessionId: sessionId }))
       // Citations only: the reply's text never reaches the draft (applyZoeReplyToDraft).
       if ((response.memoryReceipt?.citations.length ?? 0) > 0) {
-        project.setLooks(doc => applyZoeReplyToDraft(doc, target, response, new Date().toISOString()))
+        project.setLooks(doc => applyZoeReplyToDraft(doc, target, response, new Date().toISOString(), sessionId))
       }
     } catch (error) {
-      if (isAbortError(error)) return
+      if (isAbortError(error) || activeAgentProjectKeyRef.current !== requestProjectKey) return
       project.addMessage('zoe', makeMessage('assistant', 'Connection error — please try again.', PERSONAS.zoe?.name ?? 'Zoe', { lookSessionId: sessionId }))
     } finally {
       setLookSending(false)
@@ -1194,6 +1198,7 @@ export default function App() {
       const draft = draftFor(project.state.documents.looks, target)
       const entityId = typeof draft?.spec.entity_id === 'string' && draft.spec.entity_id ? draft.spec.entity_id : target.entityId
       const looksClient = projectFolder.looks
+      const lookProjectKey = activeAgentProjectKey
       const now = () => new Date().toISOString()
       return (
         <LookPanel
@@ -1203,7 +1208,7 @@ export default function App() {
           messages={project.state.agents.zoe.transcript.filter(message => message.lookSessionId === sessionId)}
           sending={lookSending}
           onSend={text => { void handleLookSend(text) }}
-          prior={activePromotedLooks.find(look => look.entityKind === target.entityKind && look.entityId === entityId)}
+          prior={promotedLookFor(activePromotedLooks, target, entityId)}
           memoryRevision={projectMemory.browserOnly ? undefined : projectMemory.snapshot?.revision}
           onField={(field, value) => project.setLooks(doc => setDraftField(doc, target, field, value, now()))}
           onClear={field => project.setLooks(doc => clearDraftField(doc, target, field, now()))}
@@ -1211,12 +1216,14 @@ export default function App() {
           promote={looksClient && activeFolderProjectId ? body => looksClient.promote(activeFolderProjectId, body) : undefined}
           reexport={looksClient && activeFolderProjectId ? async () => { await looksClient.reexport(activeFolderProjectId) } : undefined}
           onPromoted={() => {
-            project.setLooks(doc => removeDraft(doc, target))
+            // A promotion that lands after a project switch must not edit the new project.
+            if (activeAgentProjectKeyRef.current !== lookProjectKey) return
+            project.setLooks(doc => removeDraft(doc, target, sessionId))
             void projectMemory.refresh()
           }}
           onMemoryStale={() => { void projectMemory.refresh() }}
           onStartFromPromoted={() => {
-            const prior = activePromotedLooks.find(look => look.entityKind === target.entityKind && look.entityId === entityId)
+            const prior = promotedLookFor(activePromotedLooks, target, entityId)
             if (!prior) return
             const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
             project.setLooks(doc => startDraftFromPromoted(doc, target, prior, active, now()))
