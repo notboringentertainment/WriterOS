@@ -89,7 +89,24 @@ Claude verified each in code (look_ingest.py:672, look_lock_helpers.py:153, stor
 
 Accepted: export set must equal the active look set (highest-revision file read if two exist), with a Re-export button and `exportWritten: false` so the "stale" message has an action; retry lookup by op id before any other check, 409 `op-reused` on changed content; `build_look_packet` emits only the set source; helper fixed without weakening the rule; wording fixes. Changed: wayfinder wire form stays `source_ticket_ref` + `promotion_refs: []`, byte-identical to today. Declined: refusing looks with an open memory conflict; WriterOS treats them as active and Ben's terminal approval weighs it. Not re-reviewed.
 
+## Task 12 — dry run through the real Look panel (2026-09-30, passed)
+
+Scratch only: WriterOS test build on port 5198 against a scratch library (project "Vector Courier", invented character Mara Kell); OpenMontage worktree `feat/writeros-look-source` with its own projects and gates directories in the session scratchpad. Nothing under `projects/bloodless` or `~/WriterOS Projects` was touched.
+
+| Step | Result |
+|---|---|
+| Look panel: Zoe's first reply | "Do you have a reference image for this character?" |
+| Promote v1 (all fields typed in the form) | `mem_21793b0872a3a91f5055dba6ca758599`, look_hash `83ce81e41751…` (equal to the panel's preview), export written |
+| `look_run` (default `--source auto`) | picked WriterOS; gate evidence "Source: WriterOS promotion mem_21793b08… (memory revision 8) · Reference image: none" |
+| Ben's approval 1 | receipt `9feae9e4-0fd9-42d8-869a-c5209d16cc60`; envelope `promotion_refs [{system: writeros, record_id: mem_21793b08…}]`, no `source_ticket_ref` key |
+| Promote v2 (jacket → long oilskin coat) | `mem_eaa5e3413dc71bfa7949659382630a2b`, look_hash `828aa63c35b9…`; panel warned it replaces the promoted look |
+| `look_run` without / with `--supersede` | refused / request written |
+| Ben's approval 2 | receipt `c007b1af-ba48-4937-976e-a35265c9ccbf`, `supersedes_look_hash 83ce81e41751…` |
+| After | active look `828aa63c35b9…` (wardrobe "long oilskin coat"); packet `source_ref {record_id: mem_eaa5e341…, memory_revision: 9, reference: none}`; the old look_hash refused by `verify_look_refs` |
+
 ## Follow-ups found during the build (not in this plan)
+
+- **Changing a promoted look means retyping it.** Promote removes the draft, so reopening the Look panel for an entity with a promoted look starts from an empty form (found in the Task 12 dry run: changing one wardrobe line meant retyping every field). Likely fix: a "Start from the promoted look" action that copies the writer's own promoted values into a new draft, each still marked writer-typed. This does not break never-draft: the values are the writer's earlier answers, not a model's.
 
 - **Background memory analysis raises false conflicts against promoted looks** (found 2026-09-30 in the Task 6 visual check). Naming a Story Bible character "Vector Courier" made the WriterOS observer publish the document fact "The character's name is now Vector Courier" with an open conflict against that character's promoted look record, though the two do not disagree. In a real project this is review noise sitting beside a look awaiting ratification (OpenMontage deliberately does not refuse a look with an open WriterOS conflict). Likely fix: the observer/analyzer should not name look_spec canon records as conflict targets, or should treat them as reference-only. Ben approved logging it; to be handled after Task 12.
 - **Task 10 deviation: pinned manifests are frozen.** The plan said to edit `pipeline_defs/authored-film@1.5.yaml` (~line 167). That file's bytes are bound by signed `pipeline_migration` receipts (Bloodless pins 1.5 at `881e1f02…`), so any edit makes every pinned project refuse to run until the writer signs a new migration. The wording went into the director docs instead (OpenMontage `look-lock-director.md`, `WORKFLOW.md`), which tell directors to read the 1.5 review focus as "a wayfinder ticket or a WriterOS promotion"; the manifest wording waits for the next version.
