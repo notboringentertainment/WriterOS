@@ -100,9 +100,58 @@ function provenanceLine(record: ProjectMemoryRecord): string {
   return `> ${parts.join(' · ')}`
 }
 
+/**
+ * YAML for a typed payload block. Every scalar is JSON-quoted (valid YAML), so
+ * no value can change the structure; key order follows the block.
+ */
+function yamlLines(value: unknown, indent: string): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(item => {
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+        const [first, ...rest] = yamlLines(item, `${indent}  `)
+        return [`${indent}- ${first.slice(indent.length + 2)}`, ...rest]
+      }
+      return [`${indent}- ${JSON.stringify(item)}`]
+    })
+  }
+  const lines: string[] = []
+  for (const [key, member] of Object.entries(value as Record<string, unknown>)) {
+    if (member === undefined) continue
+    if (Array.isArray(member) && member.length === 0) {
+      lines.push(`${indent}${key}: []`)
+    } else if (member !== null && typeof member === 'object') {
+      lines.push(`${indent}${key}:`, ...yamlLines(member, `${indent}  `))
+    } else {
+      lines.push(`${indent}${key}: ${JSON.stringify(member)}`)
+    }
+  }
+  return lines
+}
+
+/**
+ * A code fence longer than any backtick run in the body, so record text
+ * cannot close it early (CommonMark closes only on a run at least as long).
+ */
+function fenced(language: string, body: string): string[] {
+  const longestRun = Math.max(0, ...Array.from(body.matchAll(/`+/g), match => match[0].length))
+  const fence = '`'.repeat(Math.max(3, longestRun + 1))
+  return [`${fence}${language}`, body, fence]
+}
+
 function renderRecord(record: ProjectMemoryRecord): string[] {
   const lines = [escapeBlock(record.claim)]
-  if (record.detail) lines.push('', escapeBlock(record.detail))
+  if (record.payload?.kind === 'look_spec') {
+    // The typed block replaces detail here; detail keeps it for agent context.
+    const { spec, lookHash } = record.payload
+    lines.push(
+      '',
+      `Look — ${escapedMetadata(spec.entity_id)} (${spec.entity_kind}) · look_hash ${lookHash.slice(0, 12)}`,
+      '',
+      ...fenced('yaml', yamlLines(spec, '').join('\n')),
+    )
+  } else if (record.detail) {
+    lines.push('', escapeBlock(record.detail))
+  }
   lines.push('', provenanceLine(record))
   return lines
 }

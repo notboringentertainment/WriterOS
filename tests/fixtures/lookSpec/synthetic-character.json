@@ -1,0 +1,48 @@
+{
+  "version": "1.1",
+  "entity_kind": "character",
+  "entity_id": "vector-engineer",
+  "fictional_subject_attestation": true,
+  "minor": false,
+  "prompt_safe_description": "A wiry station engineer in her thirties with cropped ash-blond hair, grey eyes behind wire-rimmed glasses, a weathered grey work coat over a rust jumpsuit, and a habit of standing with one hand on any nearby rail.",
+  "continuity_risks": [
+    "hair length drifts between shots",
+    "glasses vanish in close-ups"
+  ],
+  "negative_lines": [
+    "no hat"
+  ],
+  "spoiler": false,
+  "depends_on": [
+    {
+      "writeros_record_id": "mem_0123456789abcdef0123456789abcdef",
+      "content_hash": "abababababababababababababababababababababababababababababababab"
+    }
+  ],
+  "shape_only": false,
+  "age_band": "thirties",
+  "build": {
+    "kind": "lean",
+    "note": "long limbs"
+  },
+  "hair": "cropped ash-blond",
+  "distinguishing_marks": [
+    "burn scar on left wrist"
+  ],
+  "default_wardrobe": {
+    "pieces": [
+      "grey work coat",
+      "rust jumpsuit"
+    ]
+  },
+  "wardrobe_variants": [
+    {
+      "name": "dress blues",
+      "when": "the ceremony"
+    }
+  ],
+  "props": [
+    "torque wrench"
+  ],
+  "era_and_class_signals": "near-future working crew, café-bar regular"
+}
