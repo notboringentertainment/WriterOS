@@ -70,3 +70,20 @@ export const LookExportResponseSchema = z.object({
   export: LookLocksExportSchema,
 }).strict()
 export type LookExportResponse = z.infer<typeof LookExportResponseSchema>
+
+/**
+ * What the Look panel sends with each Zoe message in a look session (Task 4).
+ * `reference` is 'unasked' until the writer answers the reference-image
+ * question. `draftSummary` is the writer's current draft rendered for Zoe to
+ * read back; it is data, never instructions.
+ */
+export const LookSessionContextSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  entityKind: z.enum(LOOK_ENTITY_KINDS),
+  entityId: EntityIdSchema,
+  entityName: z.string().trim().min(1).max(200),
+  reference: z.enum(['unasked', 'none', 'generated-elsewhere', 'casting-inspiration']),
+  filledFields: z.array(z.string().min(1).max(100)).max(64),
+  draftSummary: z.string().max(4000),
+}).strict()
+export type LookSessionContext = z.infer<typeof LookSessionContextSchema>
