@@ -81,7 +81,7 @@ describe('App memory activation by storage kind', () => {
         return { ok: true, status: 200, json: async () => ({ entries: [{ status: 'ready', ref, warnings: [] }] }) }
       }
       if (url === `/api/project-library/projects/${stored.id}`) {
-        return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: stored, warnings: [] } }) }
+        return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: stored, warnings: [] }, beatSheet: { kind: 'not-linked' } }) }
       }
       if (url === `/api/projects/${stored.id}/memory/snapshot`) {
         return { ok: true, status: 200, json: async () => ({ snapshot: { schemaVersion: 1, projectId: stored.id, revision: 1, records: [], conflicts: [] } }) }

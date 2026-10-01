@@ -5,6 +5,8 @@ import { lstat, open, rename, rm } from 'node:fs/promises'
 import { createHash, randomBytes } from 'node:crypto'
 import { WriterOSProjectManifestSchema } from '../../client/src/lib/projectPackage'
 import { acquirePackageWriteLock } from '../projectLibrary/packageLock'
+import { readStoryDriveLinks, writeStoryDriveLink } from '../projectLibrary/storyDriveLinks'
+import { syncBeatSheet, type BeatSheetSyncStatus } from './beatSheetSync'
 import { buildMemoryContext, citationLabelsForRecords } from './retrieval'
 import { renderMemoryContextMarkdown } from './renderContext'
 import {
@@ -349,11 +351,16 @@ async function runLinkSource(
   io: ProjectMemoryCliIo,
   dependencies: ProjectMemoryCliDependencies,
 ): Promise<number> {
-  assertAllowedOptions(args, ['project', 'workflow', 'source-id'])
+  assertAllowedOptions(args, ['project', 'workflow', 'source-id', 'from', 'beat-sheet'])
   const project = await safeProjectPath(args)
   const projectPath = project.path
-  if (requiredValue(args, 'workflow') !== 'buzz') {
-    throw new CliInputError('Only the Buzz source linkage is supported.')
+  const workflow = requiredValue(args, 'workflow')
+  if (workflow === 'wayfinder') return runLinkWayfinder(args, io, project)
+  if (workflow !== 'buzz') {
+    throw new CliInputError('Only the Buzz and Wayfinder source linkage is supported.')
+  }
+  if (args.values.has('from') || args.values.has('beat-sheet')) {
+    throw new CliInputError('--from and --beat-sheet apply to the Wayfinder linkage only.')
   }
   const sourceId = requiredValue(args, 'source-id')
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(sourceId)) {
@@ -392,6 +399,59 @@ async function runLinkSource(
       if (primaryError === undefined) throw error
     }
   }
+}
+
+const BEAT_SHEET_TICKET_PATTERN = /^resolved\/[A-Za-z0-9._-]+\.md$/
+
+/**
+ * Register a Story-drive folder for a package. Only the registry beside the
+ * packages is written; project.json is never touched by this path.
+ */
+async function runLinkWayfinder(
+  args: ParsedArguments,
+  io: ProjectMemoryCliIo,
+  project: SafeExistingPath,
+): Promise<number> {
+  if (args.values.has('source-id')) throw new CliInputError('--source-id applies to the Buzz linkage only.')
+  const from = requiredValue(args, 'from')
+  if (!path.isAbsolute(from)) throw new CliInputError('--from must be an absolute path.')
+  const beatSheet = args.values.get('beat-sheet')?.trim()
+  if (args.values.has('beat-sheet') && (!beatSheet || !BEAT_SHEET_TICKET_PATTERN.test(beatSheet))) {
+    throw new CliInputError('--beat-sheet must be resolved/<file>.md.')
+  }
+  const source = await guardExistingPath(from, 'directory')
+  const manifest = await readSafeManifest(project.path)
+  await project.verify()
+  await source.verify()
+  const { changed } = await writeStoryDriveLink(path.dirname(project.path), manifest.projectId, {
+    root: source.canonicalPath,
+    ...(beatSheet ? { beatSheet } : {}),
+  })
+  io.stdout(`${JSON.stringify({
+    linked: changed,
+    workflow: 'wayfinder',
+    root: source.canonicalPath,
+    ...(beatSheet ? { beatSheet } : {}),
+  }, null, 2)}\n`)
+  return 0
+}
+
+async function runSyncBeats(args: ParsedArguments, io: ProjectMemoryCliIo): Promise<number> {
+  assertAllowedOptions(args, ['project'], ['dry-run', 'apply'])
+  const dryRun = args.flags.has('dry-run')
+  const apply = args.flags.has('apply')
+  if (dryRun === apply) throw new CliInputError('sync-beats requires exactly one of --dry-run or --apply.')
+  const project = await safeProjectPath(args)
+  const manifest = await readSafeManifest(project.path)
+  await project.verify()
+  const { status } = await syncBeatSheet({
+    workspaceRoot: path.dirname(project.path),
+    packagePath: project.path,
+    projectId: manifest.projectId,
+    write: apply,
+  })
+  io.stdout(`${JSON.stringify(status, null, 2)}\n`)
+  return status.kind === 'unchanged' || status.kind === 'updated' ? 0 : 2
 }
 
 const ImportPreviewSchema = z.object({
@@ -476,7 +536,7 @@ async function runImport(
   io: ProjectMemoryCliIo,
   dependencies: ProjectMemoryCliDependencies,
 ): Promise<number> {
-  assertAllowedOptions(args, ['project', 'source', 'from'], ['dry-run', 'apply'])
+  assertAllowedOptions(args, ['project', 'source', 'from'], ['dry-run', 'apply', 'relink'])
   const dryRun = args.flags.has('dry-run')
   const apply = args.flags.has('apply')
   if (dryRun === apply) throw new CliInputError('Import requires exactly one of --dry-run or --apply.')
@@ -499,6 +559,33 @@ async function runImport(
   const manifest = await readSafeManifest(projectPath)
   if (manifest.projectId !== snapshot.projectId) {
     throw new CliInputError('The project manifest does not match project memory.')
+  }
+  const relink = args.flags.has('relink')
+  if (relink && source !== 'wayfinder') throw new CliInputError('--relink applies to the Wayfinder import only.')
+  if (relink && dryRun) throw new CliInputError('--relink requires --apply; a dry run never writes.')
+  if (source === 'wayfinder') {
+    const registered = (await readStoryDriveLinks(path.dirname(projectPath))).links[manifest.projectId]
+    if (registered && registered.root !== sourceGuard.canonicalPath) {
+      if (!relink) {
+        throw new CliInputError(
+          '--from differs from the registered Story-drive folder; pass --relink to update the registry, or use the registered folder.',
+        )
+      }
+      await writeStoryDriveLink(path.dirname(projectPath), manifest.projectId, {
+        root: sourceGuard.canonicalPath,
+        ...(registered.beatSheet ? { beatSheet: registered.beatSheet } : {}),
+      })
+    }
+  }
+  const syncBeats = async (): Promise<{ beatSheet: BeatSheetSyncStatus } | Record<string, never>> => {
+    if (source !== 'wayfinder') return {}
+    const { status } = await syncBeatSheet({
+      workspaceRoot: path.dirname(projectPath),
+      packagePath: projectPath,
+      projectId: manifest.projectId,
+      write: apply,
+    })
+    return { beatSheet: status }
   }
   const linkedSourceId = source === 'buzz' ? manifest.sources?.buzzChannelId : undefined
   if (source === 'buzz' && !linkedSourceId && dependencies.importPreview === undefined) {
@@ -644,6 +731,7 @@ async function runImport(
       questionsClosedExpected,
       ambiguous,
       renamed,
+      ...await syncBeats(),
     }, null, 2)}\n`)
     return 0
   }
@@ -735,6 +823,7 @@ async function runImport(
     duplicates,
     counts: { ...parsed.data.counts, duplicates },
     revision,
+    ...await syncBeats(),
   }, null, 2)}\n`)
   return 0
 }
@@ -1265,6 +1354,7 @@ export async function runProjectMemoryCli(
     if (args.command === 'export') return await runExport(args, io)
     if (args.command === 'link-source') return await runLinkSource(args, io, dependencies)
     if (args.command === 'import') return await runImport(args, io, dependencies)
+    if (args.command === 'sync-beats') return await runSyncBeats(args, io)
     if (args.command === 'reconcile-stale') return await runReconcileStale(args, io, dependencies)
     if (args.command === 'report') return await runReport(args, io)
     if (args.command === 'invalidate') return await runInvalidate(args, io)

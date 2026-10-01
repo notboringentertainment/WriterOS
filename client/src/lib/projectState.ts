@@ -9,6 +9,7 @@ import {
   outlineContentToTreatmentContent,
 } from './documentMigration'
 import { createEmptySeriesContent, type AuthoredDocumentState, type ProjectDocuments } from '@shared/documents'
+import { LookbookDocumentSchema } from '@shared/lookbook'
 import type { CapabilityReceipt } from '@shared/personaCapability'
 import type { MemoryReceipt } from '@shared/schema'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
@@ -404,6 +405,9 @@ export function migrateState(raw: unknown): ProjectState {
     outline: withNormalizedRevision(rawMigratedDocuments.outline ?? defaults.documents.outline),
     treatment: withNormalizedRevision(rawMigratedDocuments.treatment ?? defaults.documents.treatment),
     storyBible: withNormalizedRevision(rawMigratedDocuments.storyBible ?? defaults.documents.storyBible),
+    lookbook: LookbookDocumentSchema.safeParse(rawMigratedDocuments.lookbook).success
+      ? rawMigratedDocuments.lookbook
+      : undefined,
   }
   const normalizedOutlineContent = normalizeOutlineContent(
     migratedDocuments.outline.content as Partial<ProjectDocuments['outline']['content']>,
@@ -463,6 +467,7 @@ export function saveProjectState(state: ProjectState): void {
       outline: state.documents.outline,
       treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
+      ...(state.documents.lookbook ? { lookbook: state.documents.lookbook } : {}),
     },
   })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))

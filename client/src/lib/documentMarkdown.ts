@@ -64,7 +64,7 @@ export function outlineToMarkdown(doc: AuthoredDocumentState<OutlineDocumentCont
   })
 
   return lines(
-    '# Outline',
+    '# Beat Sheet',
     unitBlocks.length ? unitBlocks.join('\n\n') : undefined,
   ).trim() + '\n'
 }
@@ -147,7 +147,7 @@ export function storyBibleToMarkdown(doc: AuthoredDocumentState<StoryBibleDocume
   ).trim() + '\n'
 }
 
-export function documentsToMarkdown(docs: ProjectDocuments, format: ProjectFormat): Record<keyof ProjectDocuments, string> {
+export function documentsToMarkdown(docs: ProjectDocuments, format: ProjectFormat): Record<Exclude<keyof ProjectDocuments, 'lookbook'>, string> {
   return {
     synopsis: synopsisToMarkdown(docs.synopsis),
     outline: outlineToMarkdown(docs.outline, format),

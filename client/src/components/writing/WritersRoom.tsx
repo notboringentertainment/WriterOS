@@ -31,7 +31,7 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
         unit.whyNext.trim() ||
         unit.draftNotes.trim()
       )).length
-      return `${spineFilled} spine fields · ${unitFilled} outline beats`
+      return `${spineFilled} spine fields · ${unitFilled} beats`
     }
     case 'sam':
       return state.synopsis.logline || 'No logline yet'

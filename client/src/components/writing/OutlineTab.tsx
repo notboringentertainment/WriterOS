@@ -16,10 +16,15 @@ import {
   seedEpisodes101To103,
 } from '../../lib/outlineDeck'
 import { requestOutlineCompose } from '../../lib/composeClient'
+import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import { OutlineEditView } from './outline/OutlineEditView'
+import { BeatSheetView } from './outline/BeatSheetView'
+import { BeatSheetStatusLine } from './outline/BeatSheetStatusLine'
 import { OutlineDocumentView } from './outline/OutlineDocumentView'
 import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 import type { MemoryReceipt } from '@shared/schema'
+import type { LookbookDocument } from '@shared/lookbook'
+import { applyLookbookAsk, dismissLookbookQuestion, removeLookbookBeat, setLookbookAnswer } from '../../lib/lookbookEdits'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 import { useBoundProjectScopeKey, useProjectRequestGeneration } from '../../lib/useProjectRequestGeneration'
 
@@ -38,6 +43,14 @@ interface OutlineTabProps {
   onViewPreferencesPatch: (patch: Partial<DocumentViewPreferences>) => void
   onComposed: (composed: ComposedDocument) => void
   onClear?: (options?: { keep?: 'all' | 'foundations' }) => void
+  /** Story-drive sync status; null/undefined for projects without a server link. */
+  beatSheetStatus?: BeatSheetSyncStatusResponse | null
+  onRefreshBeatSheet?: () => Promise<void>
+  onCheckBeatSheetStatus?: () => Promise<BeatSheetSyncStatusResponse>
+  lookbook?: LookbookDocument
+  onLookbookChange?: (updater: (doc: LookbookDocument) => LookbookDocument) => void
+  /** Asks Zoe about one beat; only present for server-linked projects. Resolves null when the result is stale (project switched) and must be ignored. */
+  onRequestLookbookQuestions?: (beatKey: string) => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean } | null>
 }
 
 export function OutlineTab({
@@ -53,17 +66,69 @@ export function OutlineTab({
   onViewPreferencesPatch,
   onComposed,
   onClear,
+  beatSheetStatus = null,
+  onRefreshBeatSheet,
+  onCheckBeatSheetStatus,
+  lookbook,
+  onLookbookChange,
+  onRequestLookbookQuestions,
 }: OutlineTabProps) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [isComposing, setIsComposing] = useState(false)
   const [composeError, setComposeError] = useState<string | null>(null)
   const [memoryReceipt, setMemoryReceipt] = useState<MemoryReceipt | undefined>()
+  const [refreshing, setRefreshing] = useState(false)
+  const [changedSince, setChangedSince] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const isComposingRef = useRef(false)
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const beginComposeRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
   const activeView = document.viewPreferences?.activeView ?? 'edit'
   const hasContent = hasOutlineAnswers(document.content)
+
+  const isLinked = beatSheetStatus !== null && beatSheetStatus.kind !== 'not-linked'
+
+  const handleRefreshBeatSheet = useCallback(async () => {
+    if (!onRefreshBeatSheet) return
+    setRefreshing(true)
+    setRefreshError(null)
+    try {
+      await onRefreshBeatSheet()
+      setChangedSince(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error'
+      setRefreshError(`Refresh failed: ${message}. Showing the last synced beats.`)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [onRefreshBeatSheet])
+
+  // One background check per opened project: has Story-drive moved since the last sync?
+  const checkStatusRef = useRef(onCheckBeatSheetStatus)
+  checkStatusRef.current = onCheckBeatSheetStatus
+  useEffect(() => {
+    setChangedSince(false)
+    setRefreshError(null)
+    if (!isLinked || !checkStatusRef.current) return
+    let cancelled = false
+    checkStatusRef.current()
+      .then(next => { if (!cancelled && next.kind === 'updated') setChangedSince(true) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [effectiveProjectScopeKey, isLinked])
+
+  const handleAskQuestions = useCallback(async (beatKey: string) => {
+    if (!onRequestLookbookQuestions) throw new Error('Zoe is not available for this project.')
+    const unit = document.content.units.find(candidate => candidate.id === beatKey)
+    if (!unit) throw new Error('That beat is no longer in the Beat Sheet.')
+    const result = await onRequestLookbookQuestions(beatKey)
+    if (!result) return undefined
+    const prompts = result.questions.map(question => question.prompt).filter(prompt => prompt.trim().length > 0)
+    const now = new Date().toISOString()
+    onLookbookChange?.(doc => applyLookbookAsk(doc, beatKey, unit.title, prompts, now))
+    return { nothingToSee: prompts.length === 0 }
+  }, [document.content.units, onLookbookChange, onRequestLookbookQuestions])
 
   const handleCompose = useCallback(async () => {
     if (isComposingRef.current) return
@@ -118,7 +183,7 @@ export function OutlineTab({
 
     if (currentHasFormatAnswers) {
       const confirmed = window.confirm(
-        `Switching to ${next} will hide your ${activeFormat} outline answers. They'll be kept and restored if you switch back.`,
+        `Switching to ${next} will hide your ${activeFormat} answers. They'll be kept and restored if you switch back.`,
       )
       if (!confirmed) return
     }
@@ -141,9 +206,9 @@ export function OutlineTab({
       <div style={styles.header}>
         <div style={styles.titleRow}>
           <div>
-            <h2 style={styles.title}>Outline</h2>
+            <h2 style={styles.title}>Beat Sheet</h2>
             <p style={styles.subtitle}>
-              Shape the story before pages lock it in.
+              What Story-drive ratified, and what the camera sees.
             </p>
           </div>
           <div style={styles.titleControls}>
@@ -165,9 +230,9 @@ export function OutlineTab({
                 }}
                 onClick={() => setClearDialogOpen(true)}
                 disabled={!hasContent}
-                title="Clear outline"
+                title="Clear answers"
               >
-                Clear outline
+                Clear answers
               </button>
             )}
           </div>
@@ -175,13 +240,43 @@ export function OutlineTab({
       </div>
 
       {activeView === 'edit' ? (
-        <OutlineEditView
-          format={activeFormat}
-          content={document.content}
-          onContentChange={onContentChange}
-          onAddEpisode={onAddEpisode}
-          onEpisodeFieldChange={onEpisodeFieldChange}
-        />
+        document.content.beatSheetSource ? (
+          <BeatSheetView
+            content={document.content}
+            status={beatSheetStatus}
+            changedSince={changedSince}
+            refreshError={refreshError}
+            lookbook={lookbook}
+            onRefresh={handleRefreshBeatSheet}
+            onAskQuestions={handleAskQuestions}
+            onAnswer={(beatKey, questionId, answer) =>
+              onLookbookChange?.(doc => setLookbookAnswer(doc, beatKey, questionId, answer))}
+            onDismiss={(beatKey, questionId) =>
+              onLookbookChange?.(doc => dismissLookbookQuestion(doc, beatKey, questionId, new Date().toISOString()))}
+            onRemoveOrphan={beatKey => onLookbookChange?.(doc => removeLookbookBeat(doc, beatKey))}
+            refreshing={refreshing}
+            onContentChange={onContentChange}
+          />
+        ) : (
+          <>
+            {beatSheetStatus && beatSheetStatus.kind !== 'not-linked' && (
+              <BeatSheetStatusLine
+                status={beatSheetStatus}
+                changedSince={changedSince}
+                errorMessage={refreshError}
+                refreshing={refreshing}
+                onRefresh={handleRefreshBeatSheet}
+              />
+            )}
+            <OutlineEditView
+              format={activeFormat}
+              content={document.content}
+              onContentChange={onContentChange}
+              onAddEpisode={onAddEpisode}
+              onEpisodeFieldChange={onEpisodeFieldChange}
+            />
+          </>
+        )
       ) : (
         <OutlineDocumentView
           content={document.content}

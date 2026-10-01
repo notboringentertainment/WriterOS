@@ -127,10 +127,13 @@ describe('useWriterOSProjectsFolder', () => {
     }
     storageMocks.listProjects.mockResolvedValue([{ status: 'ready', ref, warnings: [] }])
     storageMocks.readProject.mockResolvedValue({
-      ok: true,
-      manifest: ref.manifest,
-      project,
-      warnings: ['script/script.writeros.html is missing; using a blank script.'],
+      result: {
+        ok: true,
+        manifest: ref.manifest,
+        project,
+        warnings: ['script/script.writeros.html is missing; using a blank script.'],
+      },
+      beatSheet: null,
     })
     const { result } = renderHook(() => useWriterOSProjectsFolder())
 

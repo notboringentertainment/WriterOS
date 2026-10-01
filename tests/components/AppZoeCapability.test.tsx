@@ -174,7 +174,7 @@ describe('App Zoe persona capability routing', () => {
       const url = String(input)
       if (url === '/api/project-library/bootstrap') return { ok: true, status: 200, json: async () => ({ enabled: true, label: 'WriterOS Projects', sessionToken: 'session' }) }
       if (url === '/api/project-library/projects') return { ok: true, status: 200, json: async () => ({ entries: [{ status: 'ready', ref, warnings: [] }] }) }
-      if (url === `/api/project-library/projects/${stored.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: stored, warnings: [] } }) }
+      if (url === `/api/project-library/projects/${stored.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: stored, warnings: [] }, beatSheet: { kind: 'not-linked' } }) }
       if (url === '/api/persona-capability/run') return {
         ok: true, status: 200,
         json: async () => ({
@@ -217,8 +217,8 @@ describe('App Zoe persona capability routing', () => {
       const url = String(input)
       if (url === '/api/project-library/bootstrap') return { ok: true, status: 200, json: async () => ({ enabled: true, label: 'WriterOS Projects', sessionToken: 'session' }) }
       if (url === '/api/project-library/projects') return { ok: true, status: 200, json: async () => ({ entries: refs.map(ref => ({ status: 'ready', ref, warnings: [] })) }) }
-      if (url === `/api/project-library/projects/${storedA.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedA), warnings: [] } }) }
-      if (url === `/api/project-library/projects/${storedB.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedB), warnings: [] } }) }
+      if (url === `/api/project-library/projects/${storedA.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedA), warnings: [] }, beatSheet: { kind: 'not-linked' } }) }
+      if (url === `/api/project-library/projects/${storedB.id}`) return { ok: true, status: 200, json: async () => ({ result: { ok: true, project: structuredClone(storedB), warnings: [] }, beatSheet: { kind: 'not-linked' } }) }
       if (url === '/api/persona-capability/run') return { ok: true, status: 200, json: async () => pending.promise }
       if (init?.method === 'PUT') return { ok: true, status: 200, json: async () => ({ ok: true }) }
       return { ok: true, status: 200, json: async () => ({}) }

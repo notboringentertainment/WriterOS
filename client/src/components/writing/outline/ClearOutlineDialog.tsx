@@ -18,8 +18,8 @@ export function ClearOutlineDialog({
   return (
     <div style={styles.backdrop} role="presentation">
       <div role="dialog" aria-modal="true" aria-labelledby="clear-outline-title" style={styles.dialog}>
-        <h3 id="clear-outline-title" style={styles.title}>Clear outline?</h3>
-        <p style={styles.copy}>Choose how much to remove from this outline.</p>
+        <h3 id="clear-outline-title" style={styles.title}>Clear answers?</h3>
+        <p style={styles.copy}>Choose how much to remove from this page.</p>
         <div style={styles.actions}>
           <button type="button" style={styles.secondaryButton} onClick={onClose}>
             Cancel

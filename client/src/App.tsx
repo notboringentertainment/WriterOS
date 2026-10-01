@@ -45,6 +45,7 @@ import {
   type HomePackageActionTarget,
 } from './components/home/HomeSurface'
 import { PERSONAS } from '@shared/personas'
+import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import { pickIdentity } from '@shared/compose/identity'
 import { composeSeedMarkdown, resolveSeedTitle, seedFileName } from '@shared/seedMarkdown'
 import { downloadTextFile } from './lib/downloadTextFile'
@@ -150,6 +151,7 @@ export default function App() {
   const shellState = useShellState()
   const project = useProjectState()
   const projectFolder = useWriterOSProjectLibrary()
+  const [beatSheetStatus, setBeatSheetStatus] = useState<{ projectId: string; status: BeatSheetSyncStatusResponse } | null>(null)
   const [wpLoading, setWpLoading] = useState(false)
   const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
@@ -207,6 +209,8 @@ export default function App() {
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
     : null
+  const activeFolderProjectIdRef = useRef(activeFolderProjectId)
+  activeFolderProjectIdRef.current = activeFolderProjectId
   const activeAgentProjectKey = activeFolderProjectId
     ? `folder:${activeFolderProjectId}`
     : `browser:${project.activeProjectId ?? ''}`
@@ -402,6 +406,33 @@ export default function App() {
     return () => window.clearTimeout(timeout)
   }, [activeFolderProjectId, persistFolderProject, project.activeStoredProject])
 
+  const handleRefreshBeatSheet = useCallback(async () => {
+    const client = projectFolder.beatSheet
+    if (!client || !activeFolderProjectId) return
+    const requestedProjectId = activeFolderProjectId
+    const { beatSheet, outline } = await client.refresh(requestedProjectId)
+    // The writer may have switched projects while the request was in flight.
+    if (activeFolderProjectIdRef.current !== requestedProjectId) return
+    if (outline) project.replaceOutlineDocument(outline)
+    setBeatSheetStatus({ projectId: requestedProjectId, status: beatSheet })
+  }, [activeFolderProjectId, project, projectFolder.beatSheet])
+
+  const handleRequestLookbookQuestions = useCallback(async (beatKey: string) => {
+    const client = projectFolder.lookbook
+    if (!client || !activeFolderProjectId) throw new Error('Zoe is not available for this project.')
+    const requestedProjectId = activeFolderProjectId
+    const result = await client.questions(requestedProjectId, beatKey)
+    // The writer may have switched projects while Zoe was answering: drop the result silently.
+    if (activeFolderProjectIdRef.current !== requestedProjectId) return null
+    return result
+  }, [activeFolderProjectId, projectFolder.lookbook])
+
+  const handleCheckBeatSheetStatus = useCallback(async () => {
+    const client = projectFolder.beatSheet
+    if (!client || !activeFolderProjectId) throw new Error('Beat sheet status is not available.')
+    return client.status(activeFolderProjectId)
+  }, [activeFolderProjectId, projectFolder.beatSheet])
+
   const handleOpenBrowserProject = useCallback((projectId: string) => {
     cancelPendingFolderSave()
     setActiveProjectStorage({ kind: 'browser' })
@@ -421,6 +452,9 @@ export default function App() {
     try {
       const openedProject = await projectFolder.openProject(projectId)
       project.openStoredProject(openedProject.project)
+      setBeatSheetStatus(openedProject.beatSheet
+        ? { projectId: openedProject.project.id, status: openedProject.beatSheet }
+        : null)
       setActiveProjectStorage({
         kind: 'folder',
         projectId: openedProject.project.id,
@@ -985,6 +1019,12 @@ export default function App() {
             onViewPreferencesPatch={(patch) => project.setOutlineViewPreferences(patch)}
             onComposed={(composed) => project.setComposedDocument('outline', composed)}
             onClear={project.clearOutline}
+            beatSheetStatus={beatSheetStatus && beatSheetStatus.projectId === activeFolderProjectId ? beatSheetStatus.status : null}
+            onRefreshBeatSheet={handleRefreshBeatSheet}
+            onCheckBeatSheetStatus={handleCheckBeatSheetStatus}
+            lookbook={project.state.documents.lookbook}
+            onLookbookChange={project.setLookbook}
+            onRequestLookbookQuestions={projectFolder.lookbook && activeFolderProjectId ? handleRequestLookbookQuestions : undefined}
           />
         )
       case 'treatment':

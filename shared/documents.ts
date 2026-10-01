@@ -1,3 +1,4 @@
+import type { LookbookDocument } from './lookbook'
 import { z } from 'zod'
 import { ComposedDocumentSchema } from './compose/schemas'
 import type { ComposedDocument } from './compose/types'
@@ -215,6 +216,15 @@ export const OutlineEpisodeSchema = z.object({
 })
 export type OutlineEpisode = z.infer<typeof OutlineEpisodeSchema>
 
+export const BeatSheetSourceSchema = z.object({
+  ticket: z.string().min(1),
+  sourceHash: z.string().min(1),
+  syncedAt: z.string().min(1),
+  beatCount: z.number().int().nonnegative(),
+  label: z.string().nullable(),
+}).strict()
+export type BeatSheetSource = z.infer<typeof BeatSheetSourceSchema>
+
 export const OutlineDocumentContentSchema = z.object({
   mode: OutlineModeSchema,
   structureModel: OutlineStructureModelSchema,
@@ -233,6 +243,7 @@ export const OutlineDocumentContentSchema = z.object({
   seasonArc: OutlineSeasonArcSchema,
   episodes: z.array(OutlineEpisodeSchema),
   aiProductionColumns: z.object({ enabled: z.boolean() }),
+  beatSheetSource: BeatSheetSourceSchema.optional(),
 })
 export type OutlineDocumentContent = z.infer<typeof OutlineDocumentContentSchema>
 
@@ -594,6 +605,7 @@ export interface ProjectDocuments {
   outline: AuthoredDocumentState<OutlineDocumentContent>
   treatment: AuthoredDocumentState<TreatmentDocumentContent>
   storyBible: AuthoredDocumentState<StoryBibleDocumentContent>
+  lookbook?: LookbookDocument
 }
 
 export const DOCUMENT_SCHEMA_VERSION = 2

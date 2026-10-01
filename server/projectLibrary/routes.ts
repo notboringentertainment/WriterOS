@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { serializeWriterOSProjectPackage } from '../../client/src/lib/projectPackage'
+import { LookbookDocumentSchema } from '../../shared/lookbook'
 import { SaveProjectRequestSchema } from '../../shared/projectLibraryApi'
 import type { ProjectLibraryConfig } from './config'
 import { authenticated, sameOrigin } from './security'
@@ -10,6 +11,7 @@ import {
   ProjectLibraryStoreError,
   type ProjectLibraryStore,
 } from './store'
+import { keepServerOwnedBeatFields, refreshBeatSheetOnOpen } from './beatSheetRoutes'
 import { observeWriterOSSave } from '../projectMemory/writerOSObserver'
 
 function dataStore(config: ProjectLibraryConfig, store: ProjectLibraryStore | null): ProjectLibraryStore {
@@ -65,8 +67,10 @@ export function registerProjectLibraryRoutes(
 
   app.get('/api/project-library/projects/:projectId', requireSameOrigin, requireSession, async (req, res) => {
     try {
-      const result = await dataStore(config, store).readProject(req.params.projectId)
-      return res.json({ result })
+      const activeStore = dataStore(config, store)
+      const beatSheet = await refreshBeatSheetOnOpen(config, activeStore, req.params.projectId)
+      const result = await activeStore.readProject(req.params.projectId)
+      return res.json({ result, beatSheet })
     } catch (error) {
       return routeError(res, error)
     }
@@ -87,6 +91,15 @@ export function registerProjectLibraryRoutes(
       if (req.params.projectId !== data.project.id) {
         throw new ProjectLibraryStoreError('URL project id must match request project id.', 400, 'id-mismatch')
       }
+      // migrateState drops an invalid Lookbook from state; refuse the save so a
+      // damaged payload can never be mistaken for "no Lookbook" and touch disk.
+      const rawLookbook = (data.project.state as { documents?: { lookbook?: unknown } } | undefined)?.documents?.lookbook
+      if (rawLookbook !== undefined && !LookbookDocumentSchema.safeParse(rawLookbook).success) {
+        return res.status(400).json({
+          error: 'invalid-lookbook',
+          message: 'The Lookbook in this save is not valid; nothing was written.',
+        })
+      }
       const project: StoredProject = {
         ...data.project,
         state: migrateState(data.project.state),
@@ -97,16 +110,24 @@ export function registerProjectLibraryRoutes(
       // project (or a read failure) simply means there is nothing prior to
       // diff against — it must never block or fail the save itself.
       let priorFiles: Record<string, string | undefined> | null = null
+      let priorProject: StoredProject | null = null
       try {
         const priorRead = await activeStore.readProject(project.id)
-        if (priorRead.ok) priorFiles = serializeWriterOSProjectPackage(priorRead.project).files
+        if (priorRead.ok) {
+          priorProject = priorRead.project
+          priorFiles = serializeWriterOSProjectPackage(priorRead.project).files
+        }
       } catch (error) {
         if (!(error instanceof ProjectLibraryStoreError) || error.code !== 'not-found') {
           console.warn('[project-library] prior read for memory observer failed:', error instanceof Error ? error.message : error)
         }
       }
 
-      const ref = await activeStore.writeProject(project)
+      // A stale browser copy must not undo a Story-drive beat sync.
+      const effective = keepServerOwnedBeatFields(priorProject, project)
+      if (effective.replaced) console.info(`[beat-sheet] kept on-disk beats for ${project.id}`)
+
+      const ref = await activeStore.writeProject(effective.project)
 
       // Diff + queue happens after the save succeeds but before the response
       // returns; the LLM analysis itself runs afterwards in the background
@@ -116,7 +137,7 @@ export function registerProjectLibraryRoutes(
       // against and nothing worth analyzing yet.
       if (priorFiles !== null) {
         try {
-          const currentFiles = serializeWriterOSProjectPackage(project).files
+          const currentFiles = serializeWriterOSProjectPackage(effective.project).files
           const projectPath = await activeStore.resolveProjectPackagePath(project.id)
           await observeWriterOSSave({ projectId: project.id, projectPath, priorFiles, currentFiles })
         } catch (error) {

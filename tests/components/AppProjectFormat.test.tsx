@@ -21,7 +21,7 @@ describe('App project format selectors', () => {
   it('shares one canonical project format across Synopsis, Outline, and Story Bible', () => {
     render(<App />)
 
-    openTab('Outline')
+    openTab('Beat Sheet')
     expect(formatSelector()).toHaveValue('feature')
     fireEvent.change(formatSelector(), { target: { value: 'series' } })
     expect(formatSelector()).toHaveValue('series')
@@ -36,7 +36,7 @@ describe('App project format selectors', () => {
     fireEvent.change(formatSelector(), { target: { value: 'series' } })
     expect(formatSelector()).toHaveValue('series')
 
-    openTab('Outline')
+    openTab('Beat Sheet')
     expect(formatSelector()).toHaveValue('series')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)

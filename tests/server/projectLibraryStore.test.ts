@@ -888,4 +888,43 @@ describe('project library store removeProject', () => {
     await expect(store.removeProject(project.id)).rejects.toMatchObject({ code: 'not-found' })
     await expect(readdir(targetPath)).resolves.not.toEqual([])
   })
+
+  describe('lookbook file on save', () => {
+    const lookbook = {
+      version: 1 as const,
+      beats: {
+        'beat.a': {
+          titleAtAsk: 'A',
+          questions: [{ id: 'q1', prompt: 'What is the light?', answer: '', askedBy: 'zoe' as const, createdAt: '2026-09-01T00:00:00.000Z' }],
+        },
+      },
+    }
+
+    it('writeProject keeps the on-disk documents/lookbook.json when the payload has no lookbook key', async () => {
+      const root = await makeTemporaryDirectory()
+      const store = await createProjectLibraryStore(root)
+      const project = makeStoredProject()
+      project.state.documents.lookbook = lookbook
+      await store.writeProject(project)
+      const packagePath = await store.resolveProjectPackagePath(project.id)
+      await expect(readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')).resolves.toContain('What is the light?')
+
+      const before = await readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')
+      const unaware = makeStoredProject()
+      await store.writeProject(unaware)
+      await expect(readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8')).resolves.toBe(before)
+    })
+
+    it('writeProject keeps documents/lookbook.json when the payload has lookbook content', async () => {
+      const root = await makeTemporaryDirectory()
+      const store = await createProjectLibraryStore(root)
+      const project = makeStoredProject()
+      project.state.documents.lookbook = lookbook
+      await store.writeProject(project)
+      await store.writeProject(project)
+      const packagePath = await store.resolveProjectPackagePath(project.id)
+      const onDisk = JSON.parse(await readFile(path.join(packagePath, 'documents/lookbook.json'), 'utf8'))
+      expect(onDisk).toEqual(lookbook)
+    })
+  })
 })

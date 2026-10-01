@@ -30,12 +30,12 @@ describe("App Writer's Room layout", () => {
   it('keeps the active writing surface visible when Writer Room is open', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
-    expect(screen.getByRole('heading', { name: 'Outline' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
+    expect(screen.getByRole('heading', { name: 'Beat Sheet' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
 
-    expect(screen.getByRole('heading', { name: 'Outline' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Beat Sheet' })).toBeInTheDocument()
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
     // Phase 1: the dock opens on the live room channel; 1:1 chats sit below it.
     expect(screen.getByTestId('room-channel')).toBeInTheDocument()
@@ -60,7 +60,7 @@ describe("App Writer's Room layout", () => {
   it('keeps Writer Room open when switching writing surfaces', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Outline' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
     fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
 

@@ -54,7 +54,7 @@ describe('OutlineDocumentView', () => {
     expect(screen.getByText(/could not compose/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     // Compose CTA still available alongside the error.
-    expect(screen.getByRole('button', { name: /compose this outline/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /compose this beat sheet/i })).toBeEnabled()
   })
 
   it('does not double punctuation when a leadInParagraph lead ends with punctuation', () => {

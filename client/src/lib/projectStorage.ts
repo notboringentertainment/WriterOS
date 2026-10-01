@@ -1,3 +1,5 @@
+import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
+import type { LookbookQuestionsResult } from './lookbookClient'
 import {
   WRITEROS_DOCUMENT_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
@@ -109,13 +111,30 @@ export interface ProjectStorageCapabilities {
   duplicateProject: boolean
 }
 
+export interface ProjectStorageReadResult {
+  result: ProjectPackageReadResult
+  beatSheet: BeatSheetSyncStatusResponse | null
+}
+
+export interface ProjectStorageBeatSheetClient {
+  refresh(projectId: string): Promise<BeatSheetRefreshResponse>
+  status(projectId: string): Promise<BeatSheetSyncStatusResponse>
+}
+
+export interface ProjectStorageLookbookClient {
+  questions(projectId: string, beatKey: string): Promise<LookbookQuestionsResult>
+}
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access' | 'server'
   label: string
   defaultFolderLabel: string
   capabilities: ProjectStorageCapabilities
   listProjects(): Promise<Array<ProjectStorageListEntry<TRef>>>
-  readProject(ref: TRef): Promise<ProjectPackageReadResult>
+  readProject(ref: TRef): Promise<ProjectStorageReadResult>
+  /** Present only on the server adapter, which holds the session token. */
+  beatSheet?: ProjectStorageBeatSheetClient
+  lookbook?: ProjectStorageLookbookClient
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>
@@ -499,7 +518,7 @@ export function createFileSystemAccessProjectStorageAdapter(
       return entries
     },
     async readProject(ref) {
-      return readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle))
+      return { result: readWriterOSProjectPackage(await readProjectPackageFiles(ref.handle)), beatSheet: null }
     },
     async writeProject(project, previousRef) {
       if (project.id.trim().length === 0) {

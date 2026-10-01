@@ -6,7 +6,7 @@ import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 describe('surfaceLabel', () => {
   it('maps every surface to a human label', () => {
     expect(surfaceLabel('script')).toBe('Script')
-    expect(surfaceLabel('outline')).toBe('Outline')
+    expect(surfaceLabel('outline')).toBe('Beat Sheet')
     expect(surfaceLabel('synopsis')).toBe('Synopsis')
     expect(surfaceLabel('treatment')).toBe('Treatment')
     expect(surfaceLabel('story-bible')).toBe('Story Bible')
@@ -31,7 +31,7 @@ describe('selectSurfaceStructure', () => {
     state.documents.outline.content.units = []
     const s = selectSurfaceStructure('outline', state)
     expect(s.surface).toBe('outline')
-    expect(s.heading).toBe('Outline')
+    expect(s.heading).toBe('Beat Sheet')
     expect(s.empty).toBe(true)
     expect(s.nodes).toHaveLength(0)
     expect(s.emptyHint).toBeTruthy()

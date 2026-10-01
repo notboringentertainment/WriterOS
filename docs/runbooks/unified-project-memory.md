@@ -490,6 +490,28 @@ of an old answer file is a no-op by design, so a closure approved later
 against those same bytes goes through `reconcile-stale`, whose key changes
 with the target set.
 
+**Duplicate tickets.** Put `duplicate-of: wf-7a1c92e4` in the header below a
+ticket's title, replacing the example ID with the ticket it duplicates. The
+importer skips that ticket regardless of the wording in its answer and warns
+if the reference is malformed. This prevents a new memory record; it does not
+retire any record imported before the declaration was added.
+
 **Verify:** `npm run memory -- context` succeeds; `import --dry-run` for the
 same folder reports `supersessionsExpected: 0`, `questionsClosedExpected: 0`
 and no new records.
+
+## 10. Beat sheet from Story-drive
+
+A package can take its outline beats from a Story-drive beat-sheet decision.
+The link lives in `.writeros-story-drive-links.json`, beside the packages (not
+inside any package): `{ "version": 1, "links": { "<projectId>": { "root": "<absolute Story-drive folder>", "beatSheet": "resolved/<file>.md" } } }`.
+`beatSheet` is optional; without it the decision is found by its
+`beat-sheet:` header. `project.json` is never written by this linkage.
+
+- `link-source --project <pkg> --workflow wayfinder --from <abs dir> [--beat-sheet resolved/<file>.md]` registers the folder. Re-running `link-source --workflow wayfinder` without `--beat-sheet` clears any existing pointer.
+- `sync-beats --project <pkg> (--dry-run | --apply)` reads the decision and updates the outline; prints the status. Exit 0 for `unchanged` and `updated`, 2 for everything else.
+- `import --source wayfinder --from <dir> (--dry-run | --apply)` publishes canon as before, then runs the same sync and prints `beatSheet`.
+
+Status kinds: `not-linked` (no registry entry), `no-beat-sheet` (folder has no beat-sheet decision), `unchanged` (source bytes match the last sync), `updated` (beats written, or would be on dry-run), `unavailable` (folder missing, unreadable or timed out), `malformed` (decision cannot be parsed; outline untouched), `reopened` (the decision, whether pinned with `--beat-sheet` or found by its `beat-sheet:` header, is back in `tickets/`; the last synced beats stay), `ambiguous` (more than one candidate decision; name one with `--beat-sheet`).
+
+`--relink`: if the package is registered and `import --from` names a different folder, import fails with exit 2 rather than silently sync from the wrong place. Pass `--relink` (with `--apply`; a dry run never writes) to update the registry's folder, keeping any pinned `beatSheet` (`--relink` on `import` keeps the pointer; only a bare `link-source` re-run clears it), or use the registered folder.

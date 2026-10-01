@@ -678,7 +678,7 @@ export function HomeSurface({
               Delete &ldquo;{deleteTarget.title}&rdquo;?
             </h2>
             <p style={styles.modalBody}>
-              This removes the script, synopsis, outline, story bible, treatment, and all transcripts for this project.
+              This removes the script, synopsis, beat sheet, story bible, treatment, and all transcripts for this project.
             </p>
             {deleteTarget.storageKind === 'folder' && (
               <p style={styles.modalBody}>

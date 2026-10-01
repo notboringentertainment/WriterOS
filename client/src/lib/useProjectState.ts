@@ -16,11 +16,13 @@ import {
 } from './projectLibrary'
 import type { MigrationMarker, StoredProject } from './projectLibrary'
 import type { ProjectSourceImportMetadata, ProjectState, Beat, Character, AgentId, TranscriptMessage, ScriptScene, TitlePageMetadata } from './projectState'
+import { emptyLookbook, type LookbookDocument } from '@shared/lookbook'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
   SynopsisDocumentContent,
   StoryBibleDocumentContent,
   OutlineDocumentContent,
+  AuthoredDocumentState,
   OutlineEpisode,
   TreatmentDocumentContent,
   DocumentViewPreferences,
@@ -325,7 +327,17 @@ export function useProjectState() {
     (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => {
       update(s => {
         const outlineFormat = normalizeProjectFormat(s.meta.format)
-        const nextContent = updater(normalizeOutlineContent(s.documents.outline.content))
+        const currentContent = normalizeOutlineContent(s.documents.outline.content)
+        let nextContent = updater(currentContent)
+        // A synced Beat Sheet is server-owned: no writer (memory patches, cards, ...)
+        // may rewrite its beats or provenance on screen.
+        if (currentContent.beatSheetSource) {
+          nextContent = {
+            ...nextContent,
+            units: currentContent.units,
+            beatSheetSource: currentContent.beatSheetSource,
+          }
+        }
         const nextOutlineDoc = {
           ...s.documents.outline,
           revision: s.documents.outline.revision + 1,
@@ -339,6 +351,45 @@ export function useProjectState() {
           outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
         }
       })
+    },
+    [update],
+  )
+
+  // Server-written outlines only (Story-drive sync): no revision bump, no timestamp change.
+  const replaceOutlineDocument = useCallback(
+    (doc: AuthoredDocumentState<OutlineDocumentContent>) => {
+      update(s => {
+        const outlineFormat = normalizeProjectFormat(s.meta.format)
+        const current = s.documents.outline
+        // Only the server-owned parts come from the server document; anything the
+        // writer just typed elsewhere in the outline (spine, arcs, episodes) stays.
+        const merged = {
+          ...current,
+          revision: Math.max(current.revision, doc.revision),
+          updatedAt: doc.updatedAt,
+          content: {
+            ...current.content,
+            units: doc.content.units,
+            beatSheetSource: doc.content.beatSheetSource,
+          },
+        }
+        const nextDocuments = { ...s.documents, outline: merged }
+        return {
+          ...s,
+          documents: nextDocuments,
+          outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
+        }
+      })
+    },
+    [update],
+  )
+
+  const setLookbook = useCallback(
+    (updater: (doc: LookbookDocument) => LookbookDocument) => {
+      update(s => ({
+        ...s,
+        documents: { ...s.documents, lookbook: updater(s.documents.lookbook ?? emptyLookbook()) },
+      }))
     },
     [update],
   )
@@ -502,7 +553,7 @@ export function useProjectState() {
       const authoredIds = new Set(authoredUnits.map(unit => unit.id))
       const retainedRoleBindings = Object.entries(currentContent.featureRoleUnitIds ?? {})
         .filter(([, id]) => id && authoredIds.has(id))
-      const content =
+      const baseContent =
         keepFoundations
           ? {
               ...empty,
@@ -522,6 +573,10 @@ export function useProjectState() {
                 : {}),
             }
           : empty
+      // Synced beats belong to Story-drive: clearing answers never drops them.
+      const content = currentContent.beatSheetSource
+        ? { ...baseContent, units: currentContent.units, beatSheetSource: currentContent.beatSheetSource }
+        : baseContent
       const nextOutlineDoc = {
         version: DOCUMENT_SCHEMA_VERSION,
         revision: keepFoundations ? s.documents.outline.revision : 0,
@@ -868,6 +923,8 @@ export function useProjectState() {
     migrateStoryBibleLegacyToDocument,
     setBeat,
     setOutlineDocument,
+    replaceOutlineDocument,
+    setLookbook,
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,

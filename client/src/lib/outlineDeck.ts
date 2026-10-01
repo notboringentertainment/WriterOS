@@ -93,6 +93,9 @@ const SERIES_SPINE: OutlineCardDef[] = FEATURE_SPINE.map(card => ({
   deck: 'series' as const,
 }))
 
+/** The Foundations cards shown above synced beats on a Story-drive-linked series. */
+export const SERIES_FOUNDATIONS: OutlineCardDef[] = SERIES_SPINE
+
 export const FEATURE_DECK: OutlineCardDef[] = [
   ...FEATURE_SPINE,
   {

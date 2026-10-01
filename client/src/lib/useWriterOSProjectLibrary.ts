@@ -4,6 +4,8 @@ import { migrateLocalStorageToFolder, type MigrationResult } from './migrateLoca
 import {
   type ArchiveProjectResult,
   type DuplicateProjectResult,
+  type ProjectStorageBeatSheetClient,
+  type ProjectStorageLookbookClient,
   type ProjectStorageCapabilities,
   type ProjectStorageListEntry,
   type ProjectStorageProjectRef,
@@ -108,6 +110,9 @@ export interface WriterOSProjectLibraryState {
   refreshFolder: () => Promise<void>
   forgetFolder: () => Promise<void>
   openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
+  /** Server-backed libraries only: Story-drive beat sheet refresh/status. */
+  beatSheet?: ProjectStorageBeatSheetClient | null
+  lookbook?: ProjectStorageLookbookClient | null
   writeProject: (project: StoredProject) => Promise<WriterOSFolderProject>
   deleteProject: (projectId: string) => Promise<RemoveProjectResult>
   archiveProject: (projectId: string) => Promise<ArchiveProjectResult<ProjectStorageProjectRef>>
@@ -203,10 +208,10 @@ export function useWriterOSProjectLibrary(): WriterOSProjectLibraryState {
   const openProject = useCallback(async (projectId: string): Promise<WriterOSFolderProjectOpenResult> => {
     const entry = await findEntry(projectId)
     if (!entry) throw new Error('That WriterOS project package is no longer available in the project library.')
-    const result = await requireAdapter().readProject(entry.ref)
+    const { result, beatSheet } = await requireAdapter().readProject(entry.ref)
     if (!result.ok) throw new Error(result.error.message)
     setErrorMessage(null)
-    return { project: result.project, packageName: entry.ref.packageName, warnings: result.warnings }
+    return { project: result.project, packageName: entry.ref.packageName, warnings: result.warnings, beatSheet }
   }, [findEntry, requireAdapter])
 
   const writeProject = useCallback(async (project: StoredProject): Promise<WriterOSFolderProject> => {
@@ -326,6 +331,8 @@ export function useWriterOSProjectLibrary(): WriterOSProjectLibraryState {
     refreshFolder,
     forgetFolder: async () => undefined,
     openProject,
+    beatSheet: adapter.beatSheet ?? null,
+    lookbook: adapter.lookbook ?? null,
     writeProject,
     deleteProject,
     archiveProject,

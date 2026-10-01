@@ -84,6 +84,116 @@ The harbor district is sealed after midnight.
     expect(await readFile(path.join(root, relativePath), 'utf8')).toBe(ticket)
   })
 
+  it('keeps a pointer-only resolved answer out of active canon without demoting story answers', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-pointer-')
+    await writeSource(root, 'resolved/duplicate.md', `# The duplicate (duplicate — answered in wf-7a1c92e4)
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Question
+Is this a duplicate of wf-7a1c92e4?
+
+## Answer
+See wf-7a1c92e4. Ratified 2026-08-29 (look_lock receipt 87454bdf-6305-4d82-8a64-1d075e86102e).
+`)
+    await writeSource(root, 'resolved/story.md', `# The harbor rule
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Answer
+See wf-7a1c92e4 for the earlier design. The harbor closes after midnight.
+`)
+    await writeSource(root, 'resolved/simple-pointer.md', `# Another duplicate
+type: grill
+mode: hitl
+resolved: 2026-09-24
+
+## Answer
+See wf-7a1c92e4.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'pointer-fixture', sourceRoot: root,
+    })
+
+    expect(preview.counts.activeCanon).toBe(1)
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/duplicate.md')).toMatchObject({
+      kind: 'development',
+      requestedStatus: 'candidate',
+      claim: 'See wf-7a1c92e4. Ratified 2026-08-29 (look_lock receipt 87454bdf-6305-4d82-8a64-1d075e86102e).',
+    })
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/simple-pointer.md')).toMatchObject({
+      kind: 'development', requestedStatus: 'candidate', claim: 'See wf-7a1c92e4.',
+    })
+    expect(preview.records.find(record => record.source.sourceId === 'resolved/story.md')).toMatchObject({
+      kind: 'canon', requestedStatus: 'active',
+    })
+  })
+
+  it('omits declared duplicate tickets regardless of their answer wording', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-declared-duplicate-')
+    await writeSource(root, 'resolved/duplicate.md', `# Duplicate harbor decision
+duplicate-of: wf-7a1c92e4
+type: grill
+mode: hitl
+
+## Answer
+Duplicate of wf-7a1c92e4. This refers to the sound lock.
+`)
+    await writeSource(root, 'tickets/another-duplicate.md', `# Already answered
+duplicate-of: wf-a91e3c20
+type: sketch
+mode: hitl
+
+## Question
+Should the signal be blue?
+
+## Answer
+Answered in the earlier ticket.
+`)
+    await writeSource(root, 'resolved/story.md', `# Harbor rule
+type: grill
+mode: hitl
+
+## Answer
+The harbor closes after midnight.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'declared-duplicate-fixture', sourceRoot: root,
+    })
+
+    expect(preview.records.map(record => record.source.sourceId)).toEqual(['resolved/story.md'])
+    expect(preview.records[0]).toMatchObject({ kind: 'canon', requestedStatus: 'active' })
+    expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0, openQuestions: 0 })
+    expect(preview.ticketFiles).toEqual([
+      'resolved/duplicate.md', 'resolved/story.md', 'tickets/another-duplicate.md',
+    ])
+  })
+
+  it('does not treat a malformed duplicate declaration as story authority', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-invalid-duplicate-')
+    await writeSource(root, 'resolved/bad-reference.md', `# Duplicate harbor decision
+duplicate-of: another ticket
+type: grill
+mode: hitl
+
+## Answer
+The harbor closes after midnight.
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'invalid-duplicate-fixture', sourceRoot: root,
+    })
+
+    expect(preview.records).toEqual([])
+    expect(preview.warnings).toContain(
+      'resolved/bad-reference.md:2: invalid duplicate-of ticket reference; record not imported',
+    )
+  })
+
   it('never demotes ratified canon for prose length — gists the claim and keeps the full answer in detail', async () => {
     const root = await createSourceRoot('writeros-wayfinder-faithful-canon-')
     const omittedException = ' Except the rescue boat may cross.'

@@ -149,6 +149,9 @@ export function renderCanonProjection(snapshot: ProjectMemorySnapshot): string {
 
 export function renderReviewProjection(snapshot: ProjectMemorySnapshot): string {
   const candidates = snapshot.records.filter(record => record.status === 'candidate')
+  const scopedOut = candidates.filter(record => record.source.workflow === 'story-wayfinder'
+    && record.detail?.startsWith('Scoped-out answer:'))
+  const awaitingDecision = candidates.filter(record => !scopedOut.includes(record))
   const conflicts = snapshot.conflicts.filter(conflict => conflict.status === 'open')
   const lines = [
     '# Project Memory Review',
@@ -162,9 +165,14 @@ export function renderReviewProjection(snapshot: ProjectMemorySnapshot): string 
     return `${lines.join('\n')}\n`
   }
 
-  if (candidates.length > 0) {
+  if (awaitingDecision.length > 0) {
     lines.push('## Awaiting your decision', '')
-    for (const record of candidates) lines.push(...renderRecord(record), '')
+    for (const record of awaitingDecision) lines.push(...renderRecord(record), '')
+  }
+
+  if (scopedOut.length > 0) {
+    lines.push('## Scoped-out answers on file', '')
+    for (const record of scopedOut) lines.push(...renderRecord(record), '')
   }
 
   if (conflicts.length > 0) {
