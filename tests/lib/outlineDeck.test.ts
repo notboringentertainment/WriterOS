@@ -3,12 +3,15 @@ import { createEmptyOutlineContent } from '../../shared/documents'
 import {
   FEATURE_DECK,
   SERIES_DECK,
+  createOutlineUnit,
   getOutlineCardBindings,
+  getOutlineDeck,
   isOutlineCardAnswered,
   resolveOutlinePath,
   seedEpisodes101To103,
   setOutlinePath,
 } from '../../client/src/lib/outlineDeck'
+import { resolveFeatureRoleUnitIds } from '../../shared/featureRoleBindings'
 
 describe('outlineDeck', () => {
   it('defines the locked V1 card counts', () => {
@@ -27,7 +30,7 @@ describe('outlineDeck', () => {
 
   it('writes feature act cards into stable OutlineUnit paths', () => {
     const content = setOutlinePath(
-      createEmptyOutlineContent(),
+      { ...createEmptyOutlineContent(), units: [createOutlineUnit('feature.midpoint')] },
       'units[id=feature.midpoint].whatHappens',
       'She realizes she has been chasing the wrong person.',
     )
@@ -40,6 +43,82 @@ describe('outlineDeck', () => {
       title: 'Midpoint',
       actOrSequence: 'Act II',
     })
+  })
+
+  it('lets the first card edit initialize an empty feature outline', () => {
+    const blank = createEmptyOutlineContent()
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(blank))
+    const opening = deck.find(card => card.id === 'feature.openingNormalWorld')!
+    const path = getOutlineCardBindings(opening)[0].path
+
+    expect(path).toBe('units[id=feature.openingNormalWorld].whatHappens')
+    const edited = setOutlinePath(blank, path, 'A quiet morning.')
+    expect(edited.units).toHaveLength(8)
+    expect(edited.units.find(unit => unit.id === 'feature.openingNormalWorld')?.whatHappens).toBe('A quiet morning.')
+  })
+
+  it('lets a partial stock outline fill a missing card without adding the other stock units', () => {
+    const partial = {
+      ...createEmptyOutlineContent(),
+      units: [{ ...createOutlineUnit('feature.openingNormalWorld'), whatHappens: 'A quiet morning.' }],
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(partial))
+    const inciting = deck.find(card => card.id === 'feature.incitingIncident')!
+    const path = getOutlineCardBindings(inciting)[0].path
+
+    expect(path).toBe('units[id=feature.incitingIncident].whatHappens')
+    const edited = setOutlinePath(partial, path, 'A letter arrives.')
+    expect(edited.units.map(unit => unit.id)).toEqual([
+      'feature.openingNormalWorld', 'feature.incitingIncident',
+    ])
+    expect(edited.units[1].whatHappens).toBe('A letter arrives.')
+  })
+
+  it('does not create a stock unit when any custom unit is present', () => {
+    const mixed = {
+      ...createEmptyOutlineContent(),
+      units: [createOutlineUnit('feature.openingNormalWorld'), createOutlineUnit('custom.beat02')],
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(mixed))
+    const inciting = deck.find(card => card.id === 'feature.incitingIncident')!
+
+    expect(getOutlineCardBindings(inciting)[0].path).toBe('')
+    expect(setOutlinePath(mixed, 'units[id=feature.incitingIncident].whatHappens', 'Do not insert')).toBe(mixed)
+  })
+
+  it('binds feature cards to explicitly mapped unit IDs', () => {
+    const content = {
+      ...createEmptyOutlineContent(),
+      units: [createOutlineUnit('feature.beat08')],
+      featureRoleUnitIds: { midpoint: 'feature.beat08', climax: 'feature.beat08' },
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(content))
+    const midpoint = deck.find(card => card.id === 'feature.midpoint')!
+    const climax = deck.find(card => card.id === 'feature.climax')!
+    expect(getOutlineCardBindings(midpoint)[0].path).toBe('units[id=feature.beat08].whatHappens')
+    expect(getOutlineCardBindings(climax)[0].path).toBe('units[id=feature.beat08].whatHappens')
+    const edited = setOutlinePath(content, getOutlineCardBindings(midpoint)[1].path, 'A consequence')
+    const editedAgain = setOutlinePath(edited, getOutlineCardBindings(climax)[0].path, 'A final move')
+    expect(editedAgain.units).toHaveLength(1)
+    expect(editedAgain.units[0]).toMatchObject({ consequence: 'A consequence', whatHappens: 'A final move' })
+  })
+
+  it('leaves missing roles unbound and never creates a unit during a card edit', () => {
+    const content = {
+      ...createEmptyOutlineContent(),
+      units: Array.from({ length: 15 }, (_, index) => ({
+        ...createOutlineUnit(`feature.beat${String(index + 1).padStart(2, '0')}`),
+        number: index + 1,
+      })),
+    }
+    const deck = getOutlineDeck('feature', resolveFeatureRoleUnitIds(content))
+    const paths = deck.filter(card => card.section !== 'spine').flatMap(getOutlineCardBindings).map(binding => binding.path)
+    expect(paths).toEqual(Array(12).fill(''))
+    let edited = content
+    for (const path of paths) edited = setOutlinePath(edited, path, 'do not write')
+    edited = setOutlinePath(edited, 'units[id=feature.midpoint].whatHappens', 'do not create')
+    expect(edited.units).toHaveLength(15)
+    expect(new Set(edited.units.map(unit => unit.number)).size).toBe(15)
   })
 
   it('expresses the series engine card as labeled composite bindings', () => {

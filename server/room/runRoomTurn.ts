@@ -21,6 +21,7 @@ import {
   finalizeAgentMemoryText,
   type ProjectMemoryProvider,
 } from '../projectMemory/agentContext';
+import { roomError } from './roomLog';
 
 // The room's honest reach contract: agents see blocks + channel + the trigger,
 // plus typed surface state deliberately attached to the writer's message.
@@ -132,7 +133,7 @@ export async function runRoomTurn(input: {
       action = 'passed';
     }
   } catch (error) {
-    console.error(`[room.turn] persistence failed (${agentId}):`, error);
+    roomError(`[room.turn] persistence failed (${agentId}):`, error);
     action = 'errored';
   }
 
@@ -151,6 +152,6 @@ export async function runRoomTurn(input: {
       outputTokens: recorder.outputTokens || undefined,
     });
   } catch (error) {
-    console.error(`[room.turn] ledger insert failed (${agentId}):`, error);
+    roomError(`[room.turn] ledger insert failed (${agentId}):`, error);
   }
 }

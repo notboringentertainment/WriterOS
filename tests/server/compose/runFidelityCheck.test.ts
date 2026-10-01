@@ -11,7 +11,7 @@ const fs: FactSheet = {
     { id: 'spine.centralOpposition', label: 'Opposition', kind: 'prose', value: 'The Meridian Group' },
   ],
 }
-const recipe = getOutlineRecipe('feature')
+const recipe = getOutlineRecipe('feature', undefined)
 const inv = buildEntityInventory(fs)
 
 describe('runFidelityCheck', () => {

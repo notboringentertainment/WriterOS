@@ -1,5 +1,6 @@
 // shared/compose/factSheet.ts
 import type { OutlineDocumentContent } from '../documents'
+import type { FeatureRoleResolution } from '../featureRoleBindings'
 import type { FactKind, FactSheet, FactSheetField } from './types'
 
 function clean(v: unknown): string {
@@ -32,7 +33,11 @@ function titleCase(s: string): string {
   return s.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim()
 }
 
-export function buildOutlineFactSheet(content: OutlineDocumentContent, format: 'feature' | 'series'): FactSheet {
+export function buildOutlineFactSheet(
+  content: OutlineDocumentContent,
+  format: 'feature' | 'series',
+  resolution: FeatureRoleResolution | undefined,
+): FactSheet {
   const fields: FactSheetField[] = []
   const push = (id: string, label: string, kind: FactKind, raw: unknown) => {
     const value = clean(raw)
@@ -42,7 +47,9 @@ export function buildOutlineFactSheet(content: OutlineDocumentContent, format: '
   for (const f of SPINE_FIELDS) push(`spine.${String(f.key)}`, f.label, f.kind, content.spine[f.key])
 
   if (format === 'feature') {
+    const boundIds = new Set(Object.values(resolution ?? {}).filter((id): id is string => Boolean(id)))
     for (const unit of content.units) {
+      if (content.featureRoleUnitIds !== undefined && !boundIds.has(unit.id)) continue
       for (const fld of UNIT_FIELDS) {
         push(`${unit.id}.${String(fld)}`, `${unit.title} — ${titleCase(String(fld))}`, 'prose', unit[fld])
       }

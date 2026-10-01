@@ -3,7 +3,7 @@ import { deriveOutlineDocumentState } from '../../client/src/lib/outlineDocument
 import { syntheticOutlineFeature } from '../fixtures/outline/syntheticOutline'
 import { createEmptyOutlineContent } from '../../shared/documents'
 import { computeOutlineSourceHash } from '../../shared/compose/sourceHash'
-import { setOutlinePath } from '../../client/src/lib/outlineDeck'
+import { createOutlineUnit, setOutlinePath } from '../../client/src/lib/outlineDeck'
 import type { ComposedDocument } from '../../shared/compose/types'
 
 const identity = { title: 'T', genre: 'Drama' }
@@ -51,7 +51,7 @@ describe('deriveOutlineDocumentState', () => {
   it('missing-context when content is partial, hash/version match, fidelity clean', () => {
     // Core gate satisfied (protagonist + centralOpposition + one beat) but not all
     // important fields answered -> partial tier.
-    let partial = createEmptyOutlineContent()
+    let partial = { ...createEmptyOutlineContent(), units: [createOutlineUnit('feature.incitingIncident')] }
     partial = setOutlinePath(partial, 'spine.protagonist', 'Vera Solano')
     partial = setOutlinePath(partial, 'spine.centralOpposition', 'The Meridian Group')
     partial = setOutlinePath(partial, 'units[id=feature.incitingIncident].whatHappens', 'A ledger entry surfaces.')

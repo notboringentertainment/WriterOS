@@ -1,4 +1,5 @@
 import type { OutlineDocumentContent } from '../../../shared/documents'
+import { resolveFeatureRoleUnitIds } from '../../../shared/featureRoleBindings'
 import type { ComposeIdentity, ComposedDocument } from '../../../shared/compose/types'
 import { buildOutlineFactSheet } from '../../../shared/compose/factSheet'
 import { getOutlineRecipe } from '../../../shared/compose/recipe'
@@ -23,8 +24,9 @@ export function deriveOutlineDocumentState(input: {
   composed: ComposedDocument | undefined
 }): OutlineDocumentState {
   const { content, format, identity, composed } = input
-  const recipe = getOutlineRecipe(format)
-  const fs = buildOutlineFactSheet(content, format)
+  const resolution = format === 'feature' ? resolveFeatureRoleUnitIds(content) : undefined
+  const recipe = getOutlineRecipe(format, resolution)
+  const fs = buildOutlineFactSheet(content, format, resolution)
   const readiness = getOutlineReadiness(fs, recipe)
 
   // The readiness gate outranks staleness: if answers drop below the gate after a
@@ -39,7 +41,7 @@ export function deriveOutlineDocumentState(input: {
     return { kind: 'ready_uncomposed', missingCoreLabels: [], omittedSectionHeadings: readiness.omittedSectionHeadings }
   }
 
-  const currentHash = computeOutlineSourceHash(content, format, identity)
+  const currentHash = computeOutlineSourceHash(content, format, identity, resolution)
   if (currentHash !== composed.sourceHash) {
     return { kind: 'answer_stale', missingCoreLabels: [], omittedSectionHeadings: [], composed }
   }

@@ -6,8 +6,10 @@ import {
   legacyToDocuments,
   mergeOutlineLegacyIntoContent,
   mirrorSynopsisFromLegacy,
+  outlineContentToTreatmentContent,
   storyBibleLegacyToContent,
 } from '../../client/src/lib/documentMigration'
+import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import {
   createEmptyOutlineContent,
   createEmptySynopsisContent,
@@ -20,6 +22,19 @@ import {
 
 const FIXED_TS = '2026-05-15T00:00:00.000Z'
 const now = () => FIXED_TS
+
+it('leaves treatment beat prose empty for fifteen unbound feature units', () => {
+  const content = {
+    ...createEmptyOutlineContent(),
+    units: Array.from({ length: 15 }, (_, index) => ({
+      ...createOutlineUnit(`feature.beat${String(index + 1).padStart(2, '0')}`),
+      number: index + 1,
+      whatHappens: `Beat ${index + 1}`,
+    })),
+  }
+  const treatment = outlineContentToTreatmentContent(content, 'feature')
+  expect([treatment.prose.opening, treatment.prose.actOne, treatment.prose.actTwo, treatment.prose.actThree]).toEqual(['', '', '', ''])
+})
 
 describe('legacyToDocuments — synopsis', () => {
   it('maps legacy logline to documents.synopsis.content.logline.text', () => {
@@ -143,6 +158,20 @@ describe('legacyToDocuments — treatment', () => {
 })
 
 describe('documentsToLegacy round-trip', () => {
+  it('exports an explicitly mapped feature beat to treatment and legacy output', () => {
+    const state = defaultProjectState()
+    const content = {
+      ...createEmptyOutlineContent(),
+      units: [{ ...createOutlineUnit('feature.beat01'), whatHappens: 'A mapped opening.', linkedSceneIds: ['scene-1'] }],
+      featureRoleUnitIds: { openingNormalWorld: 'feature.beat01' },
+    }
+    state.documents.outline.content = content
+    expect(outlineContentToTreatmentContent(content, 'feature').prose.opening).toContain('A mapped opening.')
+    const legacy = documentsToLegacy(state.documents, { outlineFormat: 'feature' })
+    expect(legacy.outline.beats.find(beat => beat.id === 'opening-image')).toMatchObject({
+      notes: 'A mapped opening.', linkedSceneIds: ['scene-1'],
+    })
+  })
   it('synopsis: legacy -> documents -> legacy preserves logline and all five sections', () => {
     const original = defaultProjectState()
     original.synopsis.logline = 'A widow returns home.'

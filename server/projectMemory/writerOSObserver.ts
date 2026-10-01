@@ -272,6 +272,21 @@ async function updateQueueItem(
 
 const projectProcessingChains = new Map<string, Promise<void>>()
 
+/**
+ * Resolves once every background analysis chain has settled, including work
+ * chained on while waiting. The save route deliberately does not wait for
+ * analysis; a caller that is about to delete a project folder (a test's
+ * cleanup) must, or the background job can write into memory/ mid-delete.
+ */
+export async function writerOSObserverIdle(): Promise<void> {
+  for (;;) {
+    const pending = [...projectProcessingChains.values()]
+    await Promise.all(pending)
+    const current = [...projectProcessingChains.values()]
+    if (current.length === pending.length && current.every(chain => pending.includes(chain))) return
+  }
+}
+
 function chainSerially(projectId: string, task: () => Promise<void>): void {
   const previous = projectProcessingChains.get(projectId) ?? Promise.resolve()
   const next = previous.then(task, task).catch(error => {

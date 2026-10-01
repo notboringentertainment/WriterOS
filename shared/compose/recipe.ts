@@ -1,12 +1,22 @@
 // shared/compose/recipe.ts
 import type { Recipe } from './types'
+import type { FeatureRole, FeatureRoleResolution } from '../featureRoleBindings'
 
 export const OUTLINE_RECIPE_VERSION = 1
 
-function featureRecipe(): Recipe {
+function featureRecipe(resolution: FeatureRoleResolution | undefined): Recipe {
+  const field = (role: FeatureRole, name: string): string[] => {
+    const id = resolution?.[role]
+    return id ? [`${id}.${name}`] : []
+  }
+  const fields = (...parts: string[][]): string[] => parts.flat()
   return {
     surface: 'outline', format: 'feature', recipeVersion: OUTLINE_RECIPE_VERSION,
     coreRequiredFieldIds: ['spine.protagonist', 'spine.centralOpposition'],
+    coreAlternativeFieldIds: fields(
+      field('openingNormalWorld', 'whatHappens'), field('incitingIncident', 'whatHappens'),
+      field('actOneBreak', 'whatHappens'), field('midpoint', 'whatHappens'), field('climax', 'whatHappens'),
+    ),
     sections: [
       {
         key: 'whoWeFollow', heading: 'Who We Follow', style: 'prose', omittable: false,
@@ -21,13 +31,13 @@ function featureRecipe(): Recipe {
       {
         key: 'shapeOfTheStory', heading: 'The Shape of the Story', style: 'leadIns', omittable: true,
         requiredFieldIds: [],
-        importantFieldIds: ['feature.incitingIncident.whatHappens', 'feature.midpoint.whatHappens', 'feature.climax.whatHappens'],
+        importantFieldIds: fields(field('incitingIncident', 'whatHappens'), field('midpoint', 'whatHappens'), field('climax', 'whatHappens')),
         beats: [
-          { lead: 'Where We Begin', fieldIds: ['feature.openingNormalWorld.whatHappens', 'feature.openingNormalWorld.whyNext'] },
-          { lead: 'Disruption', fieldIds: ['feature.incitingIncident.whatHappens', 'feature.incitingIncident.consequence'] },
-          { lead: 'Point of No Return', fieldIds: ['feature.actOneBreak.whatHappens', 'feature.actOneBreak.whyNext'] },
-          { lead: 'Turn', fieldIds: ['feature.midpoint.whatHappens', 'feature.allIsLostWithSubplot.whatHappens'] },
-          { lead: 'Where It Lands', fieldIds: ['feature.climax.whatHappens', 'feature.finalImage.whatHappens', 'spine.ending'] },
+          { lead: 'Where We Begin', fieldIds: fields(field('openingNormalWorld', 'whatHappens'), field('openingNormalWorld', 'whyNext')) },
+          { lead: 'Disruption', fieldIds: fields(field('incitingIncident', 'whatHappens'), field('incitingIncident', 'consequence')) },
+          { lead: 'Point of No Return', fieldIds: fields(field('actOneBreak', 'whatHappens'), field('actOneBreak', 'whyNext')) },
+          { lead: 'Turn', fieldIds: fields(field('midpoint', 'whatHappens'), field('allIsLostWithSubplot', 'whatHappens')) },
+          { lead: 'Where It Lands', fieldIds: fields(field('climax', 'whatHappens'), field('finalImage', 'whatHappens'), ['spine.ending']) },
         ],
       },
     ],
@@ -67,13 +77,7 @@ function seriesRecipe(): Recipe {
   }
 }
 
-export function getOutlineRecipe(format: 'feature' | 'series'): Recipe {
-  return format === 'series' ? seriesRecipe() : featureRecipe()
+export function getOutlineRecipe(format: 'feature' | 'series', resolution: FeatureRoleResolution | undefined): Recipe {
+  return format === 'series' ? seriesRecipe() : featureRecipe(resolution)
 }
-
-// OR-group beats: readiness requires >=1 present.
-export const FEATURE_CORE_BEAT_FIELD_IDS = [
-  'feature.openingNormalWorld.whatHappens', 'feature.incitingIncident.whatHappens',
-  'feature.actOneBreak.whatHappens', 'feature.midpoint.whatHappens', 'feature.climax.whatHappens',
-]
 export function seriesCoreEpisodePrefix(): string { return 'episodes.' }

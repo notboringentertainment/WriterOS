@@ -12,7 +12,7 @@ import { registerProjectLibraryRoutes } from '../../server/projectLibrary/routes
 import { keepServerOwnedBeatFields, registerBeatSheetRoutes } from '../../server/projectLibrary/beatSheetRoutes'
 import { writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
 import { createProjectLibraryStore, type ProjectLibraryStore } from '../../server/projectLibrary/store'
-import { readAnalysisQueue } from '../../server/projectMemory/writerOSObserver'
+import { readAnalysisQueue, writerOSObserverIdle } from '../../server/projectMemory/writerOSObserver'
 import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
 
 const FIXTURE = path.resolve(__dirname, '../fixtures/beatSheet/synthetic-beat-sheet.md')
@@ -32,6 +32,9 @@ const base = `/api/project-library/projects/${PROJECT_ID}`
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve()))))
+  // Saves hand analysis to a background job that writes into memory/; let it
+  // finish before deleting the folder it writes into.
+  await writerOSObserverIdle()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 

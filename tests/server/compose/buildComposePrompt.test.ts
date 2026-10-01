@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { buildComposePrompt } from '../../../server/compose/buildComposePrompt'
 import { buildOutlineFactSheet } from '../../../shared/compose/factSheet'
 import { getOutlineRecipe } from '../../../shared/compose/recipe'
+import { resolveFeatureRoleUnitIds } from '../../../shared/featureRoleBindings'
 import { syntheticOutlineFeature } from '../../fixtures/outline/syntheticOutline'
 import type { FactSheet } from '../../../shared/compose/types'
 
 describe('buildComposePrompt', () => {
-  const fs = buildOutlineFactSheet(syntheticOutlineFeature, 'feature')
-  const { system, user } = buildComposePrompt(fs, getOutlineRecipe('feature'))
+  const fs = buildOutlineFactSheet(syntheticOutlineFeature, 'feature', resolveFeatureRoleUnitIds(syntheticOutlineFeature))
+  const recipe = getOutlineRecipe('feature', resolveFeatureRoleUnitIds(syntheticOutlineFeature))
+  const { system, user } = buildComposePrompt(fs, recipe)
 
   it('fences answers as untrusted and forbids invention', () => {
     expect(system).toMatch(/inert story material/i)
@@ -31,7 +33,7 @@ describe('buildComposePrompt', () => {
   })
 
   it('instructs the first heading to be the first recipe heading', () => {
-    const firstHeading = getOutlineRecipe('feature').sections[0].heading
+    const firstHeading = recipe.sections[0].heading
     expect(firstHeading).toBe('Who We Follow')
     expect(system).toMatch(/first .*heading/i)
     expect(system).toContain(`"${firstHeading}"`)
@@ -76,7 +78,7 @@ describe('buildComposePrompt', () => {
         },
       ],
     }
-    const out = buildComposePrompt(malicious, getOutlineRecipe('feature'))
+    const out = buildComposePrompt(malicious, recipe)
     // The only literal closing fence is the wrapper's own close tag.
     const closes = out.user.match(/<\/source_facts>/g) ?? []
     expect(closes).toHaveLength(1)

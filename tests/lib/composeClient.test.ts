@@ -13,7 +13,7 @@ function composed(): ComposedDocument {
     schemaVersion: COMPOSED_SCHEMA_VERSION,
     generatedAt: '2026-06-09T00:00:00.000Z',
     model: 'test-model',
-    recipeVersion: getOutlineRecipe('feature').recipeVersion,
+    recipeVersion: getOutlineRecipe('feature', undefined).recipeVersion,
     composerVersion: COMPOSER_VERSION,
     sourceHash: computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity),
     format: 'feature',

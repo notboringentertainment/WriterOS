@@ -1,6 +1,6 @@
 // shared/compose/readiness.ts
 import type { FactSheet, Readiness, Recipe } from './types'
-import { FEATURE_CORE_BEAT_FIELD_IDS, seriesCoreEpisodePrefix } from './recipe'
+import { seriesCoreEpisodePrefix } from './recipe'
 
 function has(fs: FactSheet, id: string): boolean {
   return fs.fields.some(f => f.id === id)
@@ -17,7 +17,7 @@ export function getOutlineReadiness(fs: FactSheet, recipe: Recipe): Readiness {
   }
   // OR-group: >=1 beat (feature) or >=1 episode field (series)
   if (recipe.format === 'feature') {
-    if (!FEATURE_CORE_BEAT_FIELD_IDS.some(id => has(fs, id))) missingCoreLabels.push('At least one story beat')
+    if (!recipe.coreAlternativeFieldIds?.some(id => has(fs, id))) missingCoreLabels.push('At least one story beat')
   } else {
     if (!fs.fields.some(f => f.id.startsWith(seriesCoreEpisodePrefix()))) missingCoreLabels.push('At least one episode')
   }

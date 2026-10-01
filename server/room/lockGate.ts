@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto';
 import { sendStreamingMessage } from '../ai/morganRuntime/anthropicToolClient';
+import { roomWarn } from './roomLog';
 
 export const DIGEST_MODEL = process.env.ANTHROPIC_DIGEST_MODEL || 'claude-haiku-4-5';
 
@@ -64,7 +65,7 @@ export async function checkProposalAgainstLocks(input: {
   } catch (error) {
     // Fail open (D14): a flaky lock check must not silently swallow proposals —
     // the writer still adopts/rejects every card by hand, so the human gate holds.
-    console.warn('[room.lockGate] check failed, allowing proposal through:', error);
+    roomWarn('[room.lockGate] check failed, allowing proposal through:', error);
     return { blocked: false };
   }
 }

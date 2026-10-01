@@ -1,6 +1,7 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import type { SurfaceAnswer, SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
 import { createEmptyStoryBibleContent } from '@shared/documents'
+import { resolveFeatureRoleUnitIds } from '@shared/featureRoleBindings'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
 import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
@@ -24,7 +25,8 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
   switch (activeTab) {
     case 'outline': {
       const content = state.documents.outline.content
-      const questions: SurfaceQuestion[] = getOutlineDeck(format).map(card => {
+      const resolution = format === 'feature' ? resolveFeatureRoleUnitIds(content) : undefined
+      const questions: SurfaceQuestion[] = getOutlineDeck(format, resolution).map(card => {
         const bindings = typeof card.mappingPath === 'string'
           ? [{ path: card.mappingPath }]
           : card.mappingPath

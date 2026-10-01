@@ -17,6 +17,7 @@ import { ensureProjectMemory, RoomMemoryError } from './memoryContract';
 import type { ProposalOrigin, RoomEventKind } from './types';
 import type { MeetingRevisionInput } from './interview/banking';
 import type { ProjectMemoryProvider } from '../projectMemory/agentContext';
+import { roomError } from './roomLog';
 
 const ACCEPTED_CLIENT_EVENTS: RoomEventKind[] = ['doc_field_changed', 'lock_changed', 'session_opened'];
 const PROPOSAL_STATUSES = ['pending', 'adopted', 'rejected', 'superseded', 'blocked'] as const;
@@ -35,7 +36,7 @@ async function ensureMemoryOr503(req: Request, res: Response): Promise<boolean> 
     await ensureProjectMemory(projectIdOf(req));
     return true;
   } catch (error) {
-    console.error('[room.routes] ensureProjectMemory failed:', error);
+    roomError('[room.routes] ensureProjectMemory failed:', error);
     res.status(503).json({ message: 'Room memory unavailable.' });
     return false;
   }
@@ -59,7 +60,7 @@ function handleInterviewError(res: Response, error: unknown): void {
     res.status(413).json({ message });
     return;
   }
-  console.error('[room.routes] interview action failed:', error);
+  roomError('[room.routes] interview action failed:', error);
   res.status(500).json({ message });
 }
 
@@ -74,7 +75,7 @@ function handlePitchPacketError(res: Response, error: unknown): void {
   if (message.includes('does not belong') || message.includes('identity does not match') || message.includes('direction changed') || message.includes('requires a banked')) {
     res.status(409).json({ message }); return;
   }
-  console.error('[room.routes] pitch packet action failed:', error);
+  roomError('[room.routes] pitch packet action failed:', error);
   res.status(500).json({ message });
 }
 
@@ -100,7 +101,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       const messages = await store.listRecentMessages(projectIdOf(req), limit);
       res.json({ messages });
     } catch (error) {
-      console.error('[room.routes] messages failed:', error);
+      roomError('[room.routes] messages failed:', error);
       res.status(500).json({ message: 'Failed to load channel messages.' });
     }
   });
@@ -116,7 +117,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       const proposals = await store.listProposals(projectIdOf(req), status);
       res.json({ proposals });
     } catch (error) {
-      console.error('[room.routes] proposals failed:', error);
+      roomError('[room.routes] proposals failed:', error);
       res.status(500).json({ message: 'Failed to load proposals.' });
     }
   });
@@ -160,7 +161,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       });
       res.json({ message });
     } catch (error) {
-      console.error('[room.routes] send failed:', error);
+      roomError('[room.routes] send failed:', error);
       res.status(500).json({ message: 'Failed to send message.' });
     }
   });
@@ -179,7 +180,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       const event = await store.insertEvent({ projectId: projectIdOf(req), kind, payload });
       res.json({ event });
     } catch (error) {
-      console.error('[room.routes] event failed:', error);
+      roomError('[room.routes] event failed:', error);
       res.status(500).json({ message: 'Failed to record event.' });
     }
   });
@@ -233,7 +234,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       broadcast(projectId, { type: 'message', message });
       res.json({ proposal });
     } catch (error) {
-      console.error('[room.routes] resolve failed:', error);
+      roomError('[room.routes] resolve failed:', error);
       res.status(500).json({ message: 'Failed to resolve proposal.' });
     }
   });
@@ -258,7 +259,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
       }
       res.status(409).json({ message: 'Story locks are being updated concurrently — retry the sync.' });
     } catch (error) {
-      console.error('[room.routes] story-locks failed:', error);
+      roomError('[room.routes] story-locks failed:', error);
       res.status(500).json({ message: 'Failed to update story locks block.' });
     }
   });
@@ -269,7 +270,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
     try {
       res.json(await interviewRuntime.getInterviewStatus(projectIdOf(req)));
     } catch (error) {
-      console.error('[room.routes] interview status failed:', error);
+      roomError('[room.routes] interview status failed:', error);
       res.status(500).json({ message: 'Failed to load Project Meeting status.' });
     }
   });

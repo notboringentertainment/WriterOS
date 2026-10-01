@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildSurfaceAwareness } from '../../client/src/lib/surfaceAwareness'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { setOutlinePath, FEATURE_DECK, SERIES_DECK } from '../../client/src/lib/outlineDeck'
+import { createOutlineUnit, getOutlineDeck, setOutlinePath, FEATURE_DECK, SERIES_DECK } from '../../client/src/lib/outlineDeck'
+import { FEATURE_ROLES, resolveFeatureRoleUnitIds } from '../../shared/featureRoleBindings'
 import { FEATURE_SYNOPSIS_DECK } from '../../client/src/lib/synopsisDeck'
 import { FEATURE_STORY_BIBLE_DECK } from '../../client/src/lib/storyBibleDeck'
 import { TREATMENT_SURFACE_DECK } from '../../client/src/lib/treatmentDeck'
@@ -9,7 +10,20 @@ import type { ProjectState } from '../../client/src/lib/projectState'
 
 function featureState(): ProjectState {
   const base = defaultProjectState()
-  return { ...base, meta: { ...base.meta, format: 'feature' } }
+  return {
+    ...base,
+    meta: { ...base.meta, format: 'feature' },
+    documents: {
+      ...base.documents,
+      outline: {
+        ...base.documents.outline,
+        content: {
+          ...base.documents.outline.content,
+          units: FEATURE_ROLES.map(role => createOutlineUnit(`feature.${role}`)),
+        },
+      },
+    },
+  }
 }
 
 function withOutline(state: ProjectState, path: string, value: string): ProjectState {
@@ -79,7 +93,8 @@ describe('buildSurfaceAwareness', () => {
 
   it('all cards answered → nextRecommendedAction is all_answered', () => {
     let state = featureState()
-    for (const card of FEATURE_DECK) {
+    const resolution = resolveFeatureRoleUnitIds(state.documents.outline.content)
+    for (const card of getOutlineDeck('feature', resolution)) {
       const paths = typeof card.mappingPath === 'string' ? [card.mappingPath] : card.mappingPath.map(b => b.path)
       for (const path of paths) state = withOutline(state, path, 'answered')
     }

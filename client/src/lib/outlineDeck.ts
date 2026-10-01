@@ -1,4 +1,5 @@
 import type { OutlineDocumentContent, OutlineEpisode, OutlineUnit } from '@shared/documents'
+import type { FeatureRole, FeatureRoleResolution } from '@shared/featureRoleBindings'
 
 export type OutlineDeckFormat = 'feature' | 'series'
 
@@ -106,8 +107,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: 'Where does the story begin?',
     helper: 'The starting situation, and the instability already hiding inside it.',
     mappingPath: [
-      { label: 'Starting situation', path: 'units[id=feature.openingNormalWorld].whatHappens' },
-      { label: 'Why this cannot stay still', path: 'units[id=feature.openingNormalWorld].whyNext' },
+      { label: 'Starting situation', path: 'units[role=openingNormalWorld].whatHappens' },
+      { label: 'Why this cannot stay still', path: 'units[role=openingNormalWorld].whyNext' },
     ],
   },
   {
@@ -119,8 +120,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: "What disrupts it?",
     helper: 'The event, discovery, or pressure that forces a response.',
     mappingPath: [
-      { label: 'Disruption', path: 'units[id=feature.incitingIncident].whatHappens' },
-      { label: 'Immediate consequence', path: 'units[id=feature.incitingIncident].consequence' },
+      { label: 'Disruption', path: 'units[role=incitingIncident].whatHappens' },
+      { label: 'Immediate consequence', path: 'units[role=incitingIncident].consequence' },
     ],
   },
   {
@@ -132,8 +133,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: 'What choice locks the story in?',
     helper: 'The decision or event that makes going back impossible.',
     mappingPath: [
-      { label: 'Commitment', path: 'units[id=feature.actOneBreak].whatHappens' },
-      { label: 'Why this leads to the next step', path: 'units[id=feature.actOneBreak].whyNext' },
+      { label: 'Commitment', path: 'units[role=actOneBreak].whatHappens' },
+      { label: 'Why this leads to the next step', path: 'units[role=actOneBreak].whyNext' },
     ],
   },
   {
@@ -145,8 +146,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: 'What changes the direction halfway through?',
     helper: 'A reveal, win, loss, reversal, or point of no return.',
     mappingPath: [
-      { label: 'Turn', path: 'units[id=feature.midpoint].whatHappens' },
-      { label: 'What changes because of it', path: 'units[id=feature.midpoint].consequence' },
+      { label: 'Turn', path: 'units[role=midpoint].whatHappens' },
+      { label: 'What changes because of it', path: 'units[role=midpoint].consequence' },
     ],
   },
   {
@@ -158,8 +159,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: 'Where does pressure break something important?',
     helper: 'The collapse, loss, or consequence that forces the final move.',
     mappingPath: [
-      { label: 'Breaking point', path: 'units[id=feature.allIsLostWithSubplot].whatHappens' },
-      { label: 'Why the old approach no longer works', path: 'units[id=feature.allIsLostWithSubplot].consequence' },
+      { label: 'Breaking point', path: 'units[role=allIsLostWithSubplot].whatHappens' },
+      { label: 'Why the old approach no longer works', path: 'units[role=allIsLostWithSubplot].consequence' },
     ],
   },
   {
@@ -171,8 +172,8 @@ export const FEATURE_DECK: OutlineCardDef[] = [
     question: 'What final choice resolves the pressure?',
     helper: 'The decisive action, cost, and final image or new state.',
     mappingPath: [
-      { label: 'Final move', path: 'units[id=feature.climax].whatHappens' },
-      { label: 'Last image / new state', path: 'units[id=feature.finalImage].whatHappens' },
+      { label: 'Final move', path: 'units[role=climax].whatHappens' },
+      { label: 'Last image / new state', path: 'units[role=finalImage].whatHappens' },
     ],
   },
 ]
@@ -238,8 +239,22 @@ export const SERIES_DECK: OutlineCardDef[] = [
   },
 ]
 
-export function getOutlineDeck(format: OutlineDeckFormat): OutlineCardDef[] {
-  return format === 'series' ? SERIES_DECK : FEATURE_DECK
+function resolveFeaturePath(path: string, resolution: FeatureRoleResolution): string {
+  const match = path.match(/^units\[role=([^\]]+)\](\.[A-Za-z0-9_]+)$/)
+  if (!match) return path
+  const id = resolution[match[1] as FeatureRole]
+  return id ? `units[id=${id}]${match[2]}` : ''
+}
+
+export function getOutlineDeck(format: OutlineDeckFormat, resolution?: FeatureRoleResolution): OutlineCardDef[] {
+  if (format === 'series') return SERIES_DECK
+  if (!resolution) return FEATURE_DECK
+  return FEATURE_DECK.map(card => ({
+    ...card,
+    mappingPath: typeof card.mappingPath === 'string'
+      ? resolveFeaturePath(card.mappingPath, resolution)
+      : card.mappingPath.map(binding => ({ ...binding, path: resolveFeaturePath(binding.path, resolution) })),
+  }))
 }
 
 export function createOutlineUnit(id: string): OutlineUnit {
@@ -280,11 +295,6 @@ export function visibleOutlineUnits(content: OutlineDocumentContent, format: Out
     : content.units
 }
 
-function findOrCreateUnit(units: OutlineUnit[], id: string): OutlineUnit[] {
-  if (units.some(unit => unit.id === id)) return units
-  return [...units, createOutlineUnit(id)].sort((a, b) => a.number - b.number)
-}
-
 function parseUnitPath(path: string): { id: string; field: keyof OutlineUnit } | null {
   const match = path.match(/^units\[id=([^\]]+)\]\.([A-Za-z0-9_]+)$/)
   if (!match) return null
@@ -310,7 +320,16 @@ export function resolveOutlinePath(content: OutlineDocumentContent, path: string
 export function setOutlinePath(content: OutlineDocumentContent, path: string, value: string): OutlineDocumentContent {
   const unitPath = parseUnitPath(path)
   if (unitPath) {
-    const units = findOrCreateUnit(content.units, unitPath.id).map(unit =>
+    const stockOnly = content.featureRoleUnitIds === undefined &&
+      content.units.every(unit => FEATURE_UNIT_BY_ID.has(unit.id))
+    const startingUnits = stockOnly && FEATURE_UNIT_BY_ID.has(unitPath.id) &&
+      !content.units.some(unit => unit.id === unitPath.id)
+      ? content.units.length === 0
+        ? FEATURE_UNITS.map(unit => createOutlineUnit(unit.id))
+        : [...content.units, createOutlineUnit(unitPath.id)].sort((a, b) => a.number - b.number)
+      : content.units
+    if (!startingUnits.some(unit => unit.id === unitPath.id)) return content
+    const units = startingUnits.map(unit =>
       unit.id === unitPath.id ? { ...unit, [unitPath.field]: value } : unit,
     )
     return { ...content, units }

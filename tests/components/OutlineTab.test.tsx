@@ -285,7 +285,7 @@ describe('OutlineTab Document View', () => {
     schemaVersion: 1,
     generatedAt: '2026-06-06T00:00:00.000Z',
     model: 'm',
-    recipeVersion: getOutlineRecipe('feature').recipeVersion,
+    recipeVersion: getOutlineRecipe('feature', undefined).recipeVersion,
     composerVersion: 1,
     sourceHash: computeOutlineSourceHash(syntheticOutlineFeature, 'feature', identity),
     format: 'feature',

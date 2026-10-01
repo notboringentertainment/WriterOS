@@ -14,6 +14,7 @@ import {
   type TreatmentDocumentContent,
 } from '@shared/documents'
 import type { ProjectFormat } from '@shared/projectFormat'
+import { FEATURE_ROLES, resolveFeatureRoleUnitIds, type FeatureRole, type FeatureRoleResolution } from '@shared/featureRoleBindings'
 import { createOutlineUnit } from './outlineDeck'
 
 type NowFn = () => string
@@ -57,9 +58,22 @@ function joinNotes(values: string[]): string {
   return values.map(value => value.trim()).filter(Boolean).join('\n\n---\n\n')
 }
 
-function unitText(content: OutlineDocumentContent, unitId: string): string {
+function unitText(content: OutlineDocumentContent, unitId: string | undefined): string {
+  if (!unitId) return ''
   const unit = content.units.find(item => item.id === unitId)
   return unit?.whatHappens.trim() || unit?.draftNotes.trim() || ''
+}
+
+function featureUnitId(
+  content: OutlineDocumentContent,
+  literalId: string | undefined,
+  resolution: FeatureRoleResolution | undefined,
+): string | undefined {
+  if (!literalId) return undefined
+  if (!resolution) return literalId // Series legacy readers retain their old behavior.
+  if (literalId === 'feature.actTwoA') return content.featureRoleUnitIds === undefined ? literalId : undefined
+  const role = literalId.slice('feature.'.length)
+  return FEATURE_ROLES.includes(role as FeatureRole) ? resolution[role as FeatureRole] : literalId
 }
 
 function legacyUnitText(content: OutlineDocumentContent, legacyBeatId: string): string {
@@ -394,14 +408,16 @@ export function outlineContentToTreatmentContent(
   const spine = content.spine
   const series = content.seriesEngine
   const season = content.seasonArc
-  const opening = unitText(content, 'feature.openingNormalWorld')
-  const inciting = unitText(content, 'feature.incitingIncident')
-  const commitment = unitText(content, 'feature.actOneBreak')
-  const actTwoA = unitText(content, 'feature.actTwoA')
-  const midpoint = unitText(content, 'feature.midpoint')
-  const collapse = unitText(content, 'feature.allIsLostWithSubplot')
-  const climax = unitText(content, 'feature.climax')
-  const finalImage = unitText(content, 'feature.finalImage')
+  const resolution = format === 'feature' ? resolveFeatureRoleUnitIds(content) : undefined
+  const textFor = (literalId: string) => unitText(content, featureUnitId(content, literalId, resolution))
+  const opening = textFor('feature.openingNormalWorld')
+  const inciting = textFor('feature.incitingIncident')
+  const commitment = textFor('feature.actOneBreak')
+  const actTwoA = textFor('feature.actTwoA')
+  const midpoint = textFor('feature.midpoint')
+  const collapse = textFor('feature.allIsLostWithSubplot')
+  const climax = textFor('feature.climax')
+  const finalImage = textFor('feature.finalImage')
 
   treatment.concept = {
     ...treatment.concept,
@@ -629,22 +645,24 @@ export function documentsToLegacy(
   }
 
   const content = normalizeOutlineContent(docs.outline.content)
+  const resolution = options.outlineFormat === 'series' ? undefined : resolveFeatureRoleUnitIds(content)
+  const textFor = (literalId: string) => unitText(content, featureUnitId(content, literalId, resolution))
   const featureNotesByLegacyId: Record<string, string> = {
-    'opening-image': unitText(content, 'feature.openingNormalWorld') || legacyUnitText(content, 'opening-image'),
+    'opening-image': textFor('feature.openingNormalWorld') || legacyUnitText(content, 'opening-image'),
     'theme-stated': content.spine.theme || legacyUnitText(content, 'theme-stated'),
-    'set-up': unitText(content, 'feature.openingNormalWorld') || legacyUnitText(content, 'set-up'),
-    catalyst: unitText(content, 'feature.incitingIncident') || legacyUnitText(content, 'catalyst'),
-    debate: unitText(content, 'feature.actOneBreak') || legacyUnitText(content, 'debate'),
-    'break-into-two': unitText(content, 'feature.actOneBreak') || legacyUnitText(content, 'break-into-two'),
-    'b-story': unitText(content, 'feature.allIsLostWithSubplot') || legacyUnitText(content, 'b-story'),
-    'fun-and-games': unitText(content, 'feature.actTwoA') || legacyUnitText(content, 'fun-and-games'),
-    midpoint: unitText(content, 'feature.midpoint') || legacyUnitText(content, 'midpoint'),
-    'bad-guys-close': unitText(content, 'feature.actTwoA') || legacyUnitText(content, 'bad-guys-close'),
-    'all-is-lost': unitText(content, 'feature.allIsLostWithSubplot') || legacyUnitText(content, 'all-is-lost'),
-    'dark-night': unitText(content, 'feature.climax') || legacyUnitText(content, 'dark-night'),
-    'break-into-three': unitText(content, 'feature.climax') || legacyUnitText(content, 'break-into-three'),
-    finale: unitText(content, 'feature.climax') || legacyUnitText(content, 'finale'),
-    'final-image': unitText(content, 'feature.finalImage') || legacyUnitText(content, 'final-image'),
+    'set-up': textFor('feature.openingNormalWorld') || legacyUnitText(content, 'set-up'),
+    catalyst: textFor('feature.incitingIncident') || legacyUnitText(content, 'catalyst'),
+    debate: textFor('feature.actOneBreak') || legacyUnitText(content, 'debate'),
+    'break-into-two': textFor('feature.actOneBreak') || legacyUnitText(content, 'break-into-two'),
+    'b-story': textFor('feature.allIsLostWithSubplot') || legacyUnitText(content, 'b-story'),
+    'fun-and-games': textFor('feature.actTwoA') || legacyUnitText(content, 'fun-and-games'),
+    midpoint: textFor('feature.midpoint') || legacyUnitText(content, 'midpoint'),
+    'bad-guys-close': textFor('feature.actTwoA') || legacyUnitText(content, 'bad-guys-close'),
+    'all-is-lost': textFor('feature.allIsLostWithSubplot') || legacyUnitText(content, 'all-is-lost'),
+    'dark-night': textFor('feature.climax') || legacyUnitText(content, 'dark-night'),
+    'break-into-three': textFor('feature.climax') || legacyUnitText(content, 'break-into-three'),
+    finale: textFor('feature.climax') || legacyUnitText(content, 'finale'),
+    'final-image': textFor('feature.finalImage') || legacyUnitText(content, 'final-image'),
   }
   const seriesNotes = seriesNotesByLegacyId(content)
   const notesByLegacyId = options.outlineFormat === 'series'
@@ -657,9 +675,9 @@ export function documentsToLegacy(
     : featureNotesByLegacyId
   const linkedScenesByLegacyId = new Map(content.units.map(unit => [unit.id, unit.linkedSceneIds]))
   const beats: Beat[] = LEGACY_BEAT_TEMPLATES.map(template => {
-    const featureUnitId = LEGACY_TO_FEATURE_UNIT[template.id]
-    const linkedSceneIds = featureUnitId
-      ? linkedScenesByLegacyId.get(featureUnitId) ?? []
+    const mappedUnitId = featureUnitId(content, LEGACY_TO_FEATURE_UNIT[template.id], resolution)
+    const linkedSceneIds = mappedUnitId
+      ? linkedScenesByLegacyId.get(mappedUnitId) ?? []
       : linkedScenesByLegacyId.get(template.id) ?? []
 
     return {
