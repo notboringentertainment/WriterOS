@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDraftCitations, applyZoeReplyToDraft, candidateSpec, clearDraftField, draftSummary, ensureDraft, filledFields, promotedLooksNamedIn,
-  removeDraft, setDraftField, slugifyEntityName, type LookTarget,
+  addDraftCitations, applyZoeReplyToDraft, candidateSpec, isPristineDraft, matchesPromotedLook, startDraftFromPromoted, clearDraftField, draftSummary, ensureDraft, filledFields, promotedLooksNamedIn,
+  removeDraft, setDraftField, setDraftReference, slugifyEntityName, type LookTarget,
 } from '../../client/src/lib/lookDraftEdits'
 import { emptyLooks, LooksDocumentSchema } from '../../shared/looks'
 
@@ -61,9 +61,32 @@ describe('look draft edits', () => {
     expect(applyZoeReplyToDraft(doc, target, { message: 'hair: grey' }, NOW)).toBe(doc)
   })
 
+  it('starting from the promoted look copies the writer\'s own answers, marked writer-typed, and only still-active citations', () => {
+    const promotedSpec = {
+      version: '1.1', entity_kind: 'character', entity_id: 'vector-engineer', hair: 'cropped', props: ['wrench'],
+      depends_on: [{ writeros_record_id: `mem_${'a'.repeat(32)}`, content_hash: 'f'.repeat(64) }, { writeros_record_id: `mem_${'b'.repeat(32)}`, content_hash: 'e'.repeat(64) }],
+    }
+    const prior = { recordId: 'mem_p', entityKind: 'character' as const, entityId: 'vector-engineer', entityName: 'Vector Engineer',
+      lookHash: 'x', reference: 'generated-elsewhere' as const, spec: promotedSpec as never }
+    let doc = ensureDraft(emptyLooks(), target, 's1', NOW)
+    expect(isPristineDraft(doc.drafts['character:vector-engineer'])).toBe(true)
+    doc = startDraftFromPromoted(doc, target, prior, new Set([`mem_${'a'.repeat(32)}`]), NOW)
+    const draft = doc.drafts['character:vector-engineer']
+    expect(draft.spec).toEqual({ entity_kind: 'character', entity_id: 'vector-engineer', hair: 'cropped', props: ['wrench'] })
+    expect(Object.keys(draft.spec).every(field => draft.fieldSources[field] === 'writer')).toBe(true)
+    expect(draft.reference).toBe('generated-elsewhere')
+    expect(draft.citedRecordIds).toEqual([`mem_${'a'.repeat(32)}`])
+    expect(draft.sessionId).toBe('s1')
+    expect(LooksDocumentSchema.safeParse(doc).success).toBe(true)
+    expect(isPristineDraft(draft)).toBe(false)
+    expect(matchesPromotedLook(draft, prior)).toBe(true)
+    expect(matchesPromotedLook(setDraftField(doc, target, 'hair', 'shaved', NOW).drafts['character:vector-engineer'], prior)).toBe(false)
+    expect(matchesPromotedLook(setDraftReference(doc, target, 'none', NOW).drafts['character:vector-engineer'], prior)).toBe(false)
+  })
+
   it('slugs names and finds promoted looks named in beat text by whole word', () => {
     expect(slugifyEntityName('  Café Noir, Level 3 ')).toBe('cafe-noir-level-3')
-    const looks = [{ recordId: 'm', entityKind: 'character' as const, entityId: 'ash', entityName: 'Ash', lookHash: 'x', spec: {} as never }]
+    const looks = [{ recordId: 'm', entityKind: 'character' as const, entityId: 'ash', entityName: 'Ash', lookHash: 'x', reference: 'none' as const, spec: {} as never }]
     expect(promotedLooksNamedIn(looks, 'Ash walks in.')).toHaveLength(1)
     expect(promotedLooksNamedIn(looks, 'The ashtray is full.')).toHaveLength(0)
   })

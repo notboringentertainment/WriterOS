@@ -3,7 +3,7 @@ import { lookHash } from '@shared/canonicalJson'
 import { findFirewallProblems, validateLookSpecForPromotion, type LookSpecProblem } from '@shared/lookSpec'
 import type { LookDraft, LookPromoteRequest, LookPromoteResponse } from '@shared/looks'
 import type { TranscriptMessage } from '../../../lib/projectState'
-import { candidateSpec, type LookTarget, type PromotedLook } from '../../../lib/lookDraftEdits'
+import { candidateSpec, isPristineDraft, matchesPromotedLook, type LookTarget, type PromotedLook } from '../../../lib/lookDraftEdits'
 import { LookRequestUnanswered, type LookPromoteOutcome } from '../../../lib/looksClient'
 import { LOOK_FIELD_LABELS, LookDraftForm, friendlyProblem, isMissingField } from './LookDraftForm'
 
@@ -30,6 +30,8 @@ export interface LookPanelProps {
   /** Called after a successful promotion: remove the draft, refresh memory. */
   onPromoted: (response: LookPromoteResponse) => void
   onMemoryStale: () => void
+  /** Copy the writer's own promoted answers into an empty draft (shown only then). */
+  onStartFromPromoted?: () => void
   onExit: () => void
 }
 
@@ -102,8 +104,9 @@ export function LookPanel(props: LookPanelProps) {
     return { problems, valid, hash: valid && validated.ok && draft.citedRecordIds.length === 0 ? lookHash(validated.spec) : null }
   }, [draft])
 
+  const unchanged = !!draft && !!prior && matchesPromotedLook(draft, prior)
   const { missing, other } = summarizeProblems(state.kind === 'refused' && state.problems.length > 0 ? state.problems : check.problems)
-  const canPromote = !!draft && !!promote && check.valid && memoryRevision !== undefined && state.kind !== 'sending'
+  const canPromote = !!draft && !!promote && check.valid && !unchanged && memoryRevision !== undefined && state.kind !== 'sending'
 
   async function handlePromote() {
     if (!draft || !promote || memoryRevision === undefined) return
@@ -183,6 +186,14 @@ export function LookPanel(props: LookPanelProps) {
         <p style={styles.notice}>
           A promoted look already exists for {prior.entityName} (look_hash <code style={styles.code}>{prior.lookHash.slice(0, 12)}</code>).
           Promoting this one replaces it; once ratified, headshots and sheets made from the old look stop being usable.
+          {props.onStartFromPromoted && isPristineDraft(draft) && (
+            <>
+              {' '}To change a detail without retyping the look, start from your promoted answers.{' '}
+              <button type="button" style={styles.inlineButton} onClick={props.onStartFromPromoted}>
+                Start from the promoted look
+              </button>
+            </>
+          )}
         </p>
       )}
 
@@ -264,6 +275,7 @@ export function LookPanel(props: LookPanelProps) {
                 {(state.kind === 'refused' || state.kind === 'unanswered') && (
                   <p style={styles.problem} role="alert">{state.message}</p>
                 )}
+                {unchanged && <p style={styles.hint}>This is identical to the promoted look. Change something before promoting.</p>}
                 {!promote && <p style={styles.hint}>Promotion needs this project open from the WriterOS project folder.</p>}
                 {promote && memoryRevision === undefined && <p style={styles.hint}>Loading project memory…</p>}
                 {check.hash && (
@@ -329,6 +341,10 @@ const styles: Record<string, React.CSSProperties> = {
   promoteButton: {
     border: '1px solid var(--wp-amber)', background: 'var(--wp-amber)', color: '#1a1200', borderRadius: 8,
     fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600, padding: '10px 16px', cursor: 'pointer',
+  },
+  inlineButton: {
+    display: 'block', border: '1px solid var(--wp-amber)', borderRadius: 8, background: 'transparent', color: 'var(--fg)',
+    fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', marginTop: 8,
   },
   secondaryButton: {
     alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--fg)',

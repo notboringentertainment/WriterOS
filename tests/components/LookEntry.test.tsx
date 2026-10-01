@@ -30,7 +30,7 @@ describe('look entry points', () => {
 
   it('the character card button opens that character and says when a look is promoted', () => {
     const value = withLooks(<CharacterLookButton name="Vector Engineer" />, {
-      promotedLooks: [{ recordId: 'm', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'x', spec: {} as never }],
+      promotedLooks: [{ recordId: 'm', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'x', reference: 'none' as const, spec: {} as never }],
     })
     fireEvent.click(screen.getByRole('button', { name: 'Look · promoted' }))
     expect(value.openLook).toHaveBeenCalledWith({ entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer' })
@@ -38,7 +38,7 @@ describe('look entry points', () => {
 
   it('a beat that names a promoted look shows it, read-only', () => {
     withLooks(<PromotedLooksLine text={'The dinner.\nVector Engineer sets the table.'} />, {
-      promotedLooks: [{ recordId: 'm', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'x', spec: {} as never }],
+      promotedLooks: [{ recordId: 'm', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'x', reference: 'none' as const, spec: {} as never }],
     })
     expect(screen.getByText('Look promoted: Vector Engineer')).toBeInTheDocument()
   })

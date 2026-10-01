@@ -170,7 +170,7 @@ describe('Promote', () => {
   })
 
   it('says a promoted look already exists and that promoting replaces it', () => {
-    renderPanel({ prior: { recordId: 'mem_p', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'c'.repeat(64), spec: {} as never } })
+    renderPanel({ prior: { recordId: 'mem_p', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'c'.repeat(64), reference: 'none' as const, spec: {} as never } })
     expect(screen.getByText(/A promoted look already exists/)).toHaveTextContent('cccccccccccc')
   })
 
@@ -178,6 +178,36 @@ describe('Promote', () => {
     renderPanel({ draft: completeCharacter(), promote: undefined })
     expect(screen.getByRole('button', { name: 'Promote to canon' })).toBeDisabled()
     expect(screen.getByText(/needs this project open from the WriterOS project folder/)).toBeInTheDocument()
+  })
+})
+
+describe('Start from the promoted look', () => {
+  const prior = (spec: Record<string, unknown>, reference: LookDraft['reference'] = 'none') => ({
+    recordId: 'mem_p', entityKind: 'character' as const, entityId: 'vector-engineer', entityName: 'Vector Engineer',
+    lookHash: 'c'.repeat(64), reference: reference as 'none', spec: spec as never,
+  })
+
+  it('offers it only when a look is promoted and the draft is still empty', () => {
+    const onStart = vi.fn()
+    const { unmount } = renderPanel({ prior: prior({}), onStartFromPromoted: onStart })
+    fireEvent.click(screen.getByRole('button', { name: 'Start from the promoted look' }))
+    expect(onStart).toHaveBeenCalled()
+    unmount()
+    renderPanel({ prior: prior({}), draft: draftWith(character, { hair: 'cropped' }), onStartFromPromoted: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Start from the promoted look' })).toBeNull()
+  })
+
+  it('is absent with no promoted look', () => {
+    renderPanel({ onStartFromPromoted: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Start from the promoted look' })).toBeNull()
+  })
+
+  it('blocks Promote while the draft is identical to the promoted look', () => {
+    const draft = completeCharacter('none')
+    const { version: _v, depends_on: _d, ...fields } = { ...draft.spec, version: '1.1', depends_on: [] }
+    renderPanel({ draft, prior: prior({ ...fields, version: '1.1', depends_on: [] }, 'none') })
+    expect(screen.getByRole('button', { name: 'Promote to canon' })).toBeDisabled()
+    expect(screen.getByText(/identical to the promoted look/)).toBeInTheDocument()
   })
 })
 

@@ -76,6 +76,7 @@ import {
   removeDraft,
   setDraftField,
   setDraftReference,
+  startDraftFromPromoted,
   type LookTarget,
 } from './lib/lookDraftEdits'
 
@@ -1214,6 +1215,12 @@ export default function App() {
             void projectMemory.refresh()
           }}
           onMemoryStale={() => { void projectMemory.refresh() }}
+          onStartFromPromoted={() => {
+            const prior = activePromotedLooks.find(look => look.entityKind === target.entityKind && look.entityId === entityId)
+            if (!prior) return
+            const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
+            project.setLooks(doc => startDraftFromPromoted(doc, target, prior, active, now()))
+          }}
           onExit={shellState.closeRitual}
         />
       )

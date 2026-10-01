@@ -119,6 +119,51 @@ export function candidateSpec(draft: LookDraft): Record<string, unknown> {
   return { ...draft.spec, version: CURRENT_LOOK_VERSION, depends_on: [] }
 }
 
+/** A draft with nothing in it yet beyond the entity the writer chose when opening it. */
+export function isPristineDraft(draft: LookDraft | undefined): boolean {
+  if (!draft) return true
+  return Object.keys(draft.spec).every(field => field === 'entity_kind' || field === 'entity_id') && draft.reference === 'unasked'
+}
+
+/**
+ * The writer's explicit "Start from the promoted look": copy their own promoted
+ * answers into the draft so changing one detail does not mean retyping the
+ * look. Every copied field is the writer's earlier typed value, so it keeps
+ * writer provenance; a model never supplies any of it. Citations carry over
+ * only when the cited canon is still active (Promote refuses inactive ones).
+ */
+export function startDraftFromPromoted(
+  doc: LooksDocument,
+  target: LookTarget,
+  promoted: PromotedLook,
+  activeRecordIds: ReadonlySet<string>,
+  now: string,
+): LooksDocument {
+  return updateDraft(doc, target, now, draft => {
+    const { version: _version, depends_on: dependsOn, ...fields } = promoted.spec as unknown as Record<string, unknown>
+    const cited = (Array.isArray(dependsOn) ? dependsOn : [])
+      .flatMap(ref => (ref && typeof ref === 'object' && 'writeros_record_id' in ref ? [String((ref as { writeros_record_id: string }).writeros_record_id)] : []))
+      .filter(id => activeRecordIds.has(id))
+    return {
+      ...draft,
+      spec: fields,
+      fieldSources: Object.fromEntries(Object.keys(fields).map(field => [field, 'writer' as const])),
+      reference: promoted.reference,
+      citedRecordIds: [...new Set(cited)].slice(-24),
+    }
+  })
+}
+
+/** True while the draft would promote the same look as `promoted` (same fields and reference). */
+export function matchesPromotedLook(draft: LookDraft, promoted: PromotedLook): boolean {
+  const strip = (spec: Record<string, unknown>) => {
+    const { version: _v, depends_on: _d, ...rest } = spec
+    return JSON.stringify(Object.keys(rest).sort().map(key => [key, rest[key]]))
+  }
+  return draft.reference === promoted.reference
+    && strip(draft.spec) === strip(promoted.spec as unknown as Record<string, unknown>)
+}
+
 /** Fields the writer has filled, for Zoe to move on from. */
 export function filledFields(draft: LookDraft | undefined): string[] {
   if (!draft) return []
@@ -154,6 +199,8 @@ export interface PromotedLook {
   entityId: string
   entityName: string
   lookHash: string
+  /** The writer's reference-image answer stored beside the promoted block. */
+  reference: Exclude<LookDraft['reference'], 'unasked'>
   spec: LookSpec
 }
 
@@ -169,6 +216,7 @@ export function promotedLooks(snapshot: ProjectMemorySnapshot | undefined): Prom
       entityId: spec.entity_id,
       entityName: record.entities[0] ?? spec.entity_id,
       lookHash: record.payload.lookHash,
+      reference: record.payload.reference,
       spec,
     }]
   })
