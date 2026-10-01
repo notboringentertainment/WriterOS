@@ -250,3 +250,17 @@ export function findFirewallProblems(spec: unknown, reference: string): LookSpec
 function canonicalizeSpaces(value: string): string {
   return value.replace(new RegExp(`[${PY_WHITESPACE_CLASS}]+`, 'gu'), ' ')
 }
+
+/**
+ * Trim spaces at the start and end of every string in a look block, at any
+ * depth. Applied when a look is checked and promoted (never while the writer
+ * is typing), on both client and server, so the hash is of the trimmed text.
+ */
+export function trimLookStrings<T>(value: T): T {
+  if (typeof value === 'string') return value.trim() as unknown as T
+  if (Array.isArray(value)) return value.map(item => trimLookStrings(item)) as unknown as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, trimLookStrings(member)])) as T
+  }
+  return value
+}

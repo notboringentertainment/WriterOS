@@ -154,6 +154,23 @@ function payloadKindIssue(
   }
 }
 
+/**
+ * Whether a record can be promoted to active canon from review. Single source of
+ * truth for the server's promote action and the Memory screen's Promote button:
+ * only a clear canon candidate the writer explicitly approved at its source.
+ */
+export function canPromoteMemoryRecord(record: {
+  kind: string
+  status: string
+  safety: string
+  source: { approval: string }
+}): boolean {
+  return record.kind === 'canon'
+    && record.status === 'candidate'
+    && record.safety === 'clear'
+    && record.source.approval === 'explicit'
+}
+
 export const ProjectMemoryRecordSchema = z.object({
   id: IdentifierSchema,
   projectId: IdentifierSchema,

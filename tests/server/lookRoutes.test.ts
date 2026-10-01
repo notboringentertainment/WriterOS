@@ -292,6 +292,18 @@ describe('POST /api/looks/:projectId/promote', () => {
     expect((await snapshot()).records).toHaveLength(0)
   })
 
+  it('trims spaces at the start and end of text before validating and hashing', async () => {
+    const draft = characterDraft()
+    const padded = { ...draft, hair: `  ${draft.hair}  `, prompt_safe_description: ` ${draft.prompt_safe_description}` }
+    const response = await promote(padded)
+    expect(response.status).toBe(200)
+    const record = (await snapshot()).records.find(candidate => candidate.id === response.json.recordId)!
+    expect(record.payload?.spec.prompt_safe_description).toBe(draft.prompt_safe_description)
+    expect((record.payload?.spec as { hair: string }).hair).toBe(draft.hair)
+    const plain = await promote(characterDraft({ hair: 'cropped grey' }))
+    expect(plain.status).toBe(200)
+  })
+
   it('refuses unknown and inactive citations', async () => {
     const unknown = await promote(characterDraft(), { citedRecordIds: [`mem_${'0'.repeat(32)}`] })
     expect(unknown.status).toBe(400)

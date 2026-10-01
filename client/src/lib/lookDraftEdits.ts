@@ -1,7 +1,7 @@
 import type { LookDraft, LookEntityKind, LooksDocument } from '@shared/looks'
 import { lookDraftKey } from '@shared/looks'
 import type { ProjectMemorySnapshot } from '@shared/projectMemory'
-import type { LookSpec } from '@shared/lookSpec'
+import { trimLookStrings, type LookSpec } from '@shared/lookSpec'
 
 // Pure edits on documents/looks.json (look sessions plan, Task 6). The Look
 // panel's form is the only caller that writes spec fields, and every field it
@@ -116,7 +116,7 @@ export function removeDraft(doc: LooksDocument, target: LookTarget): LooksDocume
 
 /** The block as Promote would see it before the server derives depends_on. */
 export function candidateSpec(draft: LookDraft): Record<string, unknown> {
-  return { ...draft.spec, version: CURRENT_LOOK_VERSION, depends_on: [] }
+  return { ...trimLookStrings(draft.spec), version: CURRENT_LOOK_VERSION, depends_on: [] }
 }
 
 /** A draft with nothing in it yet beyond the entity the writer chose when opening it. */
@@ -161,7 +161,7 @@ export function matchesPromotedLook(draft: LookDraft, promoted: PromotedLook): b
     return JSON.stringify(Object.keys(rest).sort().map(key => [key, rest[key]]))
   }
   return draft.reference === promoted.reference
-    && strip(draft.spec) === strip(promoted.spec as unknown as Record<string, unknown>)
+    && strip(trimLookStrings(draft.spec)) === strip(promoted.spec as unknown as Record<string, unknown>)
 }
 
 /** Fields the writer has filled, for Zoe to move on from. */

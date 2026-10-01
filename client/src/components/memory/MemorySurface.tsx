@@ -9,6 +9,7 @@ import type {
   ProjectMemoryConflict,
   ProjectMemoryRecord,
 } from '@shared/projectMemory'
+import { canPromoteMemoryRecord } from '@shared/projectMemory'
 import type { MemoryAnalysisQueueEntry, UseProjectMemoryResult } from '../../lib/useProjectMemory'
 import { MemoryConflictCard, type ProjectMemoryConflictResolution } from './MemoryConflictCard'
 
@@ -79,8 +80,19 @@ interface MemoryRecordRowProps {
   allRecords: ProjectMemoryRecord[]
   activeCanonOfSameKind: ProjectMemoryRecord[]
   pending: boolean
+  /** A refusal for an action taken on this record, shown beside its buttons. */
+  error?: string | null
   onPromote: (record: ProjectMemoryRecord, supersedesId?: string) => void
   onReject: (record: ProjectMemoryRecord) => void
+}
+
+/** Why a candidate offers no Promote, in the writer's words; null when it can be promoted. */
+export function notPromotableReason(record: ProjectMemoryRecord): string | null {
+  if (record.status !== 'candidate' || record.safety === 'flagged' || canPromoteMemoryRecord(record)) return null
+  if (record.kind !== 'canon') {
+    return "This is a background note WriterOS made, not a story decision, so it can't become canon. Reject it to clear it, or leave it here."
+  }
+  return "This came in without your explicit approval, so it can't become canon from here. Approve it where it came from, or reject it."
 }
 
 function MemoryRecordRow({
@@ -90,6 +102,7 @@ function MemoryRecordRow({
   allRecords,
   activeCanonOfSameKind,
   pending,
+  error,
   onPromote,
   onReject,
 }: MemoryRecordRowProps) {
@@ -97,6 +110,8 @@ function MemoryRecordRow({
   const chain = supersessionChain(record, recordsById, allRecords)
   const canReview = view === 'review'
   const isFlagged = record.safety === 'flagged'
+  const promotable = canPromoteMemoryRecord(record)
+  const blockedReason = notPromotableReason(record)
   const replaceCandidates = activeCanonOfSameKind.filter(candidate => candidate.id !== record.id)
 
   return (
@@ -119,7 +134,7 @@ function MemoryRecordRow({
 
       {canReview && (
         <div style={styles.actions}>
-          {!isFlagged && (
+          {promotable && (
             <button
               type="button"
               disabled={pending}
@@ -137,7 +152,7 @@ function MemoryRecordRow({
           >
             Reject
           </button>
-          {!isFlagged && record.kind === 'canon' && replaceCandidates.length > 0 && (
+          {promotable && replaceCandidates.length > 0 && (
             <div style={styles.replaceRow}>
               <label style={styles.replaceLabel}>
                 Replace canon
@@ -165,6 +180,8 @@ function MemoryRecordRow({
           )}
         </div>
       )}
+      {canReview && blockedReason && <p style={styles.detail}>{blockedReason}</p>}
+      {error && <p role="alert" style={styles.error}>{error}</p>}
     </article>
   )
 }
@@ -224,6 +241,8 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
   const [view, setView] = useState<MemoryView>('canon')
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // A refused Promote/Reject shows beside the record that was clicked, not at the top.
+  const [recordError, setRecordError] = useState<{ recordId: string; message: string } | null>(null)
   const [retryingQueue, setRetryingQueue] = useState(false)
 
   const snapshot = memory.snapshot
@@ -244,7 +263,7 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
       if (!confirmed) return
     }
     setPendingActionId(record.id)
-    setActionError(null)
+    setRecordError(null)
     const result = await memory.runAction({
       type: 'promote',
       recordId: record.id,
@@ -252,20 +271,20 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
       supersedes: supersedesId ? [supersedesId] : [],
     })
     setPendingActionId(null)
-    if (!result.ok) setActionError(result.message)
+    if (!result.ok) setRecordError({ recordId: record.id, message: result.message })
   }
 
   async function handleReject(record: ProjectMemoryRecord) {
     if (!snapshot) return
     setPendingActionId(record.id)
-    setActionError(null)
+    setRecordError(null)
     const result = await memory.runAction({
       type: 'reject',
       recordId: record.id,
       expectedRevision: snapshot.revision,
     })
     setPendingActionId(null)
-    if (!result.ok) setActionError(result.message)
+    if (!result.ok) setRecordError({ recordId: record.id, message: result.message })
   }
 
   async function handleResolveConflict(conflict: ProjectMemoryConflict, resolution: ProjectMemoryConflictResolution) {
@@ -381,6 +400,7 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
                     allRecords={allRecords}
                     activeCanonOfSameKind={allRecords.filter(other => other.kind === record.kind && other.status === 'active')}
                     pending={pendingActionId === record.id}
+                    error={recordError?.recordId === record.id ? recordError.message : null}
                     onPromote={(target, supersedesId) => void handlePromote(target, supersedesId)}
                     onReject={target => void handleReject(target)}
                   />

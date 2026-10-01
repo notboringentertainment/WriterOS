@@ -1,6 +1,7 @@
 import { canonicalJson, lookHash } from '../../shared/canonicalJson'
 import {
   findFirewallProblems,
+  trimLookStrings,
   validateLookSpecForPromotion,
   type LookSpec,
   type LookSpecProblem,
@@ -115,7 +116,9 @@ function detailFor(spec: LookSpec): string {
   return yaml.length <= DETAIL_LIMIT ? yaml : `${yaml.slice(0, DETAIL_LIMIT - 1)}…`
 }
 
-export async function promoteLook(deps: LookPromoteDeps, request: LookPromoteRequest): Promise<LookPromoteResponse> {
+export async function promoteLook(deps: LookPromoteDeps, rawRequest: LookPromoteRequest): Promise<LookPromoteResponse> {
+  // Spaces at the start and end of typed text are not part of the look.
+  const request: LookPromoteRequest = { ...rawRequest, spec: trimLookStrings(rawRequest.spec) }
   const { memoryStore, projectPath, projectId } = deps
   const now = deps.now ?? (() => new Date().toISOString())
   const writeExport = deps.writeExport ?? writeLookLocksExport

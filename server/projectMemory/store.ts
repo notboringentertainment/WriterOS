@@ -26,6 +26,7 @@ import {
   type MemorySource,
   type PublishMemoryInput,
   type PublishResult,
+  canPromoteMemoryRecord,
 } from '../../shared/projectMemory'
 import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from '../projectLibrary/packageLock'
 import { renderCanonProjection, renderReviewProjection } from './projections'
@@ -790,12 +791,6 @@ function sourceCanActivateCanon(source: MemorySource): boolean {
 // unratified imports stay review-only. Wayfinder sources activated this way
 // get a store-stamped promotion marker (never publishable) so the record's
 // pedigree stays honest.
-function recordCanPromote(record: ProjectMemoryRecord): boolean {
-  return record.status === 'candidate'
-    && record.safety === 'clear'
-    && record.source.approval === 'explicit'
-}
-
 function needsPromotionAuthorityStamp(source: MemorySource): boolean {
   return source.workflow === 'story-wayfinder' && !sourceCanActivateCanon(source)
 }
@@ -829,7 +824,7 @@ function derivePromotionMutation(
   supersedes: string[],
 ): PromotionMutation {
   const record = requireRecord(snapshot, recordId)
-  if (record.kind !== 'canon' || !recordCanPromote(record)) {
+  if (!canPromoteMemoryRecord(record)) {
     throw new ProjectMemoryStoreError(
       'Only a clear, explicitly approved canon candidate may be promoted.',
       'invalid-action',

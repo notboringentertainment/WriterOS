@@ -84,6 +84,19 @@ describe('look draft edits', () => {
     expect(matchesPromotedLook(setDraftReference(doc, target, 'none', NOW).drafts['character:vector-engineer'], prior)).toBe(false)
   })
 
+  it('the candidate spec trims spaces at the start and end of typed text, at every depth', () => {
+    let doc = ensureDraft(emptyLooks(), target, 's1', NOW)
+    doc = setDraftField(doc, target, 'hair', '  white, thinning  ', NOW)
+    doc = setDraftField(doc, target, 'build', { kind: 'slight', note: ' stooped ' }, NOW)
+    doc = setDraftField(doc, target, 'props', [' keys ', 'lanyard'], NOW)
+    const spec = candidateSpec(doc.drafts['character:vector-engineer'])
+    expect(spec.hair).toBe('white, thinning')
+    expect(spec.build).toEqual({ kind: 'slight', note: 'stooped' })
+    expect(spec.props).toEqual(['keys', 'lanyard'])
+    // What the writer is typing stays exactly as typed.
+    expect(doc.drafts['character:vector-engineer'].spec.hair).toBe('  white, thinning  ')
+  })
+
   it('slugs names and finds promoted looks named in beat text by whole word', () => {
     expect(slugifyEntityName('  Café Noir, Level 3 ')).toBe('cafe-noir-level-3')
     const looks = [{ recordId: 'm', entityKind: 'character' as const, entityId: 'ash', entityName: 'Ash', lookHash: 'x', reference: 'none' as const, spec: {} as never }]
