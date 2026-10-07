@@ -22,6 +22,8 @@ import { registerRoomRoutes } from "./room/roomRoutes";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLibrary/store";
 import { registerProjectLibraryRoutes } from "./projectLibrary/routes";
+import { createMorganHost, morganHostEnabled, registerMorganRoutes } from './morganHost/morganRoutes';
+import type { MorganSessions } from './morganHost/morganSession';
 import {
   STRUCTURED_DOCUMENT_SURFACES,
   isValidStructuredDocumentContent,
@@ -1027,7 +1029,7 @@ export interface RegisterRoutesOptions {
   projectMemoryProvider?: ProjectMemoryProvider | null;
 }
 
-export async function registerRoutes(app: Express, options: RegisterRoutesOptions = {}): Promise<Server> {
+export async function registerRoutes(app: Express, options: RegisterRoutesOptions = {}): Promise<{ server: Server; morganHost: { sessions: MorganSessions; killAllNow(): void } | null }> {
   let projectLibraryConfig;
   try {
     projectLibraryConfig = await loadProjectLibraryConfig(process.env);
@@ -1056,6 +1058,11 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
   registerBeatSheetRoutes(app, projectLibraryConfig, projectLibraryStore);
   registerLookbookRoutes(app, projectLibraryConfig, projectLibraryStore, agentMemoryProvider);
   registerLookRoutes(app, projectLibraryConfig, projectLibraryStore);
+  let morganHost: { sessions: MorganSessions; killAllNow(): void } | null = null;
+  if (morganHostEnabled(process.env) && projectLibraryStore && projectLibraryConfig.rootPath) {
+    morganHost = createMorganHost({ ...projectLibraryConfig, rootPath: projectLibraryConfig.rootPath }, projectLibraryStore, process.env);
+    registerMorganRoutes(app, projectLibraryConfig, morganHost.sessions);
+  }
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.
@@ -1452,5 +1459,5 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
   });
 
   const httpServer = createServer(app);
-  return httpServer;
+  return { server: httpServer, morganHost };
 }

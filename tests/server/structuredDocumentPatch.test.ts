@@ -228,7 +228,7 @@ async function startApp() {
   // it). An outer express.json() here would default to express's 100kb
   // limit and reject anything larger before registerRoutes' own parser (and
   // this file's own oversized-content size-bound tests) ever see it.
-  const server = await registerRoutes(app)
+  const { server } = await registerRoutes(app)
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return (server.address() as AddressInfo).port

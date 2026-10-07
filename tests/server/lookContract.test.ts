@@ -114,7 +114,7 @@ describe('createPersonaSystemPrompt with a look session', () => {
 async function startApp() {
   const app = express()
   app.use(express.json())
-  const server = await registerRoutes(app)
+  const { server } = await registerRoutes(app)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return { server, port: (server.address() as AddressInfo).port }
 }

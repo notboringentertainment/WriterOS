@@ -24,8 +24,8 @@ export const SaveProjectRequestSchema = z.object({
 }).strict()
 
 export type ProjectLibraryBootstrap =
-  | { enabled: false }
-  | { enabled: true; label: string; sessionToken: string }
+  | { enabled: false; morganHost: boolean }
+  | { enabled: true; label: string; sessionToken: string; morganHost: boolean }
 
 export interface ProjectLibraryListResponse {
   entries: Array<ProjectStorageListEntry<ServerProjectRef>>
