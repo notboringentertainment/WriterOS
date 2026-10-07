@@ -50,6 +50,10 @@ on('tool.check', async ($, e, next) => {
 - The `classic.PermissionRequest` handler stays as ported from Story-drive (it reports `waiting-for-input` for the live screen's turn state) and calls `next(e)`; it no longer answers anything. Because `tool.check` decides before any prompt, it should not fire for tools that reach a card; if it does fire, the page shows the stuck state (Task 7).
 - `toDecision` and its `hookSpecificOutput`/`decision.behavior` shapes are removed; tests in Task 3 Step 4 target `tool.check` through engine dispatch: `next` resolving `ask` + a stubbed `/permission` returning `{pending:true}` then `{allow:false,note:'no'}` → `{ decision: 'deny', reason: 'The writer said no: no' }`; `next` resolving `allow` → returned unchanged with no fetch; fetch failure → deny.
 
+### A1b. Page proposals poll the same way
+
+A single `$.http.fetch` is cut off at about 30 s, and Ben may take minutes to read a proposed scene. The `propose_page_change` handler therefore polls like approvals: `pollProposal($, ask)` posts the same `ProposalAsk` (same `proposalId`) to `/proposal`; WriterOS creates the proposal on the first poll only, holds each poll up to **20 s**, and replies `{ pending: true }` until Ben keeps or dismisses it, then the `ProposalOutcome`. Protocol: `type ProposalPoll = { pending: true } | ({ pending?: false } & ProposalOutcome)`. A fetch failure returns "WriterOS could not show the change." as an error result. A `proposalId` with no poll for 60 s is abandoned (`onAbandon`). `callLong` is removed.
+
 ### A2. Process ownership by process tree and a pid registry — no environment marker
 
 macOS 15 does not show another process's environment (`ps -E`, `ps eww` and `KERN_PROCARGS2` return arguments only). Drop `WRITEROS_MORGAN_SESSION`, `findMarked` and `stopMarked` everywhere. Instead:
