@@ -1,6 +1,6 @@
 # Morgan Hosted — Stage 1 Implementation Plan
 
-_Revision 8 — rescoped with Ben on 2026-10-06 after five Codex rounds on a read-only Stage 1, then a focused Codex round on the new parts (review log beside this file). Stage 1 now reaches parity with what Claude Code did for Ben in the 2026-10-06 dry run. Parts carried over from revision 5 (process cleanup, channel, routes, browser plumbing) were reviewed in those rounds; the new parts are marked **[new in rev 6]** for a focused Codex review._
+_Revision 9 (Task 0 amendments) — rescoped with Ben on 2026-10-06 after five Codex rounds on a read-only Stage 1, then a focused Codex round on the new parts (review log beside this file). Stage 1 now reaches parity with what Claude Code did for Ben in the 2026-10-06 dry run. Parts carried over from revision 5 (process cleanup, channel, routes, browser plumbing) were reviewed in those rounds; the new parts are marked **[new in rev 6]** for a focused Codex review._
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,6 +15,64 @@ _Revision 8 — rescoped with Ben on 2026-10-06 after five Codex rounds on a rea
 **Base:** branch from `origin/main` (`5f9a4b1`, what `~/WriterOS-Prod` runs). WriterOS line numbers below are from `origin/main`.
 
 ---
+
+## Task 0 results — amendments (authoritative; they override the tasks below where they differ)
+
+Task 0 was run on 2026-10-06 (`2026-10-06-morgan-hosted-stage1-checks.md`). Four findings change the build. Where a task below disagrees with this section, **this section wins**.
+
+### A1. Approval cards use `tool.check`, polled — not `classic.PermissionRequest`
+
+A `classic.PermissionRequest` handler is cut off after ~30 s and Claude Code draws its own prompt first. A `tool.check` handler that sees `ask` and polls WriterOS in short requests waited 90 s, answered both ways, and the native prompt never appeared. Replace Task 3 Step 4's handler with:
+
+```ts
+// mod/writeros-morgan/hooks/register.ts (inside register)
+on('tool.check', async ($, e, next) => {
+  const decided = await next(e)                    // what settings and permission mode decided: allow | ask | deny
+  if (decided.decision !== 'ask') return decided
+  const tool = String((e as any).tool)
+  const input = ((e as any).input ?? {}) as Record<string, unknown>
+  const full = JSON.stringify(input)
+  if (full.length > 64 * 1024) return { decision: 'deny', reason: 'This change is too large to show on one approval card; split it into smaller steps.' }
+  const requestId = randomId($)                    // existing id helper in register.ts
+  const ask = { epoch: currentEpochId(), requestId, tool, summary: describePermission(tool, input), input: full }
+  for (;;) {
+    let reply: PermissionPoll
+    try { reply = await pollPermission($, ask) } catch { return { decision: 'deny', reason: 'WriterOS could not show the approval card, so nothing was changed.' } }
+    if (reply.pending) continue                     // WriterOS holds each poll ≤ 20 s; time inside mod API calls does not count against the hook's 10 s budget
+    return reply.allow ? { decision: 'allow' } : { decision: 'deny', reason: reply.note ? `The writer said no: ${reply.note}` : 'The writer said no.' }
+  }
+}).catch(() => ({ decision: 'deny', reason: 'Morgan\'s approval step failed, so nothing was changed.' }))
+```
+
+- `pollPermission` is a top-level function: `const r = await $.http.fetch('http://writeros-morgan/permission', { method: 'POST', socketPath, headers, body: JSON.stringify(ask) }); return JSON.parse(String(r.text))` — the mod API's response body is the **`text` property** (no `json()`), and the same applies to every `call(...)` in the ported register.ts.
+- Protocol: `type PermissionPoll = { pending: true } | { pending?: false; allow: boolean; note?: string }`. Re-polling with the same `requestId` attaches to the same card (WriterOS creates the card on the first poll only).
+- `/permission` (Task 4): hold each request up to **20 s**; if Ben has not answered, reply `{ pending: true }`. A `requestId` with no poll for 60 s is abandoned (card removed, `onAbandon`).
+- The `classic.PermissionRequest` handler stays as ported from Story-drive (it reports `waiting-for-input` for the live screen's turn state) and calls `next(e)`; it no longer answers anything. Because `tool.check` decides before any prompt, it should not fire for tools that reach a card; if it does fire, the page shows the stuck state (Task 7).
+- `toDecision` and its `hookSpecificOutput`/`decision.behavior` shapes are removed; tests in Task 3 Step 4 target `tool.check` through engine dispatch: `next` resolving `ask` + a stubbed `/permission` returning `{pending:true}` then `{allow:false,note:'no'}` → `{ decision: 'deny', reason: 'The writer said no: no' }`; `next` resolving `allow` → returned unchanged with no fetch; fetch failure → deny.
+
+### A2. Process ownership by process tree and a pid registry — no environment marker
+
+macOS 15 does not show another process's environment (`ps -E`, `ps eww` and `KERN_PROCARGS2` return arguments only). Drop `WRITEROS_MORGAN_SESSION`, `findMarked` and `stopMarked` everywhere. Instead:
+
+- `server/morganHost/markerSweep.ts` is renamed `ownership.ts` and keeps `descendantsOf(pid)` and `stopProcesses(list, graceMs)` as written in Task 5 Step 3, with `ProcInfo` gaining `started: string` (the `lstart` column, `ps -o pid=,ppid=,pgid=,lstart=`; parse the last 5 fields as the start time).
+- A **pid registry** `<runDir>/owned.json` holds `{ pid, pgid, started }` for every process WriterOS knows Morgan owns: the Claude Code child at spawn, and every descendant each time `refreshOwned` sees it (every 2 s and before any stop). Entries are removed once confirmed dead. Writes are serialized (same pattern as `fileSessionStore`).
+- A recorded process is ours only if a process with that pid **and the same `started` value** is alive; this rules out pid reuse. Groups are signalled only for verified entries whose `pid === pgid`.
+- Session cleanup (`finish()`): stop the retained `owned` set with `stopProcesses`; a survivor marks the project stuck and stays in `owned.json`.
+- Forced stop (`killAllNow`): synchronously read `owned.json`, `ps -o pid=,lstart= -p <pids>`, SIGKILL entries whose start time matches.
+- Boot (`ready`): same verification, SIGTERM → SIGKILL, keep survivors recorded.
+- Tests: replace the marker tests with: a recorded live process is stopped; a recorded pid whose start time differs is left alone; an unrecorded process is never touched; a detached child of the session (the `bash` and `orphan` fake modes) is stopped at session end.
+- Remove `WRITEROS_MORGAN_SESSION` from `morganEnv`, the env allowlist in Global Constraints, the launch test's expected env, and the fake's modes (the `bash` mode's child is found by parent link).
+
+### A3. The folder-trust question becomes an approval card
+
+In a folder Claude Code has not seen, the first screen asks whether to trust the folder, with "No, exit" selected; Enter quits. In `MorganSessions` (Task 5), keep the last 8 KB of the child's terminal output (ANSI stripped); before `hello`, if it contains `Yes, I trust this folder`, emit an approval card `{ requestId: 'folder-trust', tool: 'FolderTrust', summary: 'Let Morgan work in <folder>? Claude Code asks this once per folder.' }` and pause the start timer. Allow → write `\x1b[B` then `\r` to the child (Down, Enter); Don't allow → end the session with "Morgan needs your OK to work in this folder." The `ChildProcessLike` interface gains `write(data: string): void` and `onData(cb)`; `spawnWithPty` forwards both (it still drains output). Test with a fake mode `trust` that prints the trust screen text and waits for Down+Enter on stdin before saying hello.
+
+### A4. Smaller corrections
+
+- **node-pty**: add `"postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"` to `package.json` (the 1.1.0 prebuild ships without the execute bit → `posix_spawnp failed`). Default import `import pty from 'node-pty'` works.
+- **Preflight** checks `authMethod === 'claude.ai'` from `claude auth status --json` (Ben: `claude.ai`, `firstParty`, `max`).
+- **Settings**: `ISOLATION_ARGS = ['--restricted', '--strict-mcp-config']`, `PERMISSION_MODE = 'manual'`, `SANDBOX_SETTINGS = { enabled: true }`, `CLAUDE_MEM_DIR = '~/.claude-mem'` (expanded), no `claudeMdExcludes`.
+- **Task 0 Step 5** (production permission set) runs after Task 3, against the real mod, before Task 4 starts.
 
 ## The whole job, in stages
 
