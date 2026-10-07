@@ -374,7 +374,7 @@ export default function App() {
     setApplyingPatch(false)
     const { morganProposalId, morganProjectId, morganAnswered } = activePatchProposal
     if (morganProposalId && morganProjectId && !morganAnswered && projectFolder.morgan) {
-      void projectFolder.morgan.answerProposal(morganProjectId, morganProposalId, { outcome: result.ok ? 'kept' : 'stale' }).catch(error => {
+      void projectFolder.morgan.answerProposal(morganProjectId, morganProposalId, result.ok ? { outcome: 'kept' } : { outcome: 'stale', note: result.message }).catch(error => {
         if (activeFolderProjectIdRef.current === morganProjectId) {
           setFolderProjectError(error instanceof Error ? error.message : 'Morgan could not receive the answer.')
         }

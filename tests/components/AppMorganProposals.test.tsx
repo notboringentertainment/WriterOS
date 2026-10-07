@@ -110,7 +110,7 @@ describe('App hosted proposal ownership and existing preview integration', () =>
     await screen.findByText('Stale structured suggestion')
     fireEvent.click(screen.getByRole('button', { name: /^apply$/i }))
     await waitFor(() => expect(answers(fetchMock)).toHaveLength(1))
-    expect(JSON.parse(answers(fetchMock)[0][1]!.body as string)).toEqual({ outcome: 'stale' })
+    expect(JSON.parse(answers(fetchMock)[0][1]!.body as string)).toEqual({ outcome: 'stale', note: expect.stringMatching(/out of date/) })
     deliver(null) // The server has removed the answered proposal from its open list.
     expect(await screen.findByRole('alert')).toHaveTextContent(/out of date/)
     fireEvent.click(screen.getByRole('button', { name: /^dismiss$/i }))

@@ -1,5 +1,6 @@
 // server/morganHost/proposals.ts
 // Checks a page proposal before it reaches the page. Returns a plain problem, or null when it is usable.
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   OutlineDocumentContentSchema, StoryBibleDocumentContentSchema, SynopsisDocumentContentSchema, TreatmentDocumentContentSchema,
@@ -23,7 +24,23 @@ const ScriptTarget = z.union([
 
 const first = (e: z.ZodError) => { const i = e.issues[0]; return `${i.path.join('.') || 'content'}: ${i.message}` }
 
-export function validateProposal(p: PageProposal): string | null {
+// The page as it is now, for checks that depend on it. Absent = unknown, and those checks are skipped.
+export interface CurrentPages { outline?: unknown }
+
+export const SYNCED_BEATS_PROBLEM =
+  "content.units: this Outline's beats are copied from the Story-drive beat sheet, so the page cannot change them. " +
+  'Edit the beat sheet instead (with a dated amendment note, after the writer says yes); WriterOS copies the beats in when the page reloads. ' +
+  "You can still propose changes to the Outline's other parts."
+
+// A synced beat sheet owns the Outline's beats: WriterOS restores them on every save, so a proposal that changes them could never be kept.
+function changesSyncedBeats(proposed: unknown, current: unknown): boolean {
+  const now = OutlineDocumentContentSchema.safeParse(current)
+  if (!now.success || !now.data.beatSheetSource) return false
+  const next = OutlineDocumentContentSchema.safeParse(proposed)
+  return next.success && !isDeepStrictEqual(next.data.units, now.data.units)
+}
+
+export function validateProposal(p: PageProposal, current: CurrentPages = {}): string | null {
   if (typeof p?.summary !== 'string' || p.summary.trim() === '') return 'summary: say in one line what changes and why'
   if (p.surface === 'script') {
     const target = ScriptTarget.safeParse(p.target)
@@ -35,6 +52,8 @@ export function validateProposal(p: PageProposal): string | null {
   if (!schema) return `surface: ${String((p as { surface: unknown }).surface)} cannot be changed this way`
   if (!Number.isInteger(p.baseRevision) || p.baseRevision < 0) return 'baseRevision: send the revision you read'
   const content = schema.safeParse(p.content)
-  return content.success ? null : `content.${first(content.error)}`
+  if (!content.success) return `content.${first(content.error)}`
+  if (p.surface === 'outline' && changesSyncedBeats(p.content, current.outline)) return SYNCED_BEATS_PROBLEM
+  return null
 }
 

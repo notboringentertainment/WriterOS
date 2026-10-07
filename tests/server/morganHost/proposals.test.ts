@@ -1,6 +1,6 @@
 // tests/server/morganHost/proposals.test.ts
 import { describe, expect, it } from 'vitest'
-import { validateProposal } from '../../../server/morganHost/proposals'
+import { SYNCED_BEATS_PROBLEM, validateProposal } from '../../../server/morganHost/proposals'
 import { createEmptyOutlineContent } from '../../../shared/documents' // or the empty-content helper each schema's tests use
 
 describe('validateProposal', () => {
@@ -24,3 +24,34 @@ describe('validateProposal', () => {
   })
 })
 
+
+describe('validateProposal on an Outline synced from a beat sheet', () => {
+  const unit = (whatHappens: string) => ({
+    id: 'u1', number: 1, actOrSequence: '', title: 'The aftermath', location: '', characters: [], whatHappens,
+    conflict: '', turn: '', consequence: '', whyNext: '', linkedSceneIds: [], draftNotes: '',
+  })
+  const synced = (whatHappens: string) => ({
+    ...createEmptyOutlineContent(),
+    units: [unit(whatHappens)],
+    beatSheetSource: { ticket: 'resolved/28-beat-sheet.md', sourceHash: 'h', syncedAt: '2026-10-06T00:00:00.000Z', beatCount: 1, label: null },
+  })
+
+  it('refuses a change to the beats and says to change the beat sheet', () => {
+    const problem = validateProposal({ surface: 'outline', baseRevision: 4, content: synced('The parlor floor.'), summary: 'parlor' }, { outline: synced('The living room floor.') })
+    expect(problem).toBe(SYNCED_BEATS_PROBLEM)
+    expect(problem).toMatch(/beat sheet/)
+  })
+
+  it('allows changes elsewhere in a synced Outline', () => {
+    const current = synced('The living room floor.')
+    const proposed = { ...current, spine: { ...current.spine, protagonist: 'The crew chief' } }
+    expect(validateProposal({ surface: 'outline', baseRevision: 4, content: proposed, summary: 'premise' }, { outline: current })).toBeNull()
+  })
+
+  it('allows beat changes when the Outline is not synced, or the current page is unknown', () => {
+    const { beatSheetSource: _unused, ...unsynced } = synced('The living room floor.')
+    const proposed = synced('The parlor floor.')
+    expect(validateProposal({ surface: 'outline', baseRevision: 4, content: { ...proposed, beatSheetSource: undefined }, summary: 's' }, { outline: unsynced })).toBeNull()
+    expect(validateProposal({ surface: 'outline', baseRevision: 4, content: proposed, summary: 's' })).toBeNull()
+  })
+})

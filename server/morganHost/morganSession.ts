@@ -28,7 +28,7 @@ export interface MorganSessionDeps {
   store: SessionStore
   resolveProject(projectId: string): Promise<MorganProjectPaths>
   launchFor(project: MorganProjectPaths, channel: { socketPath: string; token: string }, session: { kind: 'new' | 'resume'; id: string }): MorganLaunch
-  validateProposal?(proposal: PageProposal): string | null      // Task 6 wires proposals.ts; null = valid
+  validateProposal?(proposal: PageProposal, project: MorganProjectPaths): string | null // Task 6 wires proposals.ts; null = valid
   ownership?: OwnedRegistry
   ready?: Promise<void>                                         // production: the boot sweep; no start runs before it settles
   startTimeoutMs?: number
@@ -192,7 +192,7 @@ export class MorganSessions {
       onProposal: ask => new Promise<ProposalOutcome>(resolve => {
         const s = live
         if (!s || s.finishing || s.ending) return resolve({ outcome: 'session-ended' })
-        const problem = this.deps.validateProposal?.(ask.proposal) ?? null
+        const problem = this.deps.validateProposal?.(ask.proposal, project) ?? null
         if (problem) return resolve({ outcome: 'invalid', message: problem })
         s.proposals.set(ask.proposalId, { proposal: ask.proposal, resolve })
         emit({ type: 'proposal', proposalId: ask.proposalId, proposal: ask.proposal })

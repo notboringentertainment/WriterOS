@@ -21,6 +21,12 @@ import { writerosRoot } from './repoRoot'
 import { fileSessionStore } from './sessionStore'
 import { loginShellPath } from './shellPath'
 
+// The Outline as saved in the project, for proposal checks that depend on it. Unreadable = unknown.
+function savedOutline(packagePath: string): unknown {
+  try { return JSON.parse(readFileSync(path.join(packagePath, 'documents', 'outline.json'), 'utf8')).content }
+  catch { return undefined }
+}
+
 export function morganHostEnabled(env: Record<string, string | undefined>): boolean {
   return env.WRITEROS_MORGAN_HOST === '1'
 }
@@ -183,7 +189,7 @@ export function createMorganHost(
     runDir,
     port,
     store: fileSessionStore(path.join(os.homedir(), '.writeros', 'morgan', port)),
-    validateProposal,
+    validateProposal: (proposal, project) => validateProposal(proposal, { outline: savedOutline(project.packagePath) }),
     ownership,
     ready,
     resolveProject: async projectId => {
