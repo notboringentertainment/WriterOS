@@ -498,3 +498,17 @@ Applied:
 5. Recording the marker is required before spawning (start refuses otherwise); boot cleanup keeps markers whose processes survive instead of resetting the file.
 6. Leader test now uses a leader that keeps running; decoy test keeps the marker text in a live process's arguments.
 Notes: session-id persistence is awaited before `done`; undo isolation uses a separate closing transaction, tested with typing before and after Keep; `projectId` added to both proposal-state contracts.
+
+## Act 3 — Build
+
+### Task 0 (Claude, 2026-10-06)
+Results in `2026-10-06-morgan-hosted-stage1-checks.md`. Findings folded into the plan as amendments A1–A4 (approval via polled `tool.check`; process-tree ownership instead of an environment marker, which macOS 15 hides; folder-trust question as a card; node-pty postinstall; settings values).
+
+### Batch A — Codex build (Tasks 1–3), thread 01a11436-938a-7443-bad1-000268458196
+Codex report: `docs/superpowers/reports/2026-10-06-morgan-hosted-tasks-1-3.md`. Deviations accepted: optional `expectedEnding` in the tool schema (the plan's type needed it); fixed preflight failure message (never echoes subprocess output); generated plugin type cache not copied.
+
+### Claude's verdict
+Read the diff; reran `npx vitest run tests/server/morganHost/` (27 pass), `npm run test:mod` (validate + 49 pass), `npm run check` (clean).
+- Fix round 1 (Codex): proposal tool used one long request, which the ~30 s fetch limit would cut off → now polls like approvals (amendment A1b). Verified with tests (pending twice then kept; transport failure).
+- Task 0 Step 5 run live against the real mod: reads, image, casting firewall (direct + symlink), page-file write refusal, Edit to the approval path, proposal tool all behaved. Found: sandboxed `touch` ran without a card (sandbox auto-approval default). Fixed by Claude directly: `SANDBOX_SETTINGS = { enabled: true, autoAllowBashIfSandboxed: false }` + test; confirmed `ls` stays automatic and `touch` asks.
+Batch A accepted, pending Ben's commit OK.

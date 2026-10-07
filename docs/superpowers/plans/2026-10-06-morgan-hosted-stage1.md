@@ -75,7 +75,7 @@ In a folder Claude Code has not seen, the first screen asks whether to trust the
 
 - **node-pty**: add `"postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"` to `package.json` (the 1.1.0 prebuild ships without the execute bit → `posix_spawnp failed`). Default import `import pty from 'node-pty'` works.
 - **Preflight** checks `authMethod === 'claude.ai'` from `claude auth status --json` (Ben: `claude.ai`, `firstParty`, `max`).
-- **Settings**: `ISOLATION_ARGS = ['--restricted', '--strict-mcp-config']`, `PERMISSION_MODE = 'manual'`, `SANDBOX_SETTINGS = { enabled: true }`, `CLAUDE_MEM_DIR = '~/.claude-mem'` (expanded), no `claudeMdExcludes`.
+- **Settings**: `ISOLATION_ARGS = ['--restricted', '--strict-mcp-config']`, `PERMISSION_MODE = 'manual'`, `SANDBOX_SETTINGS = { enabled: true, autoAllowBashIfSandboxed: false }` (Task 0 Step 5: without the second key, sandboxed commands that write ran without a card), `CLAUDE_MEM_DIR = '~/.claude-mem'` (expanded), no `claudeMdExcludes`.
 - **Task 0 Step 5** (production permission set) runs after Task 3, against the real mod, before Task 4 starts.
 
 ## The whole job, in stages
