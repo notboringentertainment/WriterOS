@@ -21,6 +21,8 @@ import {
   surfaceForActiveTab,
 } from './lib/memoryPatch'
 import type { MemoryGroundedPatchProposal, StructuredDocumentSurface } from '@shared/memoryPatches'
+import type { PageProposal } from '@shared/morganLive'
+import { toPatchProposal } from './lib/morganProposal'
 import { buildSurfaceAwareness } from './lib/surfaceAwareness'
 import { buildWorkspaceLocation } from './lib/workspaceLocation'
 import { selectSurfaceStructure, selectConsoleState } from './lib/leftZone'
@@ -297,17 +299,71 @@ export default function App() {
     proposal: MemoryGroundedPatchProposal
     messageId: string
     mode: 'previewing' | 'kept'
+    morganProposalId?: string
+    morganProjectId?: string
+    morganAnswered?: boolean
   } | null>(null)
+  const [morganScriptProposal, setMorganScriptProposal] = useState<{
+    projectId: string
+    proposalId: string
+    proposal: Extract<PageProposal, { surface: 'script' }>
+    answered?: boolean
+  } | null>(null)
+  const documentsRef = useRef(project.state.documents)
+  documentsRef.current = project.state.documents
   const [patchApplyError, setPatchApplyError] = useState<string | null>(null)
   const [applyingPatch, setApplyingPatch] = useState(false)
   useEffect(() => {
     setActivePatchProposal(null)
     setPatchApplyError(null)
     setApplyingPatch(false)
+    setMorganScriptProposal(null)
   }, [activeAgentProjectKey])
+
+  const handleMorganPageProposal = useCallback((entry: { proposalId: string; proposal: PageProposal } | null) => {
+    // A callback from the previous project's stream cannot open a preview here.
+    if (!activeFolderProjectId || activeFolderProjectIdRef.current !== activeFolderProjectId) return
+    if (!entry) {
+      setActivePatchProposal(current => current?.morganProposalId && !current.morganAnswered ? null : current)
+      setMorganScriptProposal(current => current?.answered ? current : null)
+      return
+    }
+    const { proposalId, proposal } = entry
+    setPatchApplyError(null)
+    if (proposal.surface === 'script') {
+      setActivePatchProposal(current => current?.morganProposalId ? null : current)
+      setMorganScriptProposal({ projectId: activeFolderProjectId, proposalId, proposal })
+      shellState.setActiveTab('script')
+    } else {
+      setMorganScriptProposal(null)
+      setActivePatchProposal({
+        proposal: toPatchProposal(proposal, documentsRef.current[proposal.surface].content),
+        messageId: proposalId, mode: 'previewing',
+        morganProposalId: proposalId, morganProjectId: activeFolderProjectId,
+      })
+      shellState.setActiveTab(proposal.surface === 'storyBible' ? 'story-bible' : proposal.surface)
+    }
+  }, [activeFolderProjectId, shellState.setActiveTab])
+
+  const handleMorganScriptOutcome = useCallback((outcome: 'kept' | 'dismissed' | 'stale') => {
+    if (!morganScriptProposal || morganScriptProposal.projectId !== activeFolderProjectIdRef.current) return
+    const { projectId, proposalId, answered } = morganScriptProposal
+    if (!answered && projectFolder.morgan) {
+      void projectFolder.morgan.answerProposal(projectId, proposalId, { outcome }).catch(error => {
+        if (activeFolderProjectIdRef.current === projectId) {
+          setFolderProjectError(error instanceof Error ? error.message : 'Morgan could not receive the answer.')
+        }
+      })
+    }
+    if (outcome === 'stale') {
+      // The server is answered, but the explanation stays visible until Dismiss.
+      setMorganScriptProposal(current => current?.proposalId === proposalId ? { ...current, answered: true } : current)
+    } else setMorganScriptProposal(null)
+  }, [morganScriptProposal, projectFolder.morgan])
 
   const handleApplyPatch = useCallback(() => {
     if (!activePatchProposal) return
+    if (activePatchProposal.morganProposalId && activePatchProposal.morganProjectId !== activeFolderProjectIdRef.current) return
     setApplyingPatch(true)
     const result = applyMemoryGroundedPatch(activePatchProposal.proposal.patch, project.state.documents, {
       synopsis: project.setSynopsisDocument,
@@ -316,13 +372,22 @@ export default function App() {
       storyBible: project.setStoryBibleDocument,
     })
     setApplyingPatch(false)
+    const { morganProposalId, morganProjectId, morganAnswered } = activePatchProposal
+    if (morganProposalId && morganProjectId && !morganAnswered && projectFolder.morgan) {
+      void projectFolder.morgan.answerProposal(morganProjectId, morganProposalId, { outcome: result.ok ? 'kept' : 'stale' }).catch(error => {
+        if (activeFolderProjectIdRef.current === morganProjectId) {
+          setFolderProjectError(error instanceof Error ? error.message : 'Morgan could not receive the answer.')
+        }
+      })
+      if (!result.ok) setActivePatchProposal(current => current?.morganProposalId === morganProposalId ? { ...current, morganAnswered: true } : current)
+    }
     if (!result.ok) {
       setPatchApplyError(result.message)
       return
     }
     setPatchApplyError(null)
     setActivePatchProposal(null)
-  }, [activePatchProposal, project])
+  }, [activePatchProposal, project, projectFolder.morgan])
 
   // Keeps the same proposal but collapses it to a chip on its message (see
   // keptPatchMessageId / handleReopenPatchSuggestion below) instead of
@@ -334,9 +399,20 @@ export default function App() {
   }, [])
 
   const handleDismissPatch = useCallback(() => {
+    if (activePatchProposal?.morganProposalId) {
+      const { morganProjectId, morganProposalId, morganAnswered } = activePatchProposal
+      if (morganProjectId !== activeFolderProjectIdRef.current) return
+      if (morganProjectId && !morganAnswered && projectFolder.morgan) {
+        void projectFolder.morgan.answerProposal(morganProjectId, morganProposalId, { outcome: 'dismissed' }).catch(error => {
+          if (activeFolderProjectIdRef.current === morganProjectId) {
+            setFolderProjectError(error instanceof Error ? error.message : 'Morgan could not receive the answer.')
+          }
+        })
+      }
+    }
     setActivePatchProposal(null)
     setPatchApplyError(null)
-  }, [])
+  }, [activePatchProposal, projectFolder.morgan])
 
   const handleReopenPatchSuggestion = useCallback(() => {
     setActivePatchProposal(current => (current ? { ...current, mode: 'previewing' } : current))
@@ -1054,7 +1130,10 @@ export default function App() {
       case 'script':
         return (
           <ScriptTab
-            key={`${project.activeProjectId}:${scriptImportNonce}`}
+            key={`${activeAgentProjectKey}:${scriptImportNonce}`}
+            projectId={activeFolderProjectId}
+            morganProposal={morganScriptProposal?.projectId === activeFolderProjectId ? morganScriptProposal : undefined}
+            onMorganProposalOutcome={handleMorganScriptOutcome}
             focusMode={shellState.focusMode}
             onToggleFocusMode={shellState.toggleFocusMode}
             initialScript={project.state.script.rawHtml || undefined}
@@ -1299,6 +1378,7 @@ export default function App() {
       + (shellState.writersRoomActive ? countRelevantMemoryConflicts(projectMemory.snapshot, 'writers-room') : 0)
 
     const patchProposalForActiveTab = activePatchProposal?.mode === 'previewing'
+      && (!activePatchProposal.morganProposalId || activePatchProposal.morganProjectId === activeFolderProjectId)
       && surfaceForActiveTab(shellState.activeTab) === activePatchProposal.proposal.patch.surface
       ? activePatchProposal.proposal
       : null
@@ -1361,6 +1441,9 @@ export default function App() {
   }
 
   const railProps = {
+    morgan: projectFolder.morgan,
+    morganProjectId: activeFolderProjectId,
+    onMorganPageProposal: handleMorganPageProposal,
     transcript: project.state.agents.writingPartner.transcript,
     loading: wpLoading,
     onSend: handleWPSend,

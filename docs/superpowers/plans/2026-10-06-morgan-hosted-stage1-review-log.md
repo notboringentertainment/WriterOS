@@ -518,3 +518,15 @@ Codex report: `docs/superpowers/reports/2026-10-06-morgan-hosted-tasks-4-6.md`. 
 
 ### Claude's verdict
 Reran Morgan tests (129), full suite (3010 pass), mod (49), check, build; no leftover fake processes. Read the live-server diff (gated by the flag). Fix round 1 (Codex): (1) **real bug** — folder-trust detection matched spaces, but Claude Code lays words out with column codes (`\x1b[<n>G`); captured the real screen as `tests/fixtures/morgan/claude-trust-screen.raw.txt`, detector now normalizes those codes and has a whitespace-insensitive fallback, tested on the real bytes in chunks; (2) Down and Enter sent as two writes 300 ms apart, as verified in Task 0; (3) SIGTERM/SIGINT handlers installed only when Morgan is on. After fix: 135 Morgan tests, 3016 suite tests, check, build pass; I confirmed the detector on the real capture myself. Batch B accepted, pending Ben's commit OK.
+
+### Batch C — Codex build (Task 7), thread 01a114b5-354a-7d91-8386-bafb36088a66
+Codex reports: `docs/superpowers/reports/2026-10-06-morgan-hosted-task-7.md`, `…-task-7-batch-c.md`. Deviations accepted: exact-snapshot comparison keeps trailing spaces (stricter, safe); stale previews stay until dismissed; storage uses the adapter's injected fetch and robust SSE framing; reducer `reset` action; `ScriptTab` gets `projectId` and persists a kept script change immediately; script preview tested through `ScriptTabMorgan.test.tsx`.
+
+### Claude's verdict
+Reran full suite (3083 pass), check, build; read the LeftRail/App diffs (flag off → rail unchanged). Then ran the **real app** (dev server on 5178, flag on, throwaway projects folder, Writers' Room disconnected) with a **real Claude Code session**:
+- Panel renders; Start Morgan; the folder-trust question reached the page as a card; Allow → Morgan connected and answered.
+- Found V1 (stale "could not connect" notice after the trust card), V2 (routing line shown in Ben's bubble), V3 (long card text overflowing), V4 (**real bug**: guard failed closed on any *new* file because the resolver throws for a missing path). Codex fix round 1 fixed all four with tests (3089 pass).
+- Retest: server stop left 0 Morgan processes and an empty `owned.json`; restart + Start → "Picked up where you left off" with the full earlier conversation; creating a file showed an approval card (action, path, content), Allow created it; a `propose_page_change` for the Synopsis logline showed in WriterOS's existing preview on the Synopsis page, Apply put it on the page and saved it to disk, and Morgan acknowledged "You kept the change".
+- V5 (notice overlapping the feed when scrolled) fixed by Claude: `flexShrink: 0` and a margin on the notice style; confirmed in the browser.
+Not exercised live: a script-page proposal (covered by unit and component tests on the real TipTap editor), Don't allow from the card (covered by tests), the casting firewall through a helper agent. Task 8 (Ben's real run) covers these.
+Batch C accepted, pending Ben's commit OK.

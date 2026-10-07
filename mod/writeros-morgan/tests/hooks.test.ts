@@ -1,17 +1,22 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { PROPOSE_TOOL } from '../hooks/guard'
 
-function wire(on: any, opts: { decision?: any; replies?: any[]; fetchDenied?: boolean; statThrows?: boolean; packagePath?: string } = {}) {
+function wire(on: any, opts: { decision?: any; replies?: any[]; fetchDenied?: boolean; statThrows?: boolean; packageThrows?: boolean; packagePath?: string } = {}) {
   const requests: { route: string; body: any }[] = []
   const replies = [...(opts.replies ?? [{ allow: true }])]
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'WRITEROS_MORGAN_SOCKET' ? '/tmp/m.sock' : e.name === 'WRITEROS_MORGAN_PACKAGE' ? (opts.packagePath ?? '/projects/Test Project.writeros') : 'tok' }))
+  on('env.get', ($: any, e: any) => {
+    if (opts.packageThrows && e.name === 'WRITEROS_MORGAN_PACKAGE') throw new Error('environment unavailable')
+    return { value: e.name === 'WRITEROS_MORGAN_SOCKET' ? '/tmp/m.sock' : e.name === 'WRITEROS_MORGAN_PACKAGE' ? (opts.packagePath ?? '/projects/Test Project.writeros') : 'tok' }
+  })
   on('fs.stat', ($: any, e: any) => { if (opts.statThrows) throw new Error('stat failed'); return { value: { realPath: e.path } } })
   on('http.fetch', ($: any, e: any) => {
     const route = new URL(e.url).pathname
     const body = JSON.parse(e.init.body)
     requests.push({ route, body })
     if (opts.fetchDenied && (route === '/permission' || route === '/proposal')) return { deny: 'socket gone' }
-    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(route === '/permission' || route === '/proposal' ? replies.shift() : {}) } }
+    const reply = route === '/report' ? { acceptedThrough: body.events.at(-1).seq }
+      : route === '/permission' || route === '/proposal' ? replies.shift() : {}
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(reply) } }
   })
   on('session.id', () => ({ value: 'sess' }))
   on('session.cwd', () => ({ value: '/work' }))
@@ -117,10 +122,32 @@ test('the Look panel is denied before fetching a proposal', async ($, on) => {
 
 test('safety checks fail closed for tool calls and mentions', async ($, on) => {
   mock.clock(on)
-  wire(on, { statThrows: true })
+  wire(on, { packageThrows: true })
   await launch($)
   expect((await $.tool.call({ tool: 'Read', file_path: '/a/x.md' } as any)).deny).toMatch(/safety check failed/)
   expect((await $.prompt.mention({ path: '/a/x.md' } as any)).deny).toMatch(/safety check failed/)
+})
+
+test('a new file outside package pages reaches the next tool-call handler', async ($, on) => {
+  mock.clock(on)
+  wire(on, { statThrows: true })
+  await launch($)
+  expect(await $.tool.call({ tool: 'Write', file_path: '/projects/notes/new.md', content: 'Draft' } as any)).toEqual({ result: 'should not run' })
+})
+
+test('a new file inside package documents is denied with the page-proposal reason', async ($, on) => {
+  mock.clock(on)
+  wire(on, { statThrows: true })
+  await launch($)
+  const result = await $.tool.call({ tool: 'Write', file_path: '/projects/Test Project.writeros/documents/new.md', content: 'Draft' } as any)
+  expect(result.deny).toBe('That file belongs to an open WriterOS page. Use propose_page_change so the writer sees the change on the page and keeps or dismisses it.')
+})
+
+test('reading a missing file is denied because it could not be checked', async ($, on) => {
+  mock.clock(on)
+  wire(on, { statThrows: true })
+  await launch($)
+  expect(await $.tool.call({ tool: 'Read', file_path: '/projects/notes/missing.md' } as any)).toEqual({ deny: 'Morgan could not check this file, so it was not opened.' })
 })
 
 test('casting mentions are refused', async ($, on) => {

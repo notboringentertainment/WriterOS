@@ -165,7 +165,11 @@ export class MorganSessions {
         }
       },
       events: (epoch, events) => emit({ type: 'events', epoch, events }),
-      lost: (epoch, reason) => emit({ type: 'lost', epoch, reason }),
+      lost: (epoch, reason) => {
+        // Folder trust can wait for the writer longer than the channel's hello deadline.
+        if (reason === 'no-hello' && live?.approvals.has('folder-trust')) return
+        emit({ type: 'lost', epoch, reason })
+      },
       composer: update => emit({ type: 'composer', update }),
       recovered: epoch => emit({ type: 'recovered', epoch }),
     }

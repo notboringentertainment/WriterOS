@@ -1,4 +1,5 @@
 import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
+import type { MorganScreenEvent } from '@shared/morganLive'
 import type { LookbookQuestionsResult } from './lookbookClient'
 import type { LookExportResponse, LookPromoteRequest } from '@shared/looks'
 import type { LookPromoteOutcome } from './looksClient'
@@ -134,6 +135,17 @@ export interface ProjectStorageLooksClient {
   reexport(projectId: string): Promise<LookExportResponse>
 }
 
+export interface ProjectStorageMorganClient {
+  start(projectId: string, opts?: { fresh?: boolean }): Promise<{ sessionId: string; existing: boolean }>
+  submit(projectId: string, text: string, context?: { surface?: string }): Promise<string>
+  answerApproval(projectId: string, requestId: string, answer: { allow: boolean; note?: string }): Promise<void>
+  answerProposal(projectId: string, proposalId: string, answer: { outcome: 'kept' | 'dismissed' | 'stale'; note?: string }): Promise<void>
+  stop(projectId: string, turnId: string): Promise<void>
+  end(projectId: string): Promise<void>
+  stream(projectId: string, onEvent: (e: MorganScreenEvent) => void, onClosed: () => void): () => void
+}
+export type MorganApi = ProjectStorageMorganClient
+
 export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = ProjectStorageProjectRef> {
   kind: 'file-system-access' | 'server'
   label: string
@@ -145,6 +157,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   beatSheet?: ProjectStorageBeatSheetClient
   lookbook?: ProjectStorageLookbookClient
   looks?: ProjectStorageLooksClient
+  morgan?: ProjectStorageMorganClient
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>

@@ -99,8 +99,13 @@ async function guardContext($: any): Promise<GuardContext> {
   return {
     packagePath: String((await $.env.get('WRITEROS_MORGAN_PACKAGE')) ?? ''),
     resolve: async (p: string) => {
-      const info = await $.fs.stat(p, { resolve: true })
-      return info?.realPath ?? null
+      try {
+        const info = await $.fs.stat(p, { resolve: true })
+        return info?.realPath ?? null
+      } catch {
+        // New files have no real path yet; guardTool checks write paths as given and refuses reads.
+        return null
+      }
     },
   }
 }

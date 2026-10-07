@@ -13,6 +13,8 @@ import { hashScriptHtml } from '../../lib/scriptBlocks'
 import type { ScriptFactsCache, ScriptFactSection, ScriptFactWarning } from '../../lib/scriptFacts'
 import { liveScriptBlocksFromDoc, resolveFactOccurrences } from '../../lib/scriptFactNavigation'
 import type { ProjectFormat } from '@shared/projectFormat'
+import { applyScriptProposal, type ScriptProposal } from '../../lib/scriptProposal'
+import { ScriptProposalPreview } from './screenplay/ScriptProposalPreview'
 
 interface SceneHeading {
   index: number
@@ -21,6 +23,9 @@ interface SceneHeading {
 }
 
 interface ScriptTabProps {
+  projectId?: string | null
+  morganProposal?: { projectId: string; proposalId: string; proposal: ScriptProposal }
+  onMorganProposalOutcome?: (outcome: 'kept' | 'dismissed' | 'stale') => void
   focusMode?: boolean
   onToggleFocusMode?: () => void
   initialScript?: string
@@ -42,6 +47,9 @@ interface ScriptTabProps {
 }
 
 export function ScriptTab({
+  projectId,
+  morganProposal,
+  onMorganProposalOutcome,
   focusMode = false,
   onToggleFocusMode = () => {},
   initialScript,
@@ -69,6 +77,21 @@ export function ScriptTab({
   const [currentScriptHash, setCurrentScriptHash] = useState(() => hashScriptHtml(initialScript ?? ''))
 
   const editorRef = useRef<Editor | null>(null)
+  const [proposalResult, setProposalResult] = useState<{ id: string; projectId: string; status: 'kept' | 'dismissed' | 'stale' | 'ambiguous' } | null>(null)
+  const proposalStatus = proposalResult?.id === morganProposal?.proposalId && proposalResult?.projectId === morganProposal?.projectId ? proposalResult?.status : undefined
+  const visibleProposal = morganProposal?.projectId === projectId && proposalStatus !== 'kept' && proposalStatus !== 'dismissed' ? morganProposal : undefined
+  const handleKeepProposal = () => {
+    if (!visibleProposal || visibleProposal.projectId !== projectId || !editorRef.current || proposalStatus) return
+    const result = applyScriptProposal(editorRef.current, visibleProposal.proposal)
+    if (result.ok) handleContentChange(editorRef.current.getHTML())
+    setProposalResult({ id: visibleProposal.proposalId, projectId: visibleProposal.projectId, status: result.ok ? 'kept' : result.reason })
+    onMorganProposalOutcome?.(result.ok ? 'kept' : 'stale')
+  }
+  const handleDismissProposal = () => {
+    if (!visibleProposal || visibleProposal.projectId !== projectId) return
+    setProposalResult({ id: visibleProposal.proposalId, projectId: visibleProposal.projectId, status: 'dismissed' })
+    onMorganProposalOutcome?.('dismissed')
+  }
   const scenesRef = useRef<SceneHeading[]>([])
   const scriptHashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navCursorRef = useRef<{ key: string; index: number } | null>(null)
@@ -272,6 +295,12 @@ export function ScriptTab({
           </div>
         )}
 
+        {visibleProposal && <ScriptProposalPreview
+          proposal={visibleProposal.proposal}
+          error={proposalStatus === 'stale' || proposalStatus === 'ambiguous' ? proposalStatus : undefined}
+          onKeep={handleKeepProposal}
+          onDismiss={handleDismissProposal}
+        />}
         <div style={styles.row}>
           <SceneGutter scenes={scenes} onSceneClick={handleSceneClick} />
           <ScreenplayEditor

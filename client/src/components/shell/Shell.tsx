@@ -11,6 +11,8 @@ import { getDisplayProjectTitle } from '../../lib/projectIdentity'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import type { ActiveTab } from '../../lib/wpRouting'
 import type { ActiveRitual, StoryBibleSection } from '../../lib/shellState'
+import type { MorganApi } from '../../lib/projectStorage'
+import type { PageProposal } from '@shared/morganLive'
 
 interface ShellState {
   homeActive: boolean
@@ -36,6 +38,9 @@ interface ShellState {
 }
 
 interface RailProps {
+  morgan?: MorganApi | null
+  morganProjectId?: string | null
+  onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void

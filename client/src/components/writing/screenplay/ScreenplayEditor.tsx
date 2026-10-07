@@ -11,6 +11,10 @@ import { ElementType, countWords } from '../../../lib/screenplay'
 import type { ScriptFocusState } from '../../../lib/scriptIndex'
 import './screenplay.css'
 
+export function createScreenplayExtensions(opts: { onPageCountChange?: (count: number) => void } = {}) {
+  return [Document, Paragraph, Text, History, ScreenplayExtension, PaginationExtension.configure(opts)]
+}
+
 interface ScreenplayEditorProps {
   initialContent?: string
   onContentChange?: (html: string) => void
@@ -95,19 +99,9 @@ export function ScreenplayEditor({
   }, [getFocusState])
 
   const editor = useEditor({
-    extensions: [
-      Document,
-      Paragraph,
-      Text,
-      History,
-      ScreenplayExtension,
-      // Layout-derived page count + continuous-scroll page-break/number
-      // decorations. The page count flows through the stable ref so the
-      // extension (created once) always reaches the latest prop.
-      PaginationExtension.configure({
-        onPageCountChange: (count: number) => onPageCountChangeRef.current?.(count),
-      }),
-    ],
+    extensions: createScreenplayExtensions({
+      onPageCountChange: (count: number) => onPageCountChangeRef.current?.(count),
+    }),
     content: initialContent || '<p data-element-type="scene-heading"></p>',
 
     onCreate({ editor }) {

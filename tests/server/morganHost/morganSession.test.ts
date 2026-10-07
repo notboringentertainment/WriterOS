@@ -141,6 +141,24 @@ describe('MorganSessions', () => {
     expect(sockets(runDir)).toEqual([]);
     expect(seen.find(e => e.type === 'ended')).toMatchObject({ message: 'Morgan needs your OK to work in this folder.' });
   });
+  it('does not forward no-hello while waiting for folder trust, even to a late subscriber', async () => {
+    const { sessions } = make('trust', { startTimeoutMs: 1000 }); current = sessions;
+    await sessions.start('p1');
+    const seen: MorganScreenEvent[] = [];
+    sessions.subscribe('p1', e => seen.push(e));
+    await until(seen, e => e.type === 'approval' && e.card.requestId === 'folder-trust');
+    // Let the real channel's 8 s HELLO_MS deadline expire while Ben reads the card.
+    await new Promise(r => setTimeout(r, 8100));
+    expect(sessions.has('p1')).toBe(true);
+    const late: MorganScreenEvent[] = [];
+    sessions.subscribe('p1', e => late.push(e));
+    expect(seen.filter(e => e.type === 'lost')).toEqual([]);
+    expect(late.filter(e => e.type === 'lost')).toEqual([]);
+    expect(sessions.answerApproval('p1', 'folder-trust', { allow: true })).toBe(true);
+    await until(seen, e => text(e).includes('Ready.'));
+    expect(seen.some(e => e.type === 'hello')).toBe(true);
+    expect(seen.filter(e => e.type === 'lost')).toEqual([]);
+  }, 15000);
   it('starts a session and relays the first row', async () => {
     const { sessions } = make(); current = sessions
     const seen: MorganScreenEvent[] = []
