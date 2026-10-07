@@ -68,7 +68,7 @@ describe('buildMorganLaunch', () => {
   })
 
   it('runs Bash in the sandbox so the same rules hold for commands', () => {
-    expect(buildMorganLaunch(base).settings.sandbox).toEqual({ enabled: true, autoAllowBashIfSandboxed: false }) // without the second key, sandboxed writes run without asking
+    expect(buildMorganLaunch(base).settings.sandbox).toEqual({ enabled: true, autoAllowBashIfSandboxed: false, network: { allowLocalBinding: true } }) // local binding lets the memory import run; without the second key, sandboxed writes run without asking
   })
 
   it('starts a new conversation or resumes one', () => {

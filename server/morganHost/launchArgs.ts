@@ -35,7 +35,9 @@ export const PAGE_DIRS = ['documents', 'script'] as const // the files behind op
 export const ISOLATION_ARGS = ['--restricted', '--strict-mcp-config']
 export const PERMISSION_MODE = 'manual'
 export const CLAUDE_MEM_DIR = path.join(homedir(), '.claude-mem')
-export const SANDBOX_SETTINGS = { enabled: true, autoAllowBashIfSandboxed: false } as const // sandboxed commands that change things still ask Ben (Task 0 Step 5)
+// Sandboxed commands that change things still ask Ben (Task 0 Step 5). Local binding (Ben's yes, 2026-10-07) lets a command
+// listen on this Mac's own loopback port, which WriterOS's `npm run memory` import needs (tsx opens one); no new network reach.
+export const SANDBOX_SETTINGS = { enabled: true, autoAllowBashIfSandboxed: false, network: { allowLocalBinding: true } } as const
 
 const ENV_KEYS = new Set(['HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'TMPDIR'])
 
