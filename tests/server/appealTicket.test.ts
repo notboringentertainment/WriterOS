@@ -31,6 +31,20 @@ describe('appealsForCommit', () => {
     expect(appeal.lineageIds).toEqual(['mem_new', 'mem_old'])
   })
 
+  it('keeps the overrule when a later version supersedes a version that superseded a Story-drive decision', () => {
+    const decided = wayfinder('mem_w', 'resolved/vector-color.md', { claim: 'The chair is blue.', entities: ['Vector Chair'] })
+    const v1 = rec('mem_v1', { claim: 'The chair is green.', entities: ['Vector Chair'], supersedes: ['mem_w'] })
+    const v2 = rec('mem_v2', { claim: 'The chair is teal.', entities: ['Vector Stool'], supersedes: ['mem_v1'] })
+    const before = snap([{ ...decided, status: 'superseded' }, v1])
+    const after = snap([{ ...decided, status: 'superseded' }, { ...v1, status: 'superseded' }, v2])
+    const [appeal] = appealsForCommit(before, after, AT)
+    expect(appeal.kind).toBe('overrule')
+    expect(appeal.overrules).toEqual(['resolved/vector-color.md'])
+    expect(appeal.storyDriveSays).toEqual(['The chair is blue.'])
+    expect(appeal.lineageIds).toEqual(expect.arrayContaining(['mem_v2', 'mem_v1', 'mem_w']))
+    expect(appeal.affects).toEqual(expect.arrayContaining(['Vector Chair', 'Vector Stool']))
+  })
+
   it('raises a new appeal for canon Story-drive never decided', () => {
     const after = snap([rec('mem_look', { entities: ['Vector Station'] })])
     expect(appealsForCommit(snap([]), after, AT).map(a => a.kind)).toEqual(['new'])

@@ -34,17 +34,31 @@ export function appealsForCommit(before: ProjectMemorySnapshot, after: ProjectMe
   const appeals: AppealDraft[] = []
   for (const record of after.records) {
     if (record.kind !== 'canon' || record.status !== 'active' || wasActive.has(record.id) || isWayfinder(record)) continue
-    const replaced = record.supersedes.map(id => byId.get(id)).filter((r): r is ProjectMemoryRecord => !!r)
+    // The full supersedes chain: v2 -> v1 -> W must reach W, or a later version
+    // would drop the Story-drive claim and flip an overrule into a new appeal.
+    const chain = new Map<string, ProjectMemoryRecord>()
+    const lineage = new Set<string>([record.id])
+    const pending = [...record.supersedes]
+    while (pending.length > 0) {
+      const id = pending.shift() as string
+      if (lineage.has(id)) continue
+      lineage.add(id)
+      const older = byId.get(id)
+      if (!older) continue
+      chain.set(id, older)
+      pending.push(...older.supersedes)
+    }
+    const replaced = [...chain.values()]
     const conflicting = after.conflicts
       .filter(c => c.leftRecordId === record.id || c.rightRecordId === record.id)
       .map(c => (c.leftRecordId === record.id ? c.rightRecordId : c.leftRecordId))
       .map(id => byId.get(id))
       .filter((r): r is ProjectMemoryRecord => !!r)
-    const overruled = [...replaced, ...conflicting].filter(isWayfinder)
+    const overruled = [...new Map([...replaced, ...conflicting].filter(isWayfinder).map(r => [r.id, r])).values()]
     const affects = [...new Set([record, ...replaced, ...overruled].flatMap(namesOf).map(listSafe).filter(Boolean))].sort()
     appeals.push({
       recordId: record.id,
-      lineageIds: [record.id, ...record.supersedes],
+      lineageIds: [...lineage],
       kind: overruled.length > 0 ? 'overrule' : 'new',
       overrules: overruled.map(wayfinderPath),
       storyDriveSays: overruled.map(r => r.claim),
