@@ -64,7 +64,7 @@ import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProp
 import type { RoomProposal } from './lib/roomApi'
 import type { LookSessionContext } from '@shared/looks'
 import { LookPanel } from './components/writing/looks/LookPanel'
-import { LookSessionsProvider } from './lib/lookSessionsContext'
+import { LookSessionsProvider, type OpenLookOptions } from './lib/lookSessionsContext'
 import {
   applyZoeReplyToDraft,
   clearDraftField,
@@ -78,6 +78,8 @@ import {
   setDraftField,
   setDraftReference,
   startDraftFromPromoted,
+  openDraftFromPromoted,
+  setDraftName,
   type LookTarget,
 } from './lib/lookDraftEdits'
 
@@ -259,13 +261,22 @@ export default function App() {
   // which removes the draft, so the panel can still show the conversation.
   const [lookSession, setLookSession] = useState<{ target: LookTarget; sessionId: string } | null>(null)
   const [lookSending, setLookSending] = useState(false)
-  const openLook = useCallback((target: LookTarget) => {
+  const openLook = useCallback((target: LookTarget, options?: OpenLookOptions) => {
     const existing = draftFor(project.state.documents.looks, target)
     const sessionId = existing?.sessionId ?? `look_${crypto.randomUUID()}`
-    if (!existing) project.setLooks(doc => ensureDraft(doc, target, sessionId, new Date().toISOString()))
+    const now = new Date().toISOString()
+    const prior = options?.fromPromoted
+      ? promotedLookFor(promotedLooks(projectMemory.snapshot), target, target.entityId)
+      : undefined
+    if (prior) {
+      const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
+      project.setLooks(doc => openDraftFromPromoted(doc, target, prior, active, sessionId, now))
+    } else if (!existing) {
+      project.setLooks(doc => ensureDraft(doc, target, sessionId, now))
+    }
     setLookSession({ target, sessionId })
     shellState.openRitual('look')
-  }, [project, shellState.openRitual])
+  }, [project, projectMemory.snapshot, shellState.openRitual])
   const characterNames = useMemo(
     () => project.state.documents.storyBible.content.characters.map(c => c.name.trim()).filter(Boolean),
     [project.state.documents.storyBible.content.characters],
@@ -1213,6 +1224,7 @@ export default function App() {
           onField={(field, value) => project.setLooks(doc => setDraftField(doc, target, field, value, now()))}
           onClear={field => project.setLooks(doc => clearDraftField(doc, target, field, now()))}
           onReference={reference => project.setLooks(doc => setDraftReference(doc, target, reference, now()))}
+          onName={name => project.setLooks(doc => setDraftName(doc, target, name, now()))}
           promote={looksClient && activeFolderProjectId ? body => looksClient.promote(activeFolderProjectId, body) : undefined}
           reexport={looksClient && activeFolderProjectId ? async () => { await looksClient.reexport(activeFolderProjectId) } : undefined}
           onPromoted={() => {

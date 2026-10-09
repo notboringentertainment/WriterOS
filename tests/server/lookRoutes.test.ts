@@ -219,6 +219,34 @@ describe('POST /api/looks/:projectId/promote', () => {
     expect(await exportFiles()).toHaveLength(1)
   })
 
+  it('a renamed look (new name and id) replaces the look it continues; the export lists only the new one', async () => {
+    const first = await promote(locationDraft())
+    const firstSpec = (await snapshot()).records.find(record => record.id === first.json.recordId)!.payload as { spec: { entity_id: string } }
+    const renamed = await promote(locationDraft({ entity_id: 'parlor' }), { entityName: 'Parlor', replacesRecordId: first.json.recordId })
+    expect(renamed.status).toBe(200)
+    expect(renamed.json.supersededRecordId).toBe(first.json.recordId)
+    const current = await snapshot()
+    expect(current.records.find(record => record.id === first.json.recordId)!.status).toBe('superseded')
+    const active = current.records.find(record => record.id === renamed.json.recordId)!
+    expect(active.entities).toEqual(['Parlor'])
+    expect(firstSpec.spec.entity_id).not.toBe('parlor')
+    const exported = await readExport()
+    expect(exported.looks.map(look => [look.entity_id, look.promotion_id])).toEqual([['parlor', renamed.json.recordId]])
+  })
+
+  it('refuses to replace a look that is not an active promoted look of the same kind', async () => {
+    const character = await promote(characterDraft())
+    const wrongKind = await promote(locationDraft(), { replacesRecordId: character.json.recordId })
+    expect(wrongKind.status).toBe(409)
+    expect(wrongKind.json.error).toBe('stale-replace')
+    const unknown = await promote(locationDraft(), { replacesRecordId: 'mem_00000000000000000000000000000000' })
+    expect(unknown.status).toBe(409)
+    const second = await promote(characterDraft({ hair: 'shaved' }))
+    expect(second.status).toBe(200)
+    const superseded = await promote(characterDraft({ hair: 'long' }), { replacesRecordId: character.json.recordId })
+    expect(superseded.status).toBe(409)
+  })
+
   it('A, then B, then A again with a new click makes a new active record for A', async () => {
     const a1 = await promote(characterDraft())
     const b = await promote(characterDraft({ hair: 'shaved' }))

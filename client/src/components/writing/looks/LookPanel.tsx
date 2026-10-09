@@ -24,6 +24,8 @@ export interface LookPanelProps {
   onField: (field: string, value: unknown) => void
   onClear: (field: string) => void
   onReference: (reference: LookDraft['reference']) => void
+  /** The writer renamed the look. Absent: the name is not editable here. */
+  onName?: (name: string) => void
   /** Absent when the project is not on the server library (promotion needs it). */
   promote?: (body: LookPromoteRequest) => Promise<LookPromoteOutcome>
   reexport?: () => Promise<void>
@@ -127,6 +129,8 @@ export function LookPanel(props: LookPanelProps) {
         fieldSources: draft.fieldSources,
         expectedRevision: memoryRevision,
         promotionOpId: pendingOpId.current,
+        // A renamed look (new id) still replaces the look it continues.
+        ...(prior && spec.entity_id !== prior.entityId ? { replacesRecordId: prior.recordId } : {}),
       })
       if (!mounted.current) return
       pendingOpId.current = null
@@ -175,12 +179,14 @@ export function LookPanel(props: LookPanelProps) {
 
   const kindLabel = target.entityKind === 'character' ? 'Character' : 'Location'
   const promoted = state.kind === 'promoted' ? state.response : null
+  const displayName = draft?.entityName ?? target.entityName
+  const renaming = !!prior && !!draft && draft.entityName.trim() !== prior.entityName.trim()
 
   return (
     <div style={styles.root}>
       <header style={styles.header}>
         <div style={styles.headerText}>
-          <h1 style={styles.title}>{target.entityName}</h1>
+          <h1 style={styles.title}>{displayName}</h1>
           <p style={styles.meta}>
             {kindLabel} look · {promoted ? 'promoted' : 'draft saved in this project'}
           </p>
@@ -191,7 +197,8 @@ export function LookPanel(props: LookPanelProps) {
       {prior && !promoted && (
         <p style={styles.notice}>
           A promoted look already exists for {prior.entityName} (look_hash <code style={styles.code}>{prior.lookHash.slice(0, 12)}</code>).
-          Promoting this one replaces it; once ratified, headshots and sheets made from the old look stop being usable.
+          Promoting this one replaces it{renaming && draft ? ` and renames it from ${prior.entityName} to ${draft.entityName}` : ''};
+          once ratified, headshots and sheets made from the old look stop being usable.
           {props.onStartFromPromoted && isPristineDraft(draft) && (
             <>
               {' '}To change a detail without retyping the look, start from your promoted answers.{' '}
@@ -241,6 +248,9 @@ export function LookPanel(props: LookPanelProps) {
         </section>
 
         <section style={styles.formColumn} aria-label="Look form">
+          {draft && !promoted && props.onName && (
+            <NameField name={draft.entityName} onName={props.onName} disabled={state.kind === 'sending'} />
+          )}
           {draft && !promoted ? (
             <LookDraftForm draft={draft} problems={check.problems} onField={props.onField} onClear={props.onClear}
               onReference={props.onReference} disabled={state.kind === 'sending'} />
@@ -303,6 +313,28 @@ export function LookPanel(props: LookPanelProps) {
   )
 }
 
+/** The look's name. Typed freely; an empty name is kept local until the writer types one. */
+function NameField({ name, onName, disabled }: { name: string; onName: (name: string) => void; disabled: boolean }) {
+  const [value, setValue] = useState(name)
+  useEffect(() => { setValue(current => (current.trim() === name.trim() ? current : name)) }, [name])
+  return (
+    <label style={styles.nameField}>
+      <span style={styles.nameLabel}>Name</span>
+      <input
+        aria-label="Name"
+        style={styles.nameInput}
+        value={value}
+        disabled={disabled}
+        onChange={event => {
+          setValue(event.target.value)
+          if (event.target.value.trim()) onName(event.target.value)
+        }}
+      />
+      <span style={styles.hint}>What the story calls this. The look id below follows it unless you changed the id yourself.</span>
+    </label>
+  )
+}
+
 const styles: Record<string, React.CSSProperties> = {
   root: { minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 20, padding: '32px min(64px, 6vw)', boxSizing: 'border-box' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
@@ -362,4 +394,10 @@ const styles: Record<string, React.CSSProperties> = {
   promotedBlock: { display: 'flex', flexDirection: 'column', gap: 8 },
   promotedLine: { fontFamily: 'var(--font-body)', fontSize: 15, fontWeight: 600, color: 'var(--fg)', margin: 0 },
   code: { fontFamily: 'var(--font-mono)', fontSize: 12 },
+  nameField: { display: 'flex', flexDirection: 'column', gap: 6 },
+  nameLabel: { fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, color: 'var(--fg)' },
+  nameInput: {
+    fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--fg)', background: 'var(--surface-2)',
+    border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', maxWidth: 420,
+  },
 }

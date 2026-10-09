@@ -3,6 +3,7 @@ import { promotedLooksNamedIn, slugifyEntityName } from '../../../lib/lookDraftE
 import { useLookSessions } from '../../../lib/lookSessionsContext'
 
 const LOCATION_CHOICE = '__location__'
+const PROMOTED_PREFIX = 'promoted:'
 
 /** On a beat's Lookbook: pick a Story Bible character or name a location, then open its Look panel. */
 export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
@@ -13,10 +14,20 @@ export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
   if (!looks) return null
 
   const isLocation = choice === LOCATION_CHOICE
-  const name = isLocation ? locationName.trim() : choice
+  const promotedChoice = choice.startsWith(PROMOTED_PREFIX)
+    ? looks.promotedLooks.find(look => look.recordId === choice.slice(PROMOTED_PREFIX.length))
+    : undefined
+  const name = promotedChoice ? promotedChoice.entityName : isLocation ? locationName.trim() : choice
   const start = () => {
     if (!name) return
-    looks.openLook({ entityKind: isLocation ? 'location' : 'character', entityId: slugifyEntityName(name), entityName: name })
+    if (promotedChoice) {
+      looks.openLook(
+        { entityKind: promotedChoice.entityKind, entityId: promotedChoice.entityId, entityName: promotedChoice.entityName },
+        { fromPromoted: true },
+      )
+    } else {
+      looks.openLook({ entityKind: isLocation ? 'location' : 'character', entityId: slugifyEntityName(name), entityName: name })
+    }
     setOpen(false)
     setChoice('')
     setLocationName('')
@@ -33,8 +44,17 @@ export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
     <div style={styles.picker} role="group" aria-label={`Start a look from ${beatTitle}`}>
       <select aria-label="Who or where is this look for?" style={styles.input} value={choice} onChange={event => setChoice(event.target.value)}>
         <option value="">Who or where?</option>
+        {looks.promotedLooks.length > 0 && (
+          <optgroup label="Already promoted">
+            {looks.promotedLooks.map(look => (
+              <option key={look.recordId} value={`${PROMOTED_PREFIX}${look.recordId}`}>
+                {look.entityName} ({look.entityKind}, promoted)
+              </option>
+            ))}
+          </optgroup>
+        )}
         {looks.characterNames.map(character => <option key={character} value={character}>{character}</option>)}
-        <option value={LOCATION_CHOICE}>A location…</option>
+        <option value={LOCATION_CHOICE}>A new location…</option>
       </select>
       {isLocation && (
         <input aria-label="Location name" placeholder="Location name" style={styles.input} value={locationName}
