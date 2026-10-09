@@ -184,6 +184,13 @@ export async function promoteLook(deps: LookPromoteDeps, rawRequest: LookPromote
   const hash = lookHash(spec)
   const prior = priorLookRecords(snapshot, spec)
   const replaced = replacedLookRecord(snapshot, spec, request.replacesRecordId)
+  if (replaced && prior.some(record => record.id !== replaced.id)) {
+    throw new LookPromoteError(
+      409,
+      'rename-collision',
+      `Another look already uses the id "${spec.entity_id}". Choose a different name or look id.`,
+    )
+  }
   const supersedes = [...new Set([...prior.map(record => record.id), ...(replaced ? [replaced.id] : [])])]
 
   // 4. Publish and write the export inside the same package lock.

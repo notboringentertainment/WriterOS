@@ -1208,6 +1208,9 @@ export default function App() {
       const { target, sessionId } = lookSession
       const draft = draftFor(project.state.documents.looks, target)
       const entityId = typeof draft?.spec.entity_id === 'string' && draft.spec.entity_id ? draft.spec.entity_id : target.entityId
+      // The look this draft continues: the one it was opened as, else one already under its current id.
+      const openedPrior = promotedLookFor(activePromotedLooks, target, target.entityId)
+        ?? promotedLookFor(activePromotedLooks, target, entityId)
       const looksClient = projectFolder.looks
       const lookProjectKey = activeAgentProjectKey
       const now = () => new Date().toISOString()
@@ -1219,7 +1222,7 @@ export default function App() {
           messages={project.state.agents.zoe.transcript.filter(message => message.lookSessionId === sessionId)}
           sending={lookSending}
           onSend={text => { void handleLookSend(text) }}
-          prior={promotedLookFor(activePromotedLooks, target, entityId)}
+          prior={openedPrior}
           memoryRevision={projectMemory.browserOnly ? undefined : projectMemory.snapshot?.revision}
           onField={(field, value) => project.setLooks(doc => setDraftField(doc, target, field, value, now()))}
           onClear={field => project.setLooks(doc => clearDraftField(doc, target, field, now()))}
@@ -1235,7 +1238,7 @@ export default function App() {
           }}
           onMemoryStale={() => { void projectMemory.refresh() }}
           onStartFromPromoted={() => {
-            const prior = promotedLookFor(activePromotedLooks, target, entityId)
+            const prior = openedPrior
             if (!prior) return
             const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
             project.setLooks(doc => startDraftFromPromoted(doc, target, prior, active, now()))

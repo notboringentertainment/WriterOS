@@ -65,3 +65,11 @@ describe('promoted looks', () => {
     expect(promotedLooks(snapshot)[0].promotedAt).toBe('2026-10-06T21:20:45.637Z')
   })
 })
+
+describe('review fixes', () => {
+  it('a renamed draft counts as in progress: reopening the promoted look keeps the rename', () => {
+    let doc = ensureDraft(emptyLooks(), salon, 's0', NOW)
+    doc = setDraftName(doc, salon, 'Parlor', NOW)
+    expect(openDraftFromPromoted(doc, salon, prior, new Set(), 's1', NOW)).toBe(doc)
+  })
+})

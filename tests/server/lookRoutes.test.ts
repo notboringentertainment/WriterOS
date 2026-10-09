@@ -234,6 +234,19 @@ describe('POST /api/looks/:projectId/promote', () => {
     expect(exported.looks.map(look => [look.entity_id, look.promotion_id])).toEqual([['parlor', renamed.json.recordId]])
   })
 
+  it('refuses a rename onto the id of a different active look, and changes nothing', async () => {
+    const salonLook = await promote(locationDraft())
+    const parlor = await promote(locationDraft({ entity_id: 'parlor' }), { entityName: 'Parlor' })
+    const before = await revision()
+    const collide = await promote(locationDraft({ entity_id: 'parlor' }), { entityName: 'Parlor', replacesRecordId: salonLook.json.recordId })
+    expect(collide.status).toBe(409)
+    expect(collide.json.error).toBe('rename-collision')
+    expect(await revision()).toBe(before)
+    const current = await snapshot()
+    expect(current.records.find(record => record.id === salonLook.json.recordId)!.status).toBe('active')
+    expect(current.records.find(record => record.id === parlor.json.recordId)!.status).toBe('active')
+  })
+
   it('refuses to replace a look that is not an active promoted look of the same kind', async () => {
     const character = await promote(characterDraft())
     const wrongKind = await promote(locationDraft(), { replacesRecordId: character.json.recordId })

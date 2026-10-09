@@ -162,6 +162,8 @@ export function startDraftFromPromoted(
   activeRecordIds: ReadonlySet<string>,
   now: string,
 ): LooksDocument {
+  // A draft the writer renamed is in progress; copying would mix the new name with the old id.
+  if (!isUntouchedDraft(draftFor(doc, target), target)) return doc
   return updateDraft(doc, target, now, draft => {
     const { version: _version, depends_on: dependsOn, ...fields } = promoted.spec as unknown as Record<string, unknown>
     const cited = (Array.isArray(dependsOn) ? dependsOn : [])
@@ -177,6 +179,14 @@ export function startDraftFromPromoted(
   })
 }
 
+/** Empty, and still under the name and id it was opened with. */
+export function isUntouchedDraft(draft: LookDraft | undefined, target: LookTarget): boolean {
+  if (!draft) return true
+  return isPristineDraft(draft)
+    && draft.entityName.trim() === target.entityName.trim()
+    && (draft.spec.entity_id === undefined || draft.spec.entity_id === target.entityId)
+}
+
 /**
  * Opening a promoted look from the Looks list: the draft starts filled with the
  * writer's promoted answers. A draft already in progress is kept as it is.
@@ -189,8 +199,7 @@ export function openDraftFromPromoted(
   sessionId: string,
   now: string,
 ): LooksDocument {
-  const existing = draftFor(doc, target)
-  if (existing && !isPristineDraft(existing)) return doc
+  if (!isUntouchedDraft(draftFor(doc, target), target)) return doc
   return startDraftFromPromoted(ensureDraft(doc, target, sessionId, now), target, promoted, activeRecordIds, now)
 }
 
