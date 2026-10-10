@@ -30,6 +30,12 @@ export const LookPromoteRequestSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   /** One per Promote click; a retry of the same click reuses it. */
   promotionOpId: z.string().uuid(),
+  /**
+   * The promoted look this one continues, when the writer renamed it (a new
+   * look id). Promote supersedes it like a same-id look, so a rename never
+   * leaves two active looks for one character or place.
+   */
+  replacesRecordId: z.string().min(1).max(500).optional(),
 }).strict()
 export type LookPromoteRequest = z.infer<typeof LookPromoteRequestSchema>
 

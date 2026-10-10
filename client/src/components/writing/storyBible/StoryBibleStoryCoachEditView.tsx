@@ -5,6 +5,7 @@ import type { StoryBibleSection } from '../../../lib/shellState'
 import { getDeckForFormat, type StoryBiblePromptDef } from '../../../lib/storyBibleDeck'
 import { StoryBibleQuestionCard } from './StoryBibleQuestionCard'
 import { StoryBibleReadinessReview } from './StoryBibleReadinessReview'
+import { PromotedLooksList } from '../looks/PromotedLooksList'
 
 export interface StoryBibleStoryCoachEditViewProps {
   format: ProjectFormat
@@ -103,6 +104,7 @@ export function StoryBibleStoryCoachEditView({
       data-testid="story-bible-story-coach-edit-view"
       data-active-format={format}
     >
+      <PromotedLooksList />
       {groups.map((group) => {
         const section = sectionForGroup(group.group)
         return (

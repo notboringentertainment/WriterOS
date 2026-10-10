@@ -105,6 +105,26 @@ function priorLookRecords(snapshot: ProjectMemorySnapshot, spec: LookSpec): Proj
   ))
 }
 
+/** The look a renamed draft continues; refused unless it is still an active promoted look of the same kind. */
+function replacedLookRecord(snapshot: ProjectMemorySnapshot, spec: LookSpec, recordId: string | undefined): ProjectMemoryRecord | undefined {
+  if (recordId === undefined) return undefined
+  const record = snapshot.records.find(candidate => candidate.id === recordId)
+  if (
+    !record
+    || record.kind !== 'canon'
+    || record.status !== 'active'
+    || record.payload?.kind !== 'look_spec'
+    || record.payload.spec.entity_kind !== spec.entity_kind
+  ) {
+    throw new LookPromoteError(
+      409,
+      'stale-replace',
+      'The look you were editing has changed since you opened it. Close it and open it again from the Looks list.',
+    )
+  }
+  return record
+}
+
 function claimFor(entityName: string, spec: LookSpec): string {
   const firstSentence = spec.prompt_safe_description.split(/(?<=[.!?])\s+/)[0] ?? ''
   const claim = `Look: ${entityName} — ${firstSentence}`
@@ -163,6 +183,15 @@ export async function promoteLook(deps: LookPromoteDeps, rawRequest: LookPromote
   const spec = validated.spec
   const hash = lookHash(spec)
   const prior = priorLookRecords(snapshot, spec)
+  const replaced = replacedLookRecord(snapshot, spec, request.replacesRecordId)
+  if (replaced && prior.some(record => record.id !== replaced.id)) {
+    throw new LookPromoteError(
+      409,
+      'rename-collision',
+      `Another look already uses the id "${spec.entity_id}". Choose a different name or look id.`,
+    )
+  }
+  const supersedes = [...new Set([...prior.map(record => record.id), ...(replaced ? [replaced.id] : [])])]
 
   // 4. Publish and write the export inside the same package lock.
   let exportPath: string | null = null
@@ -189,7 +218,7 @@ export async function promoteLook(deps: LookPromoteDeps, rawRequest: LookPromote
       safety: 'clear',
       spoiler: spec.spoiler,
       conflictsWith: [],
-      supersedes: prior.map(record => record.id),
+      supersedes,
       supersedesPriorVersions: false,
       expectedRevision: request.expectedRevision,
       payload: { kind: 'look_spec', version: CURRENT_LOOK_SPEC_VERSION, spec, lookHash: hash, reference: request.reference },

@@ -64,7 +64,7 @@ import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProp
 import type { RoomProposal } from './lib/roomApi'
 import type { LookSessionContext } from '@shared/looks'
 import { LookPanel } from './components/writing/looks/LookPanel'
-import { LookSessionsProvider } from './lib/lookSessionsContext'
+import { LookSessionsProvider, type OpenLookOptions } from './lib/lookSessionsContext'
 import {
   applyZoeReplyToDraft,
   clearDraftField,
@@ -78,6 +78,8 @@ import {
   setDraftField,
   setDraftReference,
   startDraftFromPromoted,
+  openDraftFromPromoted,
+  setDraftName,
   type LookTarget,
 } from './lib/lookDraftEdits'
 
@@ -259,13 +261,22 @@ export default function App() {
   // which removes the draft, so the panel can still show the conversation.
   const [lookSession, setLookSession] = useState<{ target: LookTarget; sessionId: string } | null>(null)
   const [lookSending, setLookSending] = useState(false)
-  const openLook = useCallback((target: LookTarget) => {
+  const openLook = useCallback((target: LookTarget, options?: OpenLookOptions) => {
     const existing = draftFor(project.state.documents.looks, target)
     const sessionId = existing?.sessionId ?? `look_${crypto.randomUUID()}`
-    if (!existing) project.setLooks(doc => ensureDraft(doc, target, sessionId, new Date().toISOString()))
+    const now = new Date().toISOString()
+    const prior = options?.fromPromoted
+      ? promotedLookFor(promotedLooks(projectMemory.snapshot), target, target.entityId)
+      : undefined
+    if (prior) {
+      const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
+      project.setLooks(doc => openDraftFromPromoted(doc, target, prior, active, sessionId, now))
+    } else if (!existing) {
+      project.setLooks(doc => ensureDraft(doc, target, sessionId, now))
+    }
     setLookSession({ target, sessionId })
     shellState.openRitual('look')
-  }, [project, shellState.openRitual])
+  }, [project, projectMemory.snapshot, shellState.openRitual])
   const characterNames = useMemo(
     () => project.state.documents.storyBible.content.characters.map(c => c.name.trim()).filter(Boolean),
     [project.state.documents.storyBible.content.characters],
@@ -1197,6 +1208,9 @@ export default function App() {
       const { target, sessionId } = lookSession
       const draft = draftFor(project.state.documents.looks, target)
       const entityId = typeof draft?.spec.entity_id === 'string' && draft.spec.entity_id ? draft.spec.entity_id : target.entityId
+      // The look this draft continues: the one it was opened as, else one already under its current id.
+      const openedPrior = promotedLookFor(activePromotedLooks, target, target.entityId)
+        ?? promotedLookFor(activePromotedLooks, target, entityId)
       const looksClient = projectFolder.looks
       const lookProjectKey = activeAgentProjectKey
       const now = () => new Date().toISOString()
@@ -1208,11 +1222,12 @@ export default function App() {
           messages={project.state.agents.zoe.transcript.filter(message => message.lookSessionId === sessionId)}
           sending={lookSending}
           onSend={text => { void handleLookSend(text) }}
-          prior={promotedLookFor(activePromotedLooks, target, entityId)}
+          prior={openedPrior}
           memoryRevision={projectMemory.browserOnly ? undefined : projectMemory.snapshot?.revision}
           onField={(field, value) => project.setLooks(doc => setDraftField(doc, target, field, value, now()))}
           onClear={field => project.setLooks(doc => clearDraftField(doc, target, field, now()))}
           onReference={reference => project.setLooks(doc => setDraftReference(doc, target, reference, now()))}
+          onName={name => project.setLooks(doc => setDraftName(doc, target, name, now()))}
           promote={looksClient && activeFolderProjectId ? body => looksClient.promote(activeFolderProjectId, body) : undefined}
           reexport={looksClient && activeFolderProjectId ? async () => { await looksClient.reexport(activeFolderProjectId) } : undefined}
           onPromoted={() => {
@@ -1223,7 +1238,7 @@ export default function App() {
           }}
           onMemoryStale={() => { void projectMemory.refresh() }}
           onStartFromPromoted={() => {
-            const prior = promotedLookFor(activePromotedLooks, target, entityId)
+            const prior = openedPrior
             if (!prior) return
             const active = new Set((projectMemory.snapshot?.records ?? []).filter(record => record.status === 'active').map(record => record.id))
             project.setLooks(doc => startDraftFromPromoted(doc, target, prior, active, now()))
