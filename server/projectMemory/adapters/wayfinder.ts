@@ -224,12 +224,15 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         const unsafeLine = promptInjectionLine(content)
         const ticketType = parsed.headers.get('type')
         const mode = parsed.headers.get('mode')
+        // Appeal tickets (WriterOS canon appeals) are development only: they
+        // are recognized so they import cleanly, but never carry authority.
+        const isAppeal = ticketType === 'appeal'
         const verifiedType = ticketType === 'grill' || ticketType === 'sketch' || ticketType === 'homework'
           ? ticketType
           : undefined
         const verifiedMode = mode === 'hitl' || mode === 'afk' ? mode : undefined
-        const invalidTicketMetadata = directory !== 'assets' && (!verifiedType || !verifiedMode)
-        if (directory !== 'assets' && !verifiedType) {
+        const invalidTicketMetadata = directory !== 'assets' && ((!verifiedType && !isAppeal) || !verifiedMode)
+        if (directory !== 'assets' && !verifiedType && !isAppeal) {
           const typeLine = content.replace(/\r\n?/g, '\n').split('\n')
             .findIndex(line => line.startsWith('type:')) + 1
           warnings.push(
@@ -275,10 +278,15 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             `${relativePath}:${unsafeLine}: prompt-injection pattern detected; active authority withheld`,
           )
         }
-        const answer = parsed.sections.get('Answer')?.replace(/\s+/g, ' ').trim()
+        // A closed appeal's answer is the line under "Answer — applied (in Front Lot)".
+        const appealAnswerHeading = isAppeal
+          ? [...parsed.sections.keys()].find(heading => /^Answer\b/i.test(heading))
+          : undefined
+        const answer = parsed.sections.get(appealAnswerHeading ?? 'Answer')?.replace(/\s+/g, ' ').trim()
         const question = parsed.sections.get('Question')?.replace(/\s+/g, ' ').trim()
         if (directory === 'resolved' && question) ticketQuestions[relativePath] = truncateImportText(question, 600)
         const missingResolvedAnswer = directory === 'resolved'
+          && !isAppeal
           && (answer === undefined || isPointerOnlyAnswer(answer))
           && scopedAnswer === undefined
           && nearScopedAnswer === undefined
