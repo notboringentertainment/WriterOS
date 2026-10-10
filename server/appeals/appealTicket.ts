@@ -22,6 +22,12 @@ const wayfinderPath = (record: ProjectMemoryRecord) => record.source.sourceUri.r
 // Ticket header lists use "[a, b]"; commas and brackets inside a value would break them.
 const listSafe = (value: string) => value.replace(/[[\],\n]/g, ' ').replace(/\s+/g, ' ').trim()
 
+// Text placed under a "## " section must not open a heading of its own: a line
+// starting with "#" would end the section early (or add one) when the ticket is
+// read back. "\#" renders as "#" in Markdown and the WriterOS import undoes it.
+export const escapeSectionText = (text: string) => text.replace(/^([ \t]*)#/gm, '$1\\#')
+export const unescapeSectionLine = (line: string) => line.replace(/^([ \t]*)\\#/, '$1#')
+
 function namesOf(record: ProjectMemoryRecord): string[] {
   const names = [...record.entities]
   if (record.payload?.kind === 'look_spec') names.push(record.payload.spec.entity_id)
@@ -96,13 +102,13 @@ export function renderAppealTicket(a: AppealDraft): string {
       : 'WriterOS added canon Story-drive never decided. It is canon now. Front Lot closes this once it has applied the change.',
     '',
     '## Story-drive says',
-    a.storyDriveSays.length > 0 ? a.storyDriveSays.join('\n\n') : 'Nothing — Story-drive never decided this.',
+    a.storyDriveSays.length > 0 ? escapeSectionText(a.storyDriveSays.join('\n\n')) : 'Nothing — Story-drive never decided this.',
     '',
     '## WriterOS now says',
-    a.writerOSSays,
+    escapeSectionText(a.writerOSSays),
     '',
     '## Where it came from',
-    a.origin,
+    escapeSectionText(a.origin),
     '',
     '## Answer',
     '',

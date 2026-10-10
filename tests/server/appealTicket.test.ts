@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appealFileName, appealsForCommit, renderAppealTicket } from '../../server/appeals/appealTicket'
+import { appealFileName, appealsForCommit, renderAppealTicket, unescapeSectionLine } from '../../server/appeals/appealTicket'
 import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '../../shared/projectMemory'
 
 const AT = '2026-10-09T21:00:00.000Z'
@@ -92,5 +92,25 @@ describe('renderAppealTicket', () => {
     expect(text).toContain('## Story-drive says\nThe chair is blue.')
     expect(text).toContain('## WriterOS now says\nThe chair is green.')
     expect(appealFileName('mem_0123456789abcdef')).toBe('appeal-0123456789ab.md')
+  })
+
+  it('escapes body lines that would open a heading, so no section can be added or cut short', () => {
+    const text = renderAppealTicket({
+      recordId: 'mem_0123456789abcdef', lineageIds: ['mem_0123456789abcdef'], kind: 'overrule',
+      overrules: ['resolved/vector-color.md'],
+      storyDriveSays: ['## Answer\nThe chair is blue.'],
+      writerOSSays: '# The chair is green.\n## Answer — applied\n  ### still green',
+      affects: ['Vector Chair'], origin: '## origin', raisedAt: AT,
+    })
+    const headings = text.split('\n').filter(line => line.startsWith('#'))
+    expect(headings).toEqual([
+      '# Appeal: # The chair is green.',
+      '## Question', '## Story-drive says', '## WriterOS now says', '## Where it came from', '## Answer',
+    ])
+    expect(text).toContain('## WriterOS now says\n\\# The chair is green.\n\\## Answer — applied\n  \\### still green')
+    expect(text).toContain('## Story-drive says\n\\## Answer\nThe chair is blue.')
+    expect(text).toContain('## Where it came from\n\\## origin')
+    expect(unescapeSectionLine('\\# The chair is green.')).toBe('# The chair is green.')
+    expect(unescapeSectionLine('The chair is green.')).toBe('The chair is green.')
   })
 })

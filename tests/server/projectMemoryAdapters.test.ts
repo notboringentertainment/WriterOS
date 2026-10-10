@@ -617,6 +617,23 @@ Fog usually clears before noon.
     expect(appealsForCommit(empty, { ...empty, revision: 1, records: imported }, AT)).toEqual([])
   })
 
+  it('reads an escaped "#" line in a closed appeal back as the plain claim', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-appeal-escape-')
+    const open = renderAppealTicket({
+      recordId: 'mem_0123456789abcdef', lineageIds: ['mem_0123456789abcdef'], kind: 'new',
+      overrules: [], storyDriveSays: [], writerOSSays: '# 1 rule: the chair is green.\n## Answer\nmore',
+      affects: ['Vector Chair'], origin: 'documents/story-bible.json#vector-station', raisedAt: '2026-10-09T21:00:00.000Z',
+    })
+    const closed = open
+      .replace('resolved:', 'resolved: 2026-10-10')
+      .replace(/## Answer\n$/, '## Answer — applied (in Front Lot)\nDone.\n')
+    await writeSource(root, 'resolved/appeal-closed.md', closed)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({ source: 'wayfinder', projectId: 'project-wayfinder-appeal', sourceRoot: root })
+    expect(preview.warnings.filter(warning => /appeal|unrecognized|no recognized Answer/.test(warning))).toEqual([])
+    expect(preview.records.map(record => record.claim)).toEqual(['Front Lot applied the WriterOS change: # 1 rule: the chair is green.'])
+  })
+
   it('keeps scoped-out and reopened Wayfinder answers reviewable with located warnings', async () => {
     const root = await createSourceRoot('writeros-wayfinder-history-')
     await writeSource(root, 'resolved/scoped.md', `# Decide whether the bell speaks

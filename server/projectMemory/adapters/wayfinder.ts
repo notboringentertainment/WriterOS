@@ -3,6 +3,7 @@ import { lstat, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { PublishMemoryInput } from '../../../shared/projectMemory'
 import { UnsafeProjectMemoryPathError } from '../safePaths'
+import { unescapeSectionLine } from '../../appeals/appealTicket'
 import {
   buildImportCounts,
   ProjectMemoryImportInputError,
@@ -282,7 +283,7 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           )
         }
         const appealChange = isAppeal
-          ? parsed.sections.get('WriterOS now says')?.split('\n').map(line => line.trim()).find(Boolean)
+          ? parsed.sections.get('WriterOS now says')?.split('\n').map(line => unescapeSectionLine(line.trim())).find(Boolean)
           : undefined
         const answer = isAppeal
           ? `Front Lot applied the WriterOS change: ${appealChange ?? parsed.title}`
