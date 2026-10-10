@@ -1345,11 +1345,6 @@ async function runAnswer(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   return 0
 }
 
-/**
- * `appeals-backfill` — raise canon appeals for WriterOS canon that changed before appeals
- * existed. A record is backfilled when it is active WriterOS-sourced canon and no outbox
- * entry covers it (by its own id or anywhere in its lineage).
- */
 async function appealsStillOwed(
   projectPath: string,
   snapshot: ProjectMemorySnapshot,
@@ -1363,6 +1358,11 @@ async function appealsStillOwed(
     .filter(appeal => !covered.has(appeal.recordId) && !appeal.lineageIds.some(id => covered.has(id)))
 }
 
+/**
+ * `appeals-backfill` — raise canon appeals for WriterOS canon that changed before appeals
+ * existed. A record is backfilled when it is active WriterOS-sourced canon and no outbox
+ * entry covers it (by its own id or anywhere in its lineage).
+ */
 async function runAppealsBackfill(
   args: ParsedArguments,
   io: ProjectMemoryCliIo,
