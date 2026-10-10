@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { lookHash } from '../../shared/canonicalJson'
 import type { LookSpec } from '../../shared/lookSpec'
 import {
@@ -17,6 +18,7 @@ import { ProjectMemoryStoreError, createProjectMemoryStore } from '../../server/
 const capturedAt = '2026-09-30T20:00:00.000Z'
 const roots: string[] = []
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 

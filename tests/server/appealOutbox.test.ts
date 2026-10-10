@@ -182,4 +182,38 @@ describe('appeal outbox', () => {
     expect(b.entries[0].status).toBe('delivered')
     expect((await readOutbox(project)).entries).toHaveLength(1)
   })
+  it('runs only the final outbox merge inside withLock, never the ticket writes', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    let locked = false
+    const events: string[] = []
+    const writer = vi.fn(async () => { events.push(locked ? 'write-in-lock' : 'write') })
+    const withLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+      locked = true
+      events.push('lock')
+      try {
+        const before = (await readOutbox(project)).entries[0].status
+        const result = await fn()
+        events.push(`merged:${before}->${(await readOutbox(project)).entries[0].status}`)
+        return result
+      } finally {
+        locked = false
+      }
+    }
+    const result = await deliverPendingAppeals(project, root, { writeFile: writer, withLock })
+    expect(events).toEqual(['write', 'lock', 'merged:pending->delivered'])
+    expect(result.entries[0].status).toBe('delivered')
+  })
+
+  it('logs and still resolves when the lock cannot be taken', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const withLock = async <T>(): Promise<T> => { throw new Error('lock busy') }
+      await expect(deliverPendingAppeals(project, root, { withLock })).resolves.toBeDefined()
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining('lock busy'))
+      expect((await readOutbox(project)).entries[0].status).toBe('pending')
+    } finally {
+      errors.mockRestore()
+    }
+  })
 })

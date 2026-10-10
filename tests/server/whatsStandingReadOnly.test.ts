@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { projectMemoryStore } from '../../server/projectMemory/store'
 
 async function makePackage(root: string): Promise<string> {
@@ -70,6 +71,7 @@ describe('readSnapshotReadOnly', () => {
         approval: 'explicit',
       },
     } as Parameters<typeof projectMemoryStore.publish>[1])
+    await appealDeliveriesSettled() // the commit's background appeal delivery writes the outbox
 
     const before = await fileBytes(projectPath)
     expect(before.size).toBeGreaterThan(0)

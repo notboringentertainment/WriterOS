@@ -26,6 +26,11 @@ export interface DeliverOptions {
   now?: () => string
   /** Tests only: replaces the real write of a ticket file. */
   writeFile?: (filePath: string, contents: string) => Promise<void>
+  /**
+   * Runs the final outbox re-read, merge and write under the caller's project
+   * lock (the one enqueueAppeals runs under). Never wraps the ticket writes.
+   */
+  withLock?: <T>(fn: () => Promise<T>) => Promise<T>
 }
 
 const outboxPath = (projectPath: string) => path.join(projectPath, 'memory', APPEALS_OUTBOX_FILE)
@@ -166,19 +171,22 @@ async function deliverNow(
     }
     // A commit may have enqueued while we were writing. Merge only what this call
     // handled into a fresh copy, and leave re-enqueued entries pending.
-    const fresh = await readOutbox(projectPath)
-    for (const handled of todo) {
-      const current = fresh.entries.find(entry => entry.recordId === handled.recordId)
-      const before = readAs.get(handled.recordId)
-      if (!current || !before || current.ticket !== before.ticket || current.updatedAt !== before.updatedAt) continue
-      current.status = handled.status
-      current.fileName = handled.fileName
-      current.updatedAt = handled.updatedAt
-      if (handled.error === undefined) delete current.error
-      else current.error = handled.error
-    }
-    outbox = fresh
-    await writeOutbox(projectPath, outbox)
+    const withLock = options.withLock ?? (<T>(fn: () => Promise<T>) => fn())
+    outbox = await withLock(async () => {
+      const fresh = await readOutbox(projectPath)
+      for (const handled of todo) {
+        const current = fresh.entries.find(entry => entry.recordId === handled.recordId)
+        const before = readAs.get(handled.recordId)
+        if (!current || !before || current.ticket !== before.ticket || current.updatedAt !== before.updatedAt) continue
+        current.status = handled.status
+        current.fileName = handled.fileName
+        current.updatedAt = handled.updatedAt
+        if (handled.error === undefined) delete current.error
+        else current.error = handled.error
+      }
+      await writeOutbox(projectPath, fresh)
+      return fresh
+    })
   } catch (error) {
     console.error(`Could not save the appeals outbox: ${reasonOf(error)}`)
   }

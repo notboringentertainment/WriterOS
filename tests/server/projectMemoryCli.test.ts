@@ -2,6 +2,7 @@ import { appendFile, copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, wr
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 import { createProjectMemoryStore, projectMemoryStore } from '../../server/projectMemory/store'
@@ -25,6 +26,7 @@ function importCounts(overrides: Partial<Record<
 }
 
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
