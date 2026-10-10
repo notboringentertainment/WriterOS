@@ -68,10 +68,10 @@ describe('appealsForCommit', () => {
 
   it('affects carries the old and new names and look ids of a renamed thing', () => {
     const lookPayload = (id: string) => ({ kind: 'look_spec', lookHash: 'x', reference: 'none', spec: { entity_kind: 'location', entity_id: id } })
-    const v1 = rec('mem_v1', { entities: ['the vector salon'], payload: lookPayload('the-vector-salon') as never })
-    const v2 = rec('mem_v2', { entities: ['Vector Parlor'], supersedes: ['mem_v1'], payload: lookPayload('vector-parlor') as never })
+    const v1 = rec('mem_v1', { entities: ['the vector annex'], payload: lookPayload('the-vector-annex') as never })
+    const v2 = rec('mem_v2', { entities: ['Vector Lounge'], supersedes: ['mem_v1'], payload: lookPayload('vector-lounge') as never })
     const [appeal] = appealsForCommit(snap([v1]), snap([{ ...v1, status: 'superseded' }, v2]), AT)
-    expect(appeal.affects).toEqual(['Vector Parlor', 'the vector salon', 'the-vector-salon', 'vector-parlor'])
+    expect(appeal.affects).toEqual(['Vector Lounge', 'the vector annex', 'the-vector-annex', 'vector-lounge'])
   })
 })
 
