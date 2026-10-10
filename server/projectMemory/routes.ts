@@ -23,6 +23,7 @@ import { readAnalysisQueue, processQueueItem, type AnalysisQueueItem } from './w
 import { createModelProvider, type ModelProvider } from '../ai/modelProvider'
 import { readWhatsStandingReport, readWhatsStandingReportDirect } from './whatsStandingReport'
 import { annotationStore, AnnotationStoreError } from './annotationStore'
+import { readOutbox } from '../appeals/appealOutbox'
 import { WhatsStandingAnswerRequestSchema } from '../../shared/whatsStandingPanel'
 
 export type ProjectMemoryAnalyzeHandler = (input: {
@@ -73,6 +74,9 @@ const ANALYSIS_RETRY_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${pref
 // with requireSameOrigin/requireSession at registration.
 const WHATS_STANDING_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/whats-standing`)
 const WHATS_STANDING_ANSWER_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/whats-standing/answer`)
+
+// Read-only report of canon appeals that have not reached the Story-drive folder.
+const APPEALS_ROUTE_PATHS = PROJECT_MEMORY_PREFIXES.map(prefix => `${prefix}/appeals`)
 
 /** Never exposes priorText/currentText — the queue keeps up to 20k characters
  * of document/scene content per item purely for re-analysis; the Memory
@@ -293,7 +297,7 @@ function classifyProjectMemoryPath(
     ? 'GET'
     : endpoint === 'actions' || endpoint === 'analyze'
       ? 'POST'
-      : endpoint === 'analysis-queue' || endpoint === 'whats-standing'
+      : endpoint === 'analysis-queue' || endpoint === 'whats-standing' || endpoint === 'appeals'
         ? 'GET'
         : isAnalysisRetryPath || isWhatsStandingAnswerPath
           ? 'POST'
@@ -618,6 +622,23 @@ export function registerProjectMemoryRoutes(
       const refreshedItems = await readAnalysisQueue(projectPath)
       const refreshed = refreshedItems.find(entry => entry.id === itemId)
       return res.json({ item: refreshed ? summarizeQueueItem(refreshed) : null })
+    } catch (error) {
+      return routeError(res, error)
+    }
+  })
+
+  // Canon appeals still waiting to reach Story-drive (pending count, failed with reasons).
+  app.get(APPEALS_ROUTE_PATHS, requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const projectId = validatedProjectId(req.params.projectId)
+      const projectPath = await libraryStore(config, projectLibraryStore).resolveProjectPackagePath(projectId)
+      const { entries } = await readOutbox(projectPath)
+      return res.json({
+        pending: entries.filter(entry => entry.status === 'pending').length,
+        failed: entries
+          .filter(entry => entry.status === 'failed')
+          .map(entry => ({ fileName: entry.fileName, error: entry.error ?? 'Delivery failed.' })),
+      })
     } catch (error) {
       return routeError(res, error)
     }

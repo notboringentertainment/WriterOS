@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
 import type { ProjectLibraryConfig } from '../../server/projectLibrary/config'
@@ -23,6 +24,7 @@ const servers: Server[] = []
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => {
     server.close(() => resolve())
   })))

@@ -30,6 +30,7 @@ import {
 } from '../../shared/projectMemory'
 import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from '../projectLibrary/packageLock'
 import { renderCanonProjection, renderReviewProjection } from './projections'
+import { recordAppealsInLock, scheduleAppealDelivery } from '../appeals/appealHook'
 
 const MEMORY_DIRECTORY = 'memory'
 const LEDGER_FILE = 'ledger.jsonl'
@@ -341,6 +342,18 @@ async function withProjectLock<T>(
       if (primaryError === undefined) throw releaseError
     }
   }
+}
+
+/**
+ * Runs `operation` under the same package lock every memory commit takes.
+ * Used by canon-appeal delivery to merge its results into the outbox.
+ */
+export function withProjectMemoryLock<T>(
+  projectPath: string,
+  projectId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return withProjectLock(projectPath, () => operation(), projectId)
 }
 
 async function assertMemoryDirectory(memoryPath: string): Promise<boolean> {
@@ -1147,7 +1160,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       }
       const input = parsed.data
 
-      return withProjectLock(projectPath, async projectId => {
+      const result: PublishResult = await withProjectLock(projectPath, async projectId => {
         if (input.projectId !== projectId) {
           throw new ProjectMemoryStoreError(
             `Publication projectId ${input.projectId} does not match project.json projectId ${projectId}.`,
@@ -1178,6 +1191,7 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot, options.testHooks)
+        await recordAppealsInLock(projectPath, replayed.snapshot, next.snapshot, new Date().toISOString())
         let afterCommitError: string | undefined
         if (publishOptions.afterCommit) {
           try {
@@ -1193,6 +1207,8 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
           ...(afterCommitError === undefined ? {} : { afterCommitError }),
         }
       }, input.projectId, options.testHooks?.packageLock)
+      if (result.published) scheduleAppealDelivery(projectPath, input.projectId)
+      return result
     },
 
     async findPublication(projectPath, projectId, dedupeKey) {
@@ -1252,7 +1268,8 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
       if (!parsed.success) {
         throw new ProjectMemoryStoreError(parsed.error.issues[0]?.message ?? 'Invalid project memory action.', 'invalid-input')
       }
-      return withProjectLock(projectPath, async projectId => {
+      let committedProjectId = ''
+      const snapshot = await withProjectLock(projectPath, async projectId => {
         if (expectedProjectId !== undefined && projectId !== expectedProjectId) {
           throw new ProjectMemoryStoreError(
             'The locked WriterOS project does not match the expected project identity.',
@@ -1265,8 +1282,12 @@ export function createProjectMemoryStore(options: ProjectMemoryStoreOptions = {}
         const next = applyEvent(replayed, event, event.revision)
         await appendEvent(ledgerPath, event, options.testHooks)
         await writeProjections(projectPath, next.snapshot, options.testHooks)
+        await recordAppealsInLock(projectPath, replayed.snapshot, next.snapshot, new Date().toISOString())
+        committedProjectId = projectId
         return next.snapshot
       }, expectedProjectId, options.testHooks?.packageLock)
+      scheduleAppealDelivery(projectPath, committedProjectId)
+      return snapshot
     },
 
     async rebuild(projectPath) {
