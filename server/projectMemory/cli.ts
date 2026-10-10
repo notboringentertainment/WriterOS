@@ -14,9 +14,10 @@ import {
   priorVersionRecords,
   projectMemoryStore,
   publicationRecordId,
+  withProjectMemoryLock,
   type ProjectMemoryStore,
 } from './store'
-import type { MemoryContextPackage } from '../../shared/projectMemory'
+import type { MemoryContextPackage, ProjectMemorySnapshot } from '../../shared/projectMemory'
 import {
   MemoryWorkflowSchema,
   ProjectMemoryImportCountsSchema,
@@ -34,6 +35,8 @@ import { previewProjectMemoryImport } from './importer'
 import { annotationStore, AnnotationStoreError } from './annotationStore'
 import { readWhatsStandingReport } from './whatsStandingReport'
 import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
+import { appealsForCommit, type AppealDraft } from '../appeals/appealTicket'
+import { deliverPendingAppeals, enqueueAppeals, readOutbox } from '../appeals/appealOutbox'
 
 export interface ProjectMemoryCliIo {
   stdout(value: string): void
@@ -1342,6 +1345,81 @@ async function runAnswer(args: ParsedArguments, io: ProjectMemoryCliIo): Promise
   return 0
 }
 
+/**
+ * `appeals-backfill` — raise canon appeals for WriterOS canon that changed before appeals
+ * existed. A record is backfilled when it is active WriterOS-sourced canon and no outbox
+ * entry covers it (by its own id or anywhere in its lineage).
+ */
+async function appealsStillOwed(
+  projectPath: string,
+  snapshot: ProjectMemorySnapshot,
+  now: string,
+): Promise<AppealDraft[]> {
+  const outbox = await readOutbox(projectPath)
+  const covered = new Set(outbox.entries.flatMap(entry => [entry.recordId, ...entry.lineageIds]))
+  // Everything is "new" against an empty before; appealsForCommit already skips
+  // story-wayfinder and non-canon records.
+  return appealsForCommit({ ...snapshot, records: [] }, snapshot, now)
+    .filter(appeal => !covered.has(appeal.recordId) && !appeal.lineageIds.some(id => covered.has(id)))
+}
+
+async function runAppealsBackfill(
+  args: ParsedArguments,
+  io: ProjectMemoryCliIo,
+  dependencies: ProjectMemoryCliDependencies,
+): Promise<number> {
+  assertAllowedOptions(args, ['project'], ['dry-run', 'apply'])
+  const dryRun = args.flags.has('dry-run')
+  const apply = args.flags.has('apply')
+  if (dryRun === apply) {
+    io.stderr('Use exactly one of --dry-run (list what would be raised) or --apply (raise and deliver the appeals).\n')
+    return 2
+  }
+  const project = await safeProjectPath(args)
+  const projectPath = project.path
+  const memoryStore = dependencies.memoryStore ?? projectMemoryStore
+  await project.verify()
+  const claimOf = (appeal: AppealDraft) => appeal.writerOSSays.split('\n')[0].trim()
+  const now = new Date().toISOString()
+
+  if (dryRun) {
+    const snapshot = await memoryStore.readSnapshotReadOnly(projectPath)
+    const owed = await appealsStillOwed(projectPath, snapshot, now)
+    if (owed.length === 0) {
+      io.stdout('Nothing to backfill.\n')
+      return 0
+    }
+    for (const appeal of owed) io.stdout(`${appeal.kind}: ${claimOf(appeal)}\n`)
+    io.stdout(`${owed.length} appeal${owed.length === 1 ? '' : 's'} would be raised. Nothing was written.\n`)
+    return 0
+  }
+
+  const projectId = (await memoryStore.readSnapshotReadOnly(projectPath)).projectId
+  const queued = await withProjectMemoryLock(projectPath, projectId, async () => {
+    const snapshot = await memoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
+    const owed = await appealsStillOwed(projectPath, snapshot, now)
+    await enqueueAppeals(projectPath, owed, now)
+    return owed
+  })
+  if (queued.length === 0) {
+    io.stdout('Nothing to backfill.\n')
+  } else {
+    io.stdout(`Queued ${queued.length} appeal${queued.length === 1 ? '' : 's'}.\n`)
+  }
+  const links = await readStoryDriveLinks(path.dirname(projectPath))
+  const root = links.links[projectId]?.root ?? null
+  const outbox = await deliverPendingAppeals(projectPath, root, {
+    withLock: fn => withProjectMemoryLock(projectPath, projectId, fn),
+  })
+  const queuedIds = new Set(queued.map(appeal => appeal.recordId))
+  for (const entry of outbox.entries.filter(item => queuedIds.has(item.recordId))) {
+    io.stdout(entry.status === 'delivered'
+      ? `Delivered ${entry.fileName} to Story-drive.\n`
+      : `Not delivered yet (${entry.fileName}): ${entry.error ?? 'delivery is still pending'}\n`)
+  }
+  return 0
+}
+
 export async function runProjectMemoryCli(
   argv: string[],
   io: ProjectMemoryCliIo = processIo,
@@ -1360,6 +1438,7 @@ export async function runProjectMemoryCli(
     if (args.command === 'invalidate') return await runInvalidate(args, io)
     if (args.command === 'questions') return await runQuestions(args, io)
     if (args.command === 'answer') return await runAnswer(args, io)
+    if (args.command === 'appeals-backfill') return await runAppealsBackfill(args, io, dependencies)
     throw new CliInputError('Unknown memory command.')
   } catch (error) {
     if (error instanceof AnnotationStoreError) {

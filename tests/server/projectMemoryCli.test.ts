@@ -1,8 +1,11 @@
-import { appendFile, copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
+import { readOutbox, APPEALS_OUTBOX_FILE } from '../../server/appeals/appealOutbox'
+import { writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
+import { runProjectMemoryCli } from '../../server/projectMemory/cli'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 import { createProjectMemoryStore, projectMemoryStore } from '../../server/projectMemory/store'
@@ -1191,5 +1194,95 @@ The bell sounds once at sunrise.
       expect(link.root).toMatch(/story-drive-b$/)
       expect(link.beatSheet).toBe('resolved/synthetic-beat-sheet.md')
     })
+  })
+})
+
+describe('appeals-backfill', () => {
+  const writerosRecord = (projectId: string, key: string, claim: string, workflow: 'writeros' | 'story-wayfinder' = 'writeros') => ({
+    projectId,
+    dedupeKey: key,
+    kind: 'canon' as const,
+    requestedStatus: 'active' as const,
+    claim,
+    source: {
+      workflow,
+      sourceId: key,
+      sourceUri: workflow === 'story-wayfinder' ? `story-wayfinder:${key}` : `writeros://${key}`,
+      sourceHash: `${key}-hash`,
+      capturedAt: '2026-08-02T12:00:00.000Z',
+      approval: 'explicit' as const,
+    },
+  })
+
+  // Canon that predates appeals: published, then its outbox wiped.
+  async function projectWithOldCanon() {
+    const projectId = 'cli-backfill-project'
+    const { root, projectPath } = await createProject(projectId)
+    const storyDrive = await mkdtemp(path.join(root, 'story-drive-'))
+    await writeStoryDriveLink(root, projectId, { root: storyDrive })
+    await projectMemoryStore.publish(projectPath, writerosRecord(projectId, 'vector-station', 'Look: Vector Station is cold steel.\nMore detail.'))
+    await projectMemoryStore.publish(projectPath, writerosRecord(projectId, 'imported', 'An imported answer.', 'story-wayfinder'))
+    await appealDeliveriesSettled()
+    await rm(path.join(projectPath, 'memory', APPEALS_OUTBOX_FILE), { force: true })
+    await rm(path.join(storyDrive, 'tickets'), { recursive: true, force: true })
+    return { projectPath, storyDrive }
+  }
+
+  const runCli = async (argv: string[]) => {
+    const out: string[] = []
+    const err: string[] = []
+    const code = await runProjectMemoryCli(argv, { stdout: v => out.push(v), stderr: v => err.push(v) })
+    return { code, out: out.join(''), err: err.join('') }
+  }
+
+  it('--dry-run lists WriterOS canon with no appeal and writes nothing', async () => {
+    const { projectPath, storyDrive } = await projectWithOldCanon()
+    const result = await runCli(['appeals-backfill', '--project', projectPath, '--dry-run'])
+    expect(result.code).toBe(0)
+    expect(result.out).toContain('new: Look: Vector Station is cold steel.\n')
+    expect(result.out).not.toContain('imported answer')
+    expect(result.out).toContain('1 appeal would be raised')
+    expect((await readOutbox(projectPath)).entries).toEqual([])
+    expect(await readdir(path.join(storyDrive, 'tickets')).catch(() => [])).toEqual([])
+  })
+
+  it('--apply queues and delivers the appeals, and a second --apply adds nothing', async () => {
+    const { projectPath, storyDrive } = await projectWithOldCanon()
+    const first = await runCli(['appeals-backfill', '--project', projectPath, '--apply'])
+    expect(first.code).toBe(0)
+    expect(first.out).toContain('Queued 1 appeal.')
+    expect(first.out).toMatch(/Delivered appeal-\w+\.md to Story-drive\./)
+    const entries = (await readOutbox(projectPath)).entries
+    expect(entries).toHaveLength(1)
+    expect(entries[0].status).toBe('delivered')
+    expect(await readdir(path.join(storyDrive, 'tickets'))).toEqual([entries[0].fileName])
+
+    const second = await runCli(['appeals-backfill', '--project', projectPath, '--apply'])
+    expect(second.code).toBe(0)
+    expect(second.out).toContain('Nothing to backfill.')
+    expect((await readOutbox(projectPath)).entries).toHaveLength(1)
+    const dry = await runCli(['appeals-backfill', '--project', projectPath, '--dry-run'])
+    expect(dry.out).toBe('Nothing to backfill.\n')
+  })
+
+  it('says in plain words when delivery fails', async () => {
+    const { projectPath, storyDrive } = await projectWithOldCanon()
+    await rm(storyDrive, { recursive: true, force: true })
+    const result = await runCli(['appeals-backfill', '--project', projectPath, '--apply'])
+    expect(result.code).toBe(0)
+    expect(result.out).toContain('Queued 1 appeal.')
+    expect(result.out).toMatch(/Not delivered yet \(appeal-\w+\.md\): WriterOS can't reach the Story-drive folder/)
+    expect((await readOutbox(projectPath)).entries[0].status).toBe('failed')
+  })
+
+  it('refuses neither or both of --dry-run and --apply', async () => {
+    const { projectPath } = await projectWithOldCanon()
+    for (const flags of [[], ['--dry-run', '--apply']]) {
+      const result = await runCli(['appeals-backfill', '--project', projectPath, ...flags])
+      expect(result.code).not.toBe(0)
+      expect(result.err).toContain('exactly one of --dry-run')
+      expect(result.out).toBe('')
+    }
+    expect((await readOutbox(projectPath)).entries).toEqual([])
   })
 })
