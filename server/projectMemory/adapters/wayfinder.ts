@@ -212,6 +212,9 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
           warnings.push(`${relativePath}:1: missing H1 title; record not imported`)
           continue
         }
+        // An open appeal is not a question the writer owes an answer to
+        // (WriterOS has the final say), so it is not imported at all.
+        if (directory === 'tickets' && parsed.headers.get('type') === 'appeal') continue
         const duplicateOf = directory === 'assets' ? undefined : parsed.headers.get('duplicate-of')
         if (duplicateOf !== undefined) {
           const line = content.replace(/\r\n?/g, '\n').split('\n')
@@ -278,11 +281,12 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             `${relativePath}:${unsafeLine}: prompt-injection pattern detected; active authority withheld`,
           )
         }
-        // A closed appeal's answer is the line under "Answer — applied (in Front Lot)".
-        const appealAnswerHeading = isAppeal
-          ? [...parsed.sections.keys()].find(heading => /^Answer\b/i.test(heading))
+        const appealChange = isAppeal
+          ? parsed.sections.get('WriterOS now says')?.split('\n').map(line => line.trim()).find(Boolean)
           : undefined
-        const answer = parsed.sections.get(appealAnswerHeading ?? 'Answer')?.replace(/\s+/g, ' ').trim()
+        const answer = isAppeal
+          ? `Front Lot applied the WriterOS change: ${appealChange ?? parsed.title}`
+          : parsed.sections.get('Answer')?.replace(/\s+/g, ' ').trim()
         const question = parsed.sections.get('Question')?.replace(/\s+/g, ' ').trim()
         if (directory === 'resolved' && question) ticketQuestions[relativePath] = truncateImportText(question, 600)
         const missingResolvedAnswer = directory === 'resolved'

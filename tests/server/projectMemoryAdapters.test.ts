@@ -583,6 +583,7 @@ Fog usually clears before noon.
     expect(closed).toContain('## Answer — applied (in Front Lot)')
     await writeSource(root, 'tickets/appeal-open.md', open)
     await writeSource(root, 'resolved/appeal-closed.md', closed)
+    await writeSource(root, 'resolved/appeal-empty.md', open.replace('resolved:', 'resolved: 2026-10-10'))
 
     const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
     const preview = await previewProjectMemoryImport({
@@ -595,13 +596,15 @@ Fog usually clears before noon.
     expect(preview.warnings.filter(warning => /appeal|unrecognized|no recognized Answer/.test(warning))).toEqual([])
     expect(preview.records.map(record => [record.source.sourceId, record.kind, record.requestedStatus])).toEqual([
       ['resolved/appeal-closed.md', 'development', 'active'],
-      ['tickets/appeal-open.md', 'open_question', 'active'],
+      ['resolved/appeal-empty.md', 'development', 'active'],
     ])
+    expect(preview.records.every(record => record.source.workflow === 'story-wayfinder')).toBe(true)
     expect(preview.records.every(record => record.source.approval === 'none')).toBe(true)
     expect(preview.records.filter(record => record.kind === 'canon')).toEqual([])
-    expect(preview.counts).toMatchObject({ activeCanon: 0, development: 1, openQuestions: 1 })
+    expect(preview.counts).toMatchObject({ activeCanon: 0, development: 2, openQuestions: 0 })
     const closedRecord = preview.records[0]
-    expect(closedRecord.claim).toBe('Front Lot applied the change to the Vector Chair.')
+    expect(closedRecord.claim).toBe('Front Lot applied the WriterOS change: The chair is green.')
+    expect(preview.records[1].claim).toBe('Front Lot applied the WriterOS change: The chair is green.')
 
     // The import commit adds only story-wayfinder records, so it raises nothing.
     const AT = '2026-10-10T09:00:00.000Z'
