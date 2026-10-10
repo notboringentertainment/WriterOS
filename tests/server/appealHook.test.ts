@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemorySource, PublishMemoryInput } from '../../shared/projectMemory'
 // Imported before the outbox so the store -> hook -> outbox cycle resolves to the mock below.
 import { projectMemoryStore } from '../../server/projectMemory/store'
-import type { DeliverOptions } from '../../server/appeals/appealOutbox'
+import type { AppealDestination, DeliverOptions } from '../../server/appeals/appealOutbox'
 import { APPEALS_OUTBOX_FILE, readOutbox } from '../../server/appeals/appealOutbox'
 import { appealDeliveriesSettled, retryAppealDeliveriesAtStart } from '../../server/appeals/appealHook'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 import { defaultProjectState } from '../../client/src/lib/projectState'
-import { writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
+import { STORY_DRIVE_LINKS_FILE, writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
 import { writeLookLocksExport } from '../../server/looks/lookExport'
 
 // Lets a test swap the ticket writer used by the real delivery the store schedules.
@@ -19,7 +19,7 @@ vi.mock('../../server/appeals/appealOutbox', async importOriginal => {
   const actual = await importOriginal<typeof import('../../server/appeals/appealOutbox')>()
   return {
     ...actual,
-    deliverPendingAppeals: (projectPath: string, root: string | null, options: DeliverOptions = {}) =>
+    deliverPendingAppeals: (projectPath: string, root: AppealDestination, options: DeliverOptions = {}) =>
       actual.deliverPendingAppeals(projectPath, root, { ...options, ...delivery.options }),
   }
 })
@@ -192,15 +192,50 @@ describe('appeal hook on memory commits', () => {
     await library.writeProject({ id: PROJECT_ID, createdAt: Date.parse(capturedAt), updatedAt: Date.parse(capturedAt), state })
     const packagePath = await library.resolveProjectPackagePath(PROJECT_ID)
 
-    // Not linked yet: the appeal is queued and its delivery fails.
-    await projectMemoryStore.publish(packagePath, input())
-    await appealDeliveriesSettled()
-    expect((await readOutbox(packagePath)).entries[0].status).toBe('failed')
+    // Linked to a folder that isn't there yet: the appeal is queued and its delivery fails.
+    const later = path.join(workspace, 'later', 'wayfinder')
+    await writeStoryDriveLink(path.dirname(packagePath), PROJECT_ID, { root: later })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await projectMemoryStore.publish(packagePath, input())
+      await appealDeliveriesSettled()
+    } finally {
+      errors.mockRestore()
+    }
+    expect((await readOutbox(packagePath)).entries[0]).toMatchObject({
+      status: 'failed',
+      error: "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline.",
+    })
 
-    await writeStoryDriveLink(path.dirname(packagePath), PROJECT_ID, { root: wayfinderRoot })
+    await mkdir(path.join(later, 'resolved'), { recursive: true })
     await retryAppealDeliveriesAtStart({ WRITEROS_PROJECTS_ROOT: libraryRoot, HOST: '127.0.0.1' })
     await appealDeliveriesSettled()
-    expect(await tickets()).toHaveLength(1)
+    expect(await readdir(path.join(later, 'tickets'))).toHaveLength(1)
     expect((await readOutbox(packagePath)).entries[0].status).toBe('delivered')
+  })
+
+  it('raises no appeal at all for a project with no Story-drive link', async () => {
+    await rm(path.join(workspace, STORY_DRIVE_LINKS_FILE))
+    const result = await projectMemoryStore.publish(projectPath, input())
+    expect(result.published).toBe(true)
+    await appealDeliveriesSettled()
+    expect(await readdir(path.join(projectPath, 'memory'))).not.toContain(APPEALS_OUTBOX_FILE)
+    expect(await tickets()).toEqual([])
+  })
+
+  it('still queues the appeal when the link registry cannot be read, and says why it waits', async () => {
+    await writeFile(path.join(workspace, STORY_DRIVE_LINKS_FILE), '{ not json')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await projectMemoryStore.publish(projectPath, input())
+      expect(result.published).toBe(true)
+      await appealDeliveriesSettled()
+    } finally {
+      errors.mockRestore()
+    }
+    expect((await readOutbox(projectPath)).entries.map(entry => [entry.status, entry.error])).toEqual([
+      ['failed', "WriterOS couldn't read its list of linked Story-drive folders; it will retry."],
+    ])
+    expect(await tickets()).toEqual([])
   })
 })

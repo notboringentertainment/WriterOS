@@ -81,14 +81,14 @@ describe('GET /api/projects/:projectId/memory/appeals', () => {
   it('counts pending appeals and lists failed ones with their reasons, ignoring delivered', async () => {
     const { port, projectId } = await setup([
       entry({ recordId: 'a', fileName: 'appeal-a.md', status: 'pending' }),
-      entry({ recordId: 'b', fileName: 'appeal-b.md', status: 'failed', error: "This project isn't linked to a Story-drive folder." }),
+      entry({ recordId: 'b', fileName: 'appeal-b.md', status: 'failed', error: "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline." }),
       entry({ recordId: 'c', fileName: 'appeal-c.md', status: 'delivered' }),
     ])
     const response = await get(port, `/api/projects/${projectId}/memory/appeals`, authorized)
     expect(response.status).toBe(200)
     expect(response.json).toEqual({
       pending: 1,
-      failed: [{ fileName: 'appeal-b.md', error: "This project isn't linked to a Story-drive folder." }],
+      failed: [{ fileName: 'appeal-b.md', error: "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline." }],
     })
   })
 

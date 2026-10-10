@@ -37,6 +37,7 @@ import { readWhatsStandingReport } from './whatsStandingReport'
 import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
 import { appealsForCommit, type AppealDraft } from '../appeals/appealTicket'
 import { deliverPendingAppeals, enqueueAppeals, readOutbox } from '../appeals/appealOutbox'
+import { storyDriveDestination } from '../appeals/appealHook'
 
 export interface ProjectMemoryCliIo {
   stdout(value: string): void
@@ -1381,6 +1382,12 @@ async function runAppealsBackfill(
   await project.verify()
   const claimOf = (appeal: AppealDraft) => appeal.writerOSSays.split('\n')[0].trim()
   const now = new Date().toISOString()
+  const projectId = (await memoryStore.readSnapshotReadOnly(projectPath)).projectId
+  const destination = await storyDriveDestination(projectPath, projectId)
+  if (destination === 'unlinked') {
+    io.stderr("This project isn't linked to a Story-drive folder, so there's nowhere to send appeals. Link it first with link-source --workflow wayfinder.\n")
+    return 1
+  }
 
   if (dryRun) {
     const snapshot = await memoryStore.readSnapshotReadOnly(projectPath)
@@ -1394,7 +1401,6 @@ async function runAppealsBackfill(
     return 0
   }
 
-  const projectId = (await memoryStore.readSnapshotReadOnly(projectPath)).projectId
   const queued = await withProjectMemoryLock(projectPath, projectId, async () => {
     const snapshot = await memoryStore.readSnapshotReadOnlyInHeldLock(projectPath, projectId)
     const owed = await appealsStillOwed(projectPath, snapshot, now)
@@ -1406,9 +1412,7 @@ async function runAppealsBackfill(
   } else {
     io.stdout(`Queued ${queued.length} appeal${queued.length === 1 ? '' : 's'}.\n`)
   }
-  const links = await readStoryDriveLinks(path.dirname(projectPath))
-  const root = links.links[projectId]?.root ?? null
-  const outbox = await deliverPendingAppeals(projectPath, root, {
+  const outbox = await deliverPendingAppeals(projectPath, destination, {
     withLock: fn => withProjectMemoryLock(projectPath, projectId, fn),
   })
   const queuedIds = new Set(queued.map(appeal => appeal.recordId))

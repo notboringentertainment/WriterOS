@@ -39,12 +39,12 @@ describe('Memory review: appeals that have not reached Story-drive', () => {
       <Harness
         appeals={jsonResponse(200, {
           pending: 1,
-          failed: [{ fileName: 'a.md', error: "This project isn't linked to a Story-drive folder." }],
+          failed: [{ fileName: 'a.md', error: "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline." }],
         })}
       />,
     )
     expect(await screen.findByText(
-      "2 appeals haven't reached Story-drive yet: This project isn't linked to a Story-drive folder.",
+      "2 appeals haven't reached Story-drive yet: The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline.",
     )).toBeTruthy()
   })
 

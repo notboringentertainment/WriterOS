@@ -5,7 +5,7 @@ import { createProjectLibraryStore } from '../projectLibrary/store'
 import { readStoryDriveLinks } from '../projectLibrary/storyDriveLinks'
 import { withProjectMemoryLock } from '../projectMemory/store'
 import { appealsForCommit } from './appealTicket'
-import { deliverPendingAppeals, enqueueAppeals } from './appealOutbox'
+import { deliverPendingAppeals, enqueueAppeals, LINKS_UNREADABLE, type AppealDestination } from './appealOutbox'
 
 // Wires canon appeals into the memory store: appeals are queued inside the
 // commit's project lock and delivered to Story-drive after the lock is
@@ -13,6 +13,20 @@ import { deliverPendingAppeals, enqueueAppeals } from './appealOutbox'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const inFlight = new Set<Promise<void>>()
+
+/**
+ * Where this project's appeals go. A project with no Story-drive link raises no
+ * appeals (`'unlinked'`). An unreadable registry is not the same as no link: the
+ * caller still queues, so nothing is lost, and delivery says why it waits.
+ */
+export async function storyDriveDestination(projectPath: string, projectId: string): Promise<AppealDestination | 'unlinked'> {
+  try {
+    return (await readStoryDriveLinks(path.dirname(projectPath))).links[projectId]?.root ?? 'unlinked'
+  } catch (error) {
+    console.error(`The Story-drive link registry could not be read; appeals will retry: ${reasonOf(error)}`)
+    return LINKS_UNREADABLE
+  }
+}
 
 // Call only under the project lock, after the commit is written. Never throws.
 export async function recordAppealsInLock(
@@ -22,22 +36,22 @@ export async function recordAppealsInLock(
   now: string,
 ): Promise<void> {
   try {
-    await enqueueAppeals(projectPath, appealsForCommit(before, after, now), now)
+    const appeals = appealsForCommit(before, after, now)
+    if (appeals.length === 0) return
+    if (await storyDriveDestination(projectPath, after.projectId) === 'unlinked') return
+    await enqueueAppeals(projectPath, appeals, now)
   } catch (error) {
     console.error(`A canon appeal could not be queued for ${projectPath}: ${reasonOf(error)}`)
   }
 }
 
-// Fire-and-forget; call after the project lock is released.
+// Fire-and-forget; call after the project lock is released. Does nothing for a
+// project with no Story-drive link.
 export function scheduleAppealDelivery(projectPath: string, projectId: string): void {
   const run = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
-    let root: string | null = null
-    try {
-      root = (await readStoryDriveLinks(path.dirname(projectPath))).links[projectId]?.root ?? null
-    } catch (error) {
-      console.error(`The Story-drive link registry could not be read; appeals will retry: ${reasonOf(error)}`)
-    }
-    await deliverPendingAppeals(projectPath, root, {
+    const destination = await storyDriveDestination(projectPath, projectId)
+    if (destination === 'unlinked') return
+    await deliverPendingAppeals(projectPath, destination, {
       withLock: fn => withProjectMemoryLock(projectPath, projectId, fn),
     })
   }).catch(error => {

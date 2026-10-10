@@ -1,10 +1,10 @@
 import { appendFile, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { readOutbox, APPEALS_OUTBOX_FILE } from '../../server/appeals/appealOutbox'
-import { writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
+import { STORY_DRIVE_LINKS_FILE, writeStoryDriveLink } from '../../server/projectLibrary/storyDriveLinks'
 import { runProjectMemoryCli } from '../../server/projectMemory/cli'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
@@ -1221,6 +1221,7 @@ describe('appeals-backfill', () => {
     const projectId = 'cli-backfill-project'
     const { root, projectPath } = await createProject(projectId)
     const storyDrive = await mkdtemp(path.join(root, 'story-drive-'))
+    await mkdir(path.join(storyDrive, 'resolved'))
     await writeStoryDriveLink(root, projectId, { root: storyDrive })
     await projectMemoryStore.publish(projectPath, writerosRecord(projectId, 'vector-station', 'Look: Vector Station is cold steel.\nMore detail.'))
     await projectMemoryStore.publish(projectPath, writerosRecord(projectId, 'imported', 'An imported answer.', 'story-wayfinder'))
@@ -1270,11 +1271,34 @@ describe('appeals-backfill', () => {
   it('says in plain words when delivery fails', async () => {
     const { projectPath, storyDrive } = await projectWithOldCanon()
     await rm(storyDrive, { recursive: true, force: true })
-    const result = await runCli(['appeals-backfill', '--project', projectPath, '--apply'])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await runCli(['appeals-backfill', '--project', projectPath, '--apply']).finally(() => errors.mockRestore())
     expect(result.code).toBe(0)
     expect(result.out).toContain('Queued 1 appeal.')
-    expect(result.out).toMatch(/Not delivered yet \(appeal-\w+\.md\): WriterOS can't reach the Story-drive folder/)
+    expect(result.out).toMatch(/Not delivered yet \(appeal-\w+\.md\): The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline\.\n/)
     expect((await readOutbox(projectPath)).entries[0].status).toBe('failed')
+  })
+
+  it('refuses a project with no Story-drive link, in both modes, and writes nothing', async () => {
+    const { projectPath } = await projectWithOldCanon()
+    await rm(path.join(path.dirname(projectPath), STORY_DRIVE_LINKS_FILE))
+    for (const flag of ['--dry-run', '--apply']) {
+      const result = await runCli(['appeals-backfill', '--project', projectPath, flag])
+      expect(result.code).not.toBe(0)
+      expect(result.err).toBe("This project isn't linked to a Story-drive folder, so there's nowhere to send appeals. Link it first with link-source --workflow wayfinder.\n")
+      expect(result.out).toBe('')
+    }
+    expect((await readOutbox(projectPath)).entries).toEqual([])
+  })
+
+  it('still queues when the link registry cannot be read, and says why it was not delivered', async () => {
+    const { projectPath } = await projectWithOldCanon()
+    await writeFile(path.join(path.dirname(projectPath), STORY_DRIVE_LINKS_FILE), '{ not json')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await runCli(['appeals-backfill', '--project', projectPath, '--apply']).finally(() => errors.mockRestore())
+    expect(result.code).toBe(0)
+    expect(result.out).toContain('Queued 1 appeal.')
+    expect(result.out).toMatch(/Not delivered yet \(appeal-\w+\.md\): WriterOS couldn't read its list of linked Story-drive folders; it will retry\.\n/)
   })
 
   // W (story-wayfinder) <- v1 <- v2: only the active tip is owed, and it overrules W.
@@ -1282,6 +1306,7 @@ describe('appeals-backfill', () => {
     const projectId = 'cli-backfill-chain'
     const { root, projectPath } = await createProject(projectId)
     const storyDrive = await mkdtemp(path.join(root, 'story-drive-'))
+    await mkdir(path.join(storyDrive, 'resolved'))
     await writeStoryDriveLink(root, projectId, { root: storyDrive })
     const idOf = (key: string) => publicationRecordId(projectId, key, `${key}-hash`)
     await projectMemoryStore.publish(projectPath, writerosRecord(projectId, 'w', 'Station is wood.', 'story-wayfinder'))

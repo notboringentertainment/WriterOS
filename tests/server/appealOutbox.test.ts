@@ -3,7 +3,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { appealFileName, renderAppealTicket, type AppealDraft } from '../../server/appeals/appealTicket'
-import { APPEALS_OUTBOX_FILE, deliverPendingAppeals, enqueueAppeals, readOutbox } from '../../server/appeals/appealOutbox'
+import {
+  APPEALS_OUTBOX_FILE,
+  deliverPendingAppeals,
+  enqueueAppeals,
+  LINKS_UNREADABLE,
+  NOT_LINKED_MESSAGE,
+  plainDeliveryReason,
+  readOutbox,
+} from '../../server/appeals/appealOutbox'
 
 const draft = (recordId: string, overrides: Partial<AppealDraft> = {}): AppealDraft => ({
   recordId,
@@ -22,7 +30,9 @@ describe('appeal outbox', () => {
   let dir: string
   let project: string
   let root: string
+  let errors: ReturnType<typeof vi.spyOn>
   beforeEach(async () => {
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     dir = await mkdtemp(path.join(os.tmpdir(), 'appeal-outbox-'))
     project = path.join(dir, 'pkg')
     root = path.join(dir, 'wayfinder')
@@ -31,6 +41,7 @@ describe('appeal outbox', () => {
     await mkdir(path.join(root, 'resolved'), { recursive: true })
   })
   afterEach(async () => {
+    errors.mockRestore()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -98,14 +109,26 @@ describe('appeal outbox', () => {
   it('fails entries plainly when the project is not linked', async () => {
     await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
     const outbox = await deliverPendingAppeals(project, null)
-    expect(outbox.entries[0]).toMatchObject({ status: 'failed', error: "This project isn't linked to a Story-drive folder." })
+    expect(outbox.entries[0]).toMatchObject({ status: 'failed', error: NOT_LINKED_MESSAGE })
+  })
+
+  it('says the list of links could not be read, not that the project is unlinked', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const outbox = await deliverPendingAppeals(project, LINKS_UNREADABLE)
+    expect(outbox.entries[0]).toMatchObject({
+      status: 'failed',
+      error: "WriterOS couldn't read its list of linked Story-drive folders; it will retry.",
+    })
   })
 
   it('fails entries plainly when the folder does not exist', async () => {
-    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111'), draft('mem_bbbbbbbbbbbb2222')], 'T1')
     const outbox = await deliverPendingAppeals(project, path.join(dir, 'missing'))
-    expect(outbox.entries[0].status).toBe('failed')
-    expect(outbox.entries[0].error).toMatch(/^WriterOS can't reach the Story-drive folder: /)
+    expect(outbox.entries.map(entry => [entry.status, entry.error])).toEqual([
+      ['failed', "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline."],
+      ['failed', "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline."],
+    ])
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('ENOENT'))
   })
 
   it('refuses a folder that is a symlink', async () => {
@@ -113,9 +136,72 @@ describe('appeal outbox', () => {
     const link = path.join(dir, 'link')
     await symlink(root, link)
     const outbox = await deliverPendingAppeals(project, link)
-    expect(outbox.entries[0].status).toBe('failed')
-    expect(outbox.entries[0].error).toMatch(/^WriterOS can't reach the Story-drive folder: /)
+    expect(outbox.entries[0]).toMatchObject({ status: 'failed', error: "The linked Story-drive path isn't a folder." })
     expect(await readdir(path.join(root, 'tickets'))).toEqual([])
+  })
+
+  it('refuses a linked path that is a file', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const file = path.join(dir, 'file.md')
+    await writeFile(file, 'x')
+    const outbox = await deliverPendingAppeals(project, file)
+    expect(outbox.entries[0]).toMatchObject({ status: 'failed', error: "The linked Story-drive path isn't a folder." })
+  })
+
+  it('refuses a folder with neither tickets/ nor resolved/, and creates nothing there', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const elsewhere = path.join(dir, 'Documents')
+    await mkdir(elsewhere)
+    const outbox = await deliverPendingAppeals(project, elsewhere)
+    expect(outbox.entries[0]).toMatchObject({
+      status: 'failed',
+      error: "The linked folder doesn't look like a Story-drive wayfinder folder.",
+    })
+    expect(await readdir(elsewhere)).toEqual([])
+  })
+
+  it('creates tickets/ in a wayfinder folder that only has resolved/', async () => {
+    const a = draft('mem_aaaaaaaaaaaa1111')
+    await enqueueAppeals(project, [a], 'T1')
+    await rm(path.join(root, 'tickets'), { recursive: true })
+    const outbox = await deliverPendingAppeals(project, root)
+    expect(outbox.entries[0].status).toBe('delivered')
+    expect(await readdir(path.join(root, 'tickets'))).toEqual([appealFileName(a.recordId)])
+  })
+
+  it.each([
+    ['EPERM', "macOS hasn't given WriterOS permission to open the Story-drive folder."],
+    ['EACCES', "macOS hasn't given WriterOS permission to open the Story-drive folder."],
+    ['ENOENT', "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline."],
+    ['ENOTDIR', "The linked Story-drive path isn't a folder."],
+    ['EIO', "WriterOS couldn't write to the Story-drive folder."],
+  ])('turns a %s write error into a plain sentence and logs the raw error', async (code, sentence) => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const raw = Object.assign(new Error(`${code}: raw system detail`), { code })
+    const outbox = await deliverPendingAppeals(project, root, { writeFile: async () => { throw raw } })
+    expect(outbox.entries[0]).toMatchObject({ status: 'failed', error: sentence })
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('raw system detail'))
+  })
+
+  it('gives a plain sentence for a "not a directory" error without a code', () => {
+    expect(plainDeliveryReason(new Error('path is not a directory'))).toBe("The linked Story-drive path isn't a folder.")
+  })
+
+  it('picks an unused name when the record\'s own file name is also already closed', async () => {
+    const v1 = draft('mem_aaaaaaaaaaaa1111')
+    const v2 = draft('mem_bbbbbbbbbbbb2222', { lineageIds: ['mem_bbbbbbbbbbbb2222', v1.recordId] })
+    await enqueueAppeals(project, [v1], 'T1')
+    await deliverPendingAppeals(project, root)
+    const oldName = appealFileName(v1.recordId)
+    await rm(path.join(root, 'tickets', oldName))
+    const base = appealFileName(v2.recordId).replace(/\.md$/, '')
+    for (const name of [oldName, `${base}.md`, `${base}-2.md`]) await writeFile(path.join(root, 'resolved', name), 'closed')
+
+    await enqueueAppeals(project, [v2], 'T2')
+    const outbox = await deliverPendingAppeals(project, root)
+    expect(outbox.entries[0]).toMatchObject({ fileName: `${base}-3.md`, status: 'delivered' })
+    expect(await readdir(path.join(root, 'tickets'))).toEqual([`${base}-3.md`])
+    expect(await readFile(path.join(root, 'resolved', `${base}.md`), 'utf8')).toBe('closed')
   })
 
   it('abandons a write that never settles and retries later', async () => {

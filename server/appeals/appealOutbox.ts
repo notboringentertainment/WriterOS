@@ -84,18 +84,84 @@ async function defaultWriteFile(filePath: string, contents: string): Promise<voi
   await atomicReplace(filePath, contents)
 }
 
-async function checkRoot(wayfinderRoot: string): Promise<string | null> {
+// Every reason below reaches Ben (outbox, Memory line, backfill CLI), so each is
+// a plain sentence; the raw error goes to the log.
+export const NOT_LINKED_MESSAGE = "This project isn't linked to a Story-drive folder."
+export const LINKS_UNREADABLE_MESSAGE = "WriterOS couldn't read its list of linked Story-drive folders; it will retry."
+export const TIMEOUT_MESSAGE = 'Delivery to the Story-drive folder timed out; it will retry.'
+export const NO_PERMISSION_MESSAGE = "macOS hasn't given WriterOS permission to open the Story-drive folder."
+export const FOLDER_MISSING_MESSAGE = "The Story-drive folder isn't there — it may have been moved or renamed, or iCloud is offline."
+export const NOT_A_FOLDER_MESSAGE = "The linked Story-drive path isn't a folder."
+export const NOT_WAYFINDER_MESSAGE = "The linked folder doesn't look like a Story-drive wayfinder folder."
+export const WRITE_FAILED_MESSAGE = "WriterOS couldn't write to the Story-drive folder."
+
+/** Passed instead of a folder when the Story-drive links registry could not be read. */
+export const LINKS_UNREADABLE: unique symbol = Symbol('story-drive-links-unreadable')
+/** The linked wayfinder folder, null when the project has no link, or LINKS_UNREADABLE. */
+export type AppealDestination = string | null | typeof LINKS_UNREADABLE
+
+export function plainDeliveryReason(error: unknown): string {
+  console.error(`Canon appeal delivery error: ${reasonOf(error)}`)
+  const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : undefined
+  if (code === 'EPERM' || code === 'EACCES') return NO_PERMISSION_MESSAGE
+  if (code === 'ENOENT') return FOLDER_MISSING_MESSAGE
+  if (code === 'ENOTDIR' || /not a directory/i.test(reasonOf(error))) return NOT_A_FOLDER_MESSAGE
+  return WRITE_FAILED_MESSAGE
+}
+
+// A problem with the folder itself: every remaining entry fails the same way.
+class RootProblem extends Error {}
+
+async function lstatIfPresent(target: string) {
+  try {
+    return await lstat(target)
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function checkRoot(wayfinderRoot: string): Promise<void> {
   try {
     const info = await lstat(wayfinderRoot)
-    if (info.isSymbolicLink()) return 'the folder is a shortcut, not a real folder'
-    if (!info.isDirectory()) return 'it is not a folder'
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new RootProblem(NOT_A_FOLDER_MESSAGE)
     const tickets = path.join(wayfinderRoot, 'tickets')
-    await mkdir(tickets, { recursive: true })
-    const ticketsInfo = await lstat(tickets)
-    if (ticketsInfo.isSymbolicLink() || !ticketsInfo.isDirectory()) return 'its tickets folder is not a real folder'
-    return null
+    const [ticketsInfo, resolvedInfo] = await Promise.all([
+      lstatIfPresent(tickets),
+      lstatIfPresent(path.join(wayfinderRoot, 'resolved')),
+    ])
+    // Never create tickets/ somewhere that isn't a wayfinder folder.
+    if (!ticketsInfo && !resolvedInfo) throw new RootProblem(NOT_WAYFINDER_MESSAGE)
+    if (!ticketsInfo) await mkdir(tickets)
+    else if (ticketsInfo.isSymbolicLink() || !ticketsInfo.isDirectory()) throw new RootProblem(NOT_A_FOLDER_MESSAGE)
   } catch (error) {
-    return reasonOf(error)
+    if (error instanceof RootProblem) throw error
+    throw new RootProblem(plainDeliveryReason(error))
+  }
+}
+
+// An earlier appeal that was already closed stays closed; this one gets a name
+// no closed appeal uses.
+async function openFileName(wayfinderRoot: string, entry: OutboxEntry): Promise<string> {
+  const closed = (name: string) => exists(path.join(wayfinderRoot, 'resolved', name))
+  if (!(await closed(entry.fileName))) return entry.fileName
+  const base = appealFileName(entry.recordId).replace(/\.md$/, '')
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? `${base}.md` : `${base}-${n}.md`
+    if (!(await closed(name))) return name
+  }
+}
+
+const TIMED_OUT = Symbol('timed-out')
+async function withinLimit<T>(timeoutMs: number, work: () => Promise<T>): Promise<T | typeof TIMED_OUT> {
+  let timer: NodeJS.Timeout | undefined
+  const timedOut = new Promise<typeof TIMED_OUT>(resolve => {
+    timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs)
+  })
+  try {
+    return await Promise.race([work(), timedOut])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -105,7 +171,7 @@ const deliveryChains = new Map<string, Promise<unknown>>()
 // Never throws.
 export function deliverPendingAppeals(
   projectPath: string,
-  wayfinderRoot: string | null,
+  wayfinderRoot: AppealDestination,
   options: DeliverOptions = {},
 ): Promise<AppealsOutbox> {
   const key = path.resolve(projectPath)
@@ -119,7 +185,7 @@ export function deliverPendingAppeals(
 
 async function deliverNow(
   projectPath: string,
-  wayfinderRoot: string | null,
+  wayfinderRoot: AppealDestination,
   options: DeliverOptions = {},
 ): Promise<AppealsOutbox> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -137,35 +203,39 @@ async function deliverNow(
       entry.error = error
       entry.updatedAt = now()
     }
-    const rootProblem = wayfinderRoot === null ? null : await checkRoot(wayfinderRoot)
     if (wayfinderRoot === null) {
-      for (const entry of todo) fail(entry, "This project isn't linked to a Story-drive folder.")
-    } else if (rootProblem) {
-      for (const entry of todo) fail(entry, `WriterOS can't reach the Story-drive folder: ${rootProblem}`)
+      for (const entry of todo) fail(entry, NOT_LINKED_MESSAGE)
+    } else if (wayfinderRoot === LINKS_UNREADABLE) {
+      for (const entry of todo) fail(entry, LINKS_UNREADABLE_MESSAGE)
     } else {
-      for (const entry of todo) {
-        let timer: NodeJS.Timeout | undefined
+      const root = wayfinderRoot
+      for (let index = 0; index < todo.length; index += 1) {
+        const entry = todo[index]
+        const failRest = (reason: string) => { for (const rest of todo.slice(index)) fail(rest, reason) }
         try {
-          // An earlier appeal that was already closed stays closed; this one gets its own file.
-          if (await exists(path.join(wayfinderRoot, 'resolved', entry.fileName))) {
-            entry.fileName = appealFileName(entry.recordId)
-          }
-          const target = path.join(wayfinderRoot, 'tickets', entry.fileName)
-          const timedOut = new Promise<'timeout'>(resolve => {
-            timer = setTimeout(() => resolve('timeout'), timeoutMs)
+          // The whole step, folder checks included, runs under the time limit so a
+          // stalled iCloud call can't hold up this package's deliveries.
+          const fileName = await withinLimit(timeoutMs, async () => {
+            await checkRoot(root)
+            const name = await openFileName(root, entry)
+            await write(path.join(root, 'tickets', name), entry.ticket)
+            return name
           })
-          const result = await Promise.race([write(target, entry.ticket).then(() => 'ok' as const), timedOut])
-          if (result === 'timeout') {
-            fail(entry, 'Delivery to the Story-drive folder timed out; it will retry.')
-          } else {
-            entry.status = 'delivered'
-            delete entry.error
-            entry.updatedAt = now()
+          if (fileName === TIMED_OUT) {
+            // A stalled folder stalls every later entry too; don't wait on each one.
+            failRest(TIMEOUT_MESSAGE)
+            break
           }
+          entry.fileName = fileName
+          entry.status = 'delivered'
+          delete entry.error
+          entry.updatedAt = now()
         } catch (error) {
-          fail(entry, `WriterOS can't reach the Story-drive folder: ${reasonOf(error)}`)
-        } finally {
-          if (timer) clearTimeout(timer)
+          if (error instanceof RootProblem) {
+            failRest(error.message)
+            break
+          }
+          fail(entry, plainDeliveryReason(error))
         }
       }
     }
