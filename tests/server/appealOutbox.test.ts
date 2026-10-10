@@ -149,4 +149,37 @@ describe('appeal outbox', () => {
       spy.mockRestore()
     }
   })
+
+  it('keeps an enqueue that happens while a delivery write is still pending', async () => {
+    const v1 = draft('mem_aaaaaaaaaaaa1111')
+    await enqueueAppeals(project, [v1], 'T1')
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let started: () => void = () => {}
+    const writing = new Promise<void>(resolve => { started = resolve })
+    const delivery = deliverPendingAppeals(project, root, { writeFile: () => { started(); return gate } })
+    await writing
+    const v2 = draft('mem_bbbbbbbbbbbb2222', { lineageIds: ['mem_bbbbbbbbbbbb2222', v1.recordId], writerOSSays: 'Vector Station, newer' })
+    const other = draft('mem_cccccccccccc3333')
+    await enqueueAppeals(project, [v2, other], 'T2')
+    release()
+    await delivery
+    const outbox = await readOutbox(project)
+    expect(outbox.entries.map(e => e.recordId)).toEqual([v2.recordId, other.recordId])
+    expect(outbox.entries[0]).toMatchObject({ status: 'pending', ticket: renderAppealTicket(v2) })
+    expect(outbox.entries[1].status).toBe('pending')
+  })
+
+  it('serializes concurrent deliveries for the same project', async () => {
+    await enqueueAppeals(project, [draft('mem_aaaaaaaaaaaa1111')], 'T1')
+    const writer = vi.fn(async () => {})
+    const [a, b] = await Promise.all([
+      deliverPendingAppeals(project, root, { writeFile: writer }),
+      deliverPendingAppeals(project, root, { writeFile: writer }),
+    ])
+    expect(writer).toHaveBeenCalledTimes(1)
+    expect(a.entries[0].status).toBe('delivered')
+    expect(b.entries[0].status).toBe('delivered')
+    expect((await readOutbox(project)).entries).toHaveLength(1)
+  })
 })

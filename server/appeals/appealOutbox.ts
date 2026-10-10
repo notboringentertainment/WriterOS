@@ -94,8 +94,25 @@ async function checkRoot(wayfinderRoot: string): Promise<string | null> {
   }
 }
 
+// Deliveries for one package run one at a time, in this process.
+const deliveryChains = new Map<string, Promise<unknown>>()
+
 // Never throws.
-export async function deliverPendingAppeals(
+export function deliverPendingAppeals(
+  projectPath: string,
+  wayfinderRoot: string | null,
+  options: DeliverOptions = {},
+): Promise<AppealsOutbox> {
+  const key = path.resolve(projectPath)
+  const run = (deliveryChains.get(key) ?? Promise.resolve()).then(() => deliverNow(projectPath, wayfinderRoot, options))
+  const tail = run.finally(() => {
+    if (deliveryChains.get(key) === tail) deliveryChains.delete(key)
+  })
+  deliveryChains.set(key, tail)
+  return run
+}
+
+async function deliverNow(
   projectPath: string,
   wayfinderRoot: string | null,
   options: DeliverOptions = {},
@@ -108,6 +125,7 @@ export async function deliverPendingAppeals(
     outbox = await readOutbox(projectPath)
     const todo = outbox.entries.filter(entry => entry.status !== 'delivered')
     if (todo.length === 0) return outbox
+    const readAs = new Map(todo.map(entry => [entry.recordId, { ticket: entry.ticket, updatedAt: entry.updatedAt }]))
 
     const fail = (entry: OutboxEntry, error: string) => {
       entry.status = 'failed'
@@ -146,6 +164,20 @@ export async function deliverPendingAppeals(
         }
       }
     }
+    // A commit may have enqueued while we were writing. Merge only what this call
+    // handled into a fresh copy, and leave re-enqueued entries pending.
+    const fresh = await readOutbox(projectPath)
+    for (const handled of todo) {
+      const current = fresh.entries.find(entry => entry.recordId === handled.recordId)
+      const before = readAs.get(handled.recordId)
+      if (!current || !before || current.ticket !== before.ticket || current.updatedAt !== before.updatedAt) continue
+      current.status = handled.status
+      current.fileName = handled.fileName
+      current.updatedAt = handled.updatedAt
+      if (handled.error === undefined) delete current.error
+      else current.error = handled.error
+    }
+    outbox = fresh
     await writeOutbox(projectPath, outbox)
   } catch (error) {
     console.error(`Could not save the appeals outbox: ${reasonOf(error)}`)
