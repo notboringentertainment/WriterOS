@@ -54,6 +54,7 @@ export const hostToolset: AgentToolset = {
   parallelConsultError: ONE_AT_A_TIME,
   prematureFinalError: PREMATURE_FINAL,
   malformedNudge: 'You must finish by calling the respond_to_writer tool with your answer. Do not answer in plain text.',
+  deliverPlainTextAnswer: true,
   dispatchTool: dispatchMorganTool,
   attributionGuard: {
     findViolations: unverifiedSpecialistAttributions,

@@ -7,7 +7,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { ToolSpec, ToolTurn, ToolUse } from './types';
 
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_CHAT_MODEL || 'claude-sonnet-4-6';
-const DEFAULT_MAX_TOKENS = 1600;
+// Models that think before answering spend part of this budget on thinking and
+// often write the answer as text before calling respond_to_writer, so 1600 cut
+// Morgan off mid-delivery on long conversations.
+const DEFAULT_MAX_TOKENS = 8000;
 const MAX_PAUSE_TURNS = 3;
 
 export type AnthropicToolSpec = ToolSpec | Anthropic.ToolUnion;
