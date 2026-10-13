@@ -58,6 +58,17 @@ async function runLoop(
     const turn = await sendTurn({ system: input.systemPrompt, messages, tools: toolset.tools });
 
     if (turn.toolUses.length === 0) {
+      // The model wrote its answer as plain text and stopped (or hit the reply
+      // limit) without calling the terminal tool. That text is the real
+      // answer; deliver it rather than discarding it as malformed, as long as
+      // it passes the same attribution guard a terminal answer would.
+      const text = turn.text.trim();
+      if (toolset.deliverPlainTextAnswer && text) {
+        const plain: AgentRuntimeResult = { message: text, suggestions: [], ok: true };
+        const violations = toolset.attributionGuard?.findViolations(plain, consultLedger) ?? [];
+        if (violations.length === 0) return plain;
+        trace({ kind: 'guard.attribution', runId, status: 'blocked', specialists: violations });
+      }
       return null;
     }
 

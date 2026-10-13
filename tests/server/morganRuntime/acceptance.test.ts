@@ -39,7 +39,7 @@ describe('M1 acceptance', () => {
   })
 
   it('recovers honestly (no hollow filler) when the model never delivers via the terminal tool', async () => {
-    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: 'rambling', assistantContent: [], toolUses: [] })
+    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: '', assistantContent: [], toolUses: [] })
     const r = await runMorgan(input({ userMessage: 'Is that all you have to say?' }))
     expect(r.ok).toBe(false)
     expect(r.message).not.toMatch(/here to help/i)
