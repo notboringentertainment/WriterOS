@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { deflateSync, gzipSync } from 'node:zlib'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { registerRoutes } from '../../server/routes'
 import { WRITEROS_JSON_BODY_LIMIT } from '../../server/httpLimits'
@@ -27,6 +28,7 @@ const servers: Server[] = []
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   await Promise.all(servers.splice(0).map(server => new Promise<void>(resolve => {
     server.close(() => resolve())
   })))

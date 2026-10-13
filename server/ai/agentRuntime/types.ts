@@ -43,6 +43,10 @@ export interface AgentToolset {
   parallelConsultError?: string;
   prematureFinalError?: string;
   malformedNudge?: string;
+  // When the model answers in plain text without calling the terminal tool
+  // (including when the reply limit cuts it off), deliver that text instead of
+  // failing the turn. The attribution guard still applies.
+  deliverPlainTextAnswer?: boolean;
   dispatchTool(use: ToolUse, ctx: AgentToolDispatchContext): Promise<DispatchOutcome>;
   attributionGuard?: AgentAttributionGuard;
 }

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { createProjectMemoryStore, type ProjectMemoryStore } from '../../server/projectMemory/store'
 import {
   bridgeMeetingBankToMemory,
@@ -15,6 +16,7 @@ const capturedAt = '2026-08-13T20:00:00.000Z'
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 

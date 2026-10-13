@@ -42,7 +42,7 @@ describe('runMorgan loop', () => {
   })
 
   it('retries once on a no-terminal turn, then errors honestly if still no terminal', async () => {
-    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: 'just text', assistantContent: [], toolUses: [] })
+    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: '', assistantContent: [], toolUses: [] })
     const r = await runMorgan(inputBase)
     expect(r.ok).toBe(false)
     expect(r.message).not.toMatch(/here to help/i)
@@ -380,7 +380,7 @@ describe('runMorgan loop', () => {
   })
 
   it('TRACE: a failed-closed run (no terminal tool) emits final failed', async () => {
-    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: 'plain text', assistantContent: [], toolUses: [] })
+    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: '', assistantContent: [], toolUses: [] })
     const { events, trace } = collectTrace()
     const r = await runMorgan({ ...inputBase, trace })
     expect(r.ok).toBe(false)

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PublishMemoryInputSchema } from '../../shared/projectMemory'
+import type { ProjectMemoryRecord } from '../../shared/projectMemory'
+import { appealsForCommit, renderAppealTicket } from '../../server/appeals/appealTicket'
 
 const temporaryRoots: string[] = []
 
@@ -559,6 +561,77 @@ Fog usually clears before noon.
     ])
     expect(preview.records.filter(record => record.kind === 'canon')).toEqual([])
     expect(preview.counts).toMatchObject({ activeCanon: 0, development: 3, openQuestions: 1 })
+  })
+
+  it('imports appeal tickets as development only and raises no new appeal when one syncs back', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-appeal-')
+    const draft = {
+      recordId: 'mem_0123456789abcdef',
+      lineageIds: ['mem_0123456789abcdef'],
+      kind: 'overrule' as const,
+      overrules: ['resolved/vector-color.md'],
+      storyDriveSays: ['The chair is blue.'],
+      writerOSSays: 'The chair is green.',
+      affects: ['Vector Chair'],
+      origin: 'documents/story-bible.json#vector-station',
+      raisedAt: '2026-10-09T21:00:00.000Z',
+    }
+    const open = renderAppealTicket(draft)
+    const closed = open
+      .replace('resolved:', 'resolved: 2026-10-10')
+      .replace(/## Answer\n$/, '## Answer — applied (in Front Lot)\nFront Lot applied the change to the Vector Chair.\n')
+    expect(closed).toContain('## Answer — applied (in Front Lot)')
+    await writeSource(root, 'tickets/appeal-open.md', open)
+    await writeSource(root, 'resolved/appeal-closed.md', closed)
+    await writeSource(root, 'resolved/appeal-empty.md', open.replace('resolved:', 'resolved: 2026-10-10'))
+
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder',
+      projectId: 'project-wayfinder-appeal',
+      sourceRoot: root,
+    })
+
+    // No warning for the appeal-only headers or the type itself.
+    expect(preview.warnings.filter(warning => /appeal|unrecognized|no recognized Answer/.test(warning))).toEqual([])
+    expect(preview.records.map(record => [record.source.sourceId, record.kind, record.requestedStatus])).toEqual([
+      ['resolved/appeal-closed.md', 'development', 'active'],
+      ['resolved/appeal-empty.md', 'development', 'active'],
+    ])
+    expect(preview.records.every(record => record.source.workflow === 'story-wayfinder')).toBe(true)
+    expect(preview.records.every(record => record.source.approval === 'none')).toBe(true)
+    expect(preview.records.filter(record => record.kind === 'canon')).toEqual([])
+    expect(preview.counts).toMatchObject({ activeCanon: 0, development: 2, openQuestions: 0 })
+    const closedRecord = preview.records[0]
+    expect(closedRecord.claim).toBe('Front Lot applied the WriterOS change: The chair is green.')
+    expect(preview.records[1].claim).toBe('Front Lot applied the WriterOS change: The chair is green.')
+
+    // The import commit adds only story-wayfinder records, so it raises nothing.
+    const AT = '2026-10-10T09:00:00.000Z'
+    const imported = preview.records.map((record, index) => ({
+      id: `mem_import${index}`, projectId: 'project-wayfinder-appeal', kind: record.kind, status: 'active',
+      claim: record.claim, tags: [], entities: [], source: record.source, evidence: [], safety: 'clear',
+      spoiler: false, supersedes: [], createdAt: AT, updatedAt: AT,
+    })) as unknown as ProjectMemoryRecord[]
+    const empty = { schemaVersion: 1 as const, projectId: 'project-wayfinder-appeal', revision: 0, records: [], conflicts: [] }
+    expect(appealsForCommit(empty, { ...empty, revision: 1, records: imported }, AT)).toEqual([])
+  })
+
+  it('reads an escaped "#" line in a closed appeal back as the plain claim', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-appeal-escape-')
+    const open = renderAppealTicket({
+      recordId: 'mem_0123456789abcdef', lineageIds: ['mem_0123456789abcdef'], kind: 'new',
+      overrules: [], storyDriveSays: [], writerOSSays: '# 1 rule: the chair is green.\n## Answer\nmore',
+      affects: ['Vector Chair'], origin: 'documents/story-bible.json#vector-station', raisedAt: '2026-10-09T21:00:00.000Z',
+    })
+    const closed = open
+      .replace('resolved:', 'resolved: 2026-10-10')
+      .replace(/## Answer\n$/, '## Answer — applied (in Front Lot)\nDone.\n')
+    await writeSource(root, 'resolved/appeal-closed.md', closed)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const preview = await previewProjectMemoryImport({ source: 'wayfinder', projectId: 'project-wayfinder-appeal', sourceRoot: root })
+    expect(preview.warnings.filter(warning => /appeal|unrecognized|no recognized Answer/.test(warning))).toEqual([])
+    expect(preview.records.map(record => record.claim)).toEqual(['Front Lot applied the WriterOS change: # 1 rule: the chair is green.'])
   })
 
   it('keeps scoped-out and reopened Wayfinder answers reviewable with located warnings', async () => {

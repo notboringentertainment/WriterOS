@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import { projectMemoryStore } from '../../server/projectMemory/store'
 import { readWhatsStandingReport, readWhatsStandingReportDirect } from '../../server/projectMemory/whatsStandingReport'
 import { WhatsStandingPayloadSchema } from '../../shared/whatsStandingPanel'
@@ -76,6 +77,7 @@ describe('readWhatsStandingReport', () => {
   it('writes nothing to the package', async () => {
     const { projectPath } = await seeded()
     await projectMemoryStore.readSnapshot(projectPath) // settle projections first
+    await appealDeliveriesSettled() // and the background appeal delivery the seed's commits started
     const dir = path.join(projectPath, 'memory')
     const before = new Map<string, string>()
     for (const f of (await readdir(dir)).sort()) before.set(f, await readFile(path.join(dir, f), 'utf8'))
@@ -107,6 +109,7 @@ describe('readWhatsStandingReportDirect', () => {
   it('writes nothing to the package', async () => {
     const { projectPath } = await seeded()
     await projectMemoryStore.readSnapshot(projectPath) // settle projections first
+    await appealDeliveriesSettled() // and the background appeal delivery the seed's commits started
     const dir = path.join(projectPath, 'memory')
     const before = new Map<string, string>()
     for (const f of (await readdir(dir)).sort()) before.set(f, await readFile(path.join(dir, f), 'utf8'))

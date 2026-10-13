@@ -79,6 +79,25 @@ export function clearDraftField(doc: LooksDocument, target: LookTarget, field: s
   })
 }
 
+/**
+ * The writer renamed the look. The look id follows the name only while it is
+ * still the one derived from the old name; an id the writer typed stays theirs.
+ */
+export function setDraftName(doc: LooksDocument, target: LookTarget, name: string, now: string): LooksDocument {
+  const trimmed = name.trim()
+  if (!trimmed) return doc
+  return updateDraft(doc, target, now, draft => {
+    const idFollows = draft.spec.entity_id === slugifyEntityName(draft.entityName)
+    if (!idFollows) return { ...draft, entityName: trimmed }
+    return {
+      ...draft,
+      entityName: trimmed,
+      spec: { ...draft.spec, entity_id: slugifyEntityName(trimmed) },
+      fieldSources: { ...draft.fieldSources, entity_id: 'writer' },
+    }
+  })
+}
+
 export function setDraftReference(doc: LooksDocument, target: LookTarget, reference: LookDraft['reference'], now: string): LooksDocument {
   return updateDraft(doc, target, now, draft => ({ ...draft, reference }))
 }
@@ -143,6 +162,8 @@ export function startDraftFromPromoted(
   activeRecordIds: ReadonlySet<string>,
   now: string,
 ): LooksDocument {
+  // A draft the writer renamed is in progress; copying would mix the new name with the old id.
+  if (!isUntouchedDraft(draftFor(doc, target), target)) return doc
   return updateDraft(doc, target, now, draft => {
     const { version: _version, depends_on: dependsOn, ...fields } = promoted.spec as unknown as Record<string, unknown>
     const cited = (Array.isArray(dependsOn) ? dependsOn : [])
@@ -156,6 +177,30 @@ export function startDraftFromPromoted(
       citedRecordIds: [...new Set(cited)].slice(-24),
     }
   })
+}
+
+/** Empty, and still under the name and id it was opened with. */
+export function isUntouchedDraft(draft: LookDraft | undefined, target: LookTarget): boolean {
+  if (!draft) return true
+  return isPristineDraft(draft)
+    && draft.entityName.trim() === target.entityName.trim()
+    && (draft.spec.entity_id === undefined || draft.spec.entity_id === target.entityId)
+}
+
+/**
+ * Opening a promoted look from the Looks list: the draft starts filled with the
+ * writer's promoted answers. A draft already in progress is kept as it is.
+ */
+export function openDraftFromPromoted(
+  doc: LooksDocument,
+  target: LookTarget,
+  promoted: PromotedLook,
+  activeRecordIds: ReadonlySet<string>,
+  sessionId: string,
+  now: string,
+): LooksDocument {
+  if (!isUntouchedDraft(draftFor(doc, target), target)) return doc
+  return startDraftFromPromoted(ensureDraft(doc, target, sessionId, now), target, promoted, activeRecordIds, now)
 }
 
 /** True while the draft would promote the same look as `promoted` (same fields and reference). */
@@ -206,6 +251,8 @@ export interface PromotedLook {
   /** The writer's reference-image answer stored beside the promoted block. */
   reference: Exclude<LookDraft['reference'], 'unasked'>
   spec: LookSpec
+  /** When this version was promoted (the record's last update). */
+  promotedAt?: string
 }
 
 /** Active promoted looks in memory (canon records carrying a look_spec payload). */
@@ -222,6 +269,7 @@ export function promotedLooks(snapshot: ProjectMemorySnapshot | undefined): Prom
       lookHash: record.payload.lookHash,
       reference: record.payload.reference,
       spec,
+      promotedAt: record.updatedAt,
     }]
   })
 }

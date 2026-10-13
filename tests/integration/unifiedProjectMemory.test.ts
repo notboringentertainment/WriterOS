@@ -17,6 +17,7 @@
 // or story names from any real project.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appealDeliveriesSettled } from '../../server/appeals/appealHook'
 import express from 'express'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -69,6 +70,7 @@ import type { PublishMemoryInput } from '../../shared/projectMemory'
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
+  await appealDeliveriesSettled() // background canon-appeal deliveries write into the temp package
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()

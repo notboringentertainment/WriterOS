@@ -10,7 +10,7 @@ import type {
   ProjectMemoryRecord,
 } from '@shared/projectMemory'
 import { canPromoteMemoryRecord } from '@shared/projectMemory'
-import type { MemoryAnalysisQueueEntry, UseProjectMemoryResult } from '../../lib/useProjectMemory'
+import type { MemoryAnalysisQueueEntry, MemoryAppealsStatus, UseProjectMemoryResult } from '../../lib/useProjectMemory'
 import { MemoryConflictCard, type ProjectMemoryConflictResolution } from './MemoryConflictCard'
 
 export type MemoryView = 'canon' | 'review' | 'developed' | 'open-questions' | 'sources'
@@ -237,6 +237,15 @@ function PendingAnalysisSection({ items, pendingId, onRetry, queueError, queueRe
   )
 }
 
+export function appealsLine(appeals: MemoryAppealsStatus | null): string | null {
+  if (!appeals) return null
+  const count = appeals.pending + appeals.failed.length
+  if (count === 0) return null
+  const lead = count === 1 ? "1 appeal hasn't reached Story-drive yet" : `${count} appeals haven't reached Story-drive yet`
+  const reason = appeals.failed[0]?.error
+  return reason ? `${lead}: ${reason}` : `${lead}.`
+}
+
 export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
   const [view, setView] = useState<MemoryView>('canon')
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
@@ -360,6 +369,7 @@ export function MemorySurface({ memory, onExit }: MemorySurfaceProps) {
           {memory.loading && <p style={styles.status}>Loading project memory…</p>}
           {memory.error && <p style={styles.error}>{memory.error}</p>}
           {actionError && <p style={styles.error}>{actionError}</p>}
+          {appealsLine(memory.appeals) && <p style={styles.status}>{appealsLine(memory.appeals)}</p>}
 
           {snapshot && (
             <div style={styles.content}>

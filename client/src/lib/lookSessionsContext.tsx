@@ -5,8 +5,13 @@ import type { LookTarget, PromotedLook } from './lookDraftEdits'
 // on each beat and the Story Bible character card. Without a provider the
 // entry points render nothing, so surfaces outside a project are unchanged.
 
+export interface OpenLookOptions {
+  /** Opened from a promoted look (the Looks list or the picker): start the draft filled with its answers. */
+  fromPromoted?: boolean
+}
+
 export interface LookSessionsContextValue {
-  openLook: (target: LookTarget) => void
+  openLook: (target: LookTarget, options?: OpenLookOptions) => void
   /** Story Bible character names, for the beat entry's picker. */
   characterNames: string[]
   promotedLooks: PromotedLook[]

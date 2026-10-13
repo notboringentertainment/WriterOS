@@ -112,6 +112,55 @@ describe('runAgent kernel', () => {
     expect(JSON.stringify(retryMessages)).toMatch(/finish tool/)
   })
 
+  it('delivers the written answer when the reply limit cuts it off before the terminal tool', async () => {
+    sendToolTurn.mockResolvedValue({
+      stopReason: 'max_tokens',
+      text: 'The full answer, written out before the reply limit hit.',
+      assistantContent: [],
+      toolUses: [],
+    })
+
+    const result = await runAgent({ ...inputBase, toolset: { ...testToolset, deliverPlainTextAnswer: true } })
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toBe('The full answer, written out before the reply limit hit.')
+    expect(sendToolTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('delivers a plain-text answer that ended without the terminal tool', async () => {
+    sendToolTurn.mockResolvedValue({ stopReason: 'end_turn', text: 'A real answer.', assistantContent: [], toolUses: [] })
+
+    const result = await runAgent({ ...inputBase, toolset: { ...testToolset, deliverPlainTextAnswer: true } })
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toBe('A real answer.')
+  })
+
+  it('keeps failing closed on plain text for toolsets that do not opt in', async () => {
+    sendToolTurn.mockResolvedValue({ stopReason: 'max_tokens', text: 'partial', assistantContent: [], toolUses: [] })
+
+    const result = await runAgent({ ...inputBase, toolset: testToolset })
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('still blocks unverified specialist attribution in a plain-text answer', async () => {
+    sendToolTurn.mockResolvedValue({
+      stopReason: 'end_turn',
+      text: 'I asked Casey and she agrees.',
+      assistantContent: [],
+      toolUses: [],
+    })
+
+    const result = await runAgent({ ...inputBase, toolset: getAgentToolset('writingPartner') })
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('delivers plain-text answers for Morgan', () => {
+    expect(getAgentToolset('writingPartner').deliverPlainTextAnswer).toBe(true)
+  })
+
   it('caps each loop pass before the retry and then fails closed without a terminal tool', async () => {
     sendToolTurn.mockResolvedValue({
       stopReason: 'tool_use',

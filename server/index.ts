@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { redactApiLogResponse } from "./apiLogRedaction";
+import { retryAppealDeliveriesAtStart } from "./appeals/appealHook";
 
 const app = express();
 
@@ -38,6 +39,8 @@ app.use((req, res, next) => {
 
 (async () => {
   const { server, morganHost } = await registerRoutes(app);
+  // Canon appeals that failed to reach Story-drive earlier retry once per start.
+  void retryAppealDeliveriesAtStart();
   if (morganHost) {
     let stopping = false;
     for (const sig of ['SIGTERM', 'SIGINT'] as const) {

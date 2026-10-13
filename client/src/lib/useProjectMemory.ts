@@ -27,6 +27,12 @@ export interface MemoryAnalysisQueueEntry {
   updatedAt: string
 }
 
+/** Canon appeals that have not reached the Story-drive folder yet. */
+export interface MemoryAppealsStatus {
+  pending: number
+  failed: Array<{ fileName: string; error: string }>
+}
+
 export type ProjectMemoryActionResult =
   | { ok: true }
   | { ok: false; conflict: boolean; message: string }
@@ -52,6 +58,8 @@ export interface UseProjectMemoryResult {
    * inline notice and section-level retry without disturbing the rest of
    * the surface. */
   analysisQueueError: string | null
+  /** Null until loaded, and when the check itself fails (it is advisory only). */
+  appeals: MemoryAppealsStatus | null
   refresh: () => Promise<void>
   /** Re-fetches only the analysis queue — the section-level retry for
    * `analysisQueueError`, without re-fetching (or disturbing) the snapshot. */
@@ -107,6 +115,7 @@ export function useProjectMemory(
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [analysisQueueError, setAnalysisQueueError] = useState<string | null>(null)
+  const [appeals, setAppeals] = useState<MemoryAppealsStatus | null>(null)
   const sessionTokenRef = useRef<Promise<string | null> | null>(null)
 
   const getSessionToken = useCallback(async (): Promise<string | null> => {
@@ -151,6 +160,22 @@ export function useProjectMemory(
     }
   }, [fetchAnalysisQueue])
 
+  // Advisory line only: never throws, and a failure just hides the line.
+  const fetchAppealsSafely = useCallback(async (id: string, token: string): Promise<MemoryAppealsStatus | null> => {
+    try {
+      const response = await fetchImpl(memoryPath(id, 'appeals'), {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'X-WriterOS-Session': token },
+      })
+      if (!response.ok) return null
+      const body = await response.json() as Partial<MemoryAppealsStatus>
+      if (typeof body.pending !== 'number' || !Array.isArray(body.failed)) return null
+      return { pending: body.pending, failed: body.failed }
+    } catch {
+      return null
+    }
+  }, [fetchImpl, memoryPath])
+
   const load = useCallback(async () => {
     if (!projectId) return
     const requestIsCurrent = beginRequest()
@@ -168,12 +193,14 @@ export function useProjectMemory(
       // Independent fetches: a snapshot failure still throws (caught below,
       // as before — that is a genuine full-surface failure), but a queue
       // failure never does, so it can never take the snapshot down with it.
-      const [nextSnapshot, queueResult] = await Promise.all([
+      const [nextSnapshot, queueResult, appealsStatus] = await Promise.all([
         api.snapshot(projectId),
         fetchAnalysisQueueSafely(projectId, token),
+        fetchAppealsSafely(projectId, token),
       ])
       if (!requestIsCurrent()) return
       setSnapshot(nextSnapshot)
+      setAppeals(appealsStatus)
       if (queueResult.ok) {
         setAnalysisQueue(queueResult.queue)
         setAnalysisQueueError(null)
@@ -189,7 +216,7 @@ export function useProjectMemory(
     } finally {
       if (requestIsCurrent()) setLoading(false)
     }
-  }, [projectId, beginRequest, getSessionToken, fetchImpl, fetchAnalysisQueueSafely])
+  }, [projectId, beginRequest, getSessionToken, fetchImpl, fetchAnalysisQueueSafely, fetchAppealsSafely])
 
   // The pending-analysis section's own retry affordance for
   // `analysisQueueError` — refetches only the queue, leaving the snapshot
@@ -219,6 +246,7 @@ export function useProjectMemory(
     sessionTokenRef.current = null
     setSnapshot(undefined)
     setAnalysisQueue([])
+    setAppeals(null)
     setError(null)
     setAnalysisQueueError(null)
     setLoading(false)
@@ -288,6 +316,7 @@ export function useProjectMemory(
     snapshot,
     analysisQueue,
     analysisQueueError,
+    appeals,
     refresh: load,
     refreshAnalysisQueue,
     runAction,
