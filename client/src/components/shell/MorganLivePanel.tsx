@@ -9,9 +9,10 @@ interface MorganLivePanelProps {
   morgan: MorganApi
   surface: string
   onPageProposal(p: { proposalId: string; proposal: PageProposal } | null): void
+  onProjectChanged?(): void   // Morgan changed the beat sheet; reload the project so the Outline shows it
 }
 
-export function MorganLivePanel({ projectId, morgan, surface, onPageProposal }: MorganLivePanelProps) {
+export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, onProjectChanged }: MorganLivePanelProps) {
   const [model, dispatch] = useReducer(reduce, undefined, initialModel)
   const [draft, setDraft] = useState('')
   const [running, setRunning] = useState(false)
@@ -29,6 +30,8 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal }: 
   const feed = useRef<HTMLDivElement>(null)
   const proposalCallback = useRef(onPageProposal)
   proposalCallback.current = onPageProposal
+  const changedCallback = useRef(onProjectChanged)
+  changedCallback.current = onProjectChanged
   const renderGeneration = generation.current
 
   function disconnect() {
@@ -63,6 +66,7 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal }: 
     close.current = morgan.stream(projectId, (event: MorganScreenEvent) => {
       if (!current(g)) return
       if (event.type === 'ended') { sessionRunning.current = false; setRunning(false) }
+      if (event.type === 'project-changed') changedCallback.current?.()
       dispatch(event)
     }, () => {
       if (!current(g) || !sessionRunning.current) return

@@ -141,6 +141,7 @@ export function reduce(m: LiveModel, msg: MorganScreenEvent | { type: 'reset' })
     case 'truncated': return { ...m, earlierHidden: true }
     case 'resumed': return { ...m, notice: msg.ok ? 'Picked up where you left off.' : msg.message ?? 'Morgan could not resume the conversation.' }
     case 'composer': return { ...m, composer: msg.update }
+    case 'project-changed': return { ...m, notice: msg.summary }
     case 'ended': return { ...m, working: null, provisional: '', stuck: null, cards: [], proposals: [], ended: true, endReason: msg.reason, endMessage: msg.message }
   }
 }

@@ -1,6 +1,6 @@
 // server/morganHost/morganRoutes.ts
 import type { Express, Request, Response } from 'express'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -10,6 +10,7 @@ import type { ProjectLibraryConfig } from '../projectLibrary/config'
 import { authenticated, sameOrigin } from '../projectLibrary/security'
 import type { ProjectLibraryStore } from '../projectLibrary/store'
 import { readStoryDriveLinks } from '../projectLibrary/storyDriveLinks'
+import { syncBeatSheet } from '../projectMemory/beatSheetSync'
 import { preflight, realDeps } from './claudeCli'
 import { buildMorganLaunch, defaultReadRoots, morganEnv, morganModel, ISOLATION_ARGS, PERMISSION_MODE, CLAUDE_MEM_DIR } from './launchArgs'
 import { sweepStaleSockets } from './liveChannel'
@@ -199,6 +200,20 @@ export function createMorganHost(
       const links = await readStoryDriveLinks(config.rootPath)
       return { packagePath, storyDriveRoot: links.links[projectId]?.root ? path.resolve(config.rootPath, links.links[projectId].root) : null }
     },
+    // After each of Morgan's turns: if she changed the linked beat sheet, copy it into the Outline and
+    // bring canon in line, so the writer's one instruction covers the whole change.
+    afterTurn: async (projectId, project) => {
+      if (!project.storyDriveRoot) return null
+      const { status } = await syncBeatSheet({ workspaceRoot: config.rootPath, packagePath: project.packagePath, projectId, timeoutMs: 5000 })
+      if (status.kind !== 'updated') return null
+      try {
+        await importCanon(root, project.packagePath, project.storyDriveRoot)
+        return 'The beat sheet changed, so WriterOS updated the Outline and canon to match.'
+      } catch (error) {
+        console.error('[morgan] canon import after beat sheet change failed', error)
+        return 'The beat sheet changed and WriterOS updated the Outline, but canon could not be updated. Ask Morgan to update canon.'
+      }
+    },
     launchFor: (project, channel, session) => buildMorganLaunch({
       project, host, model: morganModel(env), session,
       socketPath: channel.socketPath, token: channel.token,
@@ -206,6 +221,18 @@ export function createMorganHost(
     }),
   })
   return { sessions, killAllNow: () => killOwnedNow(runDir) }
+}
+
+// The same canon import Morgan's instructions describe (`npm run memory -- import --source wayfinder ... --apply`),
+// run by WriterOS itself after a beat sheet change: the writer's instruction to Morgan is the approval.
+function importCanon(root: string, packagePath: string, storyDriveRoot: string): Promise<void> {
+  const args = [path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(root, 'server', 'projectMemory', 'cli.ts'),
+    'import', '--source', 'wayfinder', '--project', packagePath, '--from', storyDriveRoot, '--apply']
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, args, { cwd: root, timeout: 120_000 }, (error, _stdout, stderr) => {
+      if (error) reject(Object.assign(error, { stderr })); else resolve()
+    })
+  })
 }
 
 

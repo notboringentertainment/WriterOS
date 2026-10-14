@@ -1459,6 +1459,8 @@ export default function App() {
     morgan: projectFolder.morgan,
     morganProjectId: activeFolderProjectId,
     onMorganPageProposal: handleMorganPageProposal,
+    // Morgan changed the beat sheet: reopen the project so the Outline and canon on screen match disk.
+    onMorganProjectChanged: activeFolderProjectId ? () => { void handleOpenFolderProject(activeFolderProjectId) } : undefined,
     transcript: project.state.agents.writingPartner.transcript,
     loading: wpLoading,
     onSend: handleWPSend,

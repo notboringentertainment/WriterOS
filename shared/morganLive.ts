@@ -21,4 +21,5 @@ export type MorganScreenEvent =
   | { type: 'proposal-answered'; proposalId: string; outcome: ProposalOutcome['outcome'] }
   | { type: 'truncated' }
   | { type: 'resumed'; ok: boolean; message?: string }
+  | { type: 'project-changed'; summary: string }   // Morgan's turn changed the beat sheet; WriterOS synced the Outline and canon
   | { type: 'ended'; reason: 'exited' | 'stopped' | 'server-shutdown' | 'start-failed'; code: number | null; message?: string }

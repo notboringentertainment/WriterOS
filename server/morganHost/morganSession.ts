@@ -31,6 +31,7 @@ export interface MorganSessionDeps {
   validateProposal?(proposal: PageProposal, project: MorganProjectPaths): string | null // Task 6 wires proposals.ts; null = valid
   ownership?: OwnedRegistry
   ready?: Promise<void>                                         // production: the boot sweep; no start runs before it settles
+  afterTurn?(projectId: string, project: MorganProjectPaths): Promise<string | null> // after each finished turn; a summary means the project changed on disk
   startTimeoutMs?: number
   maxHistory?: number
 }
@@ -56,6 +57,7 @@ interface OpenProposal { proposal: PageProposal; resolve(o: ProposalOutcome): vo
 
 interface Live {
   sessionId: string
+  storeKey: string
   resumed: boolean
   child: ChildProcessLike
   channel: LiveChannel
@@ -73,6 +75,7 @@ interface Live {
   markDone: () => void
   startTimer: ReturnType<typeof setTimeout> | null
   refresh: Promise<void>
+  afterTurn: Promise<void>
   trustBuffer: string
   trustAsked: boolean
   owned: Map<number, ProcInfo>                 // descendants seen while the leader was alive (refreshed every 2 s and before any stop)
@@ -149,7 +152,10 @@ export class MorganSessions {
     check()
     const claude = await duringStart(pending, this.deps.claudePath(this.abort.signal))
     check()
-    const remembered = fresh ? null : await duringStart(pending, this.deps.store.get(projectId).catch(() => null))
+    // A remembered conversation belongs to the folder it ran in: relinking the project to another
+    // Story-drive folder (or another package) starts fresh instead of resuming into the old folder.
+    const storeKey = `${projectId}\n${project.storyDriveRoot ?? project.packagePath}`
+    const remembered = fresh ? null : await duringStart(pending, this.deps.store.get(storeKey).catch(() => null))
     check()
 
     const session = remembered ? { kind: 'resume' as const, id: remembered } : { kind: 'new' as const, id: randomUUID() }
@@ -161,10 +167,20 @@ export class MorganSessions {
         const s = live
         if (s) {
           if (s.resumed) emit({ type: 'resumed', ok: true })
-          s.persisting = this.deps.store.set(projectId, hello.sessionId ?? s.sessionId).catch(error => log('remember session', error))
+          s.persisting = this.deps.store.set(s.storeKey, hello.sessionId ?? s.sessionId).catch(error => log('remember session', error))
         }
       },
-      events: (epoch, events) => emit({ type: 'events', epoch, events }),
+      events: (epoch, events) => {
+        emit({ type: 'events', epoch, events })
+        const turnEnded = events.some(e => e.kind === 'turn' && e.phase === 'complete' && e.agentId === undefined)
+        const s = live
+        if (!turnEnded || !s || !this.deps.afterTurn) return
+        // One sync at a time per session, in turn order.
+        s.afterTurn = s.afterTurn.then(async () => {
+          const summary = await this.deps.afterTurn!(projectId, project)
+          if (summary) emit({ type: 'project-changed', summary })
+        }).catch(error => log('after turn', error))
+      },
       lost: (epoch, reason) => {
         // Folder trust can wait for the writer longer than the channel's hello deadline.
         if (reason === 'no-hello' && live?.approvals.has('folder-trust')) return
@@ -212,10 +228,10 @@ export class MorganSessions {
 
     let markDone!: () => void
     const s: Live = {
-      sessionId: session.id, resumed: session.kind === 'resume', child, channel,
+      sessionId: session.id, storeKey, resumed: session.kind === 'resume', child, channel,
       hello: null, history: [], truncated: false, approvals: new Map(), proposals: new Map(), listeners: new Set(),
       ending: null, stopping: false, finishing: null, done: new Promise<void>(r => { markDone = r }), markDone: () => markDone(), startTimer: null,
-      refresh: Promise.resolve(), trustBuffer: '', trustAsked: false, owned: new Map(), watch: null, persisting: Promise.resolve(),
+      refresh: Promise.resolve(), afterTurn: Promise.resolve(), trustBuffer: '', trustAsked: false, owned: new Map(), watch: null, persisting: Promise.resolve(),
     }
     live = s
     s.watch = setInterval(() => { void this.refreshOwned(s).catch(error => log('ownership refresh', error)) }, 2000)
@@ -320,7 +336,7 @@ export class MorganSessions {
         if (!gone) this.stuck.add(projectId)
         const reason = s.ending ?? 'exited'
         const failedResume = s.resumed && !s.hello
-        if (failedResume) { try { await this.deps.store.clear(projectId) } catch (error) { log('forget session', error) } }
+        if (failedResume) { try { await this.deps.store.clear(s.storeKey) } catch (error) { log('forget session', error) } }
         const message = !gone ? STUCK : s.endMessage ?? (failedResume ? RESUME_FAILED : reason === 'start-failed' ? START_FAILED : undefined)
         this.emitTo(s, { type: 'ended', reason, code, ...(message ? { message } : {}) })
         this.finished.set(projectId, [...(s.hello ? [s.hello] : []), ...(s.truncated ? [{ type: 'truncated' } as const] : []), ...s.history])

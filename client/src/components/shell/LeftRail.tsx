@@ -13,6 +13,7 @@ interface LeftRailProps {
   morgan?: MorganApi | null
   morganProjectId?: string | null
   onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
+  onMorganProjectChanged?: () => void
   open: boolean
   onToggle: () => void
   projectTitle: string
@@ -45,6 +46,7 @@ export function LeftRail({
   morgan,
   morganProjectId,
   onMorganPageProposal,
+  onMorganProjectChanged,
 }: LeftRailProps) {
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -108,6 +110,7 @@ export function LeftRail({
               morgan={morgan}
               surface={activeTab === 'story-bible' ? 'Story Bible' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
               onPageProposal={onMorganPageProposal ?? ignoreProposal}
+              onProjectChanged={onMorganProjectChanged}
             />
           ) : (
           <>

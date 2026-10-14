@@ -41,6 +41,7 @@ interface RailProps {
   morgan?: MorganApi | null
   morganProjectId?: string | null
   onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
+  onMorganProjectChanged?: () => void
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void

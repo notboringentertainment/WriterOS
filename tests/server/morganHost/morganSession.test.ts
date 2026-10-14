@@ -287,29 +287,37 @@ describe('MorganSessions', () => {
   }, 10_000)
 
   it('remembers the conversation and resumes it next time', async () => {
-    const { sessions, launches, store } = make(); current = sessions
+    const { sessions, launches, store, runDir } = make(); current = sessions
     const first = await sessions.start('p1')
     const seen: MorganScreenEvent[] = []
     sessions.subscribe('p1', e => seen.push(e))
     await until(seen, e => text(e).includes('Ready.'))
-    expect(store.ids.get('p1')).toBe(first.sessionId)
+    expect(store.ids.get(`p1\n${runDir}`)).toBe(first.sessionId)
     await sessions.end('p1')
     await sessions.start('p1')
     expect(launches[1]).toEqual(['--resume', first.sessionId])
   })
 
   it('a failed resume forgets the conversation and says so; the next Start is fresh', async () => {
-    const { sessions, store, launches } = make('silent'); current = sessions
-    store.ids.set('p1', 'old-id')
+    const { sessions, store, launches, runDir } = make('silent'); current = sessions
+    store.ids.set(`p1\n${runDir}`, 'old-id')
     const seen: MorganScreenEvent[] = []
     await sessions.start('p1')
     sessions.subscribe('p1', e => seen.push(e))
     await until(seen, e => e.type === 'ended', 6000)
     const ended = seen.find(e => e.type === 'ended') as Extract<MorganScreenEvent, { type: 'ended' }>
     expect(ended.message).toMatch(/could not pick up/i)
-    expect(store.ids.has('p1')).toBe(false)
+    expect(store.ids.has(`p1\n${runDir}`)).toBe(false)
     await sessions.start('p1')
     expect(launches[1][0]).toBe('--session-id')
+  })
+
+  it('does not resume a conversation remembered for a different folder', async () => {
+    const { sessions, store, launches } = make(); current = sessions
+    store.ids.set('p1\n/some/other/folder', 'other-folder-id')
+    store.ids.set('p1', 'old-unkeyed-id')
+    await sessions.start('p1')
+    expect(launches[0][0]).toBe('--session-id')
   })
 
   it('"New conversation" starts fresh even when one is remembered', async () => {
