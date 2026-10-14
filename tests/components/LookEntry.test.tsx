@@ -28,6 +28,16 @@ describe('look entry points', () => {
     expect(value.openLook).toHaveBeenLastCalledWith({ entityKind: 'location', entityId: 'the-salt-dock', entityName: 'The Salt Dock' })
   })
 
+  it('a beat opens a look for a new character who is not in the Story Bible yet', () => {
+    const value = withLooks(<LookEntryButton beatTitle="Opening" />, { characterNames: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Start a look' }))
+    fireEvent.change(screen.getByLabelText('Who or where is this look for?'), { target: { value: '__character__' } })
+    expect(screen.getByRole('button', { name: 'Open look' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Character name'), { target: { value: '  Night Courier ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open look' }))
+    expect(value.openLook).toHaveBeenCalledWith({ entityKind: 'character', entityId: 'night-courier', entityName: 'Night Courier' })
+  })
+
   it('the character card button opens that character and says when a look is promoted', () => {
     const value = withLooks(<CharacterLookButton name="Vector Engineer" />, {
       promotedLooks: [{ recordId: 'm', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'x', reference: 'none' as const, spec: {} as never }],

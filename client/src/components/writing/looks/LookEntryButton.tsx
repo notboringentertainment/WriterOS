@@ -3,21 +3,26 @@ import { promotedLooksNamedIn, slugifyEntityName } from '../../../lib/lookDraftE
 import { useLookSessions } from '../../../lib/lookSessionsContext'
 
 const LOCATION_CHOICE = '__location__'
+const CHARACTER_CHOICE = '__character__'
 const PROMOTED_PREFIX = 'promoted:'
 
-/** On a beat's Lookbook: pick a Story Bible character or name a location, then open its Look panel. */
+/**
+ * On a beat's Lookbook: pick a Story Bible character, or name a new character or
+ * location, then open its Look panel. A new character needs no Story Bible card first.
+ */
 export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
   const looks = useLookSessions()
   const [open, setOpen] = useState(false)
   const [choice, setChoice] = useState('')
-  const [locationName, setLocationName] = useState('')
+  const [newName, setNewName] = useState('')
   if (!looks) return null
 
   const isLocation = choice === LOCATION_CHOICE
+  const isNewCharacter = choice === CHARACTER_CHOICE
   const promotedChoice = choice.startsWith(PROMOTED_PREFIX)
     ? looks.promotedLooks.find(look => look.recordId === choice.slice(PROMOTED_PREFIX.length))
     : undefined
-  const name = promotedChoice ? promotedChoice.entityName : isLocation ? locationName.trim() : choice
+  const name = promotedChoice ? promotedChoice.entityName : isLocation || isNewCharacter ? newName.trim() : choice
   const start = () => {
     if (!name) return
     if (promotedChoice) {
@@ -30,7 +35,7 @@ export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
     }
     setOpen(false)
     setChoice('')
-    setLocationName('')
+    setNewName('')
   }
 
   if (!open) {
@@ -54,11 +59,13 @@ export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
           </optgroup>
         )}
         {looks.characterNames.map(character => <option key={character} value={character}>{character}</option>)}
+        <option value={CHARACTER_CHOICE}>A new character…</option>
         <option value={LOCATION_CHOICE}>A new location…</option>
       </select>
-      {isLocation && (
-        <input aria-label="Location name" placeholder="Location name" style={styles.input} value={locationName}
-          onChange={event => setLocationName(event.target.value)}
+      {(isLocation || isNewCharacter) && (
+        <input aria-label={isLocation ? 'Location name' : 'Character name'} placeholder={isLocation ? 'Location name' : 'Character name'}
+          style={styles.input} value={newName}
+          onChange={event => setNewName(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter') start() }} />
       )}
       <button type="button" style={styles.trigger} disabled={!name} onClick={start}>Open look</button>
