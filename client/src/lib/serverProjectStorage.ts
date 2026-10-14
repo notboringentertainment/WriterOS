@@ -11,7 +11,8 @@ import { postLookbookQuestions } from './lookbookClient'
 import { getLookExport, postLookPromote } from './looksClient'
 import { getBeatSheetStatus, postBeatSheetRefresh } from './beatSheetClient'
 import type { StoredProject } from './projectLibrary'
-import type { ProjectStorageAdapter } from './projectStorage'
+import type { MorganScreenEvent } from '@shared/morganLive'
+import type { MorganApi, ProjectStorageAdapter } from './projectStorage'
 
 export type ServerProjectStorageRef = ProjectLibrarySaveResponse['ref']
 
@@ -101,7 +102,94 @@ export async function bootstrapServerProjectStorage(
   const projectPath = (projectId: string) =>
     `/api/project-library/projects/${encodeURIComponent(projectId)}`
 
+  const morganBase = (id: string) => `/api/morgan/${encodeURIComponent(id)}`
+  async function morganRequest(url: string, init: RequestInit): Promise<Response> {
+    const response = await fetchProjectLibrary(url, {
+      credentials: 'same-origin',
+      ...init,
+      headers: { ...sessionHeaders, 'Content-Type': 'application/json' },
+    })
+    if (!response.ok) {
+      const body: ApiErrorBody = await response.json().catch(() => ({}))
+      throw new ServerProjectStorageError(
+        typeof body?.message === 'string' ? body.message : 'Morgan request failed.',
+        response.status,
+        typeof body?.error === 'string' ? body.error : 'request-failed',
+      )
+    }
+    return response
+  }
+  const morgan: MorganApi | undefined = bootstrap.morganHost === true ? {
+    start: async (id, opts) => (await morganRequest(`${morganBase(id)}/session`, {
+      method: 'POST', body: JSON.stringify({ fresh: opts?.fresh === true }),
+    })).json(),
+    submit: async (id, text, context) => (await (await morganRequest(`${morganBase(id)}/submit`, {
+      method: 'POST', body: JSON.stringify({ text, ...(context ? { context } : {}) }),
+    })).json()).composerId,
+    answerApproval: async (id, requestId, answer) => {
+      await morganRequest(`${morganBase(id)}/approval/${encodeURIComponent(requestId)}`, { method: 'POST', body: JSON.stringify(answer) })
+    },
+    answerProposal: async (id, proposalId, answer) => {
+      await morganRequest(`${morganBase(id)}/proposal/${encodeURIComponent(proposalId)}`, { method: 'POST', body: JSON.stringify(answer) })
+    },
+    stop: async (id, turnId) => { await morganRequest(`${morganBase(id)}/stop`, { method: 'POST', body: JSON.stringify({ turnId }) }) },
+    end: async id => { await morganRequest(`${morganBase(id)}/session`, { method: 'DELETE' }) },
+    stream: (id, onEvent, onClosed) => {
+      const controller = new AbortController()
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+      void (async () => {
+        try {
+          const response = await fetchProjectLibrary(`${morganBase(id)}/stream`, {
+            credentials: 'same-origin', headers: sessionHeaders, signal: controller.signal,
+          })
+          if (!response.ok || !response.body) return
+          reader = response.body.getReader()
+          if (controller.signal.aborted) return
+          const decoder = new TextDecoder()
+          let buffer = '', data: string[] = []
+          const consume = (text: string, final = false) => {
+            buffer += text
+            let cut: number
+            while ((cut = buffer.search(/[\r\n]/)) >= 0) {
+              // Wait for a possible LF when CR falls at the end of a chunk.
+              if (!final && buffer[cut] === '\r' && cut === buffer.length - 1) break
+              const line = buffer.slice(0, cut)
+              const width = buffer[cut] === '\r' && buffer[cut + 1] === '\n' ? 2 : 1
+              buffer = buffer.slice(cut + width)
+              if (!line) {
+                if (data.length && !controller.signal.aborted) onEvent(JSON.parse(data.join('\n')) as MorganScreenEvent)
+                data = []
+              } else if (line === 'data' || line.startsWith('data:')) {
+                data.push(line === 'data' ? '' : line.slice(5).replace(/^ /, ''))
+              }
+              if (controller.signal.aborted) return
+            }
+          }
+          while (!controller.signal.aborted) {
+            const { value, done } = await reader.read()
+            if (controller.signal.aborted) break
+            if (done) { consume(decoder.decode(), true); break }
+            consume(decoder.decode(value, { stream: true }))
+          }
+        } catch { /* Network and malformed-stream failures close the subscription. */ }
+        finally {
+          if (reader) {
+            await reader.cancel().catch(() => undefined)
+            reader.releaseLock()
+          }
+          if (!controller.signal.aborted) onClosed()
+        }
+      })()
+      return () => {
+        if (controller.signal.aborted) return
+        controller.abort()
+        void reader?.cancel().catch(() => undefined)
+      }
+    },
+  } : undefined
+
   return {
+    ...(morgan ? { morgan } : {}),
     kind: 'server',
     label: bootstrap.label,
     defaultFolderLabel: bootstrap.label,

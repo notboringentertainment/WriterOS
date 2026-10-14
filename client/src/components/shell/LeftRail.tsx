@@ -5,8 +5,15 @@ import type { StoryBibleSection } from '../../lib/shellState'
 import { CapabilityReceiptChip } from '../transcript/CapabilityReceiptChip'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 import { MemoryPatchSuggestionChip } from '../memory/MemoryPatchSuggestionChip'
+import { MorganLivePanel } from './MorganLivePanel'
+import type { MorganApi } from '../../lib/projectStorage'
+import type { PageProposal } from '@shared/morganLive'
 
 interface LeftRailProps {
+  morgan?: MorganApi | null
+  morganProjectId?: string | null
+  onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
+  onMorganProjectChanged?: () => void
   open: boolean
   onToggle: () => void
   projectTitle: string
@@ -36,6 +43,10 @@ export function LeftRail({
   onClearTranscript,
   keptPatchMessageId = null,
   onReopenPatchSuggestion,
+  morgan,
+  morganProjectId,
+  onMorganPageProposal,
+  onMorganProjectChanged,
 }: LeftRailProps) {
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -80,7 +91,7 @@ export function LeftRail({
           <div style={styles.panelHeader}>
             <div style={styles.panelTitleRow}>
               <span style={styles.panelTitle}>Morgan</span>
-              {transcript.length > 0 && onClearTranscript && (
+              {!(morgan && morganProjectId) && transcript.length > 0 && onClearTranscript && (
                 <button
                   type="button"
                   style={styles.clearButton}
@@ -92,6 +103,17 @@ export function LeftRail({
             </div>
             <span style={styles.contextChip}>{projectTitle}</span>
           </div>
+          {morgan && morganProjectId ? (
+            <MorganLivePanel
+              key={morganProjectId}
+              projectId={morganProjectId}
+              morgan={morgan}
+              surface={activeTab === 'story-bible' ? 'Story Bible' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              onPageProposal={onMorganPageProposal ?? ignoreProposal}
+              onProjectChanged={onMorganProjectChanged}
+            />
+          ) : (
+          <>
           <div ref={transcriptRef} style={styles.transcript} aria-label="Morgan conversation">
             {transcript.length === 0 && !loading ? (
               <p style={styles.emptyState}>
@@ -144,11 +166,15 @@ export function LeftRail({
               }}
             />
           </div>
+          </>
+          )}
         </div>
       )}
     </aside>
   )
 }
+
+const ignoreProposal = () => {}
 
 const styles: Record<string, React.CSSProperties> = {
   rail: {

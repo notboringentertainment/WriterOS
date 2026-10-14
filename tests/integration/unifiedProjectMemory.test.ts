@@ -221,7 +221,7 @@ async function waitForQueueSettled(projectPath: string, timeoutMs = 2_000): Prom
 
 async function startApp(provider: ProjectMemoryProvider) {
   const app = express()
-  const server = await registerRoutes(app, { projectMemoryProvider: provider })
+  const { server } = await registerRoutes(app, { projectMemoryProvider: provider })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return { server, port: (server.address() as AddressInfo).port }
 }
@@ -234,7 +234,7 @@ async function startApp(provider: ProjectMemoryProvider) {
  * want. */
 async function startRealApp() {
   const app = express()
-  const server = await registerRoutes(app)
+  const { server } = await registerRoutes(app)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return { server, port: (server.address() as AddressInfo).port }
 }

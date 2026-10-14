@@ -38,9 +38,23 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
+  const { server, morganHost } = await registerRoutes(app);
   // Canon appeals that failed to reach Story-drive earlier retry once per start.
   void retryAppealDeliveriesAtStart();
+  if (morganHost) {
+    let stopping = false;
+    for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+      process.on(sig, () => {
+        if (stopping) return;
+        stopping = true;
+        const hardStop = setTimeout(() => { morganHost.killAllNow(); process.exit(1); }, 10000);
+        void morganHost.sessions.shutdown().finally(() => {
+          clearTimeout(hardStop);
+          process.exit(0);
+        });
+      });
+    }
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

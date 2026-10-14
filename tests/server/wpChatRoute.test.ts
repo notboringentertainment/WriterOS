@@ -19,7 +19,7 @@ afterEach(() => {
 async function startApp() {
   const app = express()
   app.use(express.json())
-  const server = await registerRoutes(app)
+  const { server } = await registerRoutes(app)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address() as AddressInfo
   return { server, port: address.port }

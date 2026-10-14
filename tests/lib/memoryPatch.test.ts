@@ -365,3 +365,39 @@ describe('applyMemoryGroundedPatch', () => {
     expect(setters.synopsis).not.toHaveBeenCalled()
   })
 })
+
+describe('applyMemoryGroundedPatch on an Outline synced from a beat sheet', () => {
+  const unit = (whatHappens: string) => ({
+    id: 'u1', number: 1, actOrSequence: '', title: 'The aftermath', location: '', characters: [], whatHappens,
+    conflict: '', turn: '', consequence: '', whyNext: '', linkedSceneIds: [], draftNotes: '',
+  })
+  const syncedDocuments = () => {
+    const documents = createEmptyDocuments(() => '2026-08-01T00:00:00.000Z')
+    documents.outline.content = {
+      ...documents.outline.content,
+      units: [unit('The living room floor.')],
+      beatSheetSource: { ticket: 'resolved/28-beat-sheet.md', sourceHash: 'h', syncedAt: '2026-10-06T00:00:00.000Z', beatCount: 1, label: null },
+    }
+    return documents
+  }
+  const outlinePatch = (content: OutlineDocumentContent, baseVersion: number): MemoryGroundedPatch => ({
+    kind: 'structured-document', surface: 'outline', baseVersion, proposedContent: content, changedPaths: ['units'], memoryIds: ['[M-ABCD-1234]'],
+  })
+
+  it('refuses a change to synced beats instead of reporting it kept', () => {
+    const documents = syncedDocuments()
+    const setters = makeSetters()
+    const result = applyMemoryGroundedPatch(outlinePatch({ ...documents.outline.content, units: [unit('The parlor floor.')] }, documents.outline.revision), documents, setters)
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toBe('synced-beats')
+    expect(setters.outline).not.toHaveBeenCalled()
+  })
+
+  it('still applies a change that leaves the synced beats alone', () => {
+    const documents = syncedDocuments()
+    const setters = makeSetters()
+    const content = { ...documents.outline.content, spine: { ...documents.outline.content.spine, protagonist: 'The crew chief' } }
+    expect(applyMemoryGroundedPatch(outlinePatch(content, documents.outline.revision), documents, setters)).toEqual({ ok: true })
+    expect(setters.outline).toHaveBeenCalledTimes(1)
+  })
+})

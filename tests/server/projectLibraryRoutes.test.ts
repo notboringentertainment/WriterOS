@@ -107,7 +107,7 @@ describe('project library HTTP routes', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(response.json).toEqual({ enabled: false })
+    expect(response.json).toEqual({ enabled: false, morganHost: false })
     expect(response.text).not.toContain('/secret/')
     expect(response.headers['cache-control']).toBe('no-store')
   })
@@ -127,6 +127,7 @@ describe('project library HTTP routes', () => {
       enabled: true,
       label: 'WriterOS Projects',
       sessionToken: 'test-session-token',
+      morganHost: false,
     })
     expect(response.text).not.toContain(root)
     expect(response.headers['access-control-allow-origin']).toBeUndefined()

@@ -542,7 +542,7 @@ describe('project memory agent context boundary', () => {
 
 async function startApp(provider: ProjectMemoryProvider) {
   const app = express()
-  const server = await registerRoutes(app, { projectMemoryProvider: provider })
+  const { server } = await registerRoutes(app, { projectMemoryProvider: provider })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return { server, port: (server.address() as AddressInfo).port }
 }

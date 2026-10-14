@@ -14,6 +14,7 @@ import {
 } from './store'
 import { keepServerOwnedBeatFields, refreshBeatSheetOnOpen } from './beatSheetRoutes'
 import { observeWriterOSSave } from '../projectMemory/writerOSObserver'
+import { morganHostEnabled } from '../morganHost/morganRoutes'
 
 function dataStore(config: ProjectLibraryConfig, store: ProjectLibraryStore | null): ProjectLibraryStore {
   if (!config.enabled || !store) {
@@ -48,12 +49,13 @@ export function registerProjectLibraryRoutes(
 
   app.get('/api/project-library/bootstrap', requireSameOrigin, (_req, res) => {
     if (!config.enabled || !config.label) {
-      return res.json({ enabled: false })
+      return res.json({ enabled: false, morganHost: false })
     }
     return res.json({
       enabled: true,
       label: config.label,
       sessionToken: config.sessionToken,
+      morganHost: morganHostEnabled(process.env) && Boolean(config.rootPath),
     })
   })
 

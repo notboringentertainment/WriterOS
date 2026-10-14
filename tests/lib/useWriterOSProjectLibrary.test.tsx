@@ -125,6 +125,19 @@ describe('useWriterOSProjectLibrary', () => {
     expect(mocks.folderState.chooseFolder).not.toHaveBeenCalled()
   })
 
+  it('exposes the server Morgan client and returns null when it is absent', async () => {
+    const morgan = { start: vi.fn() }
+    mocks.bootstrapServerProjectStorage.mockResolvedValue({ ...serverAdapter(), morgan })
+    const hosted = renderHook(() => useWriterOSProjectLibrary())
+    await waitFor(() => expect(hosted.result.current.status).toBe('ready'))
+    expect(hosted.result.current.morgan).toBe(morgan)
+    hosted.unmount()
+    mocks.bootstrapServerProjectStorage.mockResolvedValue(serverAdapter())
+    const ordinary = renderHook(() => useWriterOSProjectLibrary())
+    await waitFor(() => expect(ordinary.result.current.status).toBe('ready'))
+    expect(ordinary.result.current.morgan).toBeNull()
+  })
+
   it('opens and saves server projects through adapter refs', async () => {
     const project = makeProject()
     const ref = makeRef(project)

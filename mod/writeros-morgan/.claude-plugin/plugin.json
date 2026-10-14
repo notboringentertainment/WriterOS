@@ -1,0 +1,9 @@
+{
+  "name": "writeros-morgan",
+  "version": "0.1.0",
+  "description": "Morgan inside WriterOS: reports the session, relays approvals and page proposals",
+  "author": {
+    "name": "Not Boring Entertainment"
+  },
+  "types": "./types/index.d.ts"
+}

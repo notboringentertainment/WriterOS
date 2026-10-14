@@ -12,6 +12,8 @@
     "check": "tsc",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:mod": "claude plugin validate mod/writeros-morgan && claude plugin test mod/writeros-morgan",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true",
     "memory": "tsx server/projectMemory/cli.ts",
     "opensrc:fetch": "npx --yes opensrc fetch",
     "opensrc:vendor": "bash scripts/opensrc-vendor.sh"
@@ -28,6 +30,7 @@
     "@tiptap/react": "^3.22.5",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
+    "node-pty": "1.1.0",
     "openai": "^5.20.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

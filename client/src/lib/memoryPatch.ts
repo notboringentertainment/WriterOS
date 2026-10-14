@@ -60,7 +60,7 @@ export function parsePatchProposal(raw: unknown): MemoryGroundedPatchProposal | 
   return parsed.data as MemoryGroundedPatchProposal
 }
 
-export type PatchApplyRejectionReason = 'stale' | 'invalid'
+export type PatchApplyRejectionReason = 'stale' | 'invalid' | 'synced-beats'
 
 export type PatchApplyResult =
   | { ok: true }
@@ -81,6 +81,8 @@ export interface StructuredDocumentSetters {
 // refuse forever with no way forward except asking the agent again.
 const STALE_PATCH_MESSAGE = 'This suggestion is out of date because the document changed — ask for a new version.'
 const INVALID_PATCH_MESSAGE = "The suggested content no longer matches this document's format."
+// The Outline's beats are copied from the Story-drive beat sheet, and every save puts them back, so this change could never be kept.
+const SYNCED_BEATS_MESSAGE = "This suggestion changes beats that come from the Story-drive beat sheet, so it can't be kept here. Change the beat sheet instead; the Outline picks it up when the page reloads."
 
 /**
  * Applies an approved patch through the matching useProjectState setter.
@@ -108,6 +110,14 @@ export function applyMemoryGroundedPatch(
   const current = documents[validated.patch.surface]
   if (current.revision !== validated.patch.baseVersion) {
     return { ok: false, reason: 'stale', message: STALE_PATCH_MESSAGE }
+  }
+
+  if (validated.patch.surface === 'outline') {
+    const now = current.content as OutlineDocumentContent
+    const next = validated.content as OutlineDocumentContent
+    if (now.beatSheetSource && JSON.stringify(next.units) !== JSON.stringify(now.units)) {
+      return { ok: false, reason: 'synced-beats', message: SYNCED_BEATS_MESSAGE }
+    }
   }
 
   switch (validated.patch.surface) {

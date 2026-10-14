@@ -38,7 +38,7 @@ afterEach(async () => {
 async function startApp() {
   const app = express()
   app.use(express.json({ limit: WRITEROS_JSON_BODY_LIMIT }))
-  const server = await registerRoutes(app)
+  const { server } = await registerRoutes(app)
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   return (server.address() as AddressInfo).port
