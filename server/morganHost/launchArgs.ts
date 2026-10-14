@@ -20,29 +20,55 @@ export interface MorganLaunchInput {
 }
 export interface MorganSettings {
   permissions: {
-    defaultMode: string; allow: string[]; deny: string[]
-    additionalDirectories: string[]; blockReadsOutsideWorkingDirectories: true
+    defaultMode: string; allow: string[]; ask: string[]; deny: string[]
+    additionalDirectories: string[]; blockReadsOutsideWorkingDirectories: boolean
   }
   [k: string]: unknown
 }
 export interface MorganLaunch { cwd: string; args: string[]; env: Record<string, string>; settings: MorganSettings }
 
-export const DEFAULT_MORGAN_MODEL = 'claude-sonnet-5-5'
-export const MORGAN_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'TodoWrite', 'WebSearch', 'WebFetch', 'Agent'] as const
+// Morgan runs on Ben's Claude login, so Opus costs plan usage, not API money (Ben, 2026-10-14).
+export const DEFAULT_MORGAN_MODEL = 'claude-opus-5-5'
+// ToolSearch loads Ben's connectors and Chrome, which Claude Code defers until asked for.
+export const MORGAN_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'TodoWrite', 'WebSearch', 'WebFetch', 'Agent', 'ToolSearch'] as const
 export const PROPOSE_TOOL = 'mcp__writeros-morgan__propose_page_change'
 export const PAGE_DIRS = ['documents', 'script'] as const // the files behind open WriterOS pages
-// Exact keys per Task 0 Step 12 (Claude Code sandbox settings, 2.1.292). Network stays as Claude Code's default for Bash.
-export const ISOLATION_ARGS = ['--restricted', '--strict-mcp-config']
+// Ben's user, project and local settings files stay out (his own hooks and modes are not Morgan's); his claude.ai
+// connectors and Chrome load (Ben, 2026-10-14: the in-app Claude gets his reach).
+export const ISOLATION_ARGS = ['--setting-sources', '']
 export const PERMISSION_MODE = 'manual'
 export const CLAUDE_MEM_DIR = path.join(homedir(), '.claude-mem')
-// Sandboxed commands that change things still ask Ben (Task 0 Step 5). Local binding (Ben's yes, 2026-10-07) lets a command
-// listen on this Mac's own loopback port, which WriterOS's `npm run memory` import needs (tsx opens one); no new network reach.
-export const SANDBOX_SETTINGS = { enabled: true, autoAllowBashIfSandboxed: false, network: { allowLocalBinding: true } } as const
+export const CHROME_TOOLS = 'mcp__claude-in-chrome'
+// Ben's claude.ai connectors, allowed whole. One missing here still works: Morgan asks Ben on a card.
+export const CONNECTORS = ['Higgsfield', 'Google_Drive', 'Google_Calendar', 'Gmail', 'Notion', 'Claude_Docs', 'Airtable',
+  'Granola', 'Hugging_Face', 'Supabase', 'Docusign'] as const
+// protects: Ben's credits. Every Higgsfield call that makes or changes media asks him on a card.
+export const HIGGSFIELD_SPEND = [
+  'generate_image', 'generate_video', 'generate_audio', 'generate_3d', 'generate_image_batch', 'generate_video_batch',
+  'generate_audio_batch', 'upscale_image', 'upscale_video', 'outpaint_image', 'reframe', 'remove_background',
+  'motion_control', 'execute_preset', 'dubbing', 'voice_change', 'create_voice', 'create_voice_from_confirmed_audio',
+  'ai_influencer_generate', 'build_ai_influencer', 'ads_studio_generate', 'shorts_studio_create',
+  'scene_builder_3d_generate_angles', 'scene_builder_3d_generate_video', 'video_analysis_create', 'virality_predictor',
+  'apps_invoke',
+] as const
+// protects: keys, tokens and saved passwords (Morgan never needs them). Read rules also bind Grep, Glob and sandboxed Bash.
+export const SECRET_DIRS = ['~/.ssh', '~/.aws', '~/.config/gcloud', '~/.config/gh', '~/.docker', '~/.codex', '~/.openmontage',
+  '~/Library/Keychains'] as const
+export const SECRET_FILES = ['~/.netrc', '~/.git-credentials', '~/.npmrc', '~/.claude.json', '~/.claude/.credentials.json'] as const
+// Sandboxed commands run without a card; the sandbox still applies the Read/Edit rules to them and everything they
+// start. Open internet (Ben, 2026-10-14). Local binding (Ben's yes, 2026-10-07) lets WriterOS's `npm run memory`
+// import open its loopback port.
+export const SANDBOX_SETTINGS = {
+  enabled: true, autoAllowBashIfSandboxed: true,
+  filesystem: { denyRead: [...SECRET_DIRS, ...SECRET_FILES] },
+  network: { allowedDomains: ['*'], allowLocalBinding: true },
+} as const
 
 const ENV_KEYS = new Set(['HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'TMPDIR'])
 
+// Morgan no longer follows ANTHROPIC_CHAT_MODEL: that setting picks the API model for WriterOS's other agents.
 export function morganModel(env: Record<string, string | undefined>): string {
-  return env.MORGAN_MODEL || env.ANTHROPIC_CHAT_MODEL || DEFAULT_MORGAN_MODEL
+  return env.MORGAN_MODEL || DEFAULT_MORGAN_MODEL
 }
 
 // Allowlist, not denylist: WriterOS's own secrets and Anthropic routing variables never reach the child.
@@ -78,17 +104,25 @@ export function buildMorganLaunch(input: MorganLaunchInput): MorganLaunch {
   const { project, host } = input
   const cwd = project.storyDriveRoot ?? project.packagePath
   const roots = readRootsFor(project, host)
+  // The Story-drive folder and the package's memory are canon: Morgan edits them without a card, and her persona
+  // requires Ben's yes in the conversation first (canon changes only with his explicit yes).
+  const writable = [...new Set([cwd, project.packagePath])]
   const settings: MorganSettings = {
     permissions: {
       defaultMode: input.permissionMode,
       additionalDirectories: roots,
-      blockReadsOutsideWorkingDirectories: true,
+      blockReadsOutsideWorkingDirectories: false, // reads elsewhere ask Ben on a card instead of failing
       allow: [
         ...[cwd, ...roots].map(dir => `Read(/${dir}/**)`), // leading "//" = absolute path
-        'Grep', 'Glob', 'TodoWrite', 'WebSearch', 'Agent', PROPOSE_TOOL,
-        // Bash, Edit, Write and WebFetch are not listed: they ask Ben (read-only shell commands are automatic in Claude Code).
+        ...writable.flatMap(dir => [`Edit(/${dir}/**)`, `Write(/${dir}/**)`]),
+        'Grep', 'Glob', 'TodoWrite', 'WebSearch', 'WebFetch', 'Agent', 'ToolSearch', PROPOSE_TOOL, CHROME_TOOLS,
+        ...CONNECTORS.map(c => `mcp__claude_ai_${c}`),
+        // Bash outside the sandbox, and edits outside the project, ask Ben on a card.
       ],
+      ask: HIGGSFIELD_SPEND.map(t => `mcp__claude_ai_Higgsfield__${t}`),
       deny: [
+        ...SECRET_DIRS.map(d => `Read(${d}/**)`), ...SECRET_FILES.map(f => `Read(${f})`),
+        `Read(/${host.writerosRoot}/.env*)`,         // WriterOS's own keys
         'Read(//**/casting-inspiration/**)',        // casting firewall: real-person images are for Ben's eyes only (Read rules also govern Grep, Glob and sandboxed Bash)
         ...PAGE_DIRS.flatMap(d => [`Edit(/${project.packagePath}/${d}/**)`, `Write(/${project.packagePath}/${d}/**)`]), // open WriterOS pages: changes go through propose_page_change (memory files stay writable for canon imports)
         'AskUserQuestion',                           // its dialog cannot be shown in the page; Morgan asks in conversation
