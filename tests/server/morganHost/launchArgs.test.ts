@@ -66,6 +66,14 @@ describe('buildMorganLaunch', () => {
     expect(ask).not.toContain('mcp__claude_ai_Higgsfield__balance')
   })
 
+  it('asks before connector actions that send, sign or delete; reading stays free', () => {
+    const { ask, allow } = buildMorganLaunch(base).settings.permissions
+    for (const t of ['Gmail__send_message', 'Docusign__createEnvelope', 'Supabase__execute_sql', 'Google_Calendar__create_event'])
+      expect(ask).toContain(`mcp__claude_ai_${t}`)
+    expect(ask).not.toContain('mcp__claude_ai_Gmail__search_threads')
+    expect(allow).toContain('mcp__claude_ai_Gmail') // ask beats the server-wide allow
+  })
+
   it('keeps keys and WriterOS\'s own .env unreadable', () => {
     const { settings } = buildMorganLaunch(base)
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([

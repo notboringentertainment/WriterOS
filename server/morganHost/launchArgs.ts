@@ -51,6 +51,26 @@ export const HIGGSFIELD_SPEND = [
   'scene_builder_3d_generate_angles', 'scene_builder_3d_generate_video', 'video_analysis_create', 'virality_predictor',
   'apps_invoke',
 ] as const
+// protects: nothing goes out or is deleted under Ben's name without his yes. Connector tools that send, share, sign,
+// delete, or change outside systems ask him on a card; reading stays free. Morgan reads web pages, which can carry
+// instructions, so this is enforced here rather than left to the persona.
+export const CONNECTOR_SIDE_EFFECTS = [
+  'Gmail__send_message', 'Gmail__reply', 'Gmail__forward', 'Gmail__trash_message', 'Gmail__trash_thread', 'Gmail__delete_label',
+  'Google_Calendar__create_event', 'Google_Calendar__update_event', 'Google_Calendar__delete_event', 'Google_Calendar__respond_to_event',
+  'Google_Drive__share_file', 'Google_Drive__trash_file', 'Google_Drive__update_file',
+  'Docusign__createEnvelope', 'Docusign__createEnvelopeWithDocuments', 'Docusign__updateEnvelope', 'Docusign__updateEnvelopeRecipients',
+  'Docusign__updateEnvelopeTabs', 'Docusign__sendReminder', 'Docusign__triggerWorkflow', 'Docusign__startClmWorkflow',
+  'Docusign__stopClmWorkflow', 'Docusign__cancelWorkflowInstance', 'Docusign__pauseNewWorkflowInstances', 'Docusign__resumeWorkflow',
+  'Notion__notion-delete-pages', 'Notion__notion-delete-databases', 'Notion__notion-delete-comment',
+  'Airtable__delete_records_for_table', 'Airtable__delete_table', 'Airtable__delete_automation', 'Airtable__delete_interface',
+  'Airtable__delete_page',
+  'Supabase__execute_sql', 'Supabase__apply_migration', 'Supabase__deploy_edge_function', 'Supabase__create_project',
+  'Supabase__pause_project', 'Supabase__delete_branch', 'Supabase__merge_branch', 'Supabase__reset_branch',
+  'Supabase__create_edge_function_secret',
+  'Claude_Docs__delete',
+  'Higgsfield__publish_website', 'Higgsfield__deploy_website', 'Higgsfield__tiktok_prepare_publish',
+  'Higgsfield__participate_in_contest', 'Higgsfield__cancel_trial_auto_renewal',
+] as const
 // protects: keys, tokens and saved passwords (Morgan never needs them). Read rules also bind Grep, Glob and sandboxed Bash.
 export const SECRET_DIRS = ['~/.ssh', '~/.aws', '~/.config/gcloud', '~/.config/gh', '~/.docker', '~/.codex', '~/.openmontage',
   '~/Library/Keychains'] as const
@@ -119,7 +139,10 @@ export function buildMorganLaunch(input: MorganLaunchInput): MorganLaunch {
         ...CONNECTORS.map(c => `mcp__claude_ai_${c}`),
         // Bash outside the sandbox, and edits outside the project, ask Ben on a card.
       ],
-      ask: HIGGSFIELD_SPEND.map(t => `mcp__claude_ai_Higgsfield__${t}`),
+      ask: [
+        ...HIGGSFIELD_SPEND.map(t => `mcp__claude_ai_Higgsfield__${t}`),
+        ...CONNECTOR_SIDE_EFFECTS.map(t => `mcp__claude_ai_${t}`),
+      ],
       deny: [
         ...SECRET_DIRS.map(d => `Read(${d}/**)`), ...SECRET_FILES.map(f => `Read(${f})`),
         `Read(/${host.writerosRoot}/.env*)`,         // WriterOS's own keys
