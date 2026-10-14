@@ -62,6 +62,7 @@ export const CONNECTOR_SIDE_EFFECTS = [
   'Docusign__updateEnvelopeTabs', 'Docusign__sendReminder', 'Docusign__triggerWorkflow', 'Docusign__startClmWorkflow',
   'Docusign__stopClmWorkflow', 'Docusign__cancelWorkflowInstance', 'Docusign__pauseNewWorkflowInstances', 'Docusign__resumeWorkflow',
   'Notion__notion-delete-pages', 'Notion__notion-delete-databases', 'Notion__notion-delete-comment',
+  'Notion__notion-update-page', 'Notion__notion-create-comment',
   'Airtable__delete_records_for_table', 'Airtable__delete_table', 'Airtable__delete_automation', 'Airtable__delete_interface',
   'Airtable__delete_page',
   'Supabase__execute_sql', 'Supabase__apply_migration', 'Supabase__deploy_edge_function', 'Supabase__create_project',
