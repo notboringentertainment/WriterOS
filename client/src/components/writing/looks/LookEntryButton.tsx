@@ -7,10 +7,11 @@ const CHARACTER_CHOICE = '__character__'
 const PROMOTED_PREFIX = 'promoted:'
 
 /**
- * On a beat's Lookbook: pick a Story Bible character, or name a new character or
- * location, then open its Look panel. A new character needs no Story Bible card first.
+ * On a beat's Lookbook, or the Story Bible's Looks list (no beat): pick a Story Bible
+ * character, or name a new character or location, then open its Look panel. A new
+ * character needs no Story Bible card first.
  */
-export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
+export function LookEntryButton({ beatTitle }: { beatTitle?: string }) {
   const looks = useLookSessions()
   const [open, setOpen] = useState(false)
   const [choice, setChoice] = useState('')
@@ -46,7 +47,7 @@ export function LookEntryButton({ beatTitle }: { beatTitle: string }) {
     )
   }
   return (
-    <div style={styles.picker} role="group" aria-label={`Start a look from ${beatTitle}`}>
+    <div style={styles.picker} role="group" aria-label={beatTitle ? `Start a look from ${beatTitle}` : 'Start a look'}>
       <select aria-label="Who or where is this look for?" style={styles.input} value={choice} onChange={event => setChoice(event.target.value)}>
         <option value="">Who or where?</option>
         {looks.promotedLooks.length > 0 && (

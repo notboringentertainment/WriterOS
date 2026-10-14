@@ -97,6 +97,15 @@ describe('the Looks list', () => {
     withLooks(<PromotedLooksList />, { promotedLooks: [] })
     expect(screen.getByText(/No looks promoted yet/)).toBeInTheDocument()
   })
+
+  it('starts a new look without a beat: name a character and open it', () => {
+    const value = withLooks(<PromotedLooksList />, { promotedLooks: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Start a look' }))
+    fireEvent.change(screen.getByLabelText('Who or where is this look for?'), { target: { value: '__character__' } })
+    fireEvent.change(screen.getByLabelText('Character name'), { target: { value: 'Night Courier' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open look' }))
+    expect(value.openLook).toHaveBeenCalledWith({ entityKind: 'character', entityId: 'night-courier', entityName: 'Night Courier' })
+  })
 })
 
 describe('Start a look', () => {

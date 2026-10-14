@@ -1,5 +1,6 @@
 import React from 'react'
 import { useLookSessions } from '../../../lib/lookSessionsContext'
+import { LookEntryButton } from './LookEntryButton'
 
 // The home of the project's canon looks: every promoted look, one row each.
 // Opening a row starts a draft filled with the promoted answers, so a look can
@@ -25,8 +26,11 @@ export function PromotedLooksList() {
       <p style={styles.lede}>
         Canon looks for this project. Open one to change any detail, including its name, then promote it again.
       </p>
+      <div style={styles.start}>
+        <LookEntryButton />
+      </div>
       {sorted.length === 0 ? (
-        <p style={styles.empty}>No looks promoted yet. Start one from a character card or a beat's Lookbook.</p>
+        <p style={styles.empty}>No looks promoted yet.</p>
       ) : (
         <ul style={styles.list}>
           {sorted.map(look => {
@@ -68,6 +72,7 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase', color: 'var(--fg-subtle)', marginTop: 28, marginBottom: 4,
   },
   lede: { fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.5, color: 'var(--fg-muted)', margin: 0, maxWidth: '72ch' },
+  start: { margin: '4px 0' },
   empty: { fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--fg-muted)', fontStyle: 'italic', margin: 0 },
   list: { listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 },
   row: {
