@@ -57,7 +57,7 @@ export function StoryBibleLocksEditor({ value, onChange }: StoryBibleLocksEditor
   }
 
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} data-story-locks-editor>
       {value.length === 0 && <p style={emptyStyle}>No locks yet.</p>}
       {value.map((lock) => (
         <StoryBibleLockCard

@@ -13,7 +13,6 @@ import {
   postRoomEvent,
   resolveRoomProposal,
   sendRoomMessage,
-  syncStoryLocksBlock,
   type RoomCharacterBrief,
   type RoomMessage,
   type RoomProposal,
@@ -74,7 +73,6 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
   const beginMemoryRetryRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const beginSendRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const beginResolveRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
-  const beginLockSyncRequest = useProjectRequestGeneration(effectiveProjectScopeKey)
   const feedRef = useRef<HTMLDivElement>(null)
 
   const pendingProposals = useMemo(
@@ -195,16 +193,6 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
       close()
     }
   }, [beginRoomLoadRequest, effectiveProjectScopeKey, projectId, handleStreamEvent, handleMutationResult, isCurrentProjectScope, loadRoom])
-
-  // Writer-only sync of the story_locks shared block (§10).
-  useEffect(() => {
-    let cancelled = false
-    const isCurrent = beginLockSyncRequest()
-    void syncStoryLocksBlock(projectId, locksText).then(result => {
-      if (!cancelled && isCurrent() && isCurrentProjectScope()) handleMutationResult(result)
-    })
-    return () => { cancelled = true }
-  }, [beginLockSyncRequest, effectiveProjectScopeKey, projectId, locksText, handleMutationResult, isCurrentProjectScope])
 
   // Keep the feed pinned to the latest activity.
   useEffect(() => {

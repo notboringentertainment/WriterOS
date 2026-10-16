@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WriterOS Pages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="brand">WriterOS</span>
+    <span class="project">The Night Shift</span>
+    <nav class="tabs" aria-label="Project">
+      <button class="tab">Script</button>
+      <button class="tab">Beat Sheet</button>
+      <button class="tab" aria-current="page">Pages</button>
+      <button class="tab">Story Bible</button>
+    </nav>
+    <div class="tools">
+      <span class="saved"><i></i>Saved 2:41 PM</span>
+      <button class="tool"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Writer</button>
+      <button class="tool"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/></svg>Canon</button>
+      <button class="tool" aria-label="More"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+    </div>
+  </header>
+
+  <div class="work">
+    <aside class="morgan" aria-label="Morgan">
+      <div class="morgan-head"><span class="dot">M</span><strong>Morgan</strong><span>Ready</span></div>
+      <div class="feed">
+        <div class="msg"><div class="who">Morgan</div><p>Canon already covers most of what a synopsis needs. I have two questions, then I'll write it.</p><p>First: how does it end for Dell? Canon has the depot closing, but not whether he stays in town.</p></div>
+      </div>
+      <div class="composer"><div>Answer Morgan</div></div>
+    </aside>
+
+    <main class="stage">
+      <div class="sheet">
+        <nav class="switch" aria-label="Pages">
+          <button>Outline <small>approved</small></button>
+          <button>Treatment <small>approved</small></button>
+          <button aria-current="page">Synopsis <small>not started</small></button>
+        </nav>
+
+        <h1>Synopsis</h1>
+        <p class="lede">Morgan writes the synopsis from canon. She asks only about what canon doesn't answer yet.</p>
+        <div class="actions"><button class="btn primary">Write it with Morgan</button></div>
+
+        <ul class="needs" aria-label="What a synopsis needs">
+          <li class="have"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>Who we follow</b><p>Dell Avery, night-shift tow driver</p></div><em>Story Bible</em></li>
+          <li class="have"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>What they want</b><p>One more winter at the depot</p></div><em>Outline</em></li>
+          <li class="have"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>What stands in the way</b><p>Marta's sale, and the money behind the depot</p></div><em>Story Bible</em></li>
+          <li class="have"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>The stakes</b><p>The job, and the town's silence about the bank</p></div><em>Beat Sheet</em></li>
+          <li class="gap"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><div><b>The turn</b><p>Morgan will ask</p></div><em>Not in canon</em></li>
+          <li class="gap"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><div><b>The ending</b><p>Morgan is asking now</p></div><em>Not in canon</em></li>
+        </ul>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

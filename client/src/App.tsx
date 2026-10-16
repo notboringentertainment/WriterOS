@@ -62,6 +62,7 @@ import { parseMemoryReceipt } from './lib/memoryReceipt'
 import { computePostDeleteStorageEffect } from './lib/homeDelete'
 import { fetchProjectMeetingStandings, type ProjectMeetingStanding } from './lib/projectMeetingStatus'
 import { roomFieldEmitter } from './lib/roomFieldEmitter'
+import { useStoryLocksSync } from './lib/useStoryLocksSync'
 import { applyProposalToStoryBible, renderStoryLocksBlock } from './lib/roomProposals'
 import type { RoomProposal } from './lib/roomApi'
 import type { LookSessionContext } from '@shared/looks'
@@ -182,6 +183,8 @@ export default function App() {
   const [beatSheetStatus, setBeatSheetStatus] = useState<{ projectId: string; status: BeatSheetSyncStatusResponse } | null>(null)
   const [wpLoading, setWpLoading] = useState(false)
   const [activeProjectStorage, setActiveProjectStorage] = useState<ActiveProjectStorage>({ kind: 'browser' })
+  const restoreFolderIdRef = useRef(localStorage.getItem('writeros.activeFolderProjectId'))
+  const restoringFolderRef = useRef(Boolean(restoreFolderIdRef.current))
   const [openingFolderProjectId, setOpeningFolderProjectId] = useState<string | null>(null)
   const [folderProjectError, setFolderProjectError] = useState<string | null>(null)
   const [fdxImportError, setFdxImportError] = useState<string | null>(null)
@@ -233,6 +236,18 @@ export default function App() {
   const writeProjectRef = useRef(projectFolder.writeProject)
   const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
+  const folderWriteQueueRef = useRef<Promise<void> | null>(null)
+  const writeFolderProject = useCallback((storedProject: StoredProject) => {
+    const write = writeProjectRef.current
+    const previous = folderWriteQueueRef.current
+    const result = previous ? previous.then(() => write(storedProject)) : write(storedProject)
+    const settled = result.then(() => {}, () => {})
+    folderWriteQueueRef.current = settled
+    void settled.then(() => {
+      if (folderWriteQueueRef.current === settled) folderWriteQueueRef.current = null
+    })
+    return result
+  }, [])
   markStoredProjectsMigratedRef.current = project.markStoredProjectsMigrated
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
@@ -242,6 +257,11 @@ export default function App() {
   const activeAgentProjectKey = activeFolderProjectId
     ? `folder:${activeFolderProjectId}`
     : `browser:${project.activeProjectId ?? ''}`
+  const finishLockEdits = useStoryLocksSync(
+    activeFolderProjectId ?? project.activeProjectId,
+    renderStoryLocksBlock(project.state.documents.storyBible.content),
+    shellState.activeTab === 'story-bible' && !shellState.homeActive && !shellState.ritual && !shellState.writersRoomActive,
+  )
   // Drives the Memory surface and inline conflict banners (Task 9). A
   // browser-only project (no activeFolderProjectId) has nowhere durable to
   // keep a shared memory ledger, so the hook reports browserOnly instead of
@@ -459,6 +479,17 @@ export default function App() {
 
   const handleScriptChange = useCallback(
     (html: string, scenes: ScriptScene[]) => {
+      if (activeFolderProjectId && project.activeStoredProject) {
+        void writeFolderProject({
+          ...project.activeStoredProject,
+          state: { ...project.state, script: { ...project.state.script, rawHtml: html, scenes } },
+        }).catch(error => setFolderProjectError(error instanceof TypeError
+          ? 'Could not save. Try again.' : formatFdxImportError(error)))
+      }
+      if (activeAgentProjectKeyRef.current !== activeAgentProjectKey) {
+        project.updateScript(html, scenes)
+        return
+      }
       latestScriptSnapshotRef.current = {
         ...latestScriptSnapshotRef.current,
         rawHtml: html,
@@ -466,7 +497,7 @@ export default function App() {
       }
       project.updateScript(html, scenes)
     },
-    [project]
+    [activeAgentProjectKey, activeFolderProjectId, project, writeFolderProject]
   )
 
   const handleRebuildScriptFacts = useCallback((snapshot: { rawHtml: string; scenes: ScriptScene[] }) => {
@@ -478,6 +509,7 @@ export default function App() {
   }, [project])
 
   const formatFolderProjectError = useCallback((error: unknown) => {
+    if (error instanceof TypeError) return 'Could not open or save this project. Try again.'
     return error instanceof Error ? error.message : 'Unable to open or save the WriterOS project package.'
   }, [])
 
@@ -494,7 +526,7 @@ export default function App() {
 
     const nonce = ++folderSaveNonceRef.current
     try {
-      const folderProject = await writeProjectRef.current(storedProject)
+      const folderProject = await writeFolderProject(storedProject)
       if (folderSaveNonceRef.current !== nonce) return false
       const folderLabel = projectFolder.label ?? projectFolder.defaultFolderLabel
       const existingMarker = storedProject.migratedToFolder
@@ -522,7 +554,7 @@ export default function App() {
       setFolderProjectError(formatFolderProjectError(error))
       return false
     }
-  }, [formatFolderProjectError, projectFolder.defaultFolderLabel, projectFolder.label])
+  }, [formatFolderProjectError, projectFolder.defaultFolderLabel, projectFolder.label, writeFolderProject])
 
   useEffect(() => {
     if (!activeFolderProjectId) return
@@ -592,6 +624,7 @@ export default function App() {
         projectId: openedProject.project.id,
         packageName: openedProject.packageName,
       })
+      localStorage.setItem('writeros.activeFolderProjectId', openedProject.project.id)
       shellState.openProjectWorkspace()
       return true
     } catch (error) {
@@ -601,6 +634,21 @@ export default function App() {
       setOpeningFolderProjectId(null)
     }
   }, [cancelPendingFolderSave, formatFolderProjectError, project, projectFolder, shellState])
+
+  useEffect(() => {
+    if (!restoreFolderIdRef.current || projectFolder.status !== 'ready') return
+    const id = restoreFolderIdRef.current
+    restoreFolderIdRef.current = null
+    void handleOpenFolderProject(id).finally(() => { restoringFolderRef.current = false })
+  }, [handleOpenFolderProject, projectFolder.status])
+
+  useEffect(() => {
+    if (activeProjectStorage.kind === 'folder') {
+      localStorage.setItem('writeros.activeFolderProjectId', activeProjectStorage.projectId)
+    } else if (!restoringFolderRef.current) {
+      localStorage.removeItem('writeros.activeFolderProjectId')
+    }
+  }, [activeProjectStorage])
 
   const handleOpenProjectMeetingFromHome = useCallback(async (projectId: string, storageKind: 'browser' | 'folder') => {
     if (storageKind === 'browser') {
@@ -728,10 +776,12 @@ export default function App() {
     project.switchProject(projectId)
   }, [cancelPendingFolderSave, project])
 
-  const handleSaveProject = useCallback(() => {
-    const savedProject = project.saveNow()
-    void persistFolderProject(savedProject, activeFolderProjectId)
-  }, [activeFolderProjectId, persistFolderProject, project])
+  const handleSaveProject = useCallback(async () => {
+    const savedProject = project.saveNow(latestScriptSnapshotRef.current)
+    const saved = await persistFolderProject(savedProject, activeFolderProjectId)
+    await finishLockEdits()
+    return saved
+  }, [activeFolderProjectId, finishLockEdits, persistFolderProject, project])
 
   const handleExportSeed = useCallback(() => {
     const documents = project.state.documents
@@ -1488,6 +1538,7 @@ export default function App() {
       onProjectChange={handleProjectChange}
       onNewProject={handleNewProject}
       onSaveProject={handleSaveProject}
+      saveError={folderProjectError}
       onDeleteProject={handleDeleteProject}
       onExportSeed={handleExportSeed}
       railProps={railProps}

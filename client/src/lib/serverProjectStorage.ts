@@ -99,6 +99,32 @@ export async function bootstrapServerProjectStorage(
     Accept: 'application/json',
     'X-WriterOS-Session': bootstrap.sessionToken,
   }
+  const originalFetch = fetchProjectLibrary
+  let refreshing: Promise<void> | null = null
+  fetchProjectLibrary = async (input, init) => {
+    const send = () => originalFetch(input, {
+      ...init,
+      headers: { ...init?.headers, 'X-WriterOS-Session': sessionHeaders['X-WriterOS-Session'] },
+    })
+    const response = await send()
+    if (response.status !== 401) return response
+    try {
+      if (!refreshing) {
+        refreshing = requestJson<ProjectLibraryBootstrap>(originalFetch, '/api/project-library/bootstrap', {
+          headers: { Accept: 'application/json' },
+        }).then(next => {
+          if (!next.enabled || typeof next.sessionToken !== 'string') throw new Error()
+          sessionHeaders['X-WriterOS-Session'] = next.sessionToken
+        }).finally(() => { refreshing = null })
+      }
+      await refreshing
+      const retried = await send()
+      if (retried.status === 401) throw new Error()
+      return retried
+    } catch {
+      throw new ServerProjectStorageError('Reload to keep saving', 401, 'session-expired')
+    }
+  }
   const projectPath = (projectId: string) =>
     `/api/project-library/projects/${encodeURIComponent(projectId)}`
 
@@ -230,19 +256,19 @@ export async function bootstrapServerProjectStorage(
       return { result: response.result, beatSheet }
     },
     beatSheet: {
-      refresh: projectId => postBeatSheetRefresh(projectId, bootstrap.sessionToken),
-      status: projectId => getBeatSheetStatus(projectId, bootstrap.sessionToken),
+      refresh: projectId => postBeatSheetRefresh(projectId, sessionHeaders['X-WriterOS-Session']),
+      status: projectId => getBeatSheetStatus(projectId, sessionHeaders['X-WriterOS-Session']),
     },
     lookbook: {
       questions: (projectId, beatKey) =>
-        postLookbookQuestions(projectId, bootstrap.sessionToken, {
+        postLookbookQuestions(projectId, sessionHeaders['X-WriterOS-Session'], {
           beatKey,
           clientRequestId: `lbreq_${crypto.randomUUID()}`,
         }),
     },
     looks: {
-      promote: (projectId, body) => postLookPromote(projectId, bootstrap.sessionToken, body),
-      reexport: projectId => getLookExport(projectId, bootstrap.sessionToken),
+      promote: (projectId, body) => postLookPromote(projectId, sessionHeaders['X-WriterOS-Session'], body),
+      reexport: projectId => getLookExport(projectId, sessionHeaders['X-WriterOS-Session']),
     },
     async writeProject(project: StoredProject) {
       const response = await requestJson<ProjectLibrarySaveResponse>(

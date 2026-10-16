@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WriterOS Pages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="brand">WriterOS</span>
+    <span class="project">The Night Shift</span>
+    <nav class="tabs" aria-label="Project">
+      <button class="tab">Script</button>
+      <button class="tab">Beat Sheet</button>
+      <button class="tab" aria-current="page">Pages</button>
+      <button class="tab">Story Bible</button>
+    </nav>
+    <div class="tools">
+      <span class="saved"><i></i>Saved 2:41 PM</span>
+      <button class="tool"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Writer</button>
+      <button class="tool"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/></svg>Canon</button>
+      <button class="tool" aria-label="More"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+    </div>
+  </header>
+
+  <div class="work">
+    <aside class="morgan" aria-label="Morgan">
+      <div class="morgan-head"><span class="dot">M</span><strong>Morgan</strong><span>Writing the treatment</span></div>
+      <div class="feed">
+        <div class="msg me"><div class="who">You</div><p>In act two, have Dell find out about the loan from Marta herself, not from the bank.</p></div>
+        <div class="clash">
+          <h4>This changes something the Outline settled</h4>
+          <p>The Outline has Dell learn about the loan when the bank calls the depot. That beat is in canon, so the treatment can't move it on its own.</p>
+          <p class="src">Outline, beat 9 · approved Oct 12</p>
+          <div class="row">
+            <button class="btn primary">Change both</button>
+            <button class="btn">Keep the Outline</button>
+          </div>
+        </div>
+        <div class="msg"><div class="who">Morgan</div><p>If you change both, I'll update beat 9 and canon to match, then rewrite the act two paragraph. Nothing changes until you say so.</p></div>
+      </div>
+      <div class="composer"><div>Tell Morgan what to change</div></div>
+    </aside>
+
+    <main class="stage">
+      <div class="sheet">
+        <nav class="switch" aria-label="Pages">
+          <button>Outline <small>approved</small></button>
+          <button aria-current="page">Treatment <small class="stale">out of date</small></button>
+          <button>Synopsis <small>not started</small></button>
+        </nav>
+
+        <h1>Treatment</h1>
+        <div class="meta"><span>Written by Morgan from canon</span><span>·</span><span class="ok">Approved Oct 13</span><span>·</span><span>2,140 words</span></div>
+
+        <div class="notice">
+          <p>Canon changed after this was approved. <span>Two facts moved: Marta's age, and the depot closing in act three.</span></p>
+          <button class="btn">Ask Morgan to update</button>
+        </div>
+
+        <article class="prose">
+          <p>Dell Avery has towed cars off the same eleven miles of interstate for nineteen years. He knows every exit by its accidents. When the depot's owner dies and leaves the business to his daughter Marta, Dell expects to be let go. Instead she hands him the keys and a ledger that doesn't add up.</p>
+          <h2>Act one</h2>
+          <p>The night shift is Dell's whole life: the radio, the coffee, the calls that come in after two. Marta wants the depot sold by spring. Dell wants one more winter. They agree on nothing except that the numbers are wrong, and that somebody in town has been <span class="changed">paying the depot to look away</span>.</p>
+          <h2>Act two</h2>
+          <p>A wreck on the overpass leaves a car nobody will claim. Dell tows it in, and the paperwork leads back to the bank that holds Marta's loan. He starts asking questions the town has spent years not asking.</p>
+        </article>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

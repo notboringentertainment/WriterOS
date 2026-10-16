@@ -1,0 +1,141 @@
+/* Mockup styles for the WriterOS pare-down plan. Tokens copied from client/src/index.css
+   so the mocks sit in the existing WriterOS world. Not app code. */
+:root {
+  --bg: hsl(220 14% 7%);
+  --rail: hsl(220 14% 8.5%);
+  --rail-2: hsl(220 13% 11%);
+  --surface: hsl(220 13% 12%);
+  --border: hsl(220 13% 16%);
+  --border-2: hsl(220 13% 22%);
+  --paper: hsl(36 9% 9.5%);
+  --paper-hi: hsl(38 11% 12.5%);
+  --ink: hsl(40 14% 87%);
+  --ink-soft: hsl(40 10% 64%);
+  --fg: hsl(220 10% 86%);
+  --fg-muted: hsl(220 10% 64%);
+  --fg-subtle: hsl(220 10% 55%);
+  --amber: hsl(38 90% 68%);
+  --amber-dim: hsl(38 55% 44%);
+  --amber-wash: hsl(38 60% 50% / 0.10);
+  --ok: hsl(120 40% 62%);
+  --warn: hsl(28 85% 64%);
+  --warn-wash: hsl(28 70% 50% / 0.10);
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Newsreader', Georgia, serif;
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.16, .84, .28, 1);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+::selection { background: hsl(38 90% 68% / 0.28); color: var(--ink); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+
+.app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
+
+/* Top bar: project, four places, three quiet tools */
+.top { display: flex; align-items: center; gap: 28px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.brand { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg); }
+.project { font-family: var(--font-display); font-style: italic; font-size: 15px; color: var(--fg-muted); padding-left: 16px; border-left: 1px solid var(--border); }
+.tabs { display: flex; gap: 4px; margin-left: 8px; }
+.tab { font-size: 14px; color: var(--fg-muted); padding: 7px 12px; border-radius: 6px; transition: color 160ms var(--ease), background 160ms var(--ease); }
+.tab:hover { color: var(--fg); background: var(--rail-2); }
+.tab[aria-current="page"] { color: var(--fg); background: var(--surface); box-shadow: inset 0 -2px 0 var(--amber); }
+.tools { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.tool { font-size: 13px; color: var(--fg-muted); padding: 6px 10px; border-radius: 6px; display: inline-flex; gap: 6px; align-items: center; }
+.tool:hover { color: var(--fg); background: var(--rail-2); }
+.tool svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.saved { font-size: 12px; color: var(--fg-subtle); margin-right: 8px; display: inline-flex; gap: 6px; align-items: center; }
+.saved i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: inline-block; }
+
+/* Working area: Morgan on the left (where she lives today), the page in the middle */
+.work { display: grid; grid-template-columns: 340px 1fr; min-height: 0; }
+.morgan { background: var(--rail); border-right: 1px solid var(--border); display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
+.morgan-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.dot { width: 26px; height: 26px; border-radius: 50%; background: var(--amber); color: #1a1408; font: 600 12px var(--font-ui); display: grid; place-items: center; }
+.morgan-head strong { font-family: var(--font-display); font-weight: 500; font-size: 16px; }
+.morgan-head > span:last-child { margin-left: auto; font-size: 12px; color: var(--fg-subtle); }
+.feed { overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+.msg { font-family: var(--font-body); font-size: 15.5px; line-height: 1.55; color: var(--ink); }
+.msg.me { color: var(--fg-muted); padding-left: 14px; border-left: 1px solid var(--border-2); }
+.msg p + p { margin-top: 8px; }
+.who { font: 500 12px var(--font-ui); color: var(--amber); margin-bottom: 4px; }
+.me .who { color: var(--fg-subtle); }
+.clash { background: var(--warn-wash); border: 1px solid hsl(28 60% 45% / 0.35); border-radius: 10px; padding: 14px 14px 12px; }
+.clash h4 { font: 600 13px var(--font-ui); color: var(--warn); margin-bottom: 6px; }
+.clash p { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--ink); }
+.clash .src { font-size: 12.5px; color: hsl(28 35% 74%); margin-top: 8px; font-family: var(--font-ui); }
+.row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.btn { font: 500 13px var(--font-ui); padding: 8px 14px; border-radius: 7px; border: 1px solid var(--border-2); color: var(--fg); transition: background 160ms var(--ease), border-color 160ms var(--ease); }
+.btn:hover { background: var(--surface); border-color: hsl(220 13% 30%); }
+.btn.primary { background: var(--amber); border-color: var(--amber); color: #1a1408; }
+.btn.primary:hover { background: hsl(38 90% 74%); }
+.composer { border-top: 1px solid var(--border); padding: 14px 18px 18px; }
+.composer div { border: 1px solid var(--border-2); border-radius: 10px; padding: 12px 14px; font-family: var(--font-body); font-size: 15px; color: var(--fg-subtle); background: var(--bg); }
+
+/* The page */
+.stage { overflow-y: auto; background: radial-gradient(1200px 600px at 50% -10%, hsl(36 9% 11%), var(--bg) 70%); }
+.sheet { max-width: 760px; margin: 0 auto; padding: 48px 56px 120px; }
+.switch { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 36px; }
+.switch button { font-size: 14px; color: var(--fg-muted); padding: 0 0 12px; position: relative; display: inline-flex; gap: 8px; align-items: baseline; }
+.switch button small { font-size: 12px; color: var(--fg-subtle); }
+.switch button[aria-current="page"] { color: var(--fg); }
+.switch button[aria-current="page"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--amber); }
+.switch .stale { color: var(--warn); }
+h1 { font-family: var(--font-display); font-weight: 500; font-size: 40px; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); text-wrap: balance; }
+.meta { margin-top: 12px; font-size: 13px; color: var(--fg-muted); display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.meta .ok { color: var(--ok); }
+.actions { display: flex; gap: 8px; margin-top: 22px; }
+.notice { margin-top: 28px; display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-radius: 10px; background: var(--warn-wash); border: 1px solid hsl(28 60% 45% / 0.30); }
+.notice p { font-size: 14px; line-height: 1.5; color: var(--ink); }
+.notice p span { color: hsl(28 35% 74%); }
+.notice .btn { margin-left: auto; white-space: nowrap; }
+.prose { margin-top: 44px; font-family: var(--font-body); font-size: 18.5px; line-height: 1.7; color: var(--ink); max-width: 66ch; }
+.prose h2 { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: -0.01em; margin: 44px 0 14px; color: var(--ink); }
+.prose p + p { margin-top: 16px; }
+.prose .changed { background: var(--amber-wash); box-shadow: 0 0 0 4px var(--amber-wash); border-radius: 2px; }
+
+/* Start state checklist */
+.lede { margin-top: 18px; font-family: var(--font-body); font-size: 19px; line-height: 1.6; color: var(--ink-soft); max-width: 58ch; }
+.needs { margin-top: 36px; list-style: none; border-top: 1px solid var(--border); }
+.needs li { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: baseline; padding: 15px 0; border-bottom: 1px solid var(--border); }
+.needs svg { width: 16px; height: 16px; stroke-width: 2; fill: none; transform: translateY(2px); }
+.needs .have svg { stroke: var(--ok); }
+.needs .gap svg { stroke: var(--amber); }
+.needs b { font: 500 15px var(--font-ui); color: var(--fg); }
+.needs p { font-family: var(--font-body); font-size: 15.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.45; }
+.needs .gap p { color: var(--amber); }
+.needs em { font-style: normal; font-size: 12.5px; color: var(--fg-subtle); }
+
+/* Story Bible canon view */
+.open { margin-top: 32px; padding: 20px 22px; border-radius: 12px; background: var(--paper-hi); border: 1px solid var(--border-2); }
+.open .open-h { font: 600 15px var(--font-ui); color: var(--fg); }
+.open ul { list-style: none; margin-top: 10px; }
+.open li { display: flex; gap: 12px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--border); font-family: var(--font-body); font-size: 16px; color: var(--ink); }
+.open li:first-child { border-top: 0; }
+.open li .btn { margin-left: auto; padding: 5px 11px; font-size: 12.5px; }
+.canon { margin-top: 44px; }
+.canon section { padding: 26px 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: 170px 1fr; gap: 28px; }
+.canon h2 { font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--ink); line-height: 1.35; }
+.canon .body { font-family: var(--font-body); font-size: 17px; line-height: 1.65; color: var(--ink); }
+.canon .src { font: 12.5px var(--font-ui); color: var(--fg-subtle); margin-top: 8px; display: flex; gap: 10px; }
+.canon .src .lock { color: var(--ok); }
+.people { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+.person { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.person b { font: 500 15px var(--font-ui); color: var(--fg); }
+.person p { font-family: var(--font-body); font-size: 15.5px; color: var(--ink-soft); margin-top: 2px; }
+.person .look { font: 12px var(--font-ui); color: var(--fg-subtle); margin-top: 4px; }
+.person .look.signed { color: var(--ok); }
+.edit { font: 12.5px var(--font-ui); color: var(--fg-subtle); }
+.edit:hover { color: var(--fg); }
+
+/* Narrow laptop: Morgan rail narrows, page keeps its measure */
+@media (max-width: 1180px) {
+  .work { grid-template-columns: 290px 1fr; }
+  .sheet { padding: 40px 36px 100px; }
+  .tabs { margin-left: 0; }
+  .project { display: none; }
+  .canon section { grid-template-columns: 1fr; gap: 10px; }
+}

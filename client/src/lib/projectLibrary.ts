@@ -250,7 +250,7 @@ export function loadActiveProjectLibrary(): ActiveProjectLibrary {
   }
 }
 
-export function saveProjectToLibrary(projectId: string, state: ProjectState, projects: StoredProject[]) {
+export function saveProjectToLibrary(projectId: string, state: ProjectState, projects: StoredProject[], activate = true) {
   const id = projectId.trim()
   if (id.length === 0) return projects
 
@@ -268,8 +268,10 @@ export function saveProjectToLibrary(projectId: string, state: ProjectState, pro
     ...projects.filter(project => project.id !== id),
   ]
   writeProjectLibrary(nextProjects)
-  writeActiveProjectId(id)
-  saveProjectState(state)
+  if (activate) {
+    writeActiveProjectId(id)
+    saveProjectState(state)
+  }
   return nextProjects
 }
 

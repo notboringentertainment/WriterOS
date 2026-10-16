@@ -58,7 +58,8 @@ interface ShellProps {
   onProjectTitleChange?: (title: string) => void
   onProjectChange?: (projectId: string) => void
   onNewProject?: () => void
-  onSaveProject?: () => void
+  onSaveProject?: () => void | boolean | Promise<void | boolean>
+  saveError?: string | null
   onDeleteProject?: () => void
   onExportSeed?: () => void
   railProps: RailProps
@@ -76,6 +77,7 @@ export function Shell({
   onProjectChange,
   onNewProject,
   onSaveProject,
+  saveError,
   onDeleteProject,
   onExportSeed,
   railProps,
@@ -173,6 +175,7 @@ export function Shell({
           onProjectChange={onProjectChange}
           onNewProject={onNewProject}
           onSaveProject={onSaveProject}
+          saveError={saveError}
           onDeleteProject={onDeleteProject}
           onExportSeed={onExportSeed}
           onHome={openHome}
