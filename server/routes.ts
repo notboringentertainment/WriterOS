@@ -338,6 +338,12 @@ const projectContextSchema = z.object({
     linkedSceneIds: z.array(z.string()).default([]),
   })),
   treatment: treatmentContextSchema,
+  // Prose pages Morgan writes. Optional so an open tab from before Phase 3 still validates.
+  pages: z.object({
+    synopsis: z.string().default(''),
+    treatment: z.string().default(''),
+    outline: z.string().default(''),
+  }).default({}),
   scenes: z.array(z.object({
     id: z.string(),
     heading: z.string(),
@@ -543,7 +549,11 @@ function buildStoryMemoryCharacters(projectContext: ProjectContextForOpenSwarm):
     });
   }
 
-  for (const character of projectContext.treatment.mainCharacters) {
+  // Fact rule: Story Bible characters win; the frozen legacy lists only add people it lacks.
+  const storyBibleKeys = new Set(Object.keys(characters));
+  const fromLegacy = (name: string) => !storyBibleKeys.has(characterKey(name, ''));
+
+  for (const character of projectContext.treatment.mainCharacters.filter(character => fromLegacy(character.name))) {
     addCharacter({
       id: character.id,
       name: character.name,
@@ -561,7 +571,7 @@ function buildStoryMemoryCharacters(projectContext: ProjectContextForOpenSwarm):
     });
   }
 
-  for (const character of projectContext.synopsis.series?.characters ?? []) {
+  for (const character of (projectContext.synopsis.series?.characters ?? []).filter(character => fromLegacy(character.name))) {
     addCharacter({
       id: character.id,
       name: character.name,
@@ -587,10 +597,13 @@ function countFilled(values: string[]): number {
 }
 
 function projectContextLogline(projectContext: ProjectContextForOpenSwarm): string {
-  return projectContext.synopsis.loglineParts.text || projectContext.logline || projectContext.synopsis.logline || '';
+  // projectContext.logline is the Story Bible logline first, then the legacy synopsis logline.
+  return projectContext.logline || projectContext.synopsis.loglineParts.text || projectContext.synopsis.logline || '';
 }
 
 function activeShowOverview(projectContext: ProjectContextForOpenSwarm): string {
+  // The synopsis page replaces the frozen overview; never pair the page with stale legacy text.
+  if (filled(projectContext.pages.synopsis)) return '';
   return projectContext.format === 'series'
     ? projectContext.synopsis.series?.showOverview || projectContext.synopsis.showOverview || ''
     : '';
@@ -605,6 +618,12 @@ function seriesHasCharacter(character: NonNullable<ProjectContextForOpenSwarm['s
 
 function buildSynopsisContextLines(projectContext: ProjectContextForOpenSwarm): string[] {
   const logline = projectContextLogline(projectContext);
+  if (filled(projectContext.pages.synopsis)) {
+    return [
+      filled(logline) ? `Logline: ${truncate(logline, 500)}` : '',
+      `Synopsis page:\n${truncate(projectContext.pages.synopsis, 4000)}`,
+    ].filter(filled);
+  }
   const legacySectionLines = Object.entries(projectContext.synopsis.sections)
     .filter(([, value]) => filled(value))
     .map(([key, value]) => `${key}: ${truncate(value, 500)}`);
@@ -660,6 +679,7 @@ function buildStoryMemorySynopsis(projectContext: ProjectContextForOpenSwarm): s
 }
 
 function buildTreatmentContextLines(projectContext: ProjectContextForOpenSwarm): string[] {
+  if (filled(projectContext.pages.treatment)) return [`Treatment page:\n${truncate(projectContext.pages.treatment, 6000)}`];
   const treatment = projectContext.treatment;
   const conceptLines = [
     labeledLine('Treatment logline', treatment.logline),
@@ -799,7 +819,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     projectContext.storyBible.rules && `Rules: ${projectContext.storyBible.rules}`,
   ].filter(filled).map(line => truncate(line, 500));
   const voiceProfileLines = buildVoiceProfileLines(voiceProfile);
-  const synopsisFilledCount = countFilled([
+  const synopsisFilledCount = filled(projectContext.pages.synopsis) ? buildSynopsisContextLines(projectContext).length : countFilled([
     projectContextLogline(projectContext),
     ...Object.values(projectContext.synopsis.prose),
     ...Object.values(projectContext.synopsis.sections),
@@ -1176,7 +1196,8 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
           format: data.projectContext.format,
           logline: projectContextLogline(data.projectContext),
           synopsis: buildStoryMemorySynopsis(data.projectContext),
-          synopsisSections: data.projectContext.synopsis.sections,
+          // The synopsis page replaces the frozen sections (openaiService prefers sections when present).
+          synopsisSections: filled(data.projectContext.pages.synopsis) ? undefined : data.projectContext.synopsis.sections,
           treatment: buildStoryMemoryTreatment(data.projectContext),
           themes: data.projectContext.storyBible.themes,
         },

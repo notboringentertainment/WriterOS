@@ -283,7 +283,7 @@ export default function App() {
     if (shellState.ritual === 'memory' || shellState.ritual === 'look') void projectMemory.refresh()
   }, [shellState.ritual, projectMemory.refresh])
   const pagesVisible = !shellState.homeActive && !shellState.ritual && !shellState.writersRoomActive
-    && (shellState.activeTab === 'synopsis' || shellState.activeTab === 'treatment')
+    && (shellState.activeTab === 'synopsis' || shellState.activeTab === 'treatment' || shellState.activeTab === 'story-bible')
   useEffect(() => {
     if (pagesVisible) void projectMemory.refresh()
   }, [pagesVisible, projectMemory.refresh])
@@ -352,6 +352,18 @@ export default function App() {
   const documentsRef = useRef(project.state.documents)
   const [selectedPage, setSelectedPage] = useState<PageName>('outline')
   const [morganPageRequest, setMorganPageRequest] = useState<(MorganPageRequest & { projectId: string }) | null>(null)
+  // Opens Morgan's panel and sends her a request from a page or the Story Bible.
+  const askMorgan = useCallback(async (text: string, surface: string) => {
+    if (!activeFolderProjectId || !projectFolder.morgan) throw new Error('Open a project from your project folder to write with Morgan.')
+    if (!shellState.panelOpen) shellState.togglePanel()
+    await new Promise<void>((resolve, reject) => {
+      const request = { projectId: activeFolderProjectId, text, surface,
+        resolve: () => { setMorganPageRequest(current => current === request ? null : current); resolve() },
+        reject: () => { setMorganPageRequest(current => current === request ? null : current); reject(new Error('Morgan could not connect.')) },
+      }
+      setMorganPageRequest(request)
+    })
+  }, [activeFolderProjectId, projectFolder.morgan, shellState])
   const [pageProposal, setPageProposal] = useState<{ projectId: string; proposalId: string; proposal: Extract<PageProposal, { surface: 'page' }>; answered?: boolean; savedOutcome?: 'kept' | 'stale' } | null>(null)
   const [pageProposalBusy, setPageProposalBusy] = useState(false)
   const [pageProposalError, setPageProposalError] = useState<string | null>(null)
@@ -458,9 +470,7 @@ export default function App() {
     if (activePatchProposal.morganProposalId && activePatchProposal.morganProjectId !== activeFolderProjectIdRef.current) return
     setApplyingPatch(true)
     const result = applyMemoryGroundedPatch(activePatchProposal.proposal.patch, project.state.documents, {
-      synopsis: project.setSynopsisDocument,
       outline: project.setOutlineDocument,
-      treatment: project.setTreatmentDocument,
       storyBible: project.setStoryBibleDocument,
     })
     setApplyingPatch(false)
@@ -851,10 +861,11 @@ export default function App() {
       storyBible: documents.storyBible.content,
       treatment: documents.treatment.content,
       projectTitle: project.state.meta.title,
+      synopsisPage: project.state.pages.synopsis?.markdown,
     }
     const markdown = composeSeedMarkdown(seedInput)
     downloadTextFile(seedFileName(resolveSeedTitle(seedInput)), markdown, 'text/markdown')
-  }, [project.state.documents, project.state.meta.title])
+  }, [project.state.documents, project.state.meta.title, project.state.pages.synopsis])
 
   const handleDeleteProject = useCallback(() => {
     cancelPendingFolderSave()
@@ -1134,7 +1145,8 @@ export default function App() {
       // server can use the browser's own current revision/content as
       // baseVersion instead of a debounced folder autosave that can lag
       // behind it.
-      const documentSnapshot = currentSurface
+      // Synopsis and Treatment are Morgan's pages now; the server refuses patches for them.
+      const documentSnapshot = currentSurface === 'outline' || currentSurface === 'storyBible'
         ? {
             surface: currentSurface,
             revision: project.state.documents[currentSurface].revision,
@@ -1286,17 +1298,7 @@ export default function App() {
           </section>}
           <Pages key={activeAgentProjectKey} projectId={activeFolderProjectId} selected={selectedPage} onSelect={setSelectedPage}
             pages={project.state.pages} onPage={project.setPage} snapshot={projectMemory.snapshot}
-            onAskMorgan={async text => {
-              if (!activeFolderProjectId || !projectFolder.morgan) throw new Error('Open a project from your project folder to write with Morgan.')
-              if (!shellState.panelOpen) shellState.togglePanel()
-              await new Promise<void>((resolve, reject) => {
-                const request = { projectId: activeFolderProjectId, text, surface: `page:${selectedPage}`,
-                  resolve: () => { setMorganPageRequest(current => current === request ? null : current); resolve() },
-                  reject: () => { setMorganPageRequest(current => current === request ? null : current); reject(new Error('Morgan could not connect.')) },
-                }
-                setMorganPageRequest(request)
-              })
-            }} />
+            onAskMorgan={text => askMorgan(text, `page:${selectedPage}`)} />
         </>
       case 'outline':
         return (
@@ -1340,6 +1342,8 @@ export default function App() {
                 return next
               })
             }
+            snapshot={projectMemory.snapshot}
+            onAskMorgan={projectFolder.morgan && activeFolderProjectId ? text => askMorgan(text, 'story-bible') : undefined}
             onMigrateLegacyStoryBible={project.migrateStoryBibleLegacyToDocument}
             onSectionChange={shellState.setStoryBibleSection}
             onClear={project.clearStoryBible}
@@ -1378,6 +1382,7 @@ export default function App() {
               projectTitleDraft={project.state.meta.title}
               onProjectTitleChange={title => project.setMeta({ title })}
               documents={project.state.documents}
+              pages={project.state.pages}
               onExit={shellState.closeRitual}
             />
           </div>

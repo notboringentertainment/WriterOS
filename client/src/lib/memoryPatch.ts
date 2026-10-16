@@ -9,8 +9,6 @@ import type {
   OutlineDocumentContent,
   ProjectDocuments,
   StoryBibleDocumentContent,
-  SynopsisDocumentContent,
-  TreatmentDocumentContent,
 } from '@shared/documents'
 import {
   MemoryGroundedPatchProposalSchema,
@@ -66,13 +64,12 @@ export type PatchApplyResult =
   | { ok: true }
   | { ok: false; reason: PatchApplyRejectionReason; message: string }
 
-/** The four document setters this module needs from useProjectState's return
+/** The document setters this module needs from useProjectState's return
  * value — narrowed to just the shape Apply calls, so tests can pass plain
- * spies instead of the whole hook. */
+ * spies instead of the whole hook. Synopsis and Treatment are written by
+ * Morgan as pages, so patches for them are refused before any setter. */
 export interface StructuredDocumentSetters {
-  synopsis: (updater: (content: SynopsisDocumentContent) => SynopsisDocumentContent) => void
   outline: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
-  treatment: (updater: (content: TreatmentDocumentContent) => TreatmentDocumentContent) => void
   storyBible: (updater: (content: StoryBibleDocumentContent) => StoryBibleDocumentContent) => void
 }
 
@@ -124,14 +121,8 @@ export function applyMemoryGroundedPatch(
   }
 
   switch (validated.patch.surface) {
-    case 'synopsis':
-      setters.synopsis(() => validated.content as SynopsisDocumentContent)
-      break
     case 'outline':
       setters.outline(() => validated.content as OutlineDocumentContent)
-      break
-    case 'treatment':
-      setters.treatment(() => validated.content as TreatmentDocumentContent)
       break
     case 'storyBible':
       setters.storyBible(() => validated.content as StoryBibleDocumentContent)

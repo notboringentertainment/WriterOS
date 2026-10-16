@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { StoryBibleTab } from '../../client/src/components/writing/StoryBibleTab'
 import {
   createEmptyStoryBibleContent,
   type AuthoredDocumentState,
   type StoryBibleDocumentContent,
 } from '@shared/documents'
+import type { ProjectMemoryRecord, ProjectMemorySnapshot } from '@shared/projectMemory'
 
 function makeDocument(
   override: Partial<StoryBibleDocumentContent> = {},
@@ -26,6 +27,26 @@ function makeDocument(
 
 const defaultDocument = makeDocument({}, { migratedFromLegacyStoryBible: true })
 
+function character(id: string, name: string): StoryBibleDocumentContent['characters'][number] {
+  return {
+    id, name, role: '', want: '', need: '', flaw: '', secret: '', contradiction: '', arc: '',
+    relationshipPressure: '', behavioralAnchors: '', speechPatterns: '', neverWriteThemAs: '', continuityFacts: '',
+  }
+}
+
+function record(input: { id: string; kind: ProjectMemoryRecord['kind']; status: ProjectMemoryRecord['status']; claim: string; source?: Partial<ProjectMemoryRecord['source']> }): ProjectMemoryRecord {
+  return {
+    id: input.id, projectId: 'p1', kind: input.kind, status: input.status, claim: input.claim,
+    tags: [], entities: [], safety: 'clear', spoiler: false, supersedes: [], evidence: [],
+    createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
+    source: { workflow: 'writeros', sourceId: input.id, sourceUri: `writeros:${input.id}`, capturedAt: '2026-10-01T00:00:00.000Z', approval: 'none', ...input.source } as ProjectMemoryRecord['source'],
+  }
+}
+
+function snapshotWith(records: ProjectMemoryRecord[]): ProjectMemorySnapshot {
+  return { records, conflicts: [] } as unknown as ProjectMemorySnapshot
+}
+
 describe('StoryBibleTab - page chrome', () => {
   it('renders the Story Bible surface name and reader-facing subtitle', () => {
     render(
@@ -38,7 +59,7 @@ describe('StoryBibleTab - page chrome', () => {
 
     expect(screen.getByText('Story Bible')).toBeInTheDocument()
     expect(
-      screen.getByText('Identity, continuity, and the rules the world cannot break.'),
+      screen.getByText("Your story's facts in your words. Morgan reads this before she writes a page."),
     ).toBeInTheDocument()
   })
 
@@ -84,8 +105,8 @@ describe('StoryBibleTab - page chrome', () => {
   })
 })
 
-describe('StoryBibleTab - story-coach Edit View', () => {
-  it('feature mode renders plain-language Feature questions', () => {
+describe('StoryBibleTab - sections view', () => {
+  it('shows the six sections, each empty one as "Not written yet"', () => {
     render(
       <StoryBibleTab
         document={defaultDocument}
@@ -95,44 +116,39 @@ describe('StoryBibleTab - story-coach Edit View', () => {
       />,
     )
 
-    expect(screen.getByTestId('story-bible-story-coach-edit-view')).toBeInTheDocument()
-    expect(screen.getByText('Say the project in one clean sentence.')).toBeInTheDocument()
-    expect(screen.getByText('What state is the world in when we start?')).toBeInTheDocument()
+    expect(screen.getByTestId('story-bible-sections-view')).toBeInTheDocument()
+    for (const title of ['The story', 'Tone and style', 'World and rules', 'People', 'Story engine', 'Always true']) {
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    }
+    expect(screen.getAllByText('Not written yet.')).toHaveLength(5)
   })
 
-  it('series mode renders series-specific questions and hides feature-only prompts', () => {
-    render(
-      <StoryBibleTab
-        document={defaultDocument}
-        projectFormat="series"
-        onContentPatch={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    )
+  it('shows written text under its section with a plain label', () => {
+    const document = makeDocument({
+      onePagePitch: { ...createEmptyStoryBibleContent().onePagePitch, logline: 'A tow driver learns the depot was paid off.' },
+    }, { migratedFromLegacyStoryBible: true })
+    render(<StoryBibleTab document={document} onContentPatch={vi.fn()} onClear={vi.fn()} />)
 
-    expect(
-      screen.getByText('What is the repeatable pressure that generates episodes?'),
-    ).toBeInTheDocument()
-    expect(screen.getByText("What is the pilot's central pressure?")).toBeInTheDocument()
-    expect(screen.queryByText('What state is the world in when we start?')).not.toBeInTheDocument()
+    const story = screen.getByTestId('story-bible-section-story')
+    expect(story).toHaveTextContent('In one sentence')
+    expect(story).toHaveTextContent('A tow driver learns the depot was paid off.')
   })
 
-  it('does not render professional document labels as Edit View card headlines', () => {
-    render(
-      <StoryBibleTab
-        document={defaultDocument}
-        projectFormat="feature"
-        onContentPatch={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    )
+  it('shows only the format\'s engine fields, plus any other field that already has text', () => {
+    const series = render(<StoryBibleTab document={defaultDocument} projectFormat="series" onContentPatch={vi.fn()} onClear={vi.fn()} />)
+    fireEvent.click(within(screen.getByTestId('story-bible-section-engine')).getByRole('button', { name: 'Write it yourself' }))
+    expect(screen.getByLabelText('What generates episodes')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Where the story starts')).not.toBeInTheDocument()
+    series.unmount()
 
-    expect(screen.queryByText('Logline')).not.toBeInTheDocument()
-    expect(screen.queryByText('World rules')).not.toBeInTheDocument()
-    expect(screen.queryByText('Feature propulsion')).not.toBeInTheDocument()
+    const document = makeDocument({
+      storyEngine: { ...createEmptyStoryBibleContent().storyEngine, seriesEngine: 'A new wreck every night.' },
+    }, { migratedFromLegacyStoryBible: true })
+    render(<StoryBibleTab document={document} projectFormat="feature" onContentPatch={vi.fn()} onClear={vi.fn()} />)
+    expect(screen.getByTestId('story-bible-section-engine')).toHaveTextContent('A new wreck every night.')
   })
 
-  it('writes a text prompt as a Story Bible document content patch', () => {
+  it('edits a field inline as a Story Bible content patch', () => {
     const onContentPatch = vi.fn()
     render(
       <StoryBibleTab
@@ -143,11 +159,46 @@ describe('StoryBibleTab - story-coach Edit View', () => {
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('cover.title'), { target: { value: 'Civic Ghosts' } })
-
+    fireEvent.click(within(screen.getByTestId('story-bible-section-story')).getByRole('button', { name: 'Write it yourself' }))
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Civic Ghosts' } })
     expect(onContentPatch).toHaveBeenCalledWith({
       cover: expect.objectContaining({ title: 'Civic Ghosts' }),
     })
+  })
+
+  it('asks Morgan to fill an empty section', async () => {
+    const onAskMorgan = vi.fn().mockResolvedValue(undefined)
+    render(<StoryBibleTab document={defaultDocument} onContentPatch={vi.fn()} onClear={vi.fn()} onAskMorgan={onAskMorgan} />)
+
+    fireEvent.click(within(screen.getByTestId('story-bible-section-world')).getByRole('button', { name: 'Ask Morgan' }))
+    await waitFor(() => expect(onAskMorgan).toHaveBeenCalledWith(expect.stringContaining('"World and rules"')))
+    expect(onAskMorgan.mock.calls[0][0]).toContain('storyBible')
+  })
+
+  it('lists the ledger\'s active open questions under "Still open"', async () => {
+    const onAskMorgan = vi.fn().mockResolvedValue(undefined)
+    render(<StoryBibleTab document={defaultDocument} onContentPatch={vi.fn()} onClear={vi.fn()}
+      onAskMorgan={onAskMorgan} snapshot={snapshotWith([
+        record({ id: 'q-open', kind: 'open_question', status: 'active', claim: 'Whether the owner appears on screen' }),
+        record({ id: 'q-old', kind: 'open_question', status: 'superseded', claim: 'An answered question' }),
+      ])} />)
+
+    const open = screen.getByRole('region', { name: 'Still open' })
+    expect(open).toHaveTextContent('Whether the owner appears on screen')
+    expect(open).not.toHaveTextContent('An answered question')
+    fireEvent.click(within(open).getByRole('button', { name: 'Ask Morgan' }))
+    await waitFor(() => expect(onAskMorgan).toHaveBeenCalledWith(expect.stringContaining('Whether the owner appears on screen')))
+  })
+
+  it('shows a canon look on its person, read-only', () => {
+    const document = makeDocument({ characters: [character('c1', 'Ace Handler')] }, { migratedFromLegacyStoryBible: true })
+    render(<StoryBibleTab document={document} onContentPatch={vi.fn()} onClear={vi.fn()}
+      snapshot={snapshotWith([record({
+        id: 'look-ace', kind: 'canon', status: 'active', claim: 'Early forties, charcoal overcoat.',
+        source: { workflow: 'story-wayfinder', sourceId: 'resolved/look-character-ace-handler.md' },
+      })])} />)
+
+    expect(screen.getByTestId('story-bible-character-look')).toHaveTextContent('Settled in Story-drive. Early forties, charcoal overcoat.')
   })
 
   it('character list adds, opens, edits, and two-click removes a character', () => {
@@ -212,7 +263,7 @@ describe('StoryBibleTab - story-coach Edit View', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: /clear story bible/i }))
-    fireEvent.click(screen.getByRole('button', { name: /click again to confirm/i }))
+    fireEvent.click(screen.getByRole('button', { name: /click again to clear/i }))
 
     expect(onClear).toHaveBeenCalledTimes(1)
   })
@@ -293,7 +344,7 @@ describe('StoryBibleTab - section routing', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('The people'))
+    fireEvent.click(screen.getByRole('heading', { name: 'People' }))
 
     expect(onSectionChange).toHaveBeenCalledWith('characters')
   })
@@ -311,7 +362,7 @@ describe('StoryBibleTab - section routing', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('The world'))
+    fireEvent.click(screen.getByRole('heading', { name: 'World and rules' }))
 
     expect(onSectionChange).toHaveBeenCalledWith('world')
   })

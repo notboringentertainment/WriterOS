@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { PERSONAS } from '@shared/personas'
 import type { ProjectDocuments } from '@shared/documents'
+import type { ProjectPages } from '@shared/pages'
 import { useInterviewSession, type InterviewAnswerOrigin, type InterviewMutability } from '../../lib/useInterviewSession'
 import type { MeetingRevisionInput } from '../../lib/roomApi'
 import { RitualPage } from './RitualPage'
@@ -23,6 +24,8 @@ export interface ProjectMeetingPageProps {
   /** When provided, the intake page offers a title field that writes through on every keystroke. */
   onProjectTitleChange?: (title: string) => void
   documents: ProjectDocuments
+  /** Morgan's prose pages; the packet's AI pass reads them alongside the documents. */
+  pages?: ProjectPages
   onExit: () => void
 }
 
@@ -31,7 +34,7 @@ function personaLabel(lane: string): string {
   return persona?.displayName ?? persona?.name ?? lane
 }
 
-export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, projectTitleDraft, onProjectTitleChange, documents, onExit }: ProjectMeetingPageProps) {
+export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, projectTitleDraft, onProjectTitleChange, documents, pages, onExit }: ProjectMeetingPageProps) {
   const interview = useInterviewSession(projectId, projectScopeKey)
   const [seedDraft, setSeedDraft] = useState('')
   const [titleDraft, setTitleDraft] = useState(projectTitleDraft ?? '')
@@ -364,7 +367,7 @@ export function ProjectMeetingPage({ projectId, projectScopeKey, projectTitle, p
           <div style={styles.stack}>
             <p style={styles.prose}>This round is banked. Future rounds append; they do not edit this one.</p>
             <div style={styles.actionRow}>
-              <button type="button" style={styles.primaryButton} onClick={() => void interview.openPitchPacket(documents, projectTitle)}>Export to PitchStudio</button>
+              <button type="button" style={styles.primaryButton} onClick={() => void interview.openPitchPacket(documents, projectTitle, pages)}>Export to PitchStudio</button>
               <button type="button" style={styles.ghostButton} onClick={interview.prepareNewRound}>Start new interview round</button>
               <button type="button" style={styles.ghostButton} onClick={onExit}>Back to writing</button>
             </div>

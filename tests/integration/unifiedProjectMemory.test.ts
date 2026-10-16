@@ -907,9 +907,7 @@ describe('outline patch preview/apply/save', () => {
     // against a minimal setter that records the applied content.
     let appliedContent: typeof syntheticOutlineFeature | undefined
     const applyResult = applyMemoryGroundedPatch(patchProposal!.patch, priorState.documents, {
-      synopsis: () => {},
       outline: updater => { appliedContent = updater(priorState.documents.outline.content) },
-      treatment: () => {},
       storyBible: () => {},
     })
     expect(applyResult).toEqual({ ok: true })

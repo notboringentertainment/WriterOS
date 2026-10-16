@@ -67,38 +67,19 @@ describe('selectSurfaceStructure', () => {
     expect(s.nodes[1].label).toContain('2') // headless scene falls back to its number
   })
 
-  it('lists synopsis as its fixed prose sections', () => {
+  it('lists the synopsis page by its headings, and nothing from the frozen legacy prose', () => {
     const state = defaultProjectState()
-    const s = selectSurfaceStructure('synopsis', state)
-    expect(s.empty).toBe(false)
-    expect(s.nodes.map(n => n.label)).toEqual(['Opening', 'Escalation', 'Middle', 'Climax', 'Resolution'])
+    state.documents.synopsis.content.prose.opening = 'Old opening.'
+    expect(selectSurfaceStructure('synopsis', state)).toMatchObject({ nodes: [], empty: true, emptyHint: 'No synopsis written yet.' })
+    state.pages.synopsis = { page: 'synopsis', markdown: '# Synopsis\n\nIntro.\n\n## The turn\n\nText.', status: 'draft', revision: 1 }
+    expect(selectSurfaceStructure('synopsis', state).nodes.map(n => n.label)).toEqual(['Synopsis', 'The turn'])
   })
 
-  it('lists treatment acts plus its main characters', () => {
+  it('lists the treatment page by its headings and counts them', () => {
     const state = defaultProjectState()
-    state.documents.treatment.content.mainCharacters = [
-      { id: 'c1', name: 'Lead', role: 'Protagonist', externalWant: '', internalNeed: '', flawOrWound: '', secretOrContradiction: '', arc: '', relationshipPressure: '' },
-    ]
-    const s = selectSurfaceStructure('treatment', state)
-    const labels = s.nodes.map(n => n.label)
-    expect(labels).toContain('Act One')
-    expect(labels).toContain('Lead')
-  })
-
-  it('numbers multiple untitled treatment custom sections distinctly', () => {
-    const state = defaultProjectState()
-    state.documents.treatment.content.prose.customSections = [
-      { id: 'cs1', heading: '', body: '' },
-      { id: 'cs2', heading: '', body: '' },
-      { id: 'cs3', heading: 'Named', body: '' },
-    ]
-    const labels = selectSurfaceStructure('treatment', state).nodes.map(n => n.label)
-    expect(labels).toContain('Section 1')
-    expect(labels).toContain('Section 2')
-    expect(labels).toContain('Named')
-    // no duplicate fallback labels
-    const sectionLabels = labels.filter(l => l.startsWith('Section '))
-    expect(new Set(sectionLabels).size).toBe(sectionLabels.length)
+    state.pages.treatment = { page: 'treatment', markdown: '## Act One\n\nA.\n\n## Act Two\n\nB.', status: 'approved', revision: 2 }
+    expect(selectSurfaceStructure('treatment', state).nodes.map(n => n.label)).toEqual(['Act One', 'Act Two'])
+    expect(selectConsoleState(state, 'treatment', null).counts).toEqual([{ label: 'sections', value: 2 }])
   })
 
   it('lists story-bible sections plus its characters', () => {

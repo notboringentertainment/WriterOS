@@ -153,33 +153,37 @@ export function composePitchPacket(input: ComposePitchPacketInput): PitchPacket 
   const synopsis = input.documents.synopsis.content
   const treatment = input.documents.treatment.content
   const storyBible = input.documents.storyBible.content
-  const title = scalarField('title', [
+  // Fact rule: a written Story Bible field wins; the frozen synopsis/treatment fields are only a fallback.
+  const fact = (storyBibleValue: string, sourceRef: string, legacy: Array<Candidate<string>>): Array<Candidate<string>> =>
+    text(storyBibleValue) ? [{ value: storyBibleValue, origin: 'document', sourceRef }] : legacy
+  const title = scalarField('title', fact(storyBible.cover.title, 'storyBible.cover.title', [
     { value: synopsis.header.title, origin: 'document', sourceRef: 'synopsis.header.title' },
     { value: treatment.header.title, origin: 'document', sourceRef: 'treatment.header.title' },
-    { value: storyBible.cover.title, origin: 'document', sourceRef: 'storyBible.cover.title' },
     { value: input.projectTitle ?? '', origin: 'document', sourceRef: 'project.title' },
-  ], input)
-  const logline = scalarField('logline', [
+  ]), input)
+  const logline = scalarField('logline', fact(storyBible.onePagePitch.logline, 'storyBible.onePagePitch.logline', [
     { value: synopsis.logline.text, origin: 'document', sourceRef: 'synopsis.logline.text' },
     { value: treatment.logline, origin: 'document', sourceRef: 'treatment.logline' },
-  ], input)
-  const format = scalarField('format', [
+  ]), input)
+  const format = scalarField('format', fact(storyBible.cover.format, 'storyBible.cover.format', [
     { value: synopsis.header.format, origin: 'document', sourceRef: 'synopsis.header.format' },
     { value: treatment.header.format, origin: 'document', sourceRef: 'treatment.header.format' },
-  ], input)
-  const genre = scalarField('genre', [
+  ]), input)
+  const genre = scalarField('genre', fact(storyBible.cover.genre, 'storyBible.cover.genre', [
     { value: synopsis.header.genre, origin: 'document', sourceRef: 'synopsis.header.genre' },
     { value: treatment.header.genre, origin: 'document', sourceRef: 'treatment.header.genre' },
-  ], input)
-  const tone = scalarField('tone', [
+  ]), input)
+  const tone = scalarField('tone', fact(storyBible.toneAndStyle.toneWords.map(text).filter(Boolean).join(', '), 'storyBible.toneAndStyle.toneWords', [
     { value: treatment.concept.tone, origin: 'document', sourceRef: 'treatment.concept.tone' },
-    { value: storyBible.toneAndStyle.toneWords.map(text).filter(Boolean).join(', '), origin: 'document', sourceRef: 'storyBible.toneAndStyle.toneWords' },
-  ], input)
-  const premise = scalarField('premise', [
-    { value: storyBible.premiseAndWorld.premise, origin: 'document', sourceRef: 'storyBible.premiseAndWorld.premise' },
+  ]), input)
+  const premise = scalarField('premise', fact(storyBible.premiseAndWorld.premise, 'storyBible.premiseAndWorld.premise', [
     { value: treatment.concept.premise, origin: 'document', sourceRef: 'treatment.concept.premise' },
-  ], input)
-  const storyEngine = scalarField('storyEngine', [], input)
+  ]), input)
+  const series = /series/i.test(format.value)
+  const engine = series
+    ? { value: storyBible.storyEngine.seriesEngine, sourceRef: 'storyBible.storyEngine.seriesEngine' }
+    : { value: storyBible.storyEngine.featurePropulsion, sourceRef: 'storyBible.storyEngine.featurePropulsion' }
+  const storyEngine = scalarField('storyEngine', fact(engine.value, engine.sourceRef, []), input)
 
   const storyBibleCharacters = storyBible.characters.filter(character => text(character.name)).map(character => ({
     name: text(character.name), role: text(character.role), want: text(character.want), need: text(character.need),
@@ -214,8 +218,13 @@ export function composePitchPacket(input: ComposePitchPacketInput): PitchPacket 
     approved: false, sourceRef: 'meeting_decisions+open_questions+treatment.openQuestions',
   }
 
-  const compValues = dedupeBy([...synopsis.header.comps.map(text), ...splitList(treatment.visualAndTonal.compsAndReferences)].filter(Boolean), value => value)
-  const comps = overrideList<string[]>('comps', input) ?? { value: compValues, origin: 'document' as const, approved: false, sourceRef: 'synopsis.header.comps+treatment.visualAndTonal.compsAndReferences' }
+  const storyBibleComps = storyBible.toneAndStyle.comps.map(text).filter(Boolean)
+  const compValues = storyBibleComps.length ? storyBibleComps
+    : dedupeBy([...synopsis.header.comps.map(text), ...splitList(treatment.visualAndTonal.compsAndReferences)].filter(Boolean), value => value)
+  const comps = overrideList<string[]>('comps', input) ?? {
+    value: compValues, origin: 'document' as const, approved: false,
+    sourceRef: storyBibleComps.length ? 'storyBible.toneAndStyle.comps' : 'synopsis.header.comps+treatment.visualAndTonal.compsAndReferences',
+  }
   const device = scalarField('device', [], input)
 
   return PitchPacketSchema.parse({ packetVersion: PITCH_PACKET_VERSION, projectId: input.projectId, exportedAt: input.exportedAt, directionRevision: input.directionRevision, title, logline, format, genre, tone, premise, storyEngine, coreCharacters, locks, openQuestions, comps, device })

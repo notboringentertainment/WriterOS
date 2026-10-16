@@ -211,6 +211,18 @@ describe('getActiveHelperText', () => {
 })
 
 describe('buildProjectContext', () => {
+  it('carries the prose pages and takes the logline from the Story Bible first', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.logline.text = 'Legacy logline.'
+    expect(buildProjectContext(state).logline).toBe('Legacy logline.')
+    state.documents.storyBible.content.onePagePitch.logline = 'Bible logline.'
+    state.pages.outline = { page: 'outline', markdown: 'Outline prose.', status: 'draft', revision: 1 }
+    const ctx = buildProjectContext(state)
+    expect(ctx.logline).toBe('Bible logline.')
+    expect(ctx.synopsis.logline).toBe('Bible logline.')
+    expect(ctx.pages).toEqual({ synopsis: '', treatment: '', outline: 'Outline prose.' })
+  })
+
   it('maps empty default state', () => {
     const ctx = buildProjectContext(defaultProjectState())
     expect(ctx.title).toBeUndefined()

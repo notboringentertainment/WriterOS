@@ -18,6 +18,10 @@ interface WritersRoomProps {
   roomProps?: RoomChannelProps
 }
 
+function firstProseLine(markdown: string | undefined): string {
+  return (markdown ?? '').split('\n').map(line => line.trim()).find(line => line && !line.startsWith('#')) ?? ''
+}
+
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
   switch (id) {
     case 'oliver': {
@@ -34,7 +38,7 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
       return `${spineFilled} spine fields · ${unitFilled} beats`
     }
     case 'sam':
-      return state.synopsis.logline || 'No logline yet'
+      return state.documents.storyBible.content.onePagePitch.logline.trim() || state.synopsis.logline || 'No logline yet'
     case 'casey': {
       const names = state.storyBible.characters.map(c => c.name)
       return names.length ? names.join(', ') : 'No characters yet'
@@ -44,7 +48,9 @@ function getContextSummary(id: SpecialistId, state: ProjectState): string {
     case 'maya':
       return state.storyBible.world.voiceNotes || 'No voice notes yet'
     case 'alex':
-      return state.documents.treatment.content.prose.opening ||
+      return firstProseLine(state.pages.treatment?.markdown) ||
+        state.documents.storyBible.content.premiseAndWorld.premise.trim() ||
+        state.documents.treatment.content.prose.opening ||
         state.documents.treatment.content.concept.premise ||
         `${getDisplayProjectTitle(state.meta.title)} · ${state.meta.genre || 'genre TBD'}`
   }

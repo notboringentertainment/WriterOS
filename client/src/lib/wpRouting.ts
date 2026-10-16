@@ -54,6 +54,8 @@ export interface ProjectContext {
     openQuestions: TreatmentDocumentContent['openQuestions']
   }
   scenes: ProjectState['script']['scenes']
+  /** The prose pages Morgan writes (draft or approved). Readers prefer these over the frozen legacy fields. */
+  pages: { synopsis: string; treatment: string; outline: string }
   storyBible: {
     themes: string
     rules: string
@@ -546,7 +548,9 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       compsAndWhyThisShowNow: text(synopsisContent.series.compsAndWhyThisShowNow),
     }
     : undefined
-  const synopsisLogline = text(synopsisContent.logline.text) || text(state.synopsis.logline)
+  // Fact rule: the Story Bible first, then the frozen legacy fields.
+  const synopsisLogline = text(state.documents.storyBible.content.onePagePitch.logline)
+    || text(synopsisContent.logline.text) || text(state.synopsis.logline)
 
   return {
     title: getProjectContextTitle(state.meta.title),
@@ -649,6 +653,11 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       },
     },
     scenes: scriptScenes,
+    pages: {
+      synopsis: text(state.pages.synopsis?.markdown),
+      treatment: text(state.pages.treatment?.markdown),
+      outline: text(state.pages.outline?.markdown),
+    },
     storyBible: {
       themes: text(storyBible.themes),
       rules: text(storyBible.rules),

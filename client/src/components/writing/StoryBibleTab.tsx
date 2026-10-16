@@ -5,7 +5,8 @@ import type {
 } from '@shared/documents'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
-import { StoryBibleStoryCoachEditView } from './storyBible/StoryBibleStoryCoachEditView'
+import type { ProjectMemorySnapshot } from '@shared/projectMemory'
+import { StoryBibleSectionsView } from './storyBible/StoryBibleSectionsView'
 import type { StoryBibleSection } from '../../lib/shellState'
 
 export interface StoryBibleTabProps {
@@ -16,6 +17,8 @@ export interface StoryBibleTabProps {
   onMigrateLegacyStoryBible?: () => void
   onSectionChange?: (section: StoryBibleSection) => void
   onClear: () => void
+  snapshot?: ProjectMemorySnapshot
+  onAskMorgan?: (text: string) => Promise<void>
 }
 
 export function StoryBibleTab({
@@ -26,6 +29,8 @@ export function StoryBibleTab({
   onMigrateLegacyStoryBible,
   onSectionChange,
   onClear,
+  snapshot,
+  onAskMorgan,
 }: StoryBibleTabProps) {
   const activeFormat = normalizeProjectFormat(projectFormat)
   const migratedFromLegacy = document.viewPreferences?.migratedFromLegacyStoryBible === true
@@ -51,7 +56,7 @@ export function StoryBibleTab({
   }
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 24px 64px' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 40px 80px' }}>
       <div style={{ marginBottom: 28 }}>
         <div
           style={{
@@ -66,8 +71,8 @@ export function StoryBibleTab({
             <h2
               style={{
                 fontFamily: 'var(--font-display)',
-                fontWeight: 600,
-                fontSize: 24,
+                fontWeight: 500,
+                fontSize: 36,
                 color: 'var(--fg)',
                 margin: 0,
               }}
@@ -76,14 +81,13 @@ export function StoryBibleTab({
             </h2>
             <p
               style={{
-                fontFamily: 'var(--font-body)',
+                fontFamily: "'IBM Plex Sans', sans-serif",
                 fontSize: 13,
                 color: 'var(--fg-muted)',
-                fontStyle: 'italic',
-                margin: '4px 0 0',
+                margin: '8px 0 0',
               }}
             >
-              Identity, continuity, and the rules the world cannot break.
+              Your story's facts in your words. Morgan reads this before she writes a page.
             </p>
           </div>
           <ProjectFormatSelector
@@ -94,11 +98,13 @@ export function StoryBibleTab({
         </div>
       </div>
 
-      <StoryBibleStoryCoachEditView
+      <StoryBibleSectionsView
         format={activeFormat}
         content={document.content}
+        snapshot={snapshot}
         onContentPatch={onContentPatch}
         onSectionChange={onSectionChange}
+        onAskMorgan={onAskMorgan}
         onClear={onClear}
       />
     </div>

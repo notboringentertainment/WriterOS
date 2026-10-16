@@ -1,4 +1,5 @@
 import { ProjectDocumentsSchema, type ProjectDocuments } from '../../../shared/documents'
+import { PageDocumentSchema, PageNameSchema, type PageName } from '../../../shared/pages'
 import { PitchPacketSchema, composePitchPacket, validatePitchPacketForApproval, type PitchMeetingDirectionItem, type PitchPacket } from '../../../shared/pitchPacket'
 import * as roomStore from '../store'
 import * as interviewStore from './store'
@@ -44,8 +45,19 @@ function applyUnapprovedProposals(packet: PitchPacket, proposals: Record<string,
   return PitchPacketSchema.parse(next)
 }
 
+function pageProse(value: unknown): Partial<Record<PageName, string>> {
+  const pages: Partial<Record<PageName, string>> = {}
+  for (const name of PageNameSchema.options) {
+    const page = PageDocumentSchema.safeParse((value as Record<string, unknown> | undefined)?.[name])
+    if (page.success && page.data.markdown.trim()) pages[name] = page.data.markdown
+  }
+  return pages
+}
+
 export async function createPitchPacketDraft(input: {
   projectId: string; sessionId: string; documents: ProjectDocuments; projectMeta?: { title?: string }; now?: Now
+  /** Morgan's prose pages as sent by the client; only their markdown is read. */
+  pages?: unknown
   memoryProvider?: ProjectMemoryProvider | null
 }): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
   const documents = ProjectDocumentsSchema.parse(input.documents)
@@ -78,7 +90,7 @@ export async function createPitchPacketDraft(input: {
     directionRevision: directionSnapshot.revision, exportedAt: (input.now ?? nowIso)(),
   })
   emitMeetingTrace({ type: 'meeting.packet.composed', projectId: input.projectId, sessionId: input.sessionId, directionRevision: directionSnapshot.revision })
-  const groundedProjectContext = { documents, seed: session.seed_text, bankedAnswers: session.answers, activeMeetingDirection: context.activeDecisions }
+  const groundedProjectContext = { documents, pages: pageProse(input.pages), seed: session.seed_text, bankedAnswers: session.answers, activeMeetingDirection: context.activeDecisions }
   emitMeetingTrace({ type: 'meeting.packet.proposal_started', projectId: input.projectId, sessionId: input.sessionId })
   const generated = await generatePitchPacketProposals(groundedProjectContext, projectMemory)
   packet = applyUnapprovedProposals(packet, generated.proposals)

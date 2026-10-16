@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ProjectDocuments } from '@shared/documents'
+import type { ProjectPages } from '@shared/pages'
 import type { MemoryReceipt } from '@shared/schema'
 import { pitchPacketFileNames, renderPitchPacketJson, renderPitchPacketMarkdown, type PitchPacket } from '@shared/pitchPacket'
 import {
@@ -79,7 +80,7 @@ export interface InterviewSessionHandle {
   redirect: (area: string, questionId: string) => Promise<void>
   previewBank: (mutability?: Record<string, InterviewMutability>, operations?: MeetingRevisionInput[]) => Promise<void>
   bank: (mutability?: Record<string, InterviewMutability>) => Promise<void>
-  openPitchPacket: (documents: ProjectDocuments, projectTitle?: string) => Promise<void>
+  openPitchPacket: (documents: ProjectDocuments, projectTitle?: string, pages?: ProjectPages) => Promise<void>
   savePitchPacket: (packet: PitchPacket) => Promise<void>
   approvePitchPacketReview: (packet: PitchPacket) => Promise<void>
   exportPitchPacketFiles: () => Promise<void>
@@ -365,12 +366,12 @@ export function useInterviewSession(projectId: string, projectScopeKey?: string)
     }
   }, [beginOperationRequest, projectId, revisionOperations, status.activeSession])
 
-  const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string) => {
+  const openPitchPacket = useCallback(async (documents: ProjectDocuments, projectTitle?: string, pages?: ProjectPages) => {
     const session = status.activeSession ?? status.latestTerminalSession
     if (!session) return
     const isCurrent = beginOperationRequest()
     try {
-      const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle })
+      const result = await createPitchPacketDraft(projectId, session.id, documents, { title: projectTitle, pages })
       if (!isCurrent()) return
       setPitchPacketMemoryReceipt(result.memoryReceipt)
       setPitchPacketRow(result.memoryReceipt && !result.row.memory_receipt
