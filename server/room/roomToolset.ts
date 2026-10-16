@@ -28,7 +28,7 @@ export const REMEMBER_TOOL = 'remember';
 export const PASS_TOOL = 'pass';
 
 const PRIVATE_BLOCK_LABELS = ['lane_notes', 'writer_rapport'] as const;
-const PROPOSAL_SURFACES = ['storyBible', 'outline', 'synopsis', 'treatment'] as const;
+const PROPOSAL_SURFACES = ['storyBible', 'outline'] as const;
 
 export const ROOM_TOOLS: ToolSpec[] = [
   {
@@ -167,6 +167,9 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
 
       case PROPOSE_TOOL: {
         const surface = typeof args.surface === 'string' ? args.surface : '';
+        if (surface === 'synopsis' || surface === 'treatment') {
+          return { kind: 'error', toolUseId: use.id, content: 'This page is now written by Morgan' };
+        }
         const fieldPath = typeof args.fieldPath === 'string' ? args.fieldPath : '';
         const rawValue = typeof args.value === 'string' ? args.value : '';
         const rawRationale = typeof args.rationale === 'string' ? args.rationale : '';
@@ -174,7 +177,7 @@ export function makeRoomToolset(turn: RoomTurnContext): AgentToolset {
           return {
             kind: 'error',
             toolUseId: use.id,
-            content: 'propose_field_write requires surface (storyBible|outline|synopsis|treatment), fieldPath, value, rationale.',
+            content: 'propose_field_write requires surface (storyBible|outline), fieldPath, value, rationale.',
           };
         }
         const finalized = turn.projectMemory

@@ -332,24 +332,9 @@ describe('/api/wp-chat structured-document patch attachment', () => {
 
     expect(response.status).toBe(200)
     expect(response.json.message).toBe('Sam response.')
-    expect(response.json.patchFailure).toBeUndefined()
-    expect(response.json.patch).toBeDefined()
-    expect(response.json.patch.patch.surface).toBe('synopsis')
-    expect(response.json.patch.patch.baseVersion).toBe(5)
-    expect(response.json.patch.patch.proposedContent).toEqual(proposedContent)
-    expect(response.json.patch.citations).toEqual([{ id: '[M-REAL-0001]', workflow: 'writeros', sourceUri: 'writeros://project/1' }])
-
-    // Prove the routing plumbing itself, not just the mocked return value:
-    // the service was called with the surface/baseVersion/content read from
-    // the real folder-backed package on disk (revision 5, the seeded
-    // synopsis content), not anything derived from the client's own request
-    // payload.
-    expect(patchSpy).toHaveBeenCalledTimes(1)
-    const call = patchSpy.mock.calls[0][0]
-    expect(call.surface).toBe('synopsis')
-    expect(call.baseVersion).toBe(5)
-    expect(call.currentContent).toEqual(fixtureSynopsisContent())
-    expect(call.userMessage).toBe('Please rewrite the synopsis logline for me.')
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
+    expect(response.json.patch).toBeUndefined()
+    expect(patchSpy).not.toHaveBeenCalled()
   })
 
   // Review Important 4: the folder autosave is debounced (~600ms), so the
@@ -401,12 +386,9 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(patchSpy).toHaveBeenCalledTimes(1)
-    const call = patchSpy.mock.calls[0][0]
-    // Not 3 (the seeded disk revision) — the client's own in-memory revision.
-    expect(call.baseVersion).toBe(5)
-    // Not the seeded disk content — the client's own in-memory content.
-    expect(call.currentContent).toEqual(liveContent)
+    expect(patchSpy).not.toHaveBeenCalled()
+    expect(response.json.patch).toBeUndefined()
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
   })
 
   it('falls back to the disk revision/content when the documentSnapshot names a different surface than the current one', async () => {
@@ -435,7 +417,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     })
 
     const port = await startApp()
-    await postJson(port, {
+    const response = await postJson(port, {
       projectId: 'test-project',
       personaId: 'sam',
       message: 'Please rewrite the synopsis logline for me.',
@@ -445,10 +427,9 @@ describe('/api/wp-chat structured-document patch attachment', () => {
       conversationHistory: [],
     })
 
-    expect(patchSpy).toHaveBeenCalledTimes(1)
-    const call = patchSpy.mock.calls[0][0]
-    expect(call.baseVersion).toBe(5)
-    expect(call.currentContent).toEqual(fixtureSynopsisContent())
+    expect(patchSpy).not.toHaveBeenCalled()
+    expect(response.json.patch).toBeUndefined()
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
   })
 
   // Review round 2 (Important): documentSnapshot.content is untrusted
@@ -482,7 +463,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     })
 
     const port = await startApp()
-    await postJson(port, {
+    const response = await postJson(port, {
       projectId: 'test-project',
       personaId: 'sam',
       message: 'Please rewrite the synopsis logline for me.',
@@ -492,11 +473,9 @@ describe('/api/wp-chat structured-document patch attachment', () => {
       conversationHistory: [],
     })
 
-    expect(patchSpy).toHaveBeenCalledTimes(1)
-    const call = patchSpy.mock.calls[0][0]
-    // Not 999 (the invalid snapshot's claimed revision) — the seeded disk revision.
-    expect(call.baseVersion).toBe(5)
-    expect(call.currentContent).toEqual(fixtureSynopsisContent())
+    expect(patchSpy).not.toHaveBeenCalled()
+    expect(response.json.patch).toBeUndefined()
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
   })
 
   // Review round 2 (Important): a schema-valid but implausibly huge snapshot
@@ -541,7 +520,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     })
 
     const port = await startApp()
-    await postJson(port, {
+    const response = await postJson(port, {
       projectId: 'test-project',
       personaId: 'sam',
       message: 'Please rewrite the synopsis logline for me.',
@@ -550,10 +529,9 @@ describe('/api/wp-chat structured-document patch attachment', () => {
       conversationHistory: [],
     })
 
-    expect(patchSpy).toHaveBeenCalledTimes(1)
-    const call = patchSpy.mock.calls[0][0]
-    expect(call.baseVersion).toBe(5)
-    expect(call.currentContent).toEqual(fixtureSynopsisContent())
+    expect(patchSpy).not.toHaveBeenCalled()
+    expect(response.json.patch).toBeUndefined()
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
   })
 
   it('(b) a non-intent request yields no patch (and no failure marker) even with a matching folder-backed project and surface', async () => {
@@ -684,7 +662,7 @@ describe('/api/wp-chat structured-document patch attachment', () => {
     expect(response.status).toBe(200)
     expect(response.json.message).toBe('Sam response.')
     expect(response.json.patch).toBeUndefined()
-    expect(response.json.patchFailure).toEqual({ reason: 'invalid model JSON' })
+    expect(response.json.patchFailure).toEqual({ reason: 'This page is now written by Morgan' })
   })
 
   it('does not attempt a patch for a browser-only project id (no folder-backed package to read)', async () => {

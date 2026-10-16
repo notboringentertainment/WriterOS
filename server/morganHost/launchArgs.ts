@@ -148,6 +148,7 @@ export function buildMorganLaunch(input: MorganLaunchInput): MorganLaunch {
     WRITEROS_MORGAN_SOCKET: input.socketPath,
     WRITEROS_MORGAN_TOKEN: input.token,
     WRITEROS_MORGAN_PACKAGE: project.packagePath, // the mod's guard keeps writes out of the open WriterOS pages
+    WRITEROS_MORGAN_FORMATS: path.resolve(host.writerosRoot, 'server/morganHost/formats'),
   })
   return { cwd, args, settings, env }
 }

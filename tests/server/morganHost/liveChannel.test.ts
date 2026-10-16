@@ -385,6 +385,34 @@ describe("LiveChannel final-review minors", () => {
 });
 
 describe('approval and proposal polling', () => {
+  it('delivers page proposals including a 30 KB treatment to onProposal and returns its outcome', async () => {
+    const received: unknown[] = [];
+    const { sink } = sinkLog();
+    const ch = await open(sink, { onProposal: async ask => { received.push(ask); return { outcome: 'kept' }; } });
+    await hello(ch);
+    for (const page of ['synopsis', 'treatment', 'outline']) {
+      const markdown = page === 'treatment' ? '# Treatment\n\n' + 'A courier crosses the city.\n\n'.repeat(1200) : '# Sample page\n\nA courier crosses the city.';
+      if (page === 'treatment') expect(Buffer.byteLength(markdown)).toBeGreaterThan(30 * 1024);
+      const ask = { epoch: 'e1', proposalId: page, proposal: { surface: 'page', page, baseRevision: 0, markdown, summary: 'Write the page' } };
+      expect(await post(ch.socketPath, '/proposal', ch.token, ask)).toEqual({ status: 200, body: { outcome: 'kept' } });
+      expect(received.at(-1)).toEqual(ask);
+    }
+    expect(received).toHaveLength(3);
+  });
+
+  it('refuses retired structured synopsis and treatment proposals with the plain message', async () => {
+    const received: unknown[] = [];
+    const { sink } = sinkLog();
+    const ch = await open(sink, { onProposal: async ask => { received.push(ask); return { outcome: 'kept' }; } });
+    await hello(ch);
+    for (const surface of ['synopsis', 'treatment']) {
+      const result = await post(ch.socketPath, '/proposal', ch.token, { epoch: 'e1', proposalId: surface,
+        proposal: { surface, baseRevision: 0, content: {}, summary: 'Old structured proposal' } });
+      expect(result).toEqual({ status: 200, body: { outcome: 'invalid', message: 'This page is now written by Morgan' } });
+    }
+    expect(received).toHaveLength(0);
+  });
+
   it('a cached answer does not suppress future report stalls', async () => {
     const { s, sink } = sinkLog(); const ch = await open(sink, { onPermission: async () => ({ allow: true }) }); await hello(ch);
     await post(ch.socketPath, '/permission', ch.token, { epoch: 'e1', requestId: 'r1', tool: 'Edit', summary: 'Edit file', input: '{}' });

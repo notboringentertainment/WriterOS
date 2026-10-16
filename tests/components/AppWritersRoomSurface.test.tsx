@@ -50,7 +50,7 @@ describe("App Writer's Room layout", () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Synopsis / }))
     expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: "Writer" }))
@@ -68,7 +68,7 @@ describe("App Writer's Room layout", () => {
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Synopsis / }))
 
     expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
     expect(screen.queryByTestId('specialist-nav')).not.toBeInTheDocument()

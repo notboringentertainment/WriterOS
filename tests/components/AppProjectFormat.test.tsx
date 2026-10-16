@@ -6,7 +6,7 @@ import App from '../../client/src/App'
 function openTab(name: string) {
   if (name === 'Synopsis' || name === 'Treatment') {
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-    fireEvent.click(screen.getByRole('button', { name }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${name} `) }))
   } else fireEvent.click(screen.getByRole('tab', { name }))
 }
 
@@ -21,7 +21,7 @@ describe('App project format selectors', () => {
     vi.restoreAllMocks()
   })
 
-  it('shares one canonical project format across Synopsis, Outline, and Story Bible', () => {
+  it('shares project format across Beat Sheet and Story Bible while Pages has no format editor', () => {
     render(<App />)
 
     openTab('Beat Sheet')
@@ -35,14 +35,12 @@ describe('App project format selectors', () => {
     expect(formatSelector()).toHaveValue('feature')
 
     openTab('Synopsis')
-    expect(formatSelector()).toHaveValue('feature')
-    fireEvent.change(formatSelector(), { target: { value: 'series' } })
-    expect(formatSelector()).toHaveValue('series')
+    expect(screen.queryByLabelText(/^format$/i)).not.toBeInTheDocument()
 
     openTab('Beat Sheet')
-    expect(formatSelector()).toHaveValue('series')
+    expect(formatSelector()).toHaveValue('feature')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.meta.format).toBe('series')
+    expect(stored.meta.format).toBe('feature')
   })
 })

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { isVoiceProfileDocument } from '../../client/src/lib/voiceProfile'
 import { z } from 'zod'
+import { PageDocumentSchema, PageNameSchema } from '../../shared/pages'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
 import { serializeWriterOSProjectPackage } from '../../client/src/lib/projectPackage'
@@ -45,6 +46,27 @@ export function registerProjectLibraryRoutes(
 ): void {
   const requireSameOrigin = sameOrigin(config)
   const requireSession = authenticated(config)
+
+  app.get('/api/projects/:projectId/pages/:page', requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const name = PageNameSchema.parse(req.params.page)
+      const activeStore = dataStore(config, store)
+      if (!activeStore.readPage) throw new Error('Page storage unavailable')
+      return res.json({ page: await activeStore.readPage(req.params.projectId, name) })
+    } catch (error) { return routeError(res, error) }
+  })
+  app.put('/api/projects/:projectId/pages/:page', requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const name = PageNameSchema.parse(req.params.page)
+      const data = z.object({ expectedRevision: z.number().int().nonnegative(), page: PageDocumentSchema }).parse(req.body)
+      if (data.page.page !== name) return res.status(400).json({ message: 'The page name does not match.' })
+      const activeStore = dataStore(config, store)
+      if (!activeStore.writePage) throw new Error('Page storage unavailable')
+      const result = await activeStore.writePage(req.params.projectId, data.page, data.expectedRevision)
+      if (result.stale) return res.status(409).json({ error: 'stale-page', message: 'This page has changed. Read the latest version before trying again.', currentPage: result.page })
+      return res.json({ page: result.page })
+    } catch (error) { return routeError(res, error) }
+  })
 
   const voicePath = () => {
     dataStore(config, store)
@@ -165,7 +187,7 @@ export function registerProjectLibraryRoutes(
         const priorRead = await activeStore.readProject(project.id)
         if (priorRead.ok) {
           priorProject = priorRead.project
-          priorFiles = serializeWriterOSProjectPackage(priorRead.project).files
+          priorFiles = activeStore.readPackageSnapshot ? await activeStore.readPackageSnapshot(project.id) : serializeWriterOSProjectPackage(priorRead.project).files
         }
       } catch (error) {
         if (!(error instanceof ProjectLibraryStoreError) || error.code !== 'not-found') {
@@ -187,7 +209,7 @@ export function registerProjectLibraryRoutes(
       // against and nothing worth analyzing yet.
       if (priorFiles !== null) {
         try {
-          const currentFiles = serializeWriterOSProjectPackage(effective.project).files
+          const currentFiles = activeStore.readPackageSnapshot ? await activeStore.readPackageSnapshot(project.id) : serializeWriterOSProjectPackage(effective.project).files
           const projectPath = await activeStore.resolveProjectPackagePath(project.id)
           await observeWriterOSSave({ projectId: project.id, projectPath, priorFiles, currentFiles })
         } catch (error) {

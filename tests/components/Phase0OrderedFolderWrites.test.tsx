@@ -40,7 +40,7 @@ it.each([false, true])('orders script and explicit folder saves even when the fi
   const editor = (view.container.querySelector('.ProseMirror') as HTMLElement & { editor: Editor }).editor
   act(() => { editor.commands.insertContent('Pending script') })
   fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
+  fireEvent.click(screen.getByRole('button', { name: /^Synopsis / }))
   await waitFor(() => expect(writes).toEqual(['Folder script']))
   fireEvent.click(screen.getByLabelText('Project title: Folder script'))
   fireEvent.change(screen.getByLabelText('Project title'), { target: { value: 'New title' } })

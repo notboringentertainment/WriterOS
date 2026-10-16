@@ -209,6 +209,7 @@ export class LiveChannel {
           return this.poll("permission", body.requestId, body, res, reply);
         }
         case "/proposal": {
+          if (["synopsis", "treatment"].includes(body.proposal?.surface)) return reply(200, { outcome: "invalid", message: "This page is now written by Morgan" });
           if (!validProposal(body)) return reply(400);
           return this.poll("proposal", body.proposalId, body, res, reply);
         }
@@ -382,5 +383,7 @@ function validProposal(b: ProposalAsk): boolean {
   const p = b.proposal;
   if (!nonempty(b.epoch) || !nonempty(b.proposalId) || !p || typeof p !== "object" || typeof p.summary !== "string") return false;
   if (p.surface === "script") return !!p.target && typeof p.target === "object" && ["append", "replace-scene", "insert-after-scene"].includes(p.target.kind) && Array.isArray(p.blocks);
-  return ["synopsis", "outline", "treatment", "storyBible"].includes(p.surface) && Number.isInteger(p.baseRevision) && p.baseRevision >= 0 && "content" in p;
+  if (!Number.isInteger(p.baseRevision) || p.baseRevision < 0) return false;
+  if (p.surface === "page") return ["synopsis", "treatment", "outline"].includes(p.page) && typeof p.markdown === "string";
+  return ["outline", "storyBible"].includes(p.surface) && "content" in p;
 }

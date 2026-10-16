@@ -29,6 +29,14 @@ function labeledLines(entries: Array<[string, string | undefined]>): string {
     .join('\n')
 }
 
+function populatedFields(value: unknown, label = ''): string {
+  if (typeof value === 'string') return value.trim() ? `${label}: ${value}` : ''
+  if (!value || typeof value !== 'object') return ''
+  return Object.entries(value).map(([key, child]) => populatedFields(child,
+    /^\d+$/.test(key) ? label : key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()),
+  )).filter(Boolean).join('\n\n')
+}
+
 export function synopsisToMarkdown(doc: AuthoredDocumentState<SynopsisDocumentContent>): string {
   const content = doc.content
   const titleSuffix = content.header.title ? ` — ${content.header.title}` : ''
@@ -44,8 +52,12 @@ export function synopsisToMarkdown(doc: AuthoredDocumentState<SynopsisDocumentCo
 
   return lines(
     `# Synopsis${titleSuffix}`,
+    section('## Header', populatedFields(content.header)),
     section('## Logline', content.logline.text),
+    section('## Logline notes', populatedFields(Object.fromEntries(Object.entries(content.logline).filter(([key]) => key !== 'text')))),
     section('## Synopsis', prose),
+    section('## Series', populatedFields(content.series)),
+    section('## Additional notes', populatedFields(Object.fromEntries(Object.entries(content).filter(([key]) => !['header', 'logline', 'prose', 'series'].includes(key))))),
   ).trim() + '\n'
 }
 
@@ -113,16 +125,20 @@ export function treatmentToMarkdown(doc: AuthoredDocumentState<TreatmentDocument
 
   return lines(
     `# Treatment${titleSuffix}`,
+    section('## Header', populatedFields(content.header)),
     section('## Logline', content.logline),
     section('## Concept', concept),
     characterBlocks.length ? `## Main Characters\n\n${characterBlocks.join('\n\n')}\n` : undefined,
+    section('## Character notes', populatedFields(content.mainCharacters.map(character => ({ id: character.id })))),
     section('## Opening', content.prose.opening),
     section('## Act One', content.prose.actOne),
     section('## Act Two', content.prose.actTwo),
     section('## Act Three', content.prose.actThree),
     ...customSections,
+    section('## Section notes', populatedFields(content.prose.customSections.map(custom => ({ id: custom.id })))),
     section('## Texture', texture),
     section('## Open Questions', openQuestions),
+    section('## Additional notes', populatedFields(Object.fromEntries(Object.entries(content).filter(([key]) => !['header', 'logline', 'concept', 'mainCharacters', 'prose', 'visualAndTonal', 'openQuestions'].includes(key))))),
   ).trim() + '\n'
 }
 

@@ -6,13 +6,13 @@
 
 ## Product North Star
 
-WriterOS is a writing-first studio for screenplay and series development. It should feel powerful enough for serious writers and legible enough that a newer writer can start without decoding craft jargon.
+WriterOS is a canon home and writing studio for the script, with pages written by Morgan. It should feel powerful enough for serious writers and legible enough that a newer writer can start without decoding craft jargon.
 
 The current surface standard:
 
-> WriterOS writing surfaces ask plain-language story questions, translate the answers into professional structure behind the scenes, and render studio-presentable documents the writer can confidently share.
+> Morgan writes Outline, Treatment, and Synopsis pages from canon on request, asking only about missing items. Pages are prose, with approval and a notice when canon changes.
 
-This standard applies to Synopsis, Outline, Treatment, and Story Bible. Script remains the formatted screenplay page surface.
+The 2026-10-15 pare-down plan supersedes the older surface PRDs below. Story Bible and Beat Sheet retain their existing editing behavior in Phase 2; Synopsis and Treatment legacy documents are frozen in place. Script remains the formatted screenplay page surface.
 
 ## Current Canonical Rules
 

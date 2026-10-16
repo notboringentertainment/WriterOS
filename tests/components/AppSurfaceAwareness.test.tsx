@@ -107,8 +107,8 @@ describe('App surface awareness — live request path', () => {
   })
 
   it.each([
-    ['Synopsis', 'synopsis', 'What should appear as the title?'],
-    ['Treatment', 'treatment', 'What is the story in one sentence?'],
+    ['Synopsis', 'synopsis', undefined],
+    ['Treatment', 'treatment', undefined],
     ['Story Bible', 'story-bible', 'What should appear as the title?'],
   ])('left-rail Writing Partner on %s sends that surface question deck', async (tabLabel, surface, firstQuestion) => {
     const fetchMock = mockFetchCapturing()
@@ -116,7 +116,7 @@ describe('App surface awareness — live request path', () => {
 
     if (tabLabel === 'Synopsis' || tabLabel === 'Treatment') {
       fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-      fireEvent.click(screen.getByRole('button', { name: tabLabel }))
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${tabLabel} `) }))
     } else fireEvent.click(screen.getByRole('tab', { name: tabLabel }))
     fireEvent.click(screen.getByTitle('Morgan'))
 
@@ -128,9 +128,11 @@ describe('App surface awareness — live request path', () => {
 
     const body = wpChatBody(fetchMock)
     expect(body.personaId).toBe('writingPartner')
-    expect(body.projectContext.surface.kind).toBe('intake')
-    expect(body.projectContext.surface.surface).toBe(surface)
-    expect(body.projectContext.surface.nextQuestion.label).toBe(firstQuestion)
+    if (firstQuestion) {
+      expect(body.projectContext.surface.kind).toBe('intake')
+      expect(body.projectContext.surface.surface).toBe(surface)
+      expect(body.projectContext.surface.nextQuestion.label).toBe(firstQuestion)
+    } else expect(body.projectContext.surface).toEqual({ kind: 'none' })
   })
 
   it('left-rail Writing Partner honors explicit specialist mentions', async () => {
@@ -138,7 +140,7 @@ describe('App surface awareness — live request path', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Synopsis / }))
     fireEvent.click(screen.getByTitle('Morgan'))
 
     const input = screen.getByPlaceholderText('Message Morgan…')

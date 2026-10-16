@@ -13,6 +13,7 @@ import type { ActiveTab } from '../../lib/wpRouting'
 import type { ActiveRitual, StoryBibleSection } from '../../lib/shellState'
 import type { MorganApi } from '../../lib/projectStorage'
 import type { PageProposal } from '@shared/morganLive'
+import type { MorganPageRequest } from './MorganLivePanel'
 
 interface ShellState {
   homeActive: boolean
@@ -42,6 +43,7 @@ interface RailProps {
   morganProjectId?: string | null
   onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
   onMorganProjectChanged?: () => void
+  morganPageRequest?: MorganPageRequest | null
   transcript: TranscriptMessage[]
   loading: boolean
   onSend: (text: string) => void

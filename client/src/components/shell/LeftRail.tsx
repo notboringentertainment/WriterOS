@@ -5,7 +5,7 @@ import type { StoryBibleSection } from '../../lib/shellState'
 import { CapabilityReceiptChip } from '../transcript/CapabilityReceiptChip'
 import { MemoryReceiptDisclosure } from '../shared/MemoryReceiptDisclosure'
 import { MemoryPatchSuggestionChip } from '../memory/MemoryPatchSuggestionChip'
-import { MorganLivePanel } from './MorganLivePanel'
+import { MorganLivePanel, type MorganPageRequest } from './MorganLivePanel'
 import type { MorganApi } from '../../lib/projectStorage'
 import type { PageProposal } from '@shared/morganLive'
 
@@ -14,6 +14,7 @@ interface LeftRailProps {
   morganProjectId?: string | null
   onMorganPageProposal?: (proposal: { proposalId: string; proposal: PageProposal } | null) => void
   onMorganProjectChanged?: () => void
+  morganPageRequest?: MorganPageRequest | null
   open: boolean
   onToggle: () => void
   projectTitle: string
@@ -47,6 +48,7 @@ export function LeftRail({
   morganProjectId,
   onMorganPageProposal,
   onMorganProjectChanged,
+  morganPageRequest,
 }: LeftRailProps) {
   const [inputText, setInputText] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -111,6 +113,7 @@ export function LeftRail({
               surface={activeTab === 'story-bible' ? 'Story Bible' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
               onPageProposal={onMorganPageProposal ?? ignoreProposal}
               onProjectChanged={onMorganProjectChanged}
+              pageRequest={morganPageRequest}
             />
           ) : (
           <>

@@ -92,6 +92,7 @@ export interface ProjectState {
   synopsis: { logline: string; sections: { setup: string; act1Break: string; midpoint: string; act2Break: string; resolution: string } }
   storyBible: { characters: Character[]; world: { setting: string; toneAnchors: string; voiceNotes: string }; themes: string; rules: string }
   documents: ProjectDocuments
+  pages: import('@shared/pages').ProjectPages
   agents: {
     writingPartner: { transcript: TranscriptMessage[]; lastActive: number | null }
     sam:    { transcript: TranscriptMessage[]; lastTouched: number | null }
@@ -212,10 +213,11 @@ export function defaultProjectState(): ProjectState {
       alex:   { transcript: [], lastTouched: null },
     },
     memory: { decisions: [], flags: [], handoffs: [] },
-  } as Omit<ProjectState, 'documents'>
+  } as Omit<ProjectState, 'documents' | 'pages'>
 
   return {
     ...base,
+    pages: {},
     documents: legacyToDocuments(base as ProjectState),
   }
 }
@@ -434,7 +436,7 @@ export function migrateState(raw: unknown): ProjectState {
     : seededTreatmentContent
   ;(state as Record<string, unknown>).documents = {
     ...migratedDocuments,
-    synopsis: syncSynopsisFormatMirror(migratedDocuments.synopsis, promotedFormat),
+    synopsis: migratedDocuments.synopsis,
     outline: {
       ...migratedDocuments.outline,
       content: outlineContent,
@@ -443,10 +445,7 @@ export function migrateState(raw: unknown): ProjectState {
         ...(version < 4 ? { migratedFromLegacyBeats: true } : {}),
       },
     },
-    treatment: syncTreatmentFormatMirror({
-      ...migratedDocuments.treatment,
-      content: treatmentContent,
-    }, promotedFormat),
+    treatment: version < 5 ? { ...migratedDocuments.treatment, content: treatmentContent } : migratedDocuments.treatment,
     storyBible: syncStoryBibleFormatMirror(migratedDocuments.storyBible, promotedFormat),
   }
 
@@ -455,7 +454,6 @@ export function migrateState(raw: unknown): ProjectState {
 
 export function saveProjectState(state: ProjectState): void {
   const projectFormat = normalizeProjectFormat(state.meta.format)
-  const mirroredSynopsis = mirrorSynopsisFromLegacy(state.documents.synopsis, state.synopsis)
   const stateToSave: ProjectState = stripProjectRawSource({
     ...state,
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -469,9 +467,9 @@ export function saveProjectState(state: ProjectState): void {
       facts: normalizeScriptFactsCache(state.script.facts),
     },
     documents: {
-      synopsis: syncSynopsisFormatMirror(mirroredSynopsis, projectFormat),
+      synopsis: state.documents.synopsis,
       outline: state.documents.outline,
-      treatment: syncTreatmentFormatMirror(state.documents.treatment, projectFormat),
+      treatment: state.documents.treatment,
       storyBible: syncStoryBibleFormatMirror(state.documents.storyBible, projectFormat),
       ...(state.documents.lookbook ? { lookbook: state.documents.lookbook } : {}),
       ...(state.documents.looks ? { looks: state.documents.looks } : {}),

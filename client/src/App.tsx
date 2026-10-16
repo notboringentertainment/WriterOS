@@ -35,9 +35,11 @@ import { VoiceProfileRitualPage } from './components/ritual/VoiceProfileRitualPa
 import { VoiceProfileDrawer } from './components/shell/VoiceProfileDrawer'
 import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
-import { SynopsisTab } from './components/writing/SynopsisTab'
+import { Pages, PageProse } from './components/writing/Pages'
+import type { MorganPageRequest } from './components/shell/MorganLivePanel'
+import type { PageName } from '@shared/pages'
+import { requestPage, StalePageError } from './lib/pagesApi'
 import { OutlineTab } from './components/writing/OutlineTab'
-import { TreatmentTab } from './components/writing/TreatmentTab'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WhatsStandingTab } from './components/writing/whatsStanding/WhatsStandingTab'
 import { WritersRoom } from './components/writing/WritersRoom'
@@ -280,6 +282,11 @@ export default function App() {
   useEffect(() => {
     if (shellState.ritual === 'memory' || shellState.ritual === 'look') void projectMemory.refresh()
   }, [shellState.ritual, projectMemory.refresh])
+  const pagesVisible = !shellState.homeActive && !shellState.ritual && !shellState.writersRoomActive
+    && (shellState.activeTab === 'synopsis' || shellState.activeTab === 'treatment')
+  useEffect(() => {
+    if (pagesVisible) void projectMemory.refresh()
+  }, [pagesVisible, projectMemory.refresh])
 
   // Look sessions (Task 6). The target and its session id survive a promotion,
   // which removes the draft, so the panel can still show the conversation.
@@ -343,6 +350,11 @@ export default function App() {
     answered?: boolean
   } | null>(null)
   const documentsRef = useRef(project.state.documents)
+  const [selectedPage, setSelectedPage] = useState<PageName>('outline')
+  const [morganPageRequest, setMorganPageRequest] = useState<(MorganPageRequest & { projectId: string }) | null>(null)
+  const [pageProposal, setPageProposal] = useState<{ projectId: string; proposalId: string; proposal: Extract<PageProposal, { surface: 'page' }>; answered?: boolean; savedOutcome?: 'kept' | 'stale' } | null>(null)
+  const [pageProposalBusy, setPageProposalBusy] = useState(false)
+  const [pageProposalError, setPageProposalError] = useState<string | null>(null)
   documentsRef.current = project.state.documents
   const [patchApplyError, setPatchApplyError] = useState<string | null>(null)
   const [applyingPatch, setApplyingPatch] = useState(false)
@@ -351,6 +363,8 @@ export default function App() {
     setPatchApplyError(null)
     setApplyingPatch(false)
     setMorganScriptProposal(null)
+    setPageProposal(null)
+    setPageProposalError(null)
   }, [activeAgentProjectKey])
 
   const handleMorganPageProposal = useCallback((entry: { proposalId: string; proposal: PageProposal } | null) => {
@@ -359,11 +373,20 @@ export default function App() {
     if (!entry) {
       setActivePatchProposal(current => current?.morganProposalId && !current.morganAnswered ? null : current)
       setMorganScriptProposal(current => current?.answered ? current : null)
+      setPageProposal(current => current?.answered ? current : null)
       return
     }
     const { proposalId, proposal } = entry
     setPatchApplyError(null)
-    if (proposal.surface === 'script') {
+    if (proposal.surface === 'page') {
+      setMorganScriptProposal(null)
+      setActivePatchProposal(null)
+      setPageProposal({ projectId: activeFolderProjectId, proposalId, proposal })
+      setPageProposalError(null)
+      setSelectedPage(proposal.page)
+      shellState.setActiveTab('treatment')
+    } else if (proposal.surface === 'script') {
+      setPageProposal(null)
       setActivePatchProposal(current => current?.morganProposalId ? null : current)
       setMorganScriptProposal({ projectId: activeFolderProjectId, proposalId, proposal })
       shellState.setActiveTab('script')
@@ -377,6 +400,42 @@ export default function App() {
       shellState.setActiveTab(proposal.surface === 'storyBible' ? 'story-bible' : proposal.surface)
     }
   }, [activeFolderProjectId, shellState.setActiveTab])
+
+  const answerPageProposal = async (keep: boolean) => {
+    const entry = pageProposal
+    if (!entry || entry.projectId !== activeFolderProjectIdRef.current || !projectFolder.morgan) return
+    setPageProposalBusy(true); setPageProposalError(null)
+    let outcome: 'kept' | 'dismissed' | 'stale' = entry.savedOutcome ?? (keep ? 'kept' : 'dismissed')
+    try {
+      if (keep && !entry.savedOutcome) {
+        const saved = await requestPage(entry.projectId, entry.proposal.page, {
+          page: entry.proposal.page, markdown: entry.proposal.markdown, status: 'draft', revision: entry.proposal.baseRevision,
+        })
+        if (activeFolderProjectIdRef.current === entry.projectId) project.setPage(saved)
+        setPageProposal(current => current?.proposalId === entry.proposalId ? { ...current, savedOutcome: 'kept' } : current)
+      }
+    } catch (error) {
+      if (error instanceof StalePageError) {
+        outcome = 'stale'
+        if (activeFolderProjectIdRef.current === entry.projectId) project.setPage(error.currentPage)
+        setPageProposal(current => current?.proposalId === entry.proposalId ? { ...current, savedOutcome: 'stale' } : current)
+      } else {
+        if (activeFolderProjectIdRef.current === entry.projectId) setPageProposalError(error instanceof Error ? error.message : 'Could not save this page. Try again.')
+        setPageProposalBusy(false)
+        return
+      }
+    }
+    try {
+      if (!entry.answered) await projectFolder.morgan.answerProposal(entry.projectId, entry.proposalId, { outcome })
+      if (activeFolderProjectIdRef.current !== entry.projectId) return
+      if (outcome === 'stale') {
+        setPageProposal(current => current?.proposalId === entry.proposalId ? { ...current, answered: true } : current)
+        setPageProposalError('This page changed since Morgan wrote this suggestion. The newer page is kept. Ask Morgan to update it.')
+      } else setPageProposal(null)
+    } catch (error) {
+      if (activeFolderProjectIdRef.current === entry.projectId) setPageProposalError(error instanceof Error ? error.message : 'Morgan could not receive the answer.')
+    } finally { setPageProposalBusy(false) }
+  }
 
   const handleMorganScriptOutcome = useCallback((outcome: 'kept' | 'dismissed' | 'stale') => {
     if (!morganScriptProposal || morganScriptProposal.projectId !== activeFolderProjectIdRef.current) return
@@ -1216,22 +1275,29 @@ export default function App() {
           />
         )
       case 'synopsis':
-        return (
-          <SynopsisTab
-            projectId={activeFolderProjectId ?? undefined}
-            projectScopeKey={activeAgentProjectKey}
-            document={project.state.documents.synopsis}
-            projectFormat={project.state.meta.format}
-            identity={pickIdentity(project.state.meta)}
-            onProjectFormatChange={project.setProjectFormat}
-            onContentPatch={(patch) =>
-              project.setSynopsisDocument((content) => ({ ...content, ...patch }))
-            }
-            onViewPreferencesPatch={(patch) => project.setSynopsisViewPreferences(patch)}
-            onComposed={(composed) => project.setComposedDocument('synopsis', composed)}
-            onClear={project.clearSynopsis}
-          />
-        )
+      case 'treatment':
+        return <>
+          {pageProposal && pageProposal.projectId === activeFolderProjectId && pageProposal.proposal.page === selectedPage && <section className="pages-sheet" aria-label="Morgan's page suggestion">
+            <h2>Morgan's suggestion</h2><p>{pageProposal.proposal.summary}</p>
+            {pageProposalError && <p role="alert">{pageProposalError}</p>}
+            <PageProse markdown={pageProposal.proposal.markdown} />
+            {!pageProposal.answered && <button className="pages-button" disabled={pageProposalBusy} onClick={() => void answerPageProposal(true)}>Keep</button>}
+            <button className="pages-button" disabled={pageProposalBusy} onClick={() => void answerPageProposal(false)}>Dismiss</button>
+          </section>}
+          <Pages key={activeAgentProjectKey} projectId={activeFolderProjectId} selected={selectedPage} onSelect={setSelectedPage}
+            pages={project.state.pages} onPage={project.setPage} snapshot={projectMemory.snapshot}
+            onAskMorgan={async text => {
+              if (!activeFolderProjectId || !projectFolder.morgan) throw new Error('Open a project from your project folder to write with Morgan.')
+              if (!shellState.panelOpen) shellState.togglePanel()
+              await new Promise<void>((resolve, reject) => {
+                const request = { projectId: activeFolderProjectId, text, surface: `page:${selectedPage}`,
+                  resolve: () => { setMorganPageRequest(current => current === request ? null : current); resolve() },
+                  reject: () => { setMorganPageRequest(current => current === request ? null : current); reject(new Error('Morgan could not connect.')) },
+                }
+                setMorganPageRequest(request)
+              })
+            }} />
+        </>
       case 'outline':
         return (
           <OutlineTab
@@ -1253,21 +1319,6 @@ export default function App() {
             lookbook={project.state.documents.lookbook}
             onLookbookChange={project.setLookbook}
             onRequestLookbookQuestions={projectFolder.lookbook && activeFolderProjectId ? handleRequestLookbookQuestions : undefined}
-          />
-        )
-      case 'treatment':
-        return (
-          <TreatmentTab
-            projectId={activeFolderProjectId ?? undefined}
-            projectScopeKey={activeAgentProjectKey}
-            document={project.state.documents.treatment}
-            projectFormat={project.state.meta.format}
-            identity={pickIdentity(project.state.meta)}
-            onProjectFormatChange={project.setProjectFormat}
-            onContentChange={project.setTreatmentDocument}
-            onViewPreferencesPatch={(patch) => project.setTreatmentViewPreferences(patch)}
-            onComposed={(composed) => project.setComposedDocument('treatment', composed)}
-            onClear={project.clearTreatment}
           />
         )
       case 'story-bible':
@@ -1467,13 +1518,6 @@ export default function App() {
         )}
         <div style={styles.surfaceWithWritersRoom}>
           <div style={shellState.writersRoomActive ? { display: 'none' } : styles.activeSurfacePane}>
-            {(shellState.activeTab === 'treatment' || shellState.activeTab === 'synopsis') && (
-              <nav aria-label="Pages" className="phase1-switch">
-                {(['treatment', 'synopsis'] as const).map(page => <button key={page}
-                  aria-current={shellState.activeTab === page ? 'page' : undefined}
-                  onClick={() => shellState.setActiveTab(page)}>{page === 'treatment' ? 'Treatment' : 'Synopsis'}</button>)}
-              </nav>
-            )}
             {activeSurface}
           </div>
           {shellState.writersRoomActive && (
@@ -1522,9 +1566,13 @@ export default function App() {
   const railProps = {
     morgan: projectFolder.morgan,
     morganProjectId: activeFolderProjectId,
+    morganPageRequest: morganPageRequest?.projectId === activeFolderProjectId ? morganPageRequest : null,
     onMorganPageProposal: handleMorganPageProposal,
     // Morgan changed the beat sheet: reopen the project so the Outline and canon on screen match disk.
-    onMorganProjectChanged: activeFolderProjectId ? () => { void handleOpenFolderProject(activeFolderProjectId) } : undefined,
+    onMorganProjectChanged: activeFolderProjectId ? () => {
+      void handleOpenFolderProject(activeFolderProjectId)
+      void projectMemory.refresh()
+    } : undefined,
     transcript: project.state.agents.writingPartner.transcript,
     loading: wpLoading,
     onSend: handleWPSend,
@@ -1534,11 +1582,15 @@ export default function App() {
   }
 
   const leftZone = useMemo(
-    () => ({
-      structure: selectSurfaceStructure(shellState.activeTab, project.state),
-      state: selectConsoleState(project.state, shellState.activeTab, shellState.storyBibleSection),
-    }),
-    [project.state, shellState.activeTab, shellState.storyBibleSection],
+    () => {
+      const surface = shellState.activeTab
+      const state = selectConsoleState(project.state, surface, shellState.storyBibleSection)
+      return surface === 'synopsis' || surface === 'treatment'
+        ? { structure: { surface, heading: 'Pages', nodes: [], empty: true },
+            state: { ...state, surfaceLabel: selectedPage[0].toUpperCase() + selectedPage.slice(1), persona: 'Morgan', counts: [] } }
+        : { structure: selectSurfaceStructure(surface, project.state), state }
+    },
+    [project.state, shellState.activeTab, shellState.storyBibleSection, selectedPage],
   )
 
   return (

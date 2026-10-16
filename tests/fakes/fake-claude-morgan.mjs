@@ -63,7 +63,8 @@ else {
     await report([row(`approval: ${a.allow ? 'allow' : 'deny'}${a.note ? ` (${a.note})` : ''}`)])
   }
   if (mode === 'propose') {
-    let o; do { o = await post('/proposal', { epoch, proposalId: 'p1', proposal: { surface: 'script', target: { kind: 'append' }, blocks: [{ type: 'action', text: 'Rain.' }], summary: 'Add rain' } }) } while (o.pending)
+    const proposal = process.env.FAKE_PROPOSAL ? JSON.parse(process.env.FAKE_PROPOSAL) : { surface: 'script', target: { kind: 'append' }, blocks: [{ type: 'action', text: 'Rain.' }], summary: 'Add rain' }
+    let o; do { o = await post('/proposal', { epoch, proposalId: 'p1', proposal }) } while (o.pending)
     await report([row(`proposal: ${o.outcome}`)])
   }
   if (mode === 'orphan') {

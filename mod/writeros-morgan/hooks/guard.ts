@@ -5,7 +5,7 @@
 const CASTING = /(^|\/)casting-inspiration(\/|$)/i
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 export const PROPOSE_TOOL = 'mcp__writeros-morgan__propose_page_change'
-const PROPOSABLE = new Set(['synopsis', 'outline', 'treatment', 'storyBible', 'script'])
+const PROPOSABLE = new Set(['page', 'outline', 'storyBible', 'script'])
 
 export interface GuardContext {
   packagePath: string                          // this session's WriterOS package (from WRITEROS_MORGAN_PACKAGE)
@@ -57,6 +57,9 @@ export async function guardTool(tool: string, args: Record<string, unknown>, ctx
     if (pageDirs.some(d => inside(p, d) || inside(resolved, d))) return { allow: false, reason: PACKAGE_REASON }
     return { allow: true }
   }
-  if (tool === PROPOSE_TOOL) return PROPOSABLE.has(String(args.surface)) ? { allow: true } : { allow: false, reason: LOOK_REASON }
+  if (tool === PROPOSE_TOOL) {
+    if (args.surface === 'synopsis' || args.surface === 'treatment') return { allow: false, reason: 'This page is now written by Morgan' }
+    return PROPOSABLE.has(String(args.surface)) ? { allow: true } : { allow: false, reason: LOOK_REASON }
+  }
   return { allow: true }
 }

@@ -16,8 +16,6 @@ import { normalizeProjectFormat } from "@shared/projectFormat";
 import { SurfaceAwarenessSchema } from "@shared/surfaceAwareness";
 import { WorkspaceLocationSchema } from "@shared/workspaceLocation";
 import { scriptFactLines } from "./scriptFactFormatting";
-import { ComposeDocumentRequestSchema } from "@shared/compose/requestSchema";
-import { composeOutline, composeSynopsis, composeTreatment } from "./compose";
 import { registerRoomRoutes } from "./room/roomRoutes";
 import { loadProjectLibraryConfig } from "./projectLibrary/config";
 import { createProjectLibraryStore, type ProjectLibraryStore } from "./projectLibrary/store";
@@ -989,6 +987,7 @@ async function attemptStructuredDocumentPatch(input: {
     return { status: 'not-requested' };
   }
   if (!read.ok) return { status: 'not-requested' };
+  if (surface === 'synopsis' || surface === 'treatment') return { status: 'failed', reason: 'This page is now written by Morgan' };
 
   // Review Important 4: prefer the writer's own in-memory revision/content
   // for this exact surface over the folder-backed package on disk. The
@@ -1388,43 +1387,8 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
     }
   });
 
-  app.post("/api/compose-document", async (req, res) => {
-    let failureMemoryReceipt: MemoryReceipt | undefined;
-    try {
-      const data = ComposeDocumentRequestSchema.parse(req.body);
-      const memory = await buildAgentMemoryContext(agentMemoryProvider, data.projectId, {
-        message: `${data.identity.title} ${data.identity.genre}`,
-        surface: data.surface,
-      });
-      failureMemoryReceipt = finalizeAgentMemoryText('', memory).receipt;
-      const result = data.surface === "treatment"
-        ? await composeTreatment({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
-        : data.surface === "synopsis"
-          ? await composeSynopsis({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt })
-          : await composeOutline({ content: data.content, format: data.format, identity: data.identity, projectMemoryPrompt: memory.prompt });
-      if (!result.ok) {
-        console.error("compose-document soft-fail:", result.reason);
-        return res.status(422).json({
-          error: "compose_failed", message: "WriterOS could not compose this document right now.",
-          reason: "compose_failed", memoryReceipt: failureMemoryReceipt,
-        });
-      }
-      const finalized = finalizeAgentMemoryValue(result.composed, memory);
-      res.json({ composed: finalized.value, memoryReceipt: finalized.receipt });
-    } catch (error) {
-      if (error instanceof ProjectMemoryAgentUnavailableError) {
-        return res.status(503).json({ error: 'project-memory-unavailable', message: error.message });
-      }
-      if (error instanceof z.ZodError) {
-        console.error("compose-document validation error:", error.flatten());
-        return res.status(400).json({ error: "invalid_request", message: "WriterOS could not build a valid compose request." });
-      }
-      console.error("compose-document route error:", error instanceof Error ? error.message : error);
-      res.status(502).json({
-        error: "compose_error", message: "WriterOS could not compose this document right now.",
-        ...(failureMemoryReceipt ? { memoryReceipt: failureMemoryReceipt } : {}),
-      });
-    }
+  app.post("/api/compose-document", (_req, res) => {
+    res.status(410).json({ error: 'retired-composer', message: 'This page is now written by Morgan' });
   });
 
   // Voice profile synthesis

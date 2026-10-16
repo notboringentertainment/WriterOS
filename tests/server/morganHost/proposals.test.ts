@@ -4,6 +4,14 @@ import { SYNCED_BEATS_PROBLEM, validateProposal } from '../../../server/morganHo
 import { createEmptyOutlineContent } from '../../../shared/documents' // or the empty-content helper each schema's tests use
 
 describe('validateProposal', () => {
+  it('accepts prose pages and refuses retired structured targets', () => {
+    expect(validateProposal({ surface: 'page', page: 'synopsis', baseRevision: 0, markdown: 'A courier chooses to stay.', summary: 'Write the synopsis' })).toBeNull()
+    expect(validateProposal({ surface: 'page', page: 'unknown', baseRevision: 0, markdown: '', summary: 'Write' } as never)).toMatch(/page/)
+    expect(validateProposal({ surface: 'page', page: 'outline', baseRevision: -1, markdown: '', summary: 'Write' })).toMatch(/baseRevision/)
+    for (const surface of ['synopsis', 'treatment']) {
+      expect(validateProposal({ surface, baseRevision: 0, content: {}, summary: 'Write' } as never)).toBe('This page is now written by Morgan')
+    }
+  })
   it('accepts a script append and a replace-scene', () => {
     expect(validateProposal({ surface: 'script', target: { kind: 'append' }, blocks: [{ type: 'action', text: 'Rain.' }], summary: 'Add rain' })).toBeNull()
     expect(validateProposal({ surface: 'script', target: { kind: 'replace-scene', sceneHeading: 'INT. KITCHEN - NIGHT', expectedScene: [{ type: 'scene-heading', text: 'INT. KITCHEN - NIGHT' }, { type: 'action', text: 'Dishes.' }] }, blocks: [{ type: 'scene-heading', text: 'INT. KITCHEN - NIGHT' }], summary: 'Rewrite' })).toBeNull()

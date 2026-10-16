@@ -32,6 +32,29 @@ async function started() {
 }
 
 describe('MorganLivePanel', () => {
+  it('starts a page request and waits for hello before sending it once', async () => {
+    const f = fakeApi()
+    const request = { text: 'Write the outline.', surface: 'page:outline', resolve: vi.fn(), reject: vi.fn() }
+    render(<MorganLivePanel projectId="p1" morgan={f.api} surface="Outline" onPageProposal={onPageProposal} pageRequest={request} />)
+    await waitFor(() => expect(f.api.stream).toHaveBeenCalled())
+    expect(f.api.start).toHaveBeenCalledTimes(1)
+    expect(f.api.submit).not.toHaveBeenCalled()
+    f.push({ type: 'hello', hello: hello() })
+    await waitFor(() => expect(request.resolve).toHaveBeenCalledTimes(1))
+    expect(f.api.submit).toHaveBeenCalledWith('p1', request.text, { surface: 'page:outline' })
+    f.push({ type: 'hello', hello: hello() })
+    expect(f.api.submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails a page request when Morgan cannot connect, without submitting', async () => {
+    const f = fakeApi()
+    const request = { text: 'Write the outline.', surface: 'page:outline', resolve: vi.fn(), reject: vi.fn() }
+    render(<MorganLivePanel projectId="p1" morgan={f.api} surface="Outline" onPageProposal={onPageProposal} pageRequest={request} />)
+    await waitFor(() => expect(f.api.stream).toHaveBeenCalled())
+    f.push({ type: 'lost', epoch: null, reason: 'no-hello' })
+    await waitFor(() => expect(request.reject).toHaveBeenCalledTimes(1))
+    expect(f.api.submit).not.toHaveBeenCalled()
+  })
   it('hides only the leading routing line in user bubbles while leaving the rest of the text intact', async () => {
     const f = await started()
     const routing = '[WriterOS: Ben is on the Script page]\n'

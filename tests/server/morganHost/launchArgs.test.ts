@@ -119,6 +119,7 @@ describe('buildMorganLaunch', () => {
       PATH: '/opt/homebrew/bin:/usr/bin', TERM: 'xterm-256color',
       WRITEROS_MORGAN_SOCKET: '/run/m.sock', WRITEROS_MORGAN_TOKEN: 'a'.repeat(64),
       WRITEROS_MORGAN_PACKAGE: '/projects/Test Project.writeros',
+      WRITEROS_MORGAN_FORMATS: '/src/WriterOS/server/morganHost/formats',
     })
   })
 })

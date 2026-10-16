@@ -4,15 +4,23 @@ import type { MorganApi } from '../../lib/projectStorage'
 import { initialModel, reduce } from '../../lib/morganLive/model'
 import { MorganApprovalCard } from './MorganApprovalCard'
 
+export interface MorganPageRequest {
+  text: string
+  surface: string
+  resolve(): void
+  reject(): void
+}
+
 interface MorganLivePanelProps {
   projectId: string
   morgan: MorganApi
   surface: string
   onPageProposal(p: { proposalId: string; proposal: PageProposal } | null): void
   onProjectChanged?(): void   // Morgan changed the beat sheet; reload the project so the Outline shows it
+  pageRequest?: MorganPageRequest | null
 }
 
-export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, onProjectChanged }: MorganLivePanelProps) {
+export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, onProjectChanged, pageRequest }: MorganLivePanelProps) {
   const [model, dispatch] = useReducer(reduce, undefined, initialModel)
   const [draft, setDraft] = useState('')
   const [running, setRunning] = useState(false)
@@ -27,6 +35,7 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, on
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRunning = useRef(false)
   const operation = useRef(false)
+  const pendingPage = useRef<MorganPageRequest | null>(null)
   const feed = useRef<HTMLDivElement>(null)
   const proposalCallback = useRef(onPageProposal)
   proposalCallback.current = onPageProposal
@@ -61,14 +70,26 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, on
   }, [model.composer])
 
   const current = (g: number) => generation.current === g && project.current === projectId
+  function failPageRequest() {
+    const request = pendingPage.current
+    pendingPage.current = null
+    request?.reject()
+  }
   function subscribe(g: number, retry = false) {
     if (!current(g)) return
     close.current = morgan.stream(projectId, (event: MorganScreenEvent) => {
       if (!current(g)) return
+      if (event.type === 'hello' && pendingPage.current) {
+        const request = pendingPage.current
+        pendingPage.current = null
+        void morgan.submit(projectId, request.text, { surface: request.surface }).then(request.resolve, request.reject)
+      }
+      if (event.type === 'ended' || event.type === 'lost') failPageRequest()
       if (event.type === 'ended') { sessionRunning.current = false; setRunning(false) }
       if (event.type === 'project-changed') changedCallback.current?.()
       dispatch(event)
     }, () => {
+      if (current(g)) failPageRequest()
       if (!current(g) || !sessionRunning.current) return
       if (!retry) {
         retryTimer.current = setTimeout(() => { retryTimer.current = null; if (current(g) && sessionRunning.current) subscribe(g, true) }, 1000)
@@ -87,9 +108,19 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, on
       if (!current(g)) return
       dispatch({ type: 'reset' })
       sessionRunning.current = true; setRunning(true); subscribe(g)
-    } catch (e) { if (current(g)) { setRunning(false); setError(e instanceof Error ? e.message : 'Morgan could not start.') } }
+    } catch (e) { if (current(g)) { setRunning(false); setError(pendingPage.current ? 'Morgan could not start. Try again.' : e instanceof Error ? e.message : 'Morgan could not start.'); failPageRequest() } }
     finally { if (current(g)) { operation.current = false; setBusy(false) } }
   }
+  useEffect(() => {
+    if (!pageRequest) return
+    pendingPage.current = pageRequest
+    void start()
+    const timeout = setTimeout(() => { if (pendingPage.current === pageRequest) failPageRequest() }, 20000)
+    return () => {
+      clearTimeout(timeout)
+      if (pendingPage.current === pageRequest) failPageRequest()
+    }
+  }, [pageRequest])
   async function send() {
     const text = draft.trim()
     if (!text || !running || busy || sending || model.stuck || model.working) return
