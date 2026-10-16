@@ -217,6 +217,10 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
   }
 
   async function handleResolve(proposal: RoomProposal, status: 'adopted' | 'rejected') {
+    if (status === 'adopted' && (proposal.surface === 'synopsis' || proposal.surface === 'treatment')) {
+      setError('This page is now written by Morgan')
+      return
+    }
     // Server resolve FIRST — the document is never written unless the server
     // accepted the resolution (a stale/double click 409s and changes nothing).
     let resolved: RoomProposal
@@ -322,7 +326,7 @@ export function RoomChannel({ projectId, projectScopeKey, characterNames, charac
                   type="button"
                   style={{ ...styles.adoptButton, ...(applicable ? {} : styles.buttonDisabled) }}
                   disabled={!applicable}
-                  title={applicable ? undefined : 'This field path can\'t be applied automatically in Phase 1'}
+                  title={applicable ? undefined : proposal.surface === 'synopsis' || proposal.surface === 'treatment' ? 'This page is now written by Morgan' : 'This field path can\'t be applied automatically in Phase 1'}
                   onClick={() => void handleResolve(proposal, 'adopted')}
                 >
                   Adopt

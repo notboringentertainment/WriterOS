@@ -18,6 +18,7 @@ import {
   readWriterOSProjectPackage,
   serializeWriterOSProjectPackage,
   WRITEROS_DOCUMENT_PATHS,
+  WRITEROS_PAGE_PATHS,
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_LOOKBOOK_PATH,
   WRITEROS_LOOKS_PATH,
@@ -37,6 +38,9 @@ import type {
 } from '../../client/src/lib/projectStorage'
 import { WRITEROS_PROJECT_ID_PATTERN } from '../../shared/projectLibraryApi'
 import { acquirePackageWriteLock, type PackageWriteLockTestHooks } from './packageLock'
+import { PageDocumentSchema, type PageDocument, type PageName } from '../../shared/pages'
+import { synopsisToMarkdown, treatmentToMarkdown } from '../../client/src/lib/documentMarkdown'
+import { renderComposedMarkdown } from '../compose/renderComposedMarkdown'
 
 const PACKAGE_TEXT_PATHS = [
   WRITEROS_PROJECT_MANIFEST_PATH,
@@ -45,6 +49,7 @@ const PACKAGE_TEXT_PATHS = [
   WRITEROS_IMPORTED_FDX_SOURCE_PATH,
   WRITEROS_TITLE_PAGE_PATH,
   ...Object.values(WRITEROS_DOCUMENT_PATHS),
+  ...Object.values(WRITEROS_PAGE_PATHS),
   WRITEROS_LOOKBOOK_PATH,
   WRITEROS_LOOKS_PATH,
   ...Object.values(WRITEROS_TRANSCRIPT_PATHS),
@@ -59,6 +64,9 @@ export interface ProjectLibraryStore {
   listProjects(): Promise<Array<ProjectStorageListEntry<ServerProjectRef>>>
   resolveProjectPackagePath(projectId: string): Promise<string>
   readProject(projectId: string): Promise<ProjectPackageReadResult>
+  readPackageSnapshot?(projectId: string): Promise<Record<string, string | undefined>>
+  readPage?(projectId: string, page: PageName): Promise<PageDocument>
+  writePage?(projectId: string, page: PageDocument, expectedRevision: number): Promise<{ page: PageDocument; stale: boolean }>
   writeProject(project: StoredProject): Promise<ServerProjectRef>
   removeProject(projectId: string): Promise<{ alreadyMissing: boolean }>
 }
@@ -413,8 +421,53 @@ export async function createProjectLibraryStore(
     return existing
   }
 
+  async function accessPage(projectId: string, name: PageName, incoming?: PageDocument, expectedRevision?: number) {
+    const lock = await acquirePackageWriteLock({ workspaceRoot: rootPath, projectId, testHooks: options.packageLockTestHooks })
+    try {
+      const existing = await findProject(projectId)
+      const files = await readPackageFiles(rootPath, existing.packagePath)
+      const relativePath = WRITEROS_PAGE_PATHS[name]
+      let page: PageDocument
+      if (files[relativePath] !== undefined) {
+        page = PageDocumentSchema.parse(JSON.parse(files[relativePath]!))
+      } else {
+        const parsed = readWriterOSProjectPackage(files)
+        if (!parsed.ok) throw new ProjectLibraryStoreError('This project could not be read.', 400, 'invalid-project')
+        const legacy = parsed.project.state.documents[name]
+        const hasText = (value: unknown): boolean => typeof value === 'string' ? value.trim().length > 0
+          : Boolean(value && typeof value === 'object' && Object.entries(value).some(([key, child]) =>
+            !['format', 'seriesType', 'episodeLength'].includes(key) && hasText(child)))
+        const markdown = legacy.composed ? renderComposedMarkdown(legacy.composed)
+          : !hasText(legacy.content) ? ''
+          : name === 'synopsis' ? synopsisToMarkdown(parsed.project.state.documents.synopsis)
+          : name === 'treatment' ? treatmentToMarkdown(parsed.project.state.documents.treatment) : ''
+        page = { page: name, markdown, status: 'draft', revision: 0 }
+      }
+      if (incoming && expectedRevision !== page.revision) return { page, stale: true }
+      if (incoming) page = { ...incoming, revision: page.revision + 1 }
+      if (incoming || files[relativePath] === undefined) {
+        const target = path.join(existing.packagePath, relativePath)
+        await assertSafeExistingPath(rootPath, existing.packagePath)
+        await mkdir(path.dirname(target), { recursive: true })
+        await assertSafeExistingPath(rootPath, path.dirname(target))
+        // Atomic replacement under the same lock used by whole-package saves.
+        const temporary = target + '.' + randomBytes(12).toString('hex') + '.tmp'
+        await writeFile(temporary, `${JSON.stringify(page, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+        await renamePath(temporary, target)
+      }
+      return { page, stale: false }
+    } finally { await lock.release() }
+  }
+
   return {
     label: path.basename(rootPath),
+    async readPackageSnapshot(projectId) {
+      const lock = await acquirePackageWriteLock({ workspaceRoot: rootPath, projectId })
+      try { return await readPackageFiles(rootPath, (await findProject(projectId)).packagePath) }
+      finally { await lock.release() }
+    },
+    async readPage(projectId, page) { return (await accessPage(projectId, page)).page },
+    async writePage(projectId, page, expectedRevision) { return accessPage(projectId, page.page, page, expectedRevision) },
     listProjects: scanProjects,
     async resolveProjectPackagePath(projectId) {
       const existing = await findProject(projectId)
@@ -492,6 +545,8 @@ export async function createProjectLibraryStore(
             backupCreated = true
             await fileOperations.afterPackageSnapshot?.(originalPath, backupPath)
             await copyExistingPackageTree(rootPath, backupPath, stagingPath, fileOperations)
+            const preservedFiles = await readPackageFiles(rootPath, backupPath)
+            Object.assign(serialized.files, serializeWriterOSProjectPackage(project, { preservedFiles }).files)
             await preserveManifestSources(stagingPath, serialized.files)
           }
           await writeStagedPackage(stagingPath, serialized.files)

@@ -3,14 +3,12 @@
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
-  OutlineDocumentContentSchema, StoryBibleDocumentContentSchema, SynopsisDocumentContentSchema, TreatmentDocumentContentSchema,
+  OutlineDocumentContentSchema, StoryBibleDocumentContentSchema,
 } from '../../shared/documents'
 import type { PageProposal } from '../../shared/morganLive'
 
 const STRUCTURED = {
-  synopsis: SynopsisDocumentContentSchema,
   outline: OutlineDocumentContentSchema,
-  treatment: TreatmentDocumentContentSchema,
   storyBible: StoryBibleDocumentContentSchema,
 } as const
 const ScriptBlock = z.object({
@@ -41,7 +39,13 @@ function changesSyncedBeats(proposed: unknown, current: unknown): boolean {
 }
 
 export function validateProposal(p: PageProposal, current: CurrentPages = {}): string | null {
+  if (['synopsis', 'treatment'].includes(String(p?.surface))) return 'This page is now written by Morgan'
   if (typeof p?.summary !== 'string' || p.summary.trim() === '') return 'summary: say in one line what changes and why'
+  if (p.surface === 'page') {
+    if (!['synopsis', 'treatment', 'outline'].includes(p.page)) return 'page: choose synopsis, treatment or outline'
+    if (!Number.isInteger(p.baseRevision) || p.baseRevision < 0) return 'baseRevision: send the revision you read'
+    return typeof p.markdown === 'string' ? null : 'markdown: send the whole page as prose'
+  }
   if (p.surface === 'script') {
     const target = ScriptTarget.safeParse(p.target)
     if (!target.success) return `target.${first(target.error)}`
@@ -56,4 +60,3 @@ export function validateProposal(p: PageProposal, current: CurrentPages = {}): s
   if (p.surface === 'outline' && changesSyncedBeats(p.content, current.outline)) return SYNCED_BEATS_PROBLEM
   return null
 }
-

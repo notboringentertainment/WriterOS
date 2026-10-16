@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PageDocumentSchema, type ProjectPages } from '@shared/pages'
 import { ProjectDocumentsSchema, type ProjectDocuments } from '@shared/documents'
 import { LookbookDocumentSchema } from '@shared/lookbook'
 import { LooksDocumentSchema } from '@shared/looks'
@@ -33,6 +34,11 @@ export const WRITEROS_DOCUMENT_PATHS = {
   storyBible: 'documents/story-bible.json',
 } as const
 export const WRITEROS_LOOKBOOK_PATH = 'documents/lookbook.json'
+export const WRITEROS_PAGE_PATHS = {
+  synopsis: 'documents/pages/synopsis.json',
+  treatment: 'documents/pages/treatment.json',
+  outline: 'documents/pages/outline.json',
+} as const
 export const WRITEROS_LOOKS_PATH = 'documents/looks.json'
 export const WRITEROS_TRANSCRIPT_PATHS = {
   writingPartner: 'transcripts/writing-partner.json',
@@ -103,6 +109,7 @@ export interface WriterOSProjectPackage {
 }
 
 export interface SerializeWriterOSProjectPackageOptions {
+  preservedFiles?: Record<string, string | undefined>
   openedAt?: number
   appVersion?: string
   sourceImport?: ProjectSourceImportMetadata | WriterOSProjectManifest['sourceImport']
@@ -275,6 +282,11 @@ export function serializeWriterOSProjectPackage(
     [WRITEROS_DOCUMENT_PATHS.storyBible]: stringifyPackageJson(state.documents.storyBible),
     [WRITEROS_TRANSCRIPT_PATHS.writingPartner]: stringifyPackageJson(state.agents.writingPartner),
     [WRITEROS_TRANSCRIPT_PATHS.specialists]: stringifyPackageJson(specialistAgentsFromState(state)),
+  }
+
+  for (const name of ['synopsis', 'treatment'] as const) {
+    const path = WRITEROS_DOCUMENT_PATHS[name]
+    if (options.preservedFiles?.[path] !== undefined) files[path] = options.preservedFiles[path]!
   }
 
   if (state.documents.lookbook !== undefined) {
@@ -501,6 +513,17 @@ export function readWriterOSProjectPackage(
   if (!titlePageResult.ok) return { ok: false, error: titlePageResult.error, warnings }
 
   const defaults = defaultProjectState()
+  const pages: ProjectPages = {}
+  for (const [name, path] of Object.entries(WRITEROS_PAGE_PATHS)) {
+    if (files[path] === undefined) continue
+    const json = parseJsonFile(path, files[path]!)
+    if (!json.ok) return { ok: false, error: json.error, warnings }
+    const page = PageDocumentSchema.safeParse(json.value)
+    if (!page.success || page.data.page !== name) return {
+      ok: false, error: { code: 'invalid-document', path, message: 'This page could not be read.' }, warnings,
+    }
+    pages[page.data.page] = page.data
+  }
   const writingPartnerResult = parseOptionalJson(
     files,
     WRITEROS_TRANSCRIPT_PATHS.writingPartner,
@@ -569,6 +592,7 @@ export function readWriterOSProjectPackage(
       facts: normalizeScriptFactsCache(scriptFactsCache),
     },
     documents: documentResult.documents,
+    pages,
     synopsis: legacy.synopsis,
     outline: legacy.outline,
     storyBible: legacy.storyBible,

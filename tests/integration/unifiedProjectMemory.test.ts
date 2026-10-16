@@ -525,9 +525,9 @@ describe('canon reaches every agent path', () => {
         projectId, surface: 'outline', format: 'feature', content: syntheticOutlineFeature,
         identity: { title: 'Harbor', genre: 'Drama' },
       })
-      expect(compose.status).toBe(200)
-      const composeCall = composeGenerateResponse.mock.calls[0][0]
-      expect(`${composeCall.systemPrompt}\n${JSON.stringify(composeCall.messages)}`).toContain(CANON_CLAIM)
+      expect(compose.status).toBe(410)
+      expect(compose.json.message).toBe('This page is now written by Morgan')
+      expect(composeGenerateResponse).not.toHaveBeenCalled()
 
       const profile = genericChatBody(projectId).userProfile
       const synopsisAssist = await postJson(port, '/api/synopsis-assist', {

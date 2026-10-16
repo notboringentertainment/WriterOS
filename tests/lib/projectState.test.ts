@@ -120,7 +120,7 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.meta.format).toBe('feature')
-    expect(result.documents.synopsis.content.header.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe(state.documents.synopsis.content.header.format)
   })
 
   it('hydrates missing title page metadata during migration', () => {
@@ -169,7 +169,7 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.meta.format).toBe('series')
-    expect(result.documents.synopsis.content.header.format).toBe('series')
+    expect(result.documents.synopsis.content.header.format).toBe(state.documents.synopsis.content.header.format)
   })
 
   it('keeps explicit feature format when a synopsis header says series', () => {
@@ -184,7 +184,7 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.meta.format).toBe('feature')
-    expect(result.documents.synopsis.content.header.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe('series')
     expect(result.documents.synopsis.content.series).toEqual(state.documents.synopsis.content.series)
   })
 
@@ -200,7 +200,7 @@ describe('migrateState', () => {
 
     expect(firstLoad.meta.format).toBe('feature')
     expect(secondLoad.meta.format).toBe('feature')
-    expect(secondLoad.documents.synopsis.content.header.format).toBe('feature')
+    expect(secondLoad.documents.synopsis.content.header.format).toBe('series')
   })
 
   it('uses a legacy series header only when manifest format is absent', () => {
@@ -211,7 +211,7 @@ describe('migrateState', () => {
     expect(migrateState(state).meta.format).toBe('series')
   })
 
-  it('normalizes stale synopsis header format mirrors during migration', () => {
+  it('preserves frozen synopsis headers during migration', () => {
     const state = defaultProjectState() as any
     state.meta.format = ''
     state.documents.synopsis.content.header.format = 'feature_film'
@@ -219,7 +219,7 @@ describe('migrateState', () => {
     const result = migrateState(state)
 
     expect(result.meta.format).toBe('feature')
-    expect(result.documents.synopsis.content.header.format).toBe('feature')
+    expect(result.documents.synopsis.content.header.format).toBe('feature_film')
   })
 })
 
@@ -368,7 +368,7 @@ describe('migrateState — legacy states hydrate documents', () => {
 
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.documents.treatment.content.logline).toBe('')
-    expect(migrated.documents.treatment.content.header.format).toBe('feature')
+    expect(migrated.documents.treatment.content.header.format).toBe('')
   })
 
   it('copies rich pre-v5 outline material into empty treatment without removing outline content', () => {
@@ -397,7 +397,7 @@ describe('migrateState — legacy states hydrate documents', () => {
 
   it('round-trips v3 state through localStorage', () => {
     const state = defaultProjectState()
-    state.synopsis.logline = 'persisted logline'
+    state.documents.synopsis.content.logline.text = 'persisted logline'
     saveProjectState(state)
     const loaded = loadProjectState()
     expect(loaded.documents.synopsis.content.logline.text).toBe('persisted logline')
@@ -500,7 +500,7 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     expect(loaded.documents.synopsis.content.header).toEqual(state.documents.synopsis.content.header)
   })
 
-  it('saves synopsis header format as a mirror of canonical meta.format', () => {
+  it('saves frozen synopsis header format unchanged', () => {
     const state = defaultProjectState()
     state.meta.format = 'series'
     state.documents.synopsis.content.header.format = 'feature'
@@ -510,7 +510,7 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     const loaded = loadProjectState()
 
     expect(loaded.meta.format).toBe('series')
-    expect(loaded.documents.synopsis.content.header.format).toBe('series')
+    expect(loaded.documents.synopsis.content.header.format).toBe('feature')
   })
 
   it('preserves every key in content.qa across save/load', () => {
@@ -561,15 +561,15 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     expect(loaded.documents.synopsis.viewPreferences?.synopsisComposeMode).toBe('paragraphs')
   })
 
-  it('mirrors state.synopsis.logline into documents.synopsis.content.logline.text', () => {
+  it('does not mirror legacy synopsis logline into the frozen document', () => {
     const state = defaultProjectState()
     state.synopsis.logline = 'A widow returns home.'
     saveProjectState(state)
     const loaded = loadProjectState()
-    expect(loaded.documents.synopsis.content.logline.text).toBe('A widow returns home.')
+    expect(loaded.documents.synopsis.content.logline.text).toBe('')
   })
 
-  it('mirrors all five legacy state.synopsis.sections into documents.synopsis.content.prose', () => {
+  it('keeps frozen prose unchanged when the legacy synopsis slice differs', () => {
     const state = defaultProjectState()
     state.synopsis.sections = {
       setup: 'OPENING',
@@ -581,11 +581,11 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     saveProjectState(state)
     const loaded = loadProjectState()
     expect(loaded.documents.synopsis.content.prose).toEqual({
-      opening: 'OPENING',
-      escalation: 'ESCALATION',
-      middle: 'MIDDLE',
-      climax: 'CLIMAX',
-      resolution: 'RESOLUTION',
+      opening: '',
+      escalation: '',
+      middle: '',
+      climax: '',
+      resolution: '',
     })
   })
 
@@ -620,11 +620,11 @@ describe('saveProjectState — preserves document-only Synopsis fields', () => {
     expect(loaded.documents.storyBible.content.onePagePitch.logline).toBe('Bible logline')
   })
 
-  it('refreshes documents.synopsis.updatedAt on save', () => {
+  it('preserves frozen documents.synopsis.updatedAt on save', () => {
     const state = defaultProjectState()
     state.documents.synopsis.updatedAt = '2020-01-01T00:00:00.000Z'
     saveProjectState(state)
     const loaded = loadProjectState()
-    expect(loaded.documents.synopsis.updatedAt).not.toBe('2020-01-01T00:00:00.000Z')
+    expect(loaded.documents.synopsis.updatedAt).toBe('2020-01-01T00:00:00.000Z')
   })
 })

@@ -2,7 +2,7 @@
 
 This repo is now the clean WriterOS app, not the original Claude Design prototype bundle.
 
-WriterOS is a writing-first studio for screenplay drafting, story structure, and AI-assisted development work. The script editor and structured writing surfaces are the primary product experience; agent chat exists to support the writing, not to replace it.
+WriterOS is a canon home and writing studio for the script, with prose pages written by Morgan from canon at the writer's request.
 
 ## Current Shape
 
@@ -23,7 +23,7 @@ WriterOS is a writing-first studio for screenplay drafting, story structure, and
 
 ## Important Constraints
 
-1. Preserve the writing-first product direction. The script editor and structured documents are the primary app surface.
+1. Preserve the writing-first product direction: canon home and script, with pages written by Morgan.
 2. Keep Writing Partner and Writer's Room transcripts separate:
    - `agents.writingPartner.transcript` is only for the left rail host conversation.
    - `agents.sam/casey/oliver/maya/zoe/alex.transcript` are only for Writer's Room specialist sessions.

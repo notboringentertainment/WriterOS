@@ -6,16 +6,10 @@ import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
 import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
 import {
-  getDeckForFormat as getSynopsisDeck,
-  resolveSynopsisPath,
-  type SynopsisPromptDef,
-} from './synopsisDeck'
-import {
   getDeckForFormat as getStoryBibleDeck,
   resolveStoryBiblePath,
   type StoryBiblePromptDef,
 } from './storyBibleDeck'
-import { TREATMENT_SURFACE_DECK, resolveTreatmentPath, type TreatmentPromptDef } from './treatmentDeck'
 
 const EMPTY_STORY_BIBLE_CONTENT = createEmptyStoryBibleContent()
 
@@ -44,35 +38,9 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
       return buildIntakeSurface('outline', 'Beat Sheet', format, questions)
     }
 
-    case 'synopsis': {
-      const content = state.documents.synopsis.content
-      const questions: SurfaceQuestion[] = getSynopsisDeck(format).map(prompt => ({
-        id: prompt.id,
-        label: prompt.question,
-        helper: prompt.helper,
-        status: isSynopsisPromptAnswered(content, prompt) ? 'answered' : 'unanswered',
-        answers: collectSurfaceAnswers(prompt.inputs.map(input => ({
-          label: input.label,
-          value: resolveSynopsisPath(content, input.path).value,
-        }))),
-      }))
-      return buildIntakeSurface('synopsis', 'Synopsis', format, questions)
-    }
-
-    case 'treatment': {
-      const content = state.documents.treatment.content
-      const questions: SurfaceQuestion[] = TREATMENT_SURFACE_DECK.map(prompt => ({
-        id: prompt.id,
-        label: prompt.question,
-        helper: prompt.helper,
-        status: isTreatmentPromptAnswered(content, prompt) ? 'answered' : 'unanswered',
-        answers: collectSurfaceAnswers(prompt.paths.map(path => ({
-          label: prompt.paths.length > 1 ? path : undefined,
-          value: resolveTreatmentPath(content, path).value,
-        }))),
-      }))
-      return buildIntakeSurface('treatment', 'Treatment', format, questions)
-    }
+    case 'synopsis':
+    case 'treatment':
+      return { kind: 'none' }
 
     case 'story-bible': {
       const content = state.documents.storyBible.content
@@ -127,16 +95,6 @@ function buildIntakeSurface(
   }
 }
 
-function isSynopsisPromptAnswered(
-  content: ProjectState['documents']['synopsis']['content'],
-  prompt: SynopsisPromptDef,
-): boolean {
-  return prompt.inputs.every(input => {
-    const resolved = resolveSynopsisPath(content, input.path)
-    return resolved.defined && hasMeaningfulContent(resolved.value)
-  })
-}
-
 function isStoryBiblePromptAnswered(
   content: ProjectState['documents']['storyBible']['content'],
   prompt: StoryBiblePromptDef,
@@ -147,16 +105,6 @@ function isStoryBiblePromptAnswered(
     return resolved.defined
       && hasMeaningfulContent(resolved.value)
       && (!emptyResolved.defined || !sameValue(resolved.value, emptyResolved.value))
-  })
-}
-
-function isTreatmentPromptAnswered(
-  content: ProjectState['documents']['treatment']['content'],
-  prompt: TreatmentPromptDef,
-): boolean {
-  return prompt.paths.every(path => {
-    const resolved = resolveTreatmentPath(content, path)
-    return resolved.defined && hasMeaningfulContent(resolved.value)
   })
 }
 

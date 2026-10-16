@@ -75,24 +75,24 @@ describe('useProjectState', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setProjectFormat('series'))
     expect(result.current.state.meta.format).toBe('series')
-    expect(result.current.state.documents.synopsis.content.header.format).toBe('series')
-    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
+    expect(result.current.state.documents.synopsis.content.header.format).toBe('')
+    expect(result.current.state.documents.treatment.content.header.format).toBe('')
     expect(result.current.state.documents.storyBible.content.cover.format).toBe('series')
 
     const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
     expect(stored.meta.format).toBe('series')
-    expect(stored.documents.synopsis.content.header.format).toBe('series')
-    expect(stored.documents.treatment.content.header.format).toBe('series')
+    expect(stored.documents.synopsis.content.header.format).toBe('')
+    expect(stored.documents.treatment.content.header.format).toBe('')
     expect(stored.documents.storyBible.content.cover.format).toBe('series')
   })
 
-  it('setProjectFormat lazily initializes series content when entering series', () => {
+  it('setProjectFormat keeps frozen synopsis content when entering series', () => {
     const { result } = renderHook(() => useProjectState())
     expect(result.current.state.documents.synopsis.content.series).toBeUndefined()
 
     act(() => result.current.setProjectFormat('series'))
 
-    expect(result.current.state.documents.synopsis.content.series).toEqual(createEmptySeriesContent())
+    expect(result.current.state.documents.synopsis.content.series).toBeUndefined()
   })
 
   it('setProjectFormat preserves feature and existing series synopsis data', () => {
@@ -160,7 +160,7 @@ describe('useProjectState', () => {
         header: treatmentDocumentBefore.content.header,
       },
     }).toEqual(treatmentDocumentBefore)
-    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
+    expect(result.current.state.documents.treatment.content.header.format).toBe(treatmentDocumentBefore.content.header.format)
     expect({
       ...result.current.state.documents.storyBible,
       updatedAt: storyBibleDocumentBefore.updatedAt,
@@ -183,7 +183,7 @@ describe('useProjectState', () => {
         header: treatmentDocumentBefore.content.header,
       },
     }).toEqual(treatmentDocumentBefore)
-    expect(stored.documents.treatment.content.header.format).toBe('series')
+    expect(stored.documents.treatment.content.header.format).toBe(treatmentDocumentBefore.content.header.format)
     expect({
       ...stored.documents.storyBible,
       updatedAt: storyBibleDocumentBefore.updatedAt,

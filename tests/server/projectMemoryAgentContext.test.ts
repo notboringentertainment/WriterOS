@@ -724,10 +724,6 @@ describe('all HTTP agent path parity', () => {
         projectId: 'project-1', personaId: 'zoe', taskKind: 'research_world_context', message: 'harbor',
         projectContext: context, sourceSurface: 'writingPartner', clientRequestId: 'req-fail-closed',
       }],
-      ['/api/compose-document', {
-        projectId: 'project-1', surface: 'outline', format: 'feature',
-        content: syntheticOutlineFeature, identity: { title: 'Harbor', genre: 'Drama' },
-      }],
       ['/api/synopsis-assist', {
         projectId: 'project-1', userInput: 'harbor', currentLogline: '', currentSynopsis: '',
         projectDetails: {}, userProfile: profile,
@@ -813,11 +809,10 @@ describe('all HTTP agent path parity', () => {
         projectId: 'project-1', surface: 'outline', format: 'feature',
         content: syntheticOutlineFeature, identity: { title: 'Harbor', genre: 'Drama' },
       })
-      expect(composeFailure.status).toBe(422)
-      expect(composeFailure.json.memoryReceipt).toEqual({
-        revision: 17, status: 'available', citations: [], conflictIds: ['conflict-visible'],
-      })
-      expect(provider.context).toHaveBeenCalledTimes(2)
+      expect(composeFailure.status).toBe(410)
+      expect(composeFailure.json.message).toBe('This page is now written by Morgan')
+      expect(composeFailure.json.memoryReceipt).toBeUndefined()
+      expect(provider.context).toHaveBeenCalledTimes(1)
     } finally { server.close() }
   })
 
@@ -868,10 +863,10 @@ describe('all HTTP agent path parity', () => {
         projectId: 'project-1', surface: 'outline', format: 'feature',
         content: syntheticOutlineFeature, identity: { title: 'Harbor', genre: 'Drama' },
       })
-      expect(response.status).toBe(200)
-      const call = generateResponse.mock.calls[0][0]
-      expect(`${call.systemPrompt}\n${JSON.stringify(call.messages)}`).toContain('<project_memory_data>')
-      expect(response.json.memoryReceipt).toMatchObject({ revision: 17, status: 'available' })
+      expect(response.status).toBe(410)
+      expect(response.json.message).toBe('This page is now written by Morgan')
+      expect(generateResponse).not.toHaveBeenCalled()
+      expect(provider.context).not.toHaveBeenCalled()
     } finally { server.close() }
   })
 

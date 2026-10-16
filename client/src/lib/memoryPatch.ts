@@ -111,6 +111,9 @@ export function applyMemoryGroundedPatch(
   if (current.revision !== validated.patch.baseVersion) {
     return { ok: false, reason: 'stale', message: STALE_PATCH_MESSAGE }
   }
+  if (patch.surface === 'synopsis' || patch.surface === 'treatment') {
+    return { ok: false, reason: 'invalid', message: 'This page is now written by Morgan' }
+  }
 
   if (validated.patch.surface === 'outline') {
     const now = current.content as OutlineDocumentContent

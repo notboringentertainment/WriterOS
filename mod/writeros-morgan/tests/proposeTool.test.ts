@@ -2,8 +2,9 @@
 import { test, expect } from 'claude-code/testing'
 import { outcomeText, PROPOSE_INPUT_SCHEMA } from '../hooks/proposeTool'
 
-test('schema names exactly the five pages', () => {
-  expect(PROPOSE_INPUT_SCHEMA.properties.surface.enum).toEqual(['synopsis', 'outline', 'treatment', 'storyBible', 'script'])
+test('schema names prose pages and surviving structured targets', () => {
+  expect(PROPOSE_INPUT_SCHEMA.properties.surface.enum).toEqual(['page', 'outline', 'storyBible', 'script'])
+  expect(PROPOSE_INPUT_SCHEMA.properties.page.enum).toEqual(['synopsis', 'treatment', 'outline'])
 })
 
 test('outcomes read plainly to Morgan', () => {

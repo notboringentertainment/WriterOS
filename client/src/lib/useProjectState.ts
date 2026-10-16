@@ -59,10 +59,6 @@ function nextTimestampAfter(value: string): string {
 
 function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
   const format = normalizeProjectFormat(value)
-  const seriesPatch =
-    format === 'series' && state.documents.synopsis.content.series === undefined
-      ? { series: createEmptySeriesContent() }
-      : {}
 
   return {
     ...state,
@@ -72,29 +68,6 @@ function withProjectFormat(state: ProjectState, value: unknown): ProjectState {
     },
     documents: {
       ...state.documents,
-      synopsis: {
-        ...state.documents.synopsis,
-        updatedAt: nextTimestampAfter(state.documents.synopsis.updatedAt),
-        content: {
-          ...state.documents.synopsis.content,
-          ...seriesPatch,
-          header: {
-            ...state.documents.synopsis.content.header,
-            format,
-          },
-        },
-      },
-      treatment: {
-        ...state.documents.treatment,
-        updatedAt: nextTimestampAfter(state.documents.treatment.updatedAt),
-        content: {
-          ...state.documents.treatment.content,
-          header: {
-            ...state.documents.treatment.content.header,
-            format,
-          },
-        },
-      },
       storyBible: {
         ...state.documents.storyBible,
         updatedAt: nextTimestampAfter(state.documents.storyBible.updatedAt),
@@ -145,6 +118,10 @@ export function useProjectState() {
 
   const setProjectFormat = useCallback((format: ProjectFormat) => {
     update(s => withProjectFormat(s, format))
+  }, [update])
+
+  const setPage = useCallback((page: import('@shared/pages').PageDocument) => {
+    update(s => ({ ...s, pages: { ...s.pages, [page.page]: page } }))
   }, [update])
 
   const setTitlePageMetadata = useCallback((patch: Partial<TitlePageMetadata>) => {
@@ -941,6 +918,7 @@ export function useProjectState() {
     storedProjects: projects,
     setMeta,
     setProjectFormat,
+    setPage,
     setTitlePageMetadata,
     clearSynopsis,
     setSynopsisDocument,

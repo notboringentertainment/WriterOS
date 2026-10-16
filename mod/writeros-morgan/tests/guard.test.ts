@@ -20,6 +20,17 @@ test('allows ordinary images and text', async () => {
   expect(await guardTool('Read', { file_path: '/a/MAP.md' }, ctx())).toEqual({ allow: true })
 })
 
+test('reads formats and prose pages, proposing changes instead of writing directly', async () => {
+  for (const file_path of ['/app/server/morganHost/formats/synopsis.md', '/projects/Test Project.writeros/documents/pages/synopsis.json']) {
+    expect(await guardTool('Read', { file_path }, ctx())).toEqual({ allow: true })
+  }
+  expect((await guardTool('Write', { file_path: '/projects/Test Project.writeros/documents/pages/synopsis.json' }, ctx())).allow).toBe(false)
+  expect(await guardTool('mcp__writeros-morgan__propose_page_change', { surface: 'page', page: 'synopsis' }, ctx())).toEqual({ allow: true })
+  for (const surface of ['synopsis', 'treatment']) {
+    expect(await guardTool('mcp__writeros-morgan__propose_page_change', { surface }, ctx())).toEqual({ allow: false, reason: 'This page is now written by Morgan' })
+  }
+})
+
 test('refuses a read it cannot resolve', async () => {
   expect((await guardTool('Read', { file_path: '/a/x.md' }, ctx({ '/a/x.md': null }))).allow).toBe(false)
 })

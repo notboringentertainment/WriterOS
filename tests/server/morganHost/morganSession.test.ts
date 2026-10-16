@@ -9,6 +9,7 @@ import { groupAlive, spawnWithPty, type SpawnChild } from '../../../server/morga
 import type { MorganScreenEvent } from '../../../shared/morganLive'
 import { TOKEN_HEADER } from '../../../mod/writeros-morgan/hooks/protocol'
 import { rowTemplate } from '../../helpers/morganProtocol'
+import { validateProposal } from '../../../server/morganHost/proposals'
 import type { OwnedRegistry } from '../../../server/morganHost/ownership'
 
 const fake = path.resolve(__dirname, '../../fakes/fake-claude-morgan.mjs')
@@ -233,13 +234,16 @@ describe('MorganSessions', () => {
     expect(seen.at(-1)?.type).toBe('ended')
   })
 
-  it('a page proposal reaches the page and Ben\'s Keep reaches Morgan', async () => {
-    const { sessions } = make('propose'); current = sessions
+  it.each(['script', 'page'])('a %s proposal reaches the client and Ben\'s Keep reaches Morgan', async surface => {
+    const proposal = { surface: 'page', page: 'synopsis', baseRevision: 0, markdown: '# Synopsis\n\nA courier crosses the city.', summary: 'Write the synopsis' }
+    const { sessions } = make('propose', { validateProposal: p => validateProposal(p) }, surface === 'page' ? { FAKE_PROPOSAL: JSON.stringify(proposal) } : {}); current = sessions
     const seen: MorganScreenEvent[] = []
     await sessions.start('p1')
     sessions.subscribe('p1', e => seen.push(e))
     await until(seen, e => e.type === 'proposal')
     const p = seen.find(e => e.type === 'proposal') as Extract<MorganScreenEvent, { type: 'proposal' }>
+    expect(p.proposal.surface).toBe(surface)
+    if (surface === 'page') expect(p.proposal).toEqual(proposal)
     expect(sessions.answerProposal('p1', p.proposalId, { outcome: 'kept' })).toBe(true)
     await until(seen, e => text(e).includes('proposal: kept'))
   })

@@ -301,21 +301,19 @@ describe('filterMemoryGroundedPatchProposal', () => {
 })
 
 describe('applyMemoryGroundedPatch', () => {
-  it('applies through the matching setter exactly once when the patch is current', () => {
+  it('refuses a current patch into a retired synopsis', () => {
     const documents = createEmptyDocuments(() => '2026-08-01T00:00:00.000Z')
     const patch = makeSynopsisPatch({ baseVersion: documents.synopsis.revision })
     const setters = makeSetters()
 
     const result = applyMemoryGroundedPatch(patch, documents, setters)
 
-    expect(result).toEqual({ ok: true })
-    expect(setters.synopsis).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ ok: false, reason: 'invalid', message: 'This page is now written by Morgan' })
+    expect(setters.synopsis).not.toHaveBeenCalled()
     expect(setters.outline).not.toHaveBeenCalled()
     expect(setters.treatment).not.toHaveBeenCalled()
     expect(setters.storyBible).not.toHaveBeenCalled()
 
-    const updater = setters.synopsis.mock.calls[0][0] as (c: SynopsisDocumentContent) => SynopsisDocumentContent
-    expect(updater(documents.synopsis.content)).toEqual(patch.proposedContent)
   })
 
   it('rejects a stale patch without calling any setter', () => {
