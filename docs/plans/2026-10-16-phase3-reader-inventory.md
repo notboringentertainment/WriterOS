@@ -1,6 +1,6 @@
 # Phase 3 reader inventory: synopsis / treatment / outline content
 
-Date: 2026-10-16 · Branch: `build/pare-down-phase3` · Plan: `2026-10-15-writeros-pare-down.md`, section "Phase 3: Story Bible and readers"
+Date: 2026-10-16 · Codex review round 1: two Important gaps (I44, I24's route) added · Branch: `build/pare-down-phase3` · Plan: `2026-10-15-writeros-pare-down.md`, section "Phase 3: Story Bible and readers"
 
 Built from a grep of `client/`, `server/`, `shared/`, `mod/` for reads and writes of `documents.synopsis`, `documents.treatment`, `documents.outline`, the legacy mirrors `state.synopsis` / `state.outline`, and the `projectContext.synopsis` / `.treatment` fields derived from them. Tests are not listed.
 
@@ -27,6 +27,7 @@ Two labels are not reader moves, and are listed so nothing is silently skipped:
 | I5 | `server/routes.ts:1179` `synopsisSections` in StoryMemory | legacy synopsis sections | page prose | Sent only when there is no synopsis page text; otherwise `{}`. (`openaiService.ts:598` prefers sections over prose, so leaving them would hide the page.) |
 | I6 | `server/routes.ts:662-720` `buildTreatmentContextLines` / `buildStoryMemoryTreatment` | treatment concept, characters, prose, visual, open questions | page prose | Treatment page markdown when it has text; legacy lines otherwise. |
 | I7 | `server/routes.ts:506-583` `buildStoryMemoryCharacters` | Story Bible characters, then treatment main characters and synopsis series characters merged in | Story Bible | Story Bible characters win. A legacy character is added only when no Story Bible character has that name. |
+| I44 | `server/routes.ts:593` `activeShowOverview` (used at `:885` in the OpenSwarm prompt) | legacy series show overview | page prose | Empty when the synopsis page has text, so the prompt never pairs the page with a stale overview. |
 | I8 | `server/routes.ts:800-835` OpenSwarm context inventory counts | synopsis/treatment field counts | page prose | Counts follow I4/I6 (a page counts as written). |
 | I9 | `server/ai/openaiService.ts:436-443, 598-627, 752, 840` | StoryMemory `synopsis`, `synopsisSections`, `treatment`, logline | page prose | No code change: it reads StoryMemory, which I4–I6 now fill from the pages. |
 | I10 | `server/ai/morganRuntime/reachContract.ts:25-27` | StoryMemory synopsis / sections / treatment | page prose | No code change: follows I4–I6. |
@@ -43,7 +44,7 @@ Two labels are not reader moves, and are listed so nothing is silently skipped:
 | I21 | `client/src/App.tsx:847-856` `handleExportSeed` | synopsis + treatment content into the seed | page prose + Story Bible | Passes the synopsis page markdown; see I22. |
 | I22 | `shared/seedMarkdown.ts:59-184` | title, logline, format, genre, comps from synopsis header; synopsis prose; treatment open questions | page prose + Story Bible | Facts: Story Bible cover/pitch/tone first, legacy synopsis header second. Synopsis section: page markdown, else legacy prose. Open questions: legacy fallback (no other written home; ledger questions go through What's Standing). |
 | I23 | `shared/pitchPacket.ts:152-220` `composePitchPacket` | title, logline, format, genre, tone, premise, comps, characters, open questions from synopsis/treatment/Story Bible | Story Bible | Each scalar: Story Bible field if written, else the legacy candidates as today. Story engine: Story Bible `storyEngine` (feature propulsion or series engine by format), which today is always empty. Comps: Story Bible comps, else legacy. Characters already Story Bible first. Treatment open questions stay as a legacy source. |
-| I24 | `server/room/interview/pitchPacketRuntime.ts:47-90` + `client/src/lib/useInterviewSession.ts:368` | `documents` sent to the packet composer and the AI proposal pass | page prose | Client also sends `pages`; the proposal pass is grounded on the page prose too. |
+| I24 | `server/room/interview/pitchPacketRuntime.ts:47-90` + the HTTP handler `server/room/roomRoutes.ts:459` + `client/src/lib/useInterviewSession.ts:368` | `documents` sent to the packet composer and the AI proposal pass | page prose | Client also sends `pages`; the route passes them through; the proposal pass is grounded on the page prose too. |
 | I25 | `server/room/interview/pitchPacketStore.ts:30-42` (F22) | deletes every draft/approved packet before a new draft | (bug fix, Q1) | Opening the packet returns the session's existing draft or approved packet instead of deleting it; a new draft is made only when none exists. |
 | I26 | `client/src/App.tsx:1133-1144` wp-chat `documentSnapshot` | sends `documents[synopsis\|treatment]` as a patch base | remove | Snapshot only for `outline` and `storyBible`; the server refuses the other two anyway. |
 | I27 | `client/src/App.tsx:456-463` patch setters | `setSynopsisDocument`, `setTreatmentDocument` passed to `applyMemoryGroundedPatch` | remove | Drop the two setters. |
