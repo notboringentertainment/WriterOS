@@ -78,11 +78,12 @@ function frontmatter(input: SeedMarkdownInput): string | undefined {
   const comps = storyBibleComps.length ? storyBibleComps : synopsis.header.comps.filter(comp => comp.trim())
   const logline = storyBible.onePagePitch.logline.trim() || synopsis.logline.text.trim()
   const genre = storyBible.cover.genre.trim() || synopsis.header.genre.trim()
+  const format = storyBible.cover.format.trim() || synopsis.header.format.trim()
 
   const entries: Array<[string, string]> = []
   if (title) entries.push(['title', yamlString(title)])
   if (logline) entries.push(['logline', yamlString(logline)])
-  if (synopsis.header.format.trim()) entries.push(['format', yamlString(synopsis.header.format.trim())])
+  if (format) entries.push(['format', yamlString(format)])
   if (genre) entries.push(['genre', yamlString(genre)])
   if (toneWords.length) entries.push(['tone', yamlList(toneWords)])
   if (comps.length) entries.push(['comps', yamlList(comps)])

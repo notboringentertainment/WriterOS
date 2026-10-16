@@ -1,4 +1,4 @@
-import type { StoryBibleDocumentContent } from '@shared/documents'
+import type { StoryBibleDocumentContent, StoryBibleStatus } from '@shared/documents'
 import type { ProjectMemorySnapshot } from '@shared/projectMemory'
 import type { ProjectFormat } from '@shared/projectFormat'
 import { buildStandingEntries } from '@shared/compose/whatsStandingFactSheet'
@@ -9,7 +9,14 @@ import type { StoryBibleSection } from './shellState'
 // template. Every Story Bible field appears in exactly one section; fields the
 // project's format doesn't use are shown only when they already have text.
 
-export type StoryBibleFieldKind = 'text' | 'textarea' | 'list'
+export type StoryBibleFieldKind = 'text' | 'textarea' | 'list' | 'status'
+
+export const STORY_BIBLE_STATUS_LABELS: Record<StoryBibleStatus, string> = {
+  pitch: 'Pitch',
+  development: 'In development',
+  production: 'In production',
+  living_canon: 'Living canon',
+}
 
 export interface StoryBibleFieldDef {
   path: string
@@ -44,6 +51,7 @@ export const STORY_BIBLE_SECTIONS: readonly StoryBibleSectionDef[] = [
       { path: 'cover.genre', label: 'Genre', kind: 'text' },
       { path: 'cover.version', label: 'Version', kind: 'text' },
       { path: 'cover.dateUpdated', label: 'Date', kind: 'text' },
+      { path: 'cover.status', label: 'Stage', kind: 'status' },
     ],
   },
   {
@@ -102,24 +110,41 @@ export function writeField(
   return { [group]: { ...(content[group] as object), [key]: value } } as Partial<StoryBibleDocumentContent>
 }
 
+/** A field counts as written when it has text; the stage counts once it moves off the default. */
+export function fieldIsWritten(content: StoryBibleDocumentContent, field: StoryBibleFieldDef): boolean {
+  const value = readField(content, field.path).trim()
+  return field.kind === 'status' ? value !== 'development' : value.length > 0
+}
+
 export function visibleFields(
   section: StoryBibleSectionDef,
   content: StoryBibleDocumentContent,
   format: ProjectFormat,
 ): StoryBibleFieldDef[] {
-  return section.fields.filter(field => !field.format || field.format === format || readField(content, field.path).trim())
+  return section.fields.filter(field => !field.format || field.format === format || fieldIsWritten(content, field))
 }
 
 /** The episode or sequence map has no field of its own here; written entries show under Story engine. */
 export function writtenMapEntries(content: StoryBibleDocumentContent) {
-  return content.episodeOrSequenceMap.filter(entry => entry.title.trim() || entry.storyEvents.trim())
+  return content.episodeOrSequenceMap.filter(entry => entry.unit.trim() || entry.title.trim() || entry.storyEvents.trim())
 }
 
 export function sectionIsWritten(section: StoryBibleSectionDef, content: StoryBibleDocumentContent): boolean {
   if (section.special === 'characters') return content.characters.some(character => character.name.trim())
   if (section.special === 'locks') return content.locks.some(lock => lock.status === 'active' && lock.statement.trim())
   if (section.id === 'engine' && writtenMapEntries(content).length) return true
-  return section.fields.some(field => readField(content, field.path).trim())
+  return section.fields.some(field => fieldIsWritten(content, field))
+}
+
+/** The record's own words, without markdown links, code ticks or emphasis marks. */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*\s][^*]*)\*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** "Still open": the ledger's active open questions, the same records What's Standing lists. */
@@ -127,7 +152,7 @@ export function stillOpen(snapshot: ProjectMemorySnapshot | undefined): Array<{ 
   if (!snapshot) return []
   return buildStandingEntries(snapshot)
     .filter(entry => entry.group === 'openQuestion')
-    .map(entry => ({ id: entry.record.id, text: entry.record.claim }))
+    .map(entry => ({ id: entry.record.id, text: plainText(entry.record.claim) }))
 }
 
 export interface CanonLook {
@@ -147,9 +172,9 @@ export function canonLookFor(snapshot: ProjectMemorySnapshot | undefined, name: 
   if (promoted) {
     const record = snapshot.records.find(item => item.id === promoted.recordId)
     const date = promoted.promotedAt ? new Date(promoted.promotedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
-    return { text: (record?.claim ?? '').replace(/^Look:\s*[^—]*—\s*/, ''), origin: `Promoted from WriterOS${date ? ` ${date}` : ''}` }
+    return { text: plainText((record?.claim ?? '').replace(/^Look:\s*[^—]*—\s*/, '')), origin: `Promoted from WriterOS${date ? ` ${date}` : ''}` }
   }
   const ticket = `resolved/look-character-${slugifyEntityName(trimmed)}.md`
   const settled = snapshot.records.find(record => record.kind === 'canon' && record.status === 'active' && record.source.workflow === 'story-wayfinder' && record.source.sourceId === ticket)
-  return settled ? { text: settled.claim, origin: 'Settled in Story-drive' } : null
+  return settled ? { text: plainText(settled.claim), origin: 'Settled in Story-drive' } : null
 }

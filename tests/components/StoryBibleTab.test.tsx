@@ -166,6 +166,25 @@ describe('StoryBibleTab - sections view', () => {
     })
   })
 
+  it('shows and edits the Story Bible stage', () => {
+    const onContentPatch = vi.fn()
+    const document = makeDocument({ cover: { ...createEmptyStoryBibleContent().cover, status: 'production' } }, { migratedFromLegacyStoryBible: true })
+    render(<StoryBibleTab document={document} onContentPatch={onContentPatch} onClear={vi.fn()} />)
+
+    const story = screen.getByTestId('story-bible-section-story')
+    expect(story).toHaveTextContent('Stage')
+    expect(story).toHaveTextContent('In production')
+    fireEvent.click(within(story).getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByLabelText('Stage'), { target: { value: 'living_canon' } })
+    expect(onContentPatch).toHaveBeenCalledWith({ cover: expect.objectContaining({ status: 'living_canon' }) })
+  })
+
+  it('shows a sequence map entry that has only its unit name', () => {
+    const document = makeDocument({ episodeOrSequenceMap: [{ id: 'm1', unit: 'Sequence 3', title: '', storyEvents: '' }] }, { migratedFromLegacyStoryBible: true })
+    render(<StoryBibleTab document={document} onContentPatch={vi.fn()} onClear={vi.fn()} />)
+    expect(screen.getByTestId('story-bible-section-engine')).toHaveTextContent('Sequence 3')
+  })
+
   it('asks Morgan to fill an empty section', async () => {
     const onAskMorgan = vi.fn().mockResolvedValue(undefined)
     render(<StoryBibleTab document={defaultDocument} onContentPatch={vi.fn()} onClear={vi.fn()} onAskMorgan={onAskMorgan} />)

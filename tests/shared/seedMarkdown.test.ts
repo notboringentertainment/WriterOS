@@ -78,11 +78,14 @@ describe('composeSeedMarkdown — frontmatter', () => {
     input.synopsis.logline.text = 'Old logline.'
     input.storyBible.cover.title = 'Bible Title'
     input.storyBible.cover.genre = 'Thriller'
+    input.synopsis.header.format = 'feature'
+    input.storyBible.cover.format = 'series'
     input.storyBible.toneAndStyle.comps = ['Heat']
     input.storyBible.onePagePitch.logline = 'New logline.'
     const md = composeSeedMarkdown(input)
     expect(md).toContain('title: "Bible Title"')
     expect(md).toContain('genre: "Thriller"')
+    expect(md).toContain('format: "series"')
     expect(md).toContain('comps: ["Heat"]')
     expect(md).toContain('logline: "New logline."')
     expect(md).not.toContain('Old logline.')

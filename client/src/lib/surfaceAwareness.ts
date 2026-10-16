@@ -4,7 +4,7 @@ import { resolveFeatureRoleUnitIds } from '@shared/featureRoleBindings'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
 import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
-import { STORY_BIBLE_SECTIONS, readField, sectionIsWritten, visibleFields } from './storyBibleSections'
+import { STORY_BIBLE_SECTIONS, fieldIsWritten, readField, sectionIsWritten, visibleFields } from './storyBibleSections'
 
 export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState): SurfaceAwareness {
   const format = normalizeProjectFormat(state.meta.format)
@@ -47,7 +47,7 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
             ? content.characters.filter(character => character.name.trim()).map(character => ({ label: character.name, value: character.role.trim() || 'character' }))
             : section.special === 'locks'
               ? content.locks.filter(lock => lock.status === 'active').map(lock => ({ value: lock.statement }))
-              : visibleFields(section, content, format).map(field => ({ label: field.label, value: readField(content, field.path) })),
+              : visibleFields(section, content, format).filter(field => fieldIsWritten(content, field)).map(field => ({ label: field.label, value: readField(content, field.path) })),
         ),
       }))
       return buildIntakeSurface('story-bible', 'Story Bible', format, questions)

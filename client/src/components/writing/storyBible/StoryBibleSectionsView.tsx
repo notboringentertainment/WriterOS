@@ -5,7 +5,9 @@ import type { ProjectMemorySnapshot } from '@shared/projectMemory'
 import type { StoryBibleSection } from '../../../lib/shellState'
 import {
   STORY_BIBLE_SECTIONS,
+  STORY_BIBLE_STATUS_LABELS,
   canonLookFor,
+  fieldIsWritten,
   readField,
   sectionIsWritten,
   stillOpen,
@@ -86,6 +88,14 @@ export function StoryBibleSectionsView({
     if (editing === section.id) {
       return <div className="sb-edit">
         {fields.map(field => {
+          if (field.kind === 'status') {
+            return <label key={field.path} className="sb-field">
+              <span>{field.label}</span>
+              <select value={readField(content, field.path)} onChange={event => onContentPatch(writeField(content, field, event.target.value))}>
+                {Object.entries(STORY_BIBLE_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+          }
           const Control = field.kind === 'text' ? 'input' : 'textarea'
           return <label key={field.path} className="sb-field">
             <span>{field.label}{field.kind === 'list' ? ' (separate with commas)' : ''}</span>
@@ -96,7 +106,7 @@ export function StoryBibleSectionsView({
         <button type="button" className="sb-button" onClick={() => setEditing(null)}>Done</button>
       </div>
     }
-    const written = fields.filter(field => readField(content, field.path).trim())
+    const written = fields.filter(field => fieldIsWritten(content, field))
     const map = section.id === 'engine' ? writtenMapEntries(content) : []
     if (!written.length && !map.length) {
       return <div className="sb-empty">
@@ -110,7 +120,7 @@ export function StoryBibleSectionsView({
     return <>
       {written.map(field => <div key={field.path} className="sb-entry">
         <h3>{field.label}</h3>
-        <p>{readField(content, field.path)}</p>
+        <p>{field.kind === 'status' ? STORY_BIBLE_STATUS_LABELS[content.cover.status] : readField(content, field.path)}</p>
       </div>)}
       {map.length > 0 && <div className="sb-entry">
         <h3>{format === 'series' ? 'Episode map' : 'Sequence map'}</h3>
@@ -147,7 +157,7 @@ export function StoryBibleSectionsView({
       {open.length > 0 && <section className="sb-open" aria-labelledby="sb-open-heading">
         <h2 id="sb-open-heading">Still open</h2>
         <ul>{open.map(item => <li key={item.id}>
-          <span>{item.text}</span>
+          <span title={item.text}>{item.text}</span>
           {askButton(openQuestionRequest(item.text))}
         </li>)}</ul>
       </section>}
