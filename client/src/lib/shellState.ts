@@ -40,6 +40,7 @@ export function useShellState() {
 
   const setActiveTab = useCallback((tab: WritingTab) => {
     setHomeActive(false)
+    setWritersRoomActive(false)
     setActiveTabRaw(tab)
     setFocusMode(false)
     setRitual(null)

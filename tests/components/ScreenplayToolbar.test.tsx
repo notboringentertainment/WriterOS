@@ -44,7 +44,7 @@ describe('ScreenplayToolbar', () => {
     expect(onOpenTitlePage).toHaveBeenCalledTimes(1)
   })
 
-  it('routes Final Draft import and replace actions separately', () => {
+  it('keeps Replace in Script and import on Home', () => {
     const onImportFdx = vi.fn()
     const onReplaceFdx = vi.fn()
     render(
@@ -55,12 +55,12 @@ describe('ScreenplayToolbar', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
-    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Import .fdx' })).not.toBeInTheDocument()
+    expect(onImportFdx).not.toHaveBeenCalled()
     expect(onReplaceFdx).toHaveBeenCalledTimes(0)
 
     fireEvent.click(screen.getByRole('button', { name: 'Replace .fdx' }))
-    expect(onImportFdx).toHaveBeenCalledTimes(1)
+    expect(onImportFdx).not.toHaveBeenCalled()
     expect(onReplaceFdx).toHaveBeenCalledTimes(1)
   })
 

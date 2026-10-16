@@ -158,6 +158,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   lookbook?: ProjectStorageLookbookClient
   looks?: ProjectStorageLooksClient
   morgan?: ProjectStorageMorganClient
+  connectVoiceProfile?: () => Promise<void>
   writeProject(project: StoredProject, previousRef?: TRef): Promise<TRef>
   removeProject(ref: TRef): Promise<RemoveProjectResult>
   archiveProject(ref: TRef): Promise<ArchiveProjectResult<TRef>>

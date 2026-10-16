@@ -70,17 +70,6 @@ export function ScreenplayToolbar({
         </button>
       )}
 
-      {onImportFdx && (
-        <button
-          type="button"
-          style={styles.focusBtn}
-          onClick={onImportFdx}
-          disabled={importingFdx}
-        >
-          {importingFdx ? 'Importing' : 'Import .fdx'}
-        </button>
-      )}
-
       {onReplaceFdx && (
         <button
           type="button"

@@ -41,7 +41,7 @@ describe('Shell', () => {
     expect(screen.queryByTitle('Morgan')).not.toBeInTheDocument()
   })
 
-  it('routes Cmd+1 through Cmd+5 to writing tabs', () => {
+  it('routes Cmd+1 through Cmd+4 to writing tabs', () => {
     const setActiveTab = vi.fn()
     const shellState = makeShellState({ setActiveTab })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
@@ -50,13 +50,11 @@ describe('Shell', () => {
     fireEvent.keyDown(window, { key: '2', metaKey: true })
     fireEvent.keyDown(window, { key: '3', metaKey: true })
     fireEvent.keyDown(window, { key: '4', metaKey: true })
-    fireEvent.keyDown(window, { key: '5', metaKey: true })
 
     expect(setActiveTab).toHaveBeenNthCalledWith(1, 'script')
-    expect(setActiveTab).toHaveBeenNthCalledWith(2, 'story-bible')
-    expect(setActiveTab).toHaveBeenNthCalledWith(3, 'outline')
-    expect(setActiveTab).toHaveBeenNthCalledWith(4, 'treatment')
-    expect(setActiveTab).toHaveBeenNthCalledWith(5, 'synopsis')
+    expect(setActiveTab).toHaveBeenNthCalledWith(2, 'outline')
+    expect(setActiveTab).toHaveBeenNthCalledWith(3, 'treatment')
+    expect(setActiveTab).toHaveBeenNthCalledWith(4, 'story-bible')
   })
 
   it('routes Cmd+0 to Home', () => {
@@ -81,7 +79,7 @@ describe('Shell', () => {
     const shellState = makeShellState({ openHome })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
 
     expect(openHome).toHaveBeenCalled()
   })
@@ -96,14 +94,14 @@ describe('Shell', () => {
     expect(toggleWritersRoom).toHaveBeenCalled()
   })
 
-  it('routes Voice Profile button to shell state', () => {
-    const toggleVoiceProfile = vi.fn()
-    const shellState = makeShellState({ toggleVoiceProfile })
+  it('routes Writer tool to shell state', () => {
+    const enterWritersRoom = vi.fn()
+    const shellState = makeShellState({ enterWritersRoom })
     render(<Shell shellState={shellState} projectTitle="The Long Hallway" railProps={defaultRailProps}>Page</Shell>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Voice Profile' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Writer' }))
 
-    expect(toggleVoiceProfile).toHaveBeenCalled()
+    expect(enterWritersRoom).toHaveBeenCalled()
   })
 
   it('closes Voice Profile on Escape before focus mode handling', () => {

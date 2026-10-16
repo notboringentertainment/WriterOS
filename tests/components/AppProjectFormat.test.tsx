@@ -4,7 +4,10 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import App from '../../client/src/App'
 
 function openTab(name: string) {
-  fireEvent.click(screen.getByRole('tab', { name }))
+  if (name === 'Synopsis' || name === 'Treatment') {
+    fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
+    fireEvent.click(screen.getByRole('button', { name }))
+  } else fireEvent.click(screen.getByRole('tab', { name }))
 }
 
 function formatSelector() {

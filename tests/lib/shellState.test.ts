@@ -26,13 +26,13 @@ describe('useShellState', () => {
     expect(result.current.storyBibleSection).toBe('characters')
   })
 
-  it('setActiveTab switches tab without closing Writer Room', () => {
+  it('setActiveTab returns from Writer to the writing place', () => {
     const { result } = renderHook(() => useShellState())
     act(() => result.current.enterWritersRoom())
     act(() => result.current.setActiveTab('synopsis'))
     expect(result.current.homeActive).toBe(false)
     expect(result.current.activeTab).toBe('synopsis')
-    expect(result.current.writersRoomActive).toBe(true)
+    expect(result.current.writersRoomActive).toBe(false)
   })
 
   it('setActiveTab exits focus mode', () => {

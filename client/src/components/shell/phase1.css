@@ -1,0 +1,40 @@
+.phase1-top { height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--bg); font-family: var(--font-ui); position: relative; z-index: 10; }
+.phase1-top button { cursor: pointer; background: none; border: 0; color: inherit; font: inherit; }
+.phase1-top .phase1-brand { font: 600 17px var(--font-display); letter-spacing: -.01em; flex-shrink: 0; }
+.phase1-project { font: italic 15px var(--font-display); color: var(--fg-muted); padding-left: 16px; border-left: 1px solid var(--border); min-width: 0; max-width: 220px; }
+.phase1-project button { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; }
+.phase1-project input { width: 180px; color: var(--fg); background: var(--surface); border: 1px solid var(--border); font: inherit; }
+.phase1-tabs { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; }
+.phase1-tabs button { font-size: 14px; color: var(--fg-muted); padding: 7px 12px; border-radius: 6px; white-space: nowrap; }
+.phase1-tabs button[aria-current="page"] { color: var(--fg); background: var(--surface); box-shadow: inset 0 -2px 0 var(--wp-amber); }
+.phase1-top button:hover { color: var(--fg); background: var(--rail-2); }
+.phase1-tools { margin-left: auto; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.phase1-top .phase1-tool { font: 400 13px var(--font-ui); color: var(--fg-muted); padding: 6px 10px; border-radius: 6px; display: inline-flex; gap: 6px; align-items: center; }
+.phase1-tool svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.phase1-save { font-size: 12px; color: var(--fg-muted); margin-right: 8px; display: inline-flex; gap: 6px; align-items: center; max-width: 180px; }
+.phase1-save i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok, #77c477); }
+.phase1-canon { position: relative; }
+.phase1-menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 160px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; box-shadow: 0 4px 12px #0005; z-index: 20; }
+.phase1-menu button { text-align: left; font: 400 13px var(--font-ui); padding: 6px 10px; border-radius: 4px; }
+.phase1-switch { display: flex; flex-shrink: 0; gap: 22px; border-bottom: 1px solid var(--border); margin: 24px 36px 36px; font-family: var(--font-ui); }
+.phase1-switch button { font: 400 14px var(--font-ui); color: var(--fg-muted); padding: 0 0 12px; position: relative; background: none; border: 0; cursor: pointer; }
+.phase1-switch button[aria-current="page"] { color: var(--fg); }
+.phase1-switch button[aria-current="page"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--wp-amber); }
+.phase1-writer { overflow: auto; height: 100%; width: 100%; padding: 32px; font-family: var(--font-ui); color: var(--fg); }
+.phase1-writer > div:last-child { width: 100% !important; max-width: none !important; min-width: 0 !important; height: 640px !important; }
+.phase1-writer > h1 { font: 500 32px var(--font-display); margin: 0 0 12px; }
+.phase1-writer > p { color: var(--fg-muted); margin-bottom: 28px; }
+.phase1-writer * { font-family: var(--font-ui) !important; }
+.phase1-writer h1, .phase1-writer h2, .phase1-writer h3 { font-family: var(--font-display) !important; }
+@media (max-width: 1180px) { .phase1-project { display: none; } .phase1-tabs { margin-left: 0; } }
+@media (max-width: 1000px) {
+  .phase1-top { gap: 12px; padding: 0 12px; }
+  .phase1-tabs { gap: 2px; }
+  .phase1-tabs button { padding: 7px 10px; }
+  .phase1-tool-label, .phase1-save-text { display: none; }
+  .phase1-top .phase1-tool { gap: 0; }
+  .phase1-save { max-width: 120px; margin-right: 4px; line-height: 14px; }
+}
+.phase1-top, .phase1-writer { --fg-muted: hsl(220 10% 64%); --fg-subtle: hsl(220 10% 64%); --danger: hsl(12 85% 74%); --error: var(--danger); }
+.phase1-switch { --fg-muted: hsl(220 10% 64%); }
+.phase1-top button:focus-visible, .phase1-switch button:focus-visible, .phase1-writer :focus-visible { outline: 2px solid var(--wp-amber); outline-offset: 2px; border-radius: 4px; }

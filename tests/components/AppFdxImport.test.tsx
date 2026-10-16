@@ -44,12 +44,10 @@ describe('App FDX import', () => {
     expect(JSON.stringify(stored)).not.toContain(fdxSource)
   })
 
-  it('imports a Final Draft file from Script as a new project that appears on Home', async () => {
+  it('imports another Final Draft file from Home as a new project', async () => {
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
-
     const file = new File([fdxSource], 'Script Import.fdx', { type: 'application/xml' })
-    fireEvent.change(screen.getByTestId('script-fdx-import-input'), {
+    fireEvent.change(screen.getByTestId('home-fdx-import-input'), {
       target: { files: [file] },
     })
 
@@ -63,7 +61,7 @@ describe('App FDX import', () => {
     expect(library[0].state.meta.title).toBe('Script Import')
     expect(library[1].state.meta.title).toBe('')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     const list = screen.getByLabelText('Project list')
     expect(list).toHaveTextContent('Script Import')
     expect(list).toHaveTextContent('Untitled Project')

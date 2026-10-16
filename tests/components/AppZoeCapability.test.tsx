@@ -233,7 +233,7 @@ describe('App Zoe persona capability routing', () => {
     fireEvent.keyDown(screen.getByPlaceholderText('Message Morgan…'), { key: 'Enter' })
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/persona-capability/run')).toBe(true))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Zoe Project B' }))
     await screen.findByLabelText('Project title: Zoe Project B')
     pending.resolve({
