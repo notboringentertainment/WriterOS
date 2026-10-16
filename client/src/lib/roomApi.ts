@@ -2,6 +2,7 @@
 // /api/room/*; all room persistence lives server-side in Supabase.
 
 import type { ProjectDocuments } from '@shared/documents'
+import type { ProjectPages } from '@shared/pages'
 import type { PitchPacket } from '@shared/pitchPacket'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import type { MemoryReceipt } from '@shared/schema'
@@ -356,12 +357,12 @@ export async function createPitchPacketDraft(
   projectId: string,
   sessionId: string,
   documents: ProjectDocuments,
-  projectMeta: { title?: string },
-): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
+  projectMeta: { title?: string; pages?: ProjectPages },
+): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt; reopened?: boolean }> {
   const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/draft`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documents, projectMeta }),
+    body: JSON.stringify({ documents, pages: projectMeta.pages, projectMeta: { title: projectMeta.title } }),
   })
   return jsonOrThrow(res)
 }

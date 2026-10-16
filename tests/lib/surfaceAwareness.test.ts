@@ -3,7 +3,7 @@ import { buildSurfaceAwareness } from '../../client/src/lib/surfaceAwareness'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createOutlineUnit, getOutlineDeck, setOutlinePath, FEATURE_DECK, SERIES_DECK } from '../../client/src/lib/outlineDeck'
 import { FEATURE_ROLES, resolveFeatureRoleUnitIds } from '../../shared/featureRoleBindings'
-import { FEATURE_STORY_BIBLE_DECK } from '../../client/src/lib/storyBibleDeck'
+import { STORY_BIBLE_SECTIONS } from '../../client/src/lib/storyBibleSections'
 import type { ProjectState } from '../../client/src/lib/projectState'
 
 function featureState(): ProjectState {
@@ -120,7 +120,7 @@ describe('buildSurfaceAwareness', () => {
     expect(buildSurfaceAwareness('treatment', featureState())).toEqual({ kind: 'none' })
   })
 
-  it('story bible sends its live question deck', () => {
+  it('story bible sends its sections, written or not', () => {
     const state = featureState()
     state.documents.storyBible.content.cover.title = 'Sample Project'
     const sa = buildSurfaceAwareness('story-bible', state)
@@ -128,23 +128,27 @@ describe('buildSurfaceAwareness', () => {
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('story-bible')
     expect(sa.surfaceTitle).toBe('Story Bible')
-    expect(sa.totalCount).toBe(FEATURE_STORY_BIBLE_DECK.length)
+    expect(sa.totalCount).toBe(STORY_BIBLE_SECTIONS.length)
     expect(sa.answeredCount).toBe(1)
     expect(sa.questions[0]).toMatchObject({
-      label: 'What should appear as the title?',
-      answers: [{ value: 'Sample Project' }],
+      label: 'The story',
+      status: 'answered',
+      answers: [{ label: 'Title', value: 'Sample Project' }],
     })
-    expect(sa.questions.find(q => q.id === 'feature-status')?.status).toBe('unanswered')
+    expect(sa.questions.find(q => q.id === 'story-bible-world')?.status).toBe('unanswered')
   })
 
-  it('story bible does count a non-default status selection as answered', () => {
+  it('story bible counts named people as written', () => {
     const state = featureState()
-    state.documents.storyBible.content.cover.status = 'pitch'
+    state.documents.storyBible.content.characters = [{
+      id: 'c1', name: 'Ivy', role: '', want: '', need: '', flaw: '', secret: '', contradiction: '', arc: '',
+      relationshipPressure: '', behavioralAnchors: '', speechPatterns: '', neverWriteThemAs: '', continuityFacts: '',
+    }]
     const sa = buildSurfaceAwareness('story-bible', state)
-    expect(sa.kind).toBe('intake')
-    if (sa.kind !== 'intake') return
-    expect(sa.answeredCount).toBe(1)
-    expect(sa.questions.find(q => q.id === 'feature-status')?.status).toBe('answered')
+    if (sa.kind !== 'intake') throw new Error('expected intake')
+    expect(sa.questions.find(q => q.id === 'story-bible-people')).toMatchObject({
+      status: 'answered', answers: [{ label: 'Ivy', value: 'character' }],
+    })
   })
 
   it('script tab stays outside intake surface awareness', () => {

@@ -70,6 +70,27 @@ describe('composeSeedMarkdown — frontmatter', () => {
     expect(md).toContain('title: "Bible Title"')
   })
 
+  it('takes facts from the Story Bible first, then the frozen synopsis header', () => {
+    const input = buildInput()
+    input.synopsis.header.title = 'Header Title'
+    input.synopsis.header.genre = 'Drama'
+    input.synopsis.header.comps = ['Alien']
+    input.synopsis.logline.text = 'Old logline.'
+    input.storyBible.cover.title = 'Bible Title'
+    input.storyBible.cover.genre = 'Thriller'
+    input.synopsis.header.format = 'feature'
+    input.storyBible.cover.format = 'series'
+    input.storyBible.toneAndStyle.comps = ['Heat']
+    input.storyBible.onePagePitch.logline = 'New logline.'
+    const md = composeSeedMarkdown(input)
+    expect(md).toContain('title: "Bible Title"')
+    expect(md).toContain('genre: "Thriller"')
+    expect(md).toContain('format: "series"')
+    expect(md).toContain('comps: ["Heat"]')
+    expect(md).toContain('logline: "New logline."')
+    expect(md).not.toContain('Old logline.')
+  })
+
   it('falls back to the project title when both document titles are empty', () => {
     const input = buildInput()
     const md = composeSeedMarkdown({ ...input, projectTitle: 'Launch Window' })
@@ -95,6 +116,14 @@ describe('composeSeedMarkdown — synopsis section', () => {
     const md = composeSeedMarkdown(input)
     expect(md).toContain('## Synopsis')
     expect(md).toMatch(/OPENING-TEXT[\s\S]+ESCALATION-TEXT[\s\S]+MIDDLE-TEXT[\s\S]+CLIMAX-TEXT[\s\S]+RESOLUTION-TEXT/)
+  })
+
+  it('uses the synopsis page instead of the frozen prose when the page has text', () => {
+    const input = buildInput()
+    input.synopsis.prose.opening = 'OLD-OPENING'
+    const md = composeSeedMarkdown({ ...input, synopsisPage: '# Synopsis\n\nPAGE-PROSE' })
+    expect(md).toContain('## Synopsis\n\nPAGE-PROSE')
+    expect(md).not.toContain('OLD-OPENING')
   })
 
   it('omits the section when all prose is empty', () => {

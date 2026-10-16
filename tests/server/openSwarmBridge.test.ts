@@ -5,6 +5,7 @@ import { buildProjectContext } from '../../client/src/lib/wpRouting'
 import { createOutlineUnit } from '../../client/src/lib/outlineDeck'
 import { rebuildScriptFactsCache } from '../../client/src/lib/scriptFacts'
 import type { VoiceProfileDocument } from '@shared/voiceProfile'
+import { createEmptySeriesContent } from '@shared/documents'
 
 function makeVoiceProfile(): VoiceProfileDocument {
   return {
@@ -96,6 +97,40 @@ describe('OpenSwarm Writing Partner prompt', () => {
     expect(prompt).toContain('Do not use Markdown heading markers')
     expect(prompt).toContain('Use compact section labels that end with a colon')
     expect(prompt).toContain('Target 250-450 words')
+  })
+
+  it('reads the synopsis and treatment pages instead of the frozen legacy fields', () => {
+    const state = defaultProjectState()
+    state.meta.format = 'series'
+    state.documents.synopsis.content.prose.opening = 'LEGACY-SYNOPSIS-OPENING'
+    state.documents.synopsis.content.series = { ...createEmptySeriesContent(), showOverview: 'LEGACY-OVERVIEW' }
+    state.documents.treatment.content.prose.actOne = 'LEGACY-TREATMENT-ACT'
+    state.pages.synopsis = { page: 'synopsis', markdown: '# Synopsis\n\nPAGE-SYNOPSIS-PROSE', status: 'draft', revision: 1 }
+    state.pages.treatment = { page: 'treatment', markdown: '## Act One\n\nPAGE-TREATMENT-PROSE', status: 'approved', revision: 2 }
+
+    const prompt = buildOpenSwarmWritingPartnerPrompt('Review this premise.', buildProjectContext(state))
+
+    expect(prompt).toContain('PAGE-SYNOPSIS-PROSE')
+    expect(prompt).toContain('PAGE-TREATMENT-PROSE')
+    expect(prompt).not.toContain('LEGACY-SYNOPSIS-OPENING')
+    expect(prompt).not.toContain('LEGACY-OVERVIEW')
+    expect(prompt).not.toContain('LEGACY-TREATMENT-ACT')
+  })
+
+  it('falls back to the frozen legacy prose when no page is written', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.prose.opening = 'LEGACY-SYNOPSIS-OPENING'
+    const prompt = buildOpenSwarmWritingPartnerPrompt('Review this premise.', buildProjectContext(state))
+    expect(prompt).toContain('LEGACY-SYNOPSIS-OPENING')
+  })
+
+  it('takes the logline and characters from the Story Bible before the legacy documents', () => {
+    const state = defaultProjectState()
+    state.documents.synopsis.content.logline.text = 'LEGACY-LOGLINE'
+    state.documents.storyBible.content.onePagePitch.logline = 'BIBLE-LOGLINE'
+    const prompt = buildOpenSwarmWritingPartnerPrompt('Review this premise.', buildProjectContext(state))
+    expect(prompt).toContain('- Logline: BIBLE-LOGLINE')
+    expect(prompt).not.toContain('LEGACY-LOGLINE')
   })
 
   it('is explicit when no Voice Profile is supplied', () => {

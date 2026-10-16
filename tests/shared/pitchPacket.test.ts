@@ -34,6 +34,27 @@ function fixture() {
 }
 
 describe('Pitch Packet contract and composer', () => {
+  it('takes a written Story Bible fact over the frozen synopsis/treatment fields, with no conflict', () => {
+    const input = fixture()
+    const bible = input.documents.storyBible.content
+    bible.cover = { ...bible.cover, title: 'Bible title', format: 'Series', genre: 'Mystery' }
+    bible.onePagePitch.logline = 'A chef finds the recipe that names a killer.'
+    bible.toneAndStyle.toneWords = ['warm', 'haunted']
+    bible.toneAndStyle.comps = ['Mare of Easttown']
+    bible.storyEngine.seriesEngine = 'Every recipe names a new suspect.'
+    const packet = composePitchPacket(input)
+    expect(packet.title).toMatchObject({ value: 'Bible title', sourceRef: 'storyBible.cover.title' })
+    expect(packet.title.conflict).toBeUndefined()
+    expect(packet.logline).toMatchObject({ value: 'A chef finds the recipe that names a killer.', sourceRef: 'storyBible.onePagePitch.logline' })
+    expect(packet.format.value).toBe('Series')
+    expect(packet.genre.value).toBe('Mystery')
+    expect(packet.tone.value).toBe('warm, haunted')
+    expect(packet.premise).toMatchObject({ sourceRef: 'storyBible.premiseAndWorld.premise' })
+    expect(packet.premise.conflict).toBeUndefined()
+    expect(packet.storyEngine).toMatchObject({ value: 'Every recipe names a new suspect.', sourceRef: 'storyBible.storyEngine.seriesEngine' })
+    expect(packet.comps?.value).toEqual(['Mare of Easttown'])
+  })
+
   it('parses version 1 and uses deterministic scalar precedence with visible conflicts', () => {
     const packet = composePitchPacket(fixture())
     expect(PitchPacketSchema.parse(packet).packetVersion).toBe(PITCH_PACKET_VERSION)

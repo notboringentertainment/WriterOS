@@ -9,9 +9,6 @@ import { createOutlineUnit, setOutlinePath } from '../../client/src/lib/outlineD
 import {
   createEmptySeriesContent,
   createEmptyStoryBibleContent,
-  createEmptySynopsisContent,
-  createEmptyTreatmentContent,
-  DOCUMENT_SCHEMA_VERSION,
 } from '../../shared/documents'
 
 beforeEach(() => localStorage.clear())
@@ -98,11 +95,12 @@ describe('useProjectState', () => {
   it('setProjectFormat preserves feature and existing series synopsis data', () => {
     const existingSeries = { ...createEmptySeriesContent(), showOverview: 'Existing overview' }
     const { result } = renderHook(() => useProjectState())
-
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      prose: { ...c.prose, opening: 'Feature opening.' },
-      qa: { ...c.qa, endingRevealed: true },
+    // Synopsis is frozen legacy data now (Morgan writes the page), so seed it through a stored project.
+    const seeded = defaultProjectState()
+    seeded.documents.synopsis.content = {
+      ...seeded.documents.synopsis.content,
+      prose: { ...seeded.documents.synopsis.content.prose, opening: 'Feature opening.' },
+      qa: { ...seeded.documents.synopsis.content.qa, endingRevealed: true },
       aiProductionImplications: {
         visuallyImportantSequences: 'Bridge chase',
         continuitySensitiveMoments: 'Ring changes hands',
@@ -110,7 +108,8 @@ describe('useProjectState', () => {
         likelyReferenceImageNeeds: 'Old maps',
       },
       series: existingSeries,
-    })))
+    }
+    act(() => result.current.openStoredProject({ id: 'seeded', createdAt: 1, updatedAt: 1, state: seeded }))
 
     act(() => result.current.setProjectFormat('series'))
     act(() => result.current.setProjectFormat('feature'))
@@ -279,22 +278,6 @@ describe('useProjectState', () => {
     expect(result.current.state.meta.title).toBe('Working Title')
     expect(result.current.state.script.rawHtml).toContain('EXT. DOCK - DAWN')
     expect(result.current.state.meta.sourceImport?.originalFilename).toBe('Imported Title.fdx')
-  })
-
-  it('clearSynopsis empties every synopsis field and persists the change', () => {
-    const { result } = renderHook(() => useProjectState())
-
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, logline: { ...c.logline, text: 'A hero rises.' } })))
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, opening: 'Set in Chicago.' } })))
-    act(() => result.current.clearSynopsis())
-
-    expect(result.current.state.synopsis).toEqual({
-      logline: '',
-      sections: { setup: '', act1Break: '', midpoint: '', act2Break: '', resolution: '' },
-    })
-
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.synopsis).toEqual(result.current.state.synopsis)
   })
 
   it('setBeat updates a single beat by id', () => {
@@ -866,144 +849,6 @@ describe('useProjectState', () => {
   })
 })
 
-describe('useProjectState — setSynopsisDocument', () => {
-  it('applies the updater to documents.synopsis.content', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(content => ({
-      ...content,
-      header: { ...content.header, title: 'My Film' },
-    })))
-    expect(result.current.state.documents.synopsis.content.header.title).toBe('My Film')
-  })
-
-  it('refreshes documents.synopsis.updatedAt', () => {
-    const { result } = renderHook(() => useProjectState())
-    const before = result.current.state.documents.synopsis.updatedAt
-    act(() => result.current.setSynopsisDocument(content => ({
-      ...content,
-      logline: { ...content.logline, text: 'A new logline.' },
-    })))
-    const after = result.current.state.documents.synopsis.updatedAt
-    expect(after).not.toBe(before)
-  })
-
-  it('mirrors the legacy slice into state.synopsis after every mutation', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(content => ({
-      ...content,
-      logline: { ...content.logline, text: 'Mirror me.' },
-      prose: {
-        opening: 'OPEN',
-        escalation: 'ESC',
-        middle: 'MID',
-        climax: 'CLI',
-        resolution: 'RES',
-      },
-    })))
-    expect(result.current.state.synopsis).toEqual(
-      documentsToLegacy(result.current.state.documents).synopsis,
-    )
-    expect(result.current.state.synopsis.logline).toBe('Mirror me.')
-    expect(result.current.state.synopsis.sections.setup).toBe('OPEN')
-    expect(result.current.state.synopsis.sections.resolution).toBe('RES')
-  })
-
-  it('persists documents.synopsis content to localStorage', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(content => ({
-      ...content,
-      header: { ...content.header, title: 'Persisted Film' },
-    })))
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.documents.synopsis.content.header.title).toBe('Persisted Film')
-  })
-
-  it('does not mutate other documents', () => {
-    const { result } = renderHook(() => useProjectState())
-    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
-    const treatmentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
-    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
-
-    act(() => result.current.setSynopsisDocument(content => ({
-      ...content,
-      header: { ...content.header, title: 'X' },
-    })))
-
-    expect(result.current.state.documents.outline).toEqual(outlineBefore)
-    expect(result.current.state.documents.treatment).toEqual(treatmentBefore)
-    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
-  })
-
-  it('preserves mirror invariant across arbitrary edit sequence', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, logline: { ...c.logline, text: 'L1' } })))
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, opening: 'O1' } })))
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, prose: { ...c.prose, resolution: 'R1' } })))
-    act(() => result.current.setSynopsisDocument(c => ({ ...c, header: { ...c.header, title: 'T1' } })))
-    expect(result.current.state.synopsis).toEqual(
-      documentsToLegacy(result.current.state.documents).synopsis,
-    )
-  })
-})
-
-describe('useProjectState — setTreatmentDocument', () => {
-  it('applies the updater to documents.treatment.content', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setTreatmentDocument(content => ({
-      ...content,
-      logline: 'A medic hears impossible calls.',
-      prose: { ...content.prose, opening: 'The line rings after midnight.' },
-    })))
-
-    expect(result.current.state.documents.treatment.content.logline).toBe('A medic hears impossible calls.')
-    expect(result.current.state.documents.treatment.content.prose.opening).toBe('The line rings after midnight.')
-  })
-
-  it('keeps header.format mirrored from ProjectState.meta.format', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setProjectFormat('series'))
-    act(() => result.current.setTreatmentDocument(content => ({
-      ...content,
-      header: { ...content.header, format: 'feature' },
-      concept: { ...content.concept, premise: 'A renewable rescue story.' },
-    })))
-
-    expect(result.current.state.documents.treatment.content.header.format).toBe('series')
-  })
-
-  it('persists treatment content to localStorage', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setTreatmentDocument(content => ({
-      ...content,
-      concept: { ...content.concept, premise: 'A city chooses who gets saved.' },
-    })))
-
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.documents.treatment.content.concept.premise).toBe('A city chooses who gets saved.')
-  })
-
-  it('clearTreatment resets only the treatment document and preserves the format mirror', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setProjectFormat('series'))
-    const synopsisBefore = JSON.parse(JSON.stringify(result.current.state.documents.synopsis))
-    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
-    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
-
-    act(() => result.current.setTreatmentDocument(content => ({
-      ...content,
-      logline: 'A medic hears impossible calls.',
-    })))
-    act(() => result.current.clearTreatment())
-
-    const expected = createEmptyTreatmentContent()
-    expected.header.format = 'series'
-    expect(result.current.state.documents.treatment.content).toEqual(expected)
-    expect(result.current.state.documents.synopsis).toEqual(synopsisBefore)
-    expect(result.current.state.documents.outline).toEqual(outlineBefore)
-    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
-  })
-})
-
 describe('useProjectState — setStoryBibleDocument', () => {
   it('applies the updater to documents.storyBible.content', () => {
     const { result } = renderHook(() => useProjectState())
@@ -1111,259 +956,3 @@ describe('useProjectState — Story Bible legacy migration guard', () => {
   })
 })
 
-describe('useProjectState — setSynopsisViewPreferences', () => {
-  it('merges activeView into viewPreferences', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
-    expect(result.current.state.documents.synopsis.viewPreferences?.activeView).toBe('document')
-  })
-
-  it('merges synopsisComposeMode into viewPreferences', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisViewPreferences({ synopsisComposeMode: 'paragraphs' }))
-    expect(result.current.state.documents.synopsis.viewPreferences?.synopsisComposeMode).toBe('paragraphs')
-  })
-
-  it('preserves other view preferences when patching one key', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
-    act(() => result.current.setSynopsisViewPreferences({ synopsisComposeMode: 'prose' }))
-    const prefs = result.current.state.documents.synopsis.viewPreferences
-    expect(prefs?.activeView).toBe('document')
-    expect(prefs?.synopsisComposeMode).toBe('prose')
-  })
-
-  it('persists viewPreferences to localStorage', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document' }))
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.documents.synopsis.viewPreferences?.activeView).toBe('document')
-  })
-})
-
-describe('useProjectState — setTreatmentViewPreferences', () => {
-  it('merges activeView into viewPreferences', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
-    expect(result.current.state.documents.treatment.viewPreferences?.activeView).toBe('document')
-  })
-
-  it('preserves other view preferences when patching one key', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
-    act(() => result.current.setTreatmentViewPreferences({ collapsedSections: ['story'] }))
-    const prefs = result.current.state.documents.treatment.viewPreferences
-    expect(prefs?.activeView).toBe('document')
-    expect(prefs?.collapsedSections).toEqual(['story'])
-  })
-
-  it('persists viewPreferences to localStorage', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setTreatmentViewPreferences({ activeView: 'document' }))
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    expect(stored.documents.treatment.viewPreferences?.activeView).toBe('document')
-  })
-})
-
-describe('useProjectState — clearSynopsis dual reset', () => {
-  it('resets state.synopsis to defaultProjectState().synopsis', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      logline: { ...c.logline, text: 'A logline.' },
-      prose: { opening: 'O', escalation: 'E', middle: 'M', climax: 'C', resolution: 'R' },
-    })))
-    act(() => result.current.clearSynopsis())
-    expect(result.current.state.synopsis).toEqual(defaultProjectState().synopsis)
-  })
-
-  it('resets documents.synopsis.content to empty', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      header: { ...c.header, title: 'My Film' },
-      logline: { ...c.logline, text: 'A logline.' },
-    })))
-    act(() => result.current.clearSynopsis())
-    const expected = createEmptySynopsisContent()
-    expected.header.format = 'feature'
-    expect(result.current.state.documents.synopsis.content).toEqual(expected)
-  })
-
-  it('resets documents.synopsis.content to empty series shape when project format is series', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setProjectFormat('series'))
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      logline: { ...c.logline, text: 'A logline.' },
-      series: { ...createEmptySeriesContent(), showOverview: 'To be cleared.' },
-    })))
-
-    act(() => result.current.clearSynopsis())
-
-    const expected = createEmptySynopsisContent()
-    expected.header.format = 'series'
-    expected.series = createEmptySeriesContent()
-    expect(result.current.state.documents.synopsis.content).toEqual(expected)
-  })
-
-  it('clears documents.synopsis viewPreferences', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisViewPreferences({ activeView: 'document', synopsisComposeMode: 'paragraphs' }))
-    act(() => result.current.clearSynopsis())
-    // After clear, viewPreferences should be absent or empty.
-    const prefs = result.current.state.documents.synopsis.viewPreferences
-    expect(prefs === undefined || Object.keys(prefs).length === 0).toBe(true)
-  })
-
-  it('preserves mirror invariant after clear', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      logline: { ...c.logline, text: 'Hello.' },
-    })))
-    act(() => result.current.clearSynopsis())
-    expect(result.current.state.synopsis).toEqual(
-      documentsToLegacy(result.current.state.documents).synopsis,
-    )
-  })
-
-  it('does not affect other documents', () => {
-    const { result } = renderHook(() => useProjectState())
-    const outlineBefore = JSON.parse(JSON.stringify(result.current.state.documents.outline))
-    const treatmentBefore = JSON.parse(JSON.stringify(result.current.state.documents.treatment))
-    const bibleBefore = JSON.parse(JSON.stringify(result.current.state.documents.storyBible))
-    act(() => result.current.clearSynopsis())
-    expect(result.current.state.documents.outline).toEqual(outlineBefore)
-    expect(result.current.state.documents.treatment).toEqual(treatmentBefore)
-    expect(result.current.state.documents.storyBible).toEqual(bibleBefore)
-  })
-
-  it('persists the cleared state to localStorage', () => {
-    const { result } = renderHook(() => useProjectState())
-    act(() => result.current.setSynopsisDocument(c => ({
-      ...c,
-      header: { ...c.header, title: 'Persisted' },
-    })))
-    act(() => result.current.clearSynopsis())
-    const stored = JSON.parse(localStorage.getItem('writeros_project_state')!)
-    const expected = createEmptySynopsisContent()
-    expected.header.format = 'feature'
-    expect(stored.synopsis).toEqual(defaultProjectState().synopsis)
-    expect(stored.documents.synopsis.content).toEqual(expected)
-  })
-
-  it('refreshes documents.synopsis.updatedAt on clear', () => {
-    const { result } = renderHook(() => useProjectState())
-    const before = result.current.state.documents.synopsis.updatedAt
-    act(() => result.current.clearSynopsis())
-    const after = result.current.state.documents.synopsis.updatedAt
-    expect(after).not.toBe(before)
-    expect(typeof after).toBe('string')
-  })
-
-  describe('deleteProjectById (Slice 5a)', () => {
-    it('deletes a non-active project without changing the active project', () => {
-      const { result } = renderHook(() => useProjectState())
-      let secondId = ''
-      act(() => {
-        const created = result.current.createProject()
-        secondId = created.id
-      })
-      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
-      act(() => result.current.switchProject(firstId))
-
-      expect(result.current.activeProjectId).toBe(firstId)
-      expect(result.current.projects.find(p => p.id === secondId)).toBeDefined()
-
-      act(() => {
-        result.current.deleteProjectById(secondId)
-      })
-
-      expect(result.current.activeProjectId).toBe(firstId)
-      expect(result.current.projects.find(p => p.id === secondId)).toBeUndefined()
-    })
-
-    it('clears active selection when the active project is deleted', () => {
-      const { result } = renderHook(() => useProjectState())
-      act(() => {
-        result.current.createProject()
-      })
-      const activeId = result.current.activeProjectId
-
-      act(() => {
-        result.current.deleteProjectById(activeId)
-      })
-
-      expect(result.current.activeProjectId).toBe('')
-      expect(result.current.state.meta.title).toBe('')
-    })
-
-    it('leaves the library empty after deleting the only project', () => {
-      const { result } = renderHook(() => useProjectState())
-      const onlyId = result.current.activeProjectId
-
-      act(() => {
-        result.current.deleteProjectById(onlyId)
-      })
-
-      expect(result.current.projects).toHaveLength(0)
-      expect(result.current.activeProjectId).toBe('')
-    })
-  })
-
-  describe('archive / restore by id (Slice 5a-2)', () => {
-    it('archive sets archivedAt and clears active when archiving the active project', () => {
-      const { result } = renderHook(() => useProjectState())
-      act(() => {
-        result.current.createProject()
-      })
-      const activeId = result.current.activeProjectId
-
-      act(() => {
-        result.current.archiveProjectById(activeId)
-      })
-
-      expect(result.current.activeProjectId).toBe('')
-      // Summary should still surface the archived project so Home can show it.
-      const archived = result.current.projects.find(p => p.id === activeId)
-      expect(archived?.archivedAt).toBeTruthy()
-    })
-
-    it('archive of a non-active project leaves the active project alone', () => {
-      const { result } = renderHook(() => useProjectState())
-      let secondId = ''
-      act(() => {
-        const created = result.current.createProject()
-        secondId = created.id
-      })
-      const firstId = result.current.projects.find(p => p.id !== secondId)!.id
-      act(() => result.current.switchProject(firstId))
-
-      act(() => {
-        result.current.archiveProjectById(secondId)
-      })
-
-      expect(result.current.activeProjectId).toBe(firstId)
-      expect(result.current.projects.find(p => p.id === secondId)?.archivedAt).toBeTruthy()
-    })
-
-    it('restore clears archivedAt and does not auto-activate', () => {
-      const { result } = renderHook(() => useProjectState())
-      act(() => {
-        result.current.createProject()
-      })
-      const archivedId = result.current.activeProjectId
-      act(() => result.current.archiveProjectById(archivedId))
-      expect(result.current.activeProjectId).toBe('')
-
-      act(() => {
-        result.current.restoreProjectById(archivedId)
-      })
-
-      expect(result.current.projects.find(p => p.id === archivedId)?.archivedAt).toBeUndefined()
-      // Restore does not silently re-open the project.
-      expect(result.current.activeProjectId).toBe('')
-    })
-  })
-})

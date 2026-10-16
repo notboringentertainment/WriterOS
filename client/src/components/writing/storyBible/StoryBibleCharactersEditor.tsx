@@ -1,10 +1,13 @@
 import React from 'react'
 import type { StoryBibleCharacter } from '@shared/documents'
 import { StoryBibleCharacterCard } from './StoryBibleCharacterCard'
+import type { CanonLook } from '../../../lib/storyBibleSections'
 
 export interface StoryBibleCharactersEditorProps {
   value: readonly StoryBibleCharacter[]
   onChange: (next: StoryBibleCharacter[]) => void
+  /** The character's look as canon holds it, shown read-only on the card. */
+  lookFor?: (name: string) => CanonLook | null
 }
 
 const emptyCharacter = (): StoryBibleCharacter => ({
@@ -53,6 +56,7 @@ const emptyStyle: React.CSSProperties = {
 export function StoryBibleCharactersEditor({
   value,
   onChange,
+  lookFor,
 }: StoryBibleCharactersEditorProps) {
   function updateCharacter(id: string, nextCharacter: StoryBibleCharacter) {
     onChange(value.map((character) => (character.id === id ? nextCharacter : character)))
@@ -75,6 +79,7 @@ export function StoryBibleCharactersEditor({
         <StoryBibleCharacterCard
           key={character.id}
           character={character}
+          look={lookFor?.(character.name) ?? null}
           onChange={(nextCharacter) => updateCharacter(character.id, nextCharacter)}
           onRemove={() => removeCharacter(character.id)}
         />

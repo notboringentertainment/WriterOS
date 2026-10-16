@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import type { StoryBibleCharacter } from '@shared/documents'
 import { CharacterLookButton } from '../looks/LookEntryButton'
+import type { CanonLook } from '../../../lib/storyBibleSections'
 
 export interface StoryBibleCharacterCardProps {
   character: StoryBibleCharacter
+  look?: CanonLook | null
   onChange: (next: StoryBibleCharacter) => void
   onRemove: () => void
 }
@@ -103,12 +105,21 @@ const textareaStyle: React.CSSProperties = {
   lineHeight: 1.45,
 }
 
+const lookStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-body)',
+  fontSize: '0.86rem',
+  lineHeight: 1.5,
+  color: 'var(--fg-muted)',
+  margin: '10px 0 0',
+}
+
 function displayText(value: string, fallback: string): string {
   return value.trim() || fallback
 }
 
 export function StoryBibleCharacterCard({
   character,
+  look,
   onChange,
   onRemove,
 }: StoryBibleCharacterCardProps) {
@@ -188,6 +199,12 @@ export function StoryBibleCharacterCard({
           {removeArmed ? 'Confirm remove' : 'Remove'}
         </button>
       </div>
+
+      {look && (
+        <p style={lookStyle} data-testid="story-bible-character-look">
+          <span style={{ color: 'var(--fg)' }}>Look</span> · {look.origin}. {look.text.length > 220 ? `${look.text.slice(0, 219)}…` : look.text}
+        </p>
+      )}
 
       {expanded && (
         <div style={fieldGridStyle}>

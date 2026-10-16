@@ -1,6 +1,7 @@
 import type { ProjectState } from './projectState'
 import { getDisplayProjectTitle } from './projectIdentity'
 import { visibleOutlineUnits } from './outlineDeck'
+import { STORY_BIBLE_SECTIONS } from './storyBibleSections'
 import {
   type ActiveTab,
   getDefaultPersona,
@@ -63,8 +64,10 @@ function labelOr(value: string, kind: string, n: number): string {
   return clean || `${kind} ${n}`
 }
 
-function filledDetail(value: string): string {
-  return value.trim() ? 'written' : 'empty'
+function pageHeadings(state: ProjectState, page: 'synopsis' | 'treatment'): string[] {
+  return (state.pages[page]?.markdown ?? '').split('\n')
+    .map(line => /^#{1,6}\s+(.+)$/.exec(line.trim())?.[1]?.trim() ?? '')
+    .filter(Boolean)
 }
 
 export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState): SurfaceStructure {
@@ -101,55 +104,24 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
       }
     }
 
-    case 'synopsis': {
-      const prose = state.documents.synopsis.content.prose
-      const sections: Array<[string, string]> = [
-        ['Opening', prose.opening],
-        ['Escalation', prose.escalation],
-        ['Middle', prose.middle],
-        ['Climax', prose.climax],
-        ['Resolution', prose.resolution],
-      ]
-      const nodes: StructureNode[] = sections.map(([label, value], i) => ({
-        id: `synopsis-${i}`,
-        label,
-        detail: filledDetail(value),
-      }))
-      return { surface, heading, nodes, empty: false }
-    }
-
+    case 'synopsis':
     case 'treatment': {
-      const content = state.documents.treatment.content
-      const acts: Array<[string, string]> = [
-        ['Opening', content.prose.opening],
-        ['Act One', content.prose.actOne],
-        ['Act Two', content.prose.actTwo],
-        ['Act Three', content.prose.actThree],
-      ]
-      const nodes: StructureNode[] = [
-        ...acts.map(([label, value], i) => ({ id: `treatment-act-${i}`, label, detail: filledDetail(value) })),
-        ...content.prose.customSections.map((s, i) => ({
-          id: s.id,
-          label: labelOr(s.heading, 'Section', i + 1),
-          detail: filledDetail(s.body),
-        })),
-        ...content.mainCharacters.map((c, i) => ({
-          id: c.id,
-          label: labelOr(c.name, 'Character', i + 1),
-          detail: c.role.trim() || 'character',
-        })),
-      ]
-      return { surface, heading, nodes, empty: false }
+      // The prose page's own headings; the frozen legacy sections are no longer shown.
+      const nodes: StructureNode[] = pageHeadings(state, surface).map((label, i) => ({ id: `${surface}-${i}`, label }))
+      return {
+        surface,
+        heading,
+        nodes,
+        empty: nodes.length === 0,
+        emptyHint: nodes.length === 0 ? `No ${heading.toLowerCase()} written yet.` : undefined,
+      }
     }
 
     case 'story-bible': {
       const content = state.documents.storyBible.content
-      const sectionNodes: StructureNode[] = [
-        { id: 'sb-pitch', label: 'One-Page Pitch' },
-        { id: 'sb-tone', label: 'Tone & Style' },
-        { id: 'sb-world', label: 'Premise & World' },
-        { id: 'sb-engine', label: 'Story Engine' },
-      ]
+      const sectionNodes: StructureNode[] = STORY_BIBLE_SECTIONS
+        .filter(section => !section.special)
+        .map(section => ({ id: `sb-${section.id}`, label: section.title }))
       const characterNodes: StructureNode[] = content.characters.map((c, i) => ({
         id: c.id,
         label: labelOr(c.name, 'Character', i + 1),
@@ -176,14 +148,11 @@ function surfaceCounts(surface: ActiveTab, state: ProjectState): ConsoleCount[] 
     case 'outline':
       return [{ label: 'beats', value: visibleOutlineUnits(state.documents.outline.content, state.meta.format).length }]
     case 'treatment':
-      return [{ label: 'characters', value: state.documents.treatment.content.mainCharacters.length }]
+      return [{ label: 'sections', value: pageHeadings(state, surface).length }]
     case 'story-bible':
       return [{ label: 'characters', value: state.documents.storyBible.content.characters.length }]
-    case 'synopsis': {
-      const p = state.documents.synopsis.content.prose
-      const written = [p.opening, p.escalation, p.middle, p.climax, p.resolution].filter(v => v.trim()).length
-      return [{ label: 'sections', value: written }]
-    }
+    case 'synopsis':
+      return [{ label: 'sections', value: pageHeadings(state, surface).length }]
     case 'whats-standing':
       // Report surfaces have no document counts
       return []

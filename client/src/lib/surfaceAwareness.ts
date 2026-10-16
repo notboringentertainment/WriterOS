@@ -1,17 +1,10 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import type { SurfaceAnswer, SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
-import { createEmptyStoryBibleContent } from '@shared/documents'
 import { resolveFeatureRoleUnitIds } from '@shared/featureRoleBindings'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
 import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
-import {
-  getDeckForFormat as getStoryBibleDeck,
-  resolveStoryBiblePath,
-  type StoryBiblePromptDef,
-} from './storyBibleDeck'
-
-const EMPTY_STORY_BIBLE_CONTENT = createEmptyStoryBibleContent()
+import { STORY_BIBLE_SECTIONS, fieldIsWritten, readField, sectionIsWritten, visibleFields } from './storyBibleSections'
 
 export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState): SurfaceAwareness {
   const format = normalizeProjectFormat(state.meta.format)
@@ -44,21 +37,18 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
 
     case 'story-bible': {
       const content = state.documents.storyBible.content
-      const questions: SurfaceQuestion[] = getStoryBibleDeck(format).map(prompt => ({
-        id: prompt.id,
-        label: prompt.question,
-        helper: prompt.helper,
-        status: isStoryBiblePromptAnswered(content, prompt) ? 'answered' : 'unanswered',
-        answers: collectSurfaceAnswers(prompt.inputs.map(input => {
-          const resolved = resolveStoryBiblePath(content, input.path)
-          const emptyResolved = resolveStoryBiblePath(EMPTY_STORY_BIBLE_CONTENT, input.path)
-          return {
-            label: input.label,
-            value: emptyResolved.defined && sameValue(resolved.value, emptyResolved.value)
-              ? undefined
-              : resolved.value,
-          }
-        })),
+      const questions: SurfaceQuestion[] = STORY_BIBLE_SECTIONS.map(section => ({
+        id: `story-bible-${section.id}`,
+        label: section.title,
+        helper: '',
+        status: sectionIsWritten(section, content) ? 'answered' : 'unanswered',
+        answers: collectSurfaceAnswers(
+          section.special === 'characters'
+            ? content.characters.filter(character => character.name.trim()).map(character => ({ label: character.name, value: character.role.trim() || 'character' }))
+            : section.special === 'locks'
+              ? content.locks.filter(lock => lock.status === 'active').map(lock => ({ value: lock.statement }))
+              : visibleFields(section, content, format).filter(field => fieldIsWritten(content, field)).map(field => ({ label: field.label, value: readField(content, field.path) })),
+        ),
       }))
       return buildIntakeSurface('story-bible', 'Story Bible', format, questions)
     }
@@ -95,19 +85,6 @@ function buildIntakeSurface(
   }
 }
 
-function isStoryBiblePromptAnswered(
-  content: ProjectState['documents']['storyBible']['content'],
-  prompt: StoryBiblePromptDef,
-): boolean {
-  return prompt.inputs.every(input => {
-    const resolved = resolveStoryBiblePath(content, input.path)
-    const emptyResolved = resolveStoryBiblePath(EMPTY_STORY_BIBLE_CONTENT, input.path)
-    return resolved.defined
-      && hasMeaningfulContent(resolved.value)
-      && (!emptyResolved.defined || !sameValue(resolved.value, emptyResolved.value))
-  })
-}
-
 function hasMeaningfulContent(value: unknown): boolean {
   if (typeof value === 'string') return value.trim().length > 0
   if (typeof value === 'number' || typeof value === 'boolean') return true
@@ -135,23 +112,4 @@ function renderSurfaceAnswerValue(value: unknown): string {
   if (typeof value === 'string') return value.trim()
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   return JSON.stringify(value)
-}
-
-function sameValue(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true
-
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-    return a.every((item, index) => sameValue(item, b[index]))
-  }
-
-  if (a && b && typeof a === 'object' && typeof b === 'object') {
-    const aEntries = Object.entries(a as Record<string, unknown>)
-    const bObject = b as Record<string, unknown>
-    const bKeys = Object.keys(bObject)
-    if (aEntries.length !== bKeys.length) return false
-    return aEntries.every(([key, value]) => Object.prototype.hasOwnProperty.call(bObject, key) && sameValue(value, bObject[key]))
-  }
-
-  return false
 }

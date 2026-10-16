@@ -23,8 +23,10 @@ export interface SeedMarkdownInput {
   synopsis: SynopsisDocumentContent
   storyBible: StoryBibleDocumentContent
   treatment: TreatmentDocumentContent
-  /** Project meta title; used when neither the synopsis header nor the story bible cover has one. */
+  /** Project meta title; used when neither the story bible cover nor the synopsis header has one. */
   projectTitle?: string
+  /** The synopsis page Morgan writes; replaces the frozen synopsis prose when it has text. */
+  synopsisPage?: string
 }
 
 function lines(...xs: (string | undefined | false)[]): string {
@@ -60,8 +62,8 @@ export function resolveSeedTitle(
   input: Pick<SeedMarkdownInput, 'synopsis' | 'storyBible' | 'projectTitle'>,
 ): string {
   return (
-    input.synopsis.header.title.trim() ||
     input.storyBible.cover.title.trim() ||
+    input.synopsis.header.title.trim() ||
     input.projectTitle?.trim() ||
     ''
   )
@@ -71,13 +73,18 @@ function frontmatter(input: SeedMarkdownInput): string | undefined {
   const { synopsis, storyBible } = input
   const title = resolveSeedTitle(input)
   const toneWords = storyBible.toneAndStyle.toneWords.filter(word => word.trim())
-  const comps = synopsis.header.comps.filter(comp => comp.trim())
+  // Fact rule: Story Bible first, then the frozen legacy synopsis header.
+  const storyBibleComps = storyBible.toneAndStyle.comps.filter(comp => comp.trim())
+  const comps = storyBibleComps.length ? storyBibleComps : synopsis.header.comps.filter(comp => comp.trim())
+  const logline = storyBible.onePagePitch.logline.trim() || synopsis.logline.text.trim()
+  const genre = storyBible.cover.genre.trim() || synopsis.header.genre.trim()
+  const format = storyBible.cover.format.trim() || synopsis.header.format.trim()
 
   const entries: Array<[string, string]> = []
   if (title) entries.push(['title', yamlString(title)])
-  if (synopsis.logline.text.trim()) entries.push(['logline', yamlString(synopsis.logline.text.trim())])
-  if (synopsis.header.format.trim()) entries.push(['format', yamlString(synopsis.header.format.trim())])
-  if (synopsis.header.genre.trim()) entries.push(['genre', yamlString(synopsis.header.genre.trim())])
+  if (logline) entries.push(['logline', yamlString(logline)])
+  if (format) entries.push(['format', yamlString(format)])
+  if (genre) entries.push(['genre', yamlString(genre)])
   if (toneWords.length) entries.push(['tone', yamlList(toneWords)])
   if (comps.length) entries.push(['comps', yamlList(comps)])
 
@@ -85,7 +92,8 @@ function frontmatter(input: SeedMarkdownInput): string | undefined {
   return ['---', ...entries.map(([key, value]) => `${key}: ${value}`), '---', ''].join('\n')
 }
 
-function synopsisSection(synopsis: SynopsisDocumentContent): string | undefined {
+function synopsisSection(synopsis: SynopsisDocumentContent, synopsisPage = ''): string | undefined {
+  if (synopsisPage.trim()) return section('## Synopsis', synopsisPage.replace(/^#\s+Synopsis\s*\n/i, ''))
   const prose = [
     synopsis.prose.opening,
     synopsis.prose.escalation,
@@ -177,7 +185,7 @@ export function composeSeedMarkdown(input: SeedMarkdownInput): string {
   return (
     lines(
       frontmatter(input),
-      synopsisSection(input.synopsis),
+      synopsisSection(input.synopsis, input.synopsisPage),
       characterNotesSection(input.storyBible),
       worldSection(input.storyBible),
       locksSection(input.storyBible),

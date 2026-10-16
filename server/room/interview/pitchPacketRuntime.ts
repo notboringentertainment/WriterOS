@@ -1,4 +1,5 @@
 import { ProjectDocumentsSchema, type ProjectDocuments } from '../../../shared/documents'
+import { PageDocumentSchema, PageNameSchema, type PageName } from '../../../shared/pages'
 import { PitchPacketSchema, composePitchPacket, validatePitchPacketForApproval, type PitchMeetingDirectionItem, type PitchPacket } from '../../../shared/pitchPacket'
 import * as roomStore from '../store'
 import * as interviewStore from './store'
@@ -44,10 +45,21 @@ function applyUnapprovedProposals(packet: PitchPacket, proposals: Record<string,
   return PitchPacketSchema.parse(next)
 }
 
+function pageProse(value: unknown): Partial<Record<PageName, string>> {
+  const pages: Partial<Record<PageName, string>> = {}
+  for (const name of PageNameSchema.options) {
+    const page = PageDocumentSchema.safeParse((value as Record<string, unknown> | undefined)?.[name])
+    if (page.success && page.data.markdown.trim()) pages[name] = page.data.markdown
+  }
+  return pages
+}
+
 export async function createPitchPacketDraft(input: {
   projectId: string; sessionId: string; documents: ProjectDocuments; projectMeta?: { title?: string }; now?: Now
+  /** Morgan's prose pages as sent by the client; only their markdown is read. */
+  pages?: unknown
   memoryProvider?: ProjectMemoryProvider | null
-}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
+}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt; reopened?: true }> {
   const documents = ProjectDocumentsSchema.parse(input.documents)
   let projectMemory
   try {
@@ -66,6 +78,9 @@ export async function createPitchPacketDraft(input: {
   if (!session) throw new Error('Interview session not found.')
   requireSessionProject(session, input.projectId)
   if (session.state !== 'banked') throw new Error('Pitch Packet review requires a banked Meeting round.')
+  // F22: a saved draft or approved packet is reopened, never replaced.
+  const open = await packetStore.getOpenPitchPacket({ projectId: input.projectId, sessionId: input.sessionId })
+  if (open) return { row: open, proposalUnavailable: false, memoryReceipt: open.memory_receipt ?? projectMemory.receipt, reopened: true }
   const [sessions, storyLocks, openQuestions, directionSnapshot] = await Promise.all([
     interviewStore.listInterviewSessions(input.projectId), roomStore.getSharedBlockValue(input.projectId, 'story_locks'),
     roomStore.getSharedBlockValue(input.projectId, 'open_questions'), roomStore.getSharedBlockSnapshot(input.projectId, 'concept_seed'),
@@ -78,7 +93,7 @@ export async function createPitchPacketDraft(input: {
     directionRevision: directionSnapshot.revision, exportedAt: (input.now ?? nowIso)(),
   })
   emitMeetingTrace({ type: 'meeting.packet.composed', projectId: input.projectId, sessionId: input.sessionId, directionRevision: directionSnapshot.revision })
-  const groundedProjectContext = { documents, seed: session.seed_text, bankedAnswers: session.answers, activeMeetingDirection: context.activeDecisions }
+  const groundedProjectContext = { documents, pages: pageProse(input.pages), seed: session.seed_text, bankedAnswers: session.answers, activeMeetingDirection: context.activeDecisions }
   emitMeetingTrace({ type: 'meeting.packet.proposal_started', projectId: input.projectId, sessionId: input.sessionId })
   const generated = await generatePitchPacketProposals(groundedProjectContext, projectMemory)
   packet = applyUnapprovedProposals(packet, generated.proposals)

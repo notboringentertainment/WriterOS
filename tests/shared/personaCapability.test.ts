@@ -107,6 +107,14 @@ describe('persona capability contracts', () => {
     expect(getMissingCapabilitySurfaces(context)).toEqual(['synopsis'])
   })
 
+  it('counts a written synopsis page as synopsis context', () => {
+    const state = defaultProjectState()
+    state.pages.synopsis = { page: 'synopsis', markdown: 'A medic follows the signal.', status: 'draft', revision: 1 }
+    const context = buildProjectContext(state)
+    expect(getCapabilityContextChips(context)).toContain('synopsis')
+    expect(getMissingCapabilitySurfaces(context)).not.toContain('synopsis')
+  })
+
   it('counts current Script Facts characters as character context for receipts', () => {
     const state = defaultProjectState()
     state.script.rawHtml = '<p data-element-type="character">ISAIAH</p>'

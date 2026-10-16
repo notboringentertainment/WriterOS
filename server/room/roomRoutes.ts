@@ -457,7 +457,7 @@ export function registerRoomRoutes(app: Express, memoryProvider?: ProjectMemoryP
     if (!(await ensureMemoryOr503(req, res))) return;
     try {
       res.json(await pitchPacketRuntime.createPitchPacketDraft({
-        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), documents: req.body?.documents,
+        projectId: projectIdOf(req), sessionId: String(req.params.sessionId), documents: req.body?.documents, pages: req.body?.pages,
         projectMeta: { title: typeof req.body?.projectMeta?.title === 'string' ? req.body.projectMeta.title : undefined },
         memoryProvider,
       }));

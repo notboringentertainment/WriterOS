@@ -141,6 +141,8 @@ export interface PersonaCapabilityProjectContext {
       customSections: Array<{ id: string; heading: string; body: string }>
     }
   }
+  /** Prose pages Morgan writes; absent from requests sent before Phase 3. */
+  pages?: { synopsis: string; treatment: string; outline: string }
   scenes: Array<{
     id: string
     heading: string
@@ -298,6 +300,12 @@ export const personaCapabilityProjectContextSchema = z.object({
     linkedSceneIds: stringArraySchema,
   })),
   treatment: capabilityTreatmentContextSchema,
+  // Prose pages Morgan writes. Optional so an open tab from before Phase 3 still validates.
+  pages: z.object({
+    synopsis: z.string().default(''),
+    treatment: z.string().default(''),
+    outline: z.string().default(''),
+  }).default({}),
   scenes: z.array(z.object({
     id: z.string(),
     heading: z.string(),
@@ -414,7 +422,7 @@ export function getCapabilityContextChips(
     chips.push('logline')
   }
 
-  if (Object.values(projectContext.synopsis.sections).some(filled)) {
+  if (filled(projectContext.pages?.synopsis) || Object.values(projectContext.synopsis.sections).some(filled)) {
     chips.push('synopsis')
   }
 

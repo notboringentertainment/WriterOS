@@ -7,7 +7,7 @@ import {
 } from '../../projectMemory/agentContext'
 
 export const PITCH_PACKET_PROPOSAL_SYSTEM_PROMPT = `You propose only missing scalar fields for a Pitch Packet.
-Ground every proposal in the supplied project documents, Meeting seed, and banked answers. Do not invent unsupported plot facts.
+Ground every proposal in the supplied project documents, the prose pages (when present they are newer than the synopsis and treatment documents), Meeting seed, and banked answers. Do not invent unsupported plot facts.
 Return one JSON object containing only these optional string keys: title, logline, format, genre, tone, premise, storyEngine.`
 
 export const PitchPacketProposalSchema = z.object({

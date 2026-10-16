@@ -49,9 +49,12 @@ function formatVoiceProfileSlice(voiceProfile?: WorldContextVoiceProfileSlice): 
 }
 
 function formatProjectContext(projectContext: PersonaCapabilityProjectContext): string {
-  const synopsisSections = Object.entries(projectContext.synopsis.sections)
-    .filter(([, value]) => filled(value))
-    .map(([key, value]) => `${key}: ${truncate(value, 300)}`)
+  // The synopsis page replaces the frozen legacy sections when it has text.
+  const synopsisSections = filled(projectContext.pages?.synopsis)
+    ? [truncate(projectContext.pages!.synopsis, 1500)]
+    : Object.entries(projectContext.synopsis.sections)
+      .filter(([, value]) => filled(value))
+      .map(([key, value]) => `${key}: ${truncate(value, 300)}`)
 
   const characterLines = projectContext.characters
     .filter(character => filled(character.name))

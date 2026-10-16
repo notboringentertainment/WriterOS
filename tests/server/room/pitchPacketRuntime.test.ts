@@ -6,6 +6,7 @@ import { RoomMemoryError } from '../../../server/room/memoryContract'
 const packetStoreMock = vi.hoisted(() => ({
   createPitchPacketDraft: vi.fn(), getPitchPacket: vi.fn(), updatePitchPacketDraft: vi.fn(),
   approvePitchPacketRow: vi.fn(), exportPitchPacketRow: vi.fn(), getLatestExportedPitchPacket: vi.fn(),
+  getOpenPitchPacket: vi.fn(), // F22 (Ben approved this protected-test edit, 2026-10-16)
 }))
 vi.mock('../../../server/room/interview/pitchPacketStore', () => packetStoreMock)
 const interviewStoreMock = vi.hoisted(() => ({ getInterviewSession: vi.fn(), listInterviewSessions: vi.fn() }))
@@ -52,6 +53,7 @@ beforeEach(() => {
   roomStoreMock.getSharedBlockSnapshot.mockResolvedValue({ value: 'seed', revision: 5 })
   auditContextMock.buildAuditContext.mockResolvedValue({ activeDecisions: [], priorAnswers: session.answers, coveredAreas: new Set(), storyLocks: '', openQuestions: '' })
   providerMock.generateResponse.mockResolvedValue(JSON.stringify({ logline: 'A chef returns home to solve her sister’s disappearance.', genre: 'Mystery', format: 'Feature', tone: 'Haunted warmth', premise: 'A coded recipe exposes a family crime.', storyEngine: 'Each recipe reveals a new suspect.' }))
+  packetStoreMock.getOpenPitchPacket.mockResolvedValue(null)
   packetStoreMock.createPitchPacketDraft.mockImplementation(async (value: object) => ({ id: 'packet-1', project_id: 'p1', session_id: 's1', status: 'draft', created_at: 'now', exported_at: null, ...value }))
 })
 afterEach(async () => {

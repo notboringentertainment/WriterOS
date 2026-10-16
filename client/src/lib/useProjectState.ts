@@ -20,20 +20,15 @@ import { emptyLookbook, type LookbookDocument } from '@shared/lookbook'
 import { emptyLooks, type LooksDocument } from '@shared/looks'
 import { normalizeProjectTitle } from './projectIdentity'
 import type {
-  SynopsisDocumentContent,
   StoryBibleDocumentContent,
   OutlineDocumentContent,
   AuthoredDocumentState,
   OutlineEpisode,
-  TreatmentDocumentContent,
   DocumentViewPreferences,
 } from '@shared/documents'
 import {
   createEmptyOutlineContent,
-  createEmptySeriesContent,
   createEmptyStoryBibleContent,
-  createEmptySynopsisContent,
-  createEmptyTreatmentContent,
   DOCUMENT_SCHEMA_VERSION,
 } from '@shared/documents'
 import { documentsToLegacy, mergeStoryBibleLegacyIntoContent, normalizeOutlineContent } from './documentMigration'
@@ -137,58 +132,6 @@ export function useProjectState() {
     }))
   }, [update])
 
-  const clearSynopsis = useCallback(() => {
-    update(s => {
-      const ts = new Date(
-        Math.max(Date.now(), new Date(s.documents.synopsis.updatedAt).getTime() + 1),
-      ).toISOString()
-      const format = normalizeProjectFormat(s.meta.format)
-      const content = createEmptySynopsisContent()
-      content.header.format = format
-      if (format === 'series') {
-        content.series = createEmptySeriesContent()
-      }
-      return {
-        ...s,
-        synopsis: defaultProjectState().synopsis,
-        documents: {
-          ...s.documents,
-          synopsis: {
-            version: DOCUMENT_SCHEMA_VERSION,
-            revision: 0,
-            mode: 'prose' as const,
-            updatedAt: ts,
-            content,
-            // viewPreferences intentionally omitted on clear
-          },
-        },
-      }
-    })
-  }, [update])
-
-  const setSynopsisDocument = useCallback(
-    (updater: (content: SynopsisDocumentContent) => SynopsisDocumentContent) => {
-      update(s => {
-        const nextContent = updater(s.documents.synopsis.content)
-        const prevUpdatedAt = new Date(s.documents.synopsis.updatedAt).getTime()
-        const nextSynopsisDoc = {
-          ...s.documents.synopsis,
-          revision: s.documents.synopsis.revision + 1,
-          updatedAt: new Date(Math.max(Date.now(), prevUpdatedAt + 1)).toISOString(),
-          content: nextContent,
-        }
-        const nextDocuments = { ...s.documents, synopsis: nextSynopsisDoc }
-        const nextLegacySlice = documentsToLegacy(nextDocuments).synopsis
-        return {
-          ...s,
-          documents: nextDocuments,
-          synopsis: nextLegacySlice,
-        }
-      })
-    },
-    [update],
-  )
-
   const setStoryBibleDocument = useCallback(
     (updater: (content: StoryBibleDocumentContent) => StoryBibleDocumentContent) => {
       update(s => {
@@ -271,25 +214,6 @@ export function useProjectState() {
       }
     })
   }, [update])
-
-  const setSynopsisViewPreferences = useCallback(
-    (patch: Partial<DocumentViewPreferences>) => {
-      update(s => ({
-        ...s,
-        documents: {
-          ...s.documents,
-          synopsis: {
-            ...s.documents.synopsis,
-            viewPreferences: {
-              ...(s.documents.synopsis.viewPreferences ?? {}),
-              ...patch,
-            },
-          },
-        },
-      }))
-    },
-    [update],
-  )
 
   const setBeat = useCallback((beatId: string, patch: Partial<Beat>) => {
     update(s => {
@@ -430,76 +354,6 @@ export function useProjectState() {
     },
     [update],
   )
-
-  const setTreatmentDocument = useCallback(
-    (updater: (content: TreatmentDocumentContent) => TreatmentDocumentContent) => {
-      update(s => {
-        const format = normalizeProjectFormat(s.meta.format)
-        const nextContent = updater(s.documents.treatment.content)
-        const nextTreatmentDoc = {
-          ...s.documents.treatment,
-          revision: s.documents.treatment.revision + 1,
-          updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
-          content: {
-            ...nextContent,
-            header: {
-              ...nextContent.header,
-              format,
-            },
-          },
-        }
-        return {
-          ...s,
-          documents: {
-            ...s.documents,
-            treatment: nextTreatmentDoc,
-          },
-        }
-      })
-    },
-    [update],
-  )
-
-  const setTreatmentViewPreferences = useCallback(
-    (patch: Partial<DocumentViewPreferences>) => {
-      update(s => ({
-        ...s,
-        documents: {
-          ...s.documents,
-          treatment: {
-            ...s.documents.treatment,
-            viewPreferences: {
-              ...(s.documents.treatment.viewPreferences ?? {}),
-              ...patch,
-            },
-          },
-        },
-      }))
-    },
-    [update],
-  )
-
-  const clearTreatment = useCallback(() => {
-    update(s => {
-      const format = normalizeProjectFormat(s.meta.format)
-      const content = createEmptyTreatmentContent()
-      content.header.format = format
-      const nextTreatmentDoc = {
-        version: DOCUMENT_SCHEMA_VERSION,
-        revision: 0,
-        mode: 'three_act_prose' as const,
-        updatedAt: nextTimestampAfter(s.documents.treatment.updatedAt),
-        content,
-      }
-      return {
-        ...s,
-        documents: {
-          ...s.documents,
-          treatment: nextTreatmentDoc,
-        },
-      }
-    })
-  }, [update])
 
   const addEpisode = useCallback(() => {
     setOutlineDocument(content => {
@@ -920,9 +774,6 @@ export function useProjectState() {
     setProjectFormat,
     setPage,
     setTitlePageMetadata,
-    clearSynopsis,
-    setSynopsisDocument,
-    setSynopsisViewPreferences,
     setStoryBibleDocument,
     setStoryBibleViewPreferences,
     migrateStoryBibleLegacyToDocument,
@@ -934,9 +785,6 @@ export function useProjectState() {
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,
-    setTreatmentDocument,
-    setTreatmentViewPreferences,
-    clearTreatment,
     addEpisode,
     renameEpisode,
     setEpisodeField,
