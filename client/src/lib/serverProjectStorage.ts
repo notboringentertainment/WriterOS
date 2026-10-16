@@ -256,19 +256,19 @@ export async function bootstrapServerProjectStorage(
       return { result: response.result, beatSheet }
     },
     beatSheet: {
-      refresh: projectId => postBeatSheetRefresh(projectId, bootstrap.sessionToken),
-      status: projectId => getBeatSheetStatus(projectId, bootstrap.sessionToken),
+      refresh: projectId => postBeatSheetRefresh(projectId, sessionHeaders['X-WriterOS-Session']),
+      status: projectId => getBeatSheetStatus(projectId, sessionHeaders['X-WriterOS-Session']),
     },
     lookbook: {
       questions: (projectId, beatKey) =>
-        postLookbookQuestions(projectId, bootstrap.sessionToken, {
+        postLookbookQuestions(projectId, sessionHeaders['X-WriterOS-Session'], {
           beatKey,
           clientRequestId: `lbreq_${crypto.randomUUID()}`,
         }),
     },
     looks: {
-      promote: (projectId, body) => postLookPromote(projectId, bootstrap.sessionToken, body),
-      reexport: projectId => getLookExport(projectId, bootstrap.sessionToken),
+      promote: (projectId, body) => postLookPromote(projectId, sessionHeaders['X-WriterOS-Session'], body),
+      reexport: projectId => getLookExport(projectId, sessionHeaders['X-WriterOS-Session']),
     },
     async writeProject(project: StoredProject) {
       const response = await requestJson<ProjectLibrarySaveResponse>(

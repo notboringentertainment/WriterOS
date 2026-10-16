@@ -236,6 +236,18 @@ export default function App() {
   const writeProjectRef = useRef(projectFolder.writeProject)
   const markStoredProjectsMigratedRef = useRef(project.markStoredProjectsMigrated)
   writeProjectRef.current = projectFolder.writeProject
+  const folderWriteQueueRef = useRef<Promise<void> | null>(null)
+  const writeFolderProject = useCallback((storedProject: StoredProject) => {
+    const write = writeProjectRef.current
+    const previous = folderWriteQueueRef.current
+    const result = previous ? previous.then(() => write(storedProject)) : write(storedProject)
+    const settled = result.then(() => {}, () => {})
+    folderWriteQueueRef.current = settled
+    void settled.then(() => {
+      if (folderWriteQueueRef.current === settled) folderWriteQueueRef.current = null
+    })
+    return result
+  }, [])
   markStoredProjectsMigratedRef.current = project.markStoredProjectsMigrated
   const activeFolderProjectId = activeProjectStorage.kind === 'folder'
     ? activeProjectStorage.projectId
@@ -468,7 +480,7 @@ export default function App() {
   const handleScriptChange = useCallback(
     (html: string, scenes: ScriptScene[]) => {
       if (activeFolderProjectId && project.activeStoredProject) {
-        void writeProjectRef.current({
+        void writeFolderProject({
           ...project.activeStoredProject,
           state: { ...project.state, script: { ...project.state.script, rawHtml: html, scenes } },
         }).catch(error => setFolderProjectError(error instanceof TypeError
@@ -485,7 +497,7 @@ export default function App() {
       }
       project.updateScript(html, scenes)
     },
-    [activeAgentProjectKey, activeFolderProjectId, project]
+    [activeAgentProjectKey, activeFolderProjectId, project, writeFolderProject]
   )
 
   const handleRebuildScriptFacts = useCallback((snapshot: { rawHtml: string; scenes: ScriptScene[] }) => {
@@ -514,7 +526,7 @@ export default function App() {
 
     const nonce = ++folderSaveNonceRef.current
     try {
-      const folderProject = await writeProjectRef.current(storedProject)
+      const folderProject = await writeFolderProject(storedProject)
       if (folderSaveNonceRef.current !== nonce) return false
       const folderLabel = projectFolder.label ?? projectFolder.defaultFolderLabel
       const existingMarker = storedProject.migratedToFolder
@@ -542,7 +554,7 @@ export default function App() {
       setFolderProjectError(formatFolderProjectError(error))
       return false
     }
-  }, [formatFolderProjectError, projectFolder.defaultFolderLabel, projectFolder.label])
+  }, [formatFolderProjectError, projectFolder.defaultFolderLabel, projectFolder.label, writeFolderProject])
 
   useEffect(() => {
     if (!activeFolderProjectId) return

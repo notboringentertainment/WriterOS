@@ -244,17 +244,28 @@ export class MorganSessions {
       s.ending ??= 'start-failed'
       void this.stopSession(projectId, s)
     }, this.deps.startTimeoutMs ?? 10000)
-    child.onData(data => {
+    let waitingForTrustFolder = false;
+    const decideTrust = (waitForFolder = true) => {
       if (s.hello || s.trustAsked || s.finishing || s.ending) return;
-      s.trustBuffer = (s.trustBuffer + data).slice(-8192);
       if (!detectTrustScreen(s.trustBuffer)) return;
-      s.trustAsked = true;
-      if (s.startTimer) { clearTimeout(s.startTimer); s.startTimer = null; }
       const requestId = 'folder-trust';
-      const folders = normalizeTrustScreen(s.trustBuffer).split(/[\r\n]+/)
+      const lines = normalizeTrustScreen(s.trustBuffer).split(/[\r\n]+/);
+      if (waitForFolder) lines.pop();
+      const folders = lines
         .map(line => line.trim().replace(/^[│┃]\s*|\s*[│┃]$/g, '').trim())
         .filter(line => path.isAbsolute(line));
       const folder = folders.length === 1 ? folders[0] : null;
+      if (folder === null && waitForFolder) {
+        if (!waitingForTrustFolder) {
+          waitingForTrustFolder = true;
+          if (s.startTimer) clearTimeout(s.startTimer);
+          s.startTimer = setTimeout(() => decideTrust(false), 2000);
+        }
+        return;
+      }
+      waitingForTrustFolder = false;
+      s.trustAsked = true;
+      if (s.startTimer) { clearTimeout(s.startTimer); s.startTimer = null; }
       const ownFolder = folder !== null && [project.packagePath, project.storyDriveRoot]
         .some(own => {
           try { return own !== null && realpathSync(own) === realpathSync(folder); }
@@ -262,7 +273,7 @@ export class MorganSessions {
         });
       const card: ApprovalCard = { requestId, tool: 'FolderTrust', summary: folder
         ? `Let Morgan work in ${folder}? Claude Code asks this once per folder.`
-        : 'Let Morgan work in this folder? Claude Code is asking for your OK.', input: folder ? JSON.stringify({ folder }) : launchFolder(project) };
+        : 'Claude Code is asking to trust a folder. WriterOS could not identify which folder.', input: JSON.stringify({ folder }) };
       const resolveTrust = (answer: PermissionAnswer) => {
         if (answer.allow) {
           child.write('\x1b[B');
@@ -283,6 +294,11 @@ export class MorganSessions {
       if (ownFolder) { resolveTrust({ allow: true }); return; }
       s.approvals.set(requestId, { card, resolve: resolveTrust });
       emit({ type: 'approval', card });
+    };
+    child.onData(data => {
+      if (s.hello || s.trustAsked || s.finishing || s.ending) return;
+      s.trustBuffer = (s.trustBuffer + data).slice(-8192);
+      decideTrust();
     });
     try { await this.refreshOwned(s) }
     catch (error) {
@@ -424,5 +440,3 @@ export class MorganSessions {
     await Promise.all([...ids].map(id => this.end(id)))
   }
 }
-
-function launchFolder(project: MorganProjectPaths): string { return JSON.stringify({ folder: project.storyDriveRoot ?? project.packagePath }) }

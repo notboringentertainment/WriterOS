@@ -114,3 +114,8 @@ No Critical/Important findings, so no fix round. Minors logged, not fixed (per B
 - The save error text squeezes the project title in the current top bar. Phase 1 replaces this top bar.
 - The script now writes to the folder after every 500 ms typing pause, not only on the folder-save delay. That means more saves, with no correctness issue seen.
 - One flaky test under full-suite load, not in the Phase 0 tests.
+
+### Phase 0, Round 2 — Codex fix (from CodeRabbit on PR #85)
+Fixed: (1) all folder-project writes go through one ordered client queue; (2) beat sheet / lookbook / looks calls use the refreshed session token; (3) the trust card waits up to 2 s for the folder path, and if it is still unknown says so instead of labelling it the project folder.
+Skipped, with reasons: "Saved" tied to the lock-sync result (lock sync depends on the Room service, so this would show false failures whenever the Room is down); a stale error showing on a newly selected project (minor).
+Claude verified: full suite 3203 passed; tsc and build clean; protected canon tests untouched. Browser re-check on the sandbox: two typing bursts then an immediate tab switch landed on disk in order ("QUEUE ONE QUEUE TWO"), and reload reopened the project.

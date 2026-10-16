@@ -9,14 +9,15 @@ import { TOKEN_HEADER } from '../../../mod/writeros-morgan/hooks/protocol'
 import { rowTemplate } from '../../helpers/morganProtocol'
 import type { MorganScreenEvent } from '../../../shared/morganLive'
 
-it.each(['story', 'package', 'other'])('answers only the project folders automatically: %s', async kind => {
+it.each(['story', 'package', 'other', 'split-story', 'split-other', 'unknown'])('answers only the project folders automatically: %s', async kind => {
   const dir = mkdtempSync(path.join(tmpdir(), 'm-trust-'))
   const storyDriveRoot = path.join(dir, 'story')
   const packagePath = path.join(dir, 'project.writeros')
   mkdirSync(storyDriveRoot)
   mkdirSync(packagePath)
-  const folder = kind === 'story' ? storyDriveRoot : kind === 'package' ? packagePath : path.join(dir, 'other')
-  const displayedFolder = kind === 'other' ? folder : realpathSync(folder)
+  const ownFolder = kind === 'story' || kind === 'package' || kind === 'split-story'
+  const folder = kind === 'story' || kind === 'split-story' ? storyDriveRoot : kind === 'package' ? packagePath : path.join(dir, 'other')
+  const displayedFolder = ownFolder ? realpathSync(folder) : folder
   const writes: string[] = []
   const sessions = new MorganSessions({
     runDir: dir, port: '9997', startTimeoutMs: 2000,
@@ -31,7 +32,10 @@ it.each(['story', 'package', 'other'])('answers only the project folders automat
       let first = true
       return { ...child, write: data => { writes.push(data); child.write(data) },
         onData: handler => child.onData(data => {
-          handler((first ? `Accessing workspace:\r\n ${displayedFolder}\r\n` : '') + data)
+          if (first && (kind.startsWith('split-') || kind === 'unknown')) {
+            handler(data)
+            if (kind !== 'unknown') setTimeout(() => handler(`\r\n ${displayedFolder}\r\n`), 100)
+          } else handler((first ? `Accessing workspace:\r\n ${displayedFolder}\r\n` : '') + data)
           first = false
         }) }
     },
@@ -41,13 +45,18 @@ it.each(['story', 'package', 'other'])('answers only the project folders automat
     await sessions.start('p')
     sessions.subscribe('p', e => events.push(e))
     const deadline = Date.now() + 4000
-    while (!events.some(e => e.type === (kind === 'other' ? 'approval' : 'hello'))) {
+    while (!events.some(e => e.type === (ownFolder ? 'hello' : 'approval'))) {
       if (Date.now() > deadline) throw new Error(`Timed out: ${JSON.stringify(events)}`)
       await new Promise(resolve => setTimeout(resolve, 25))
     }
-    if (kind === 'other') {
+    if (!ownFolder) {
       expect(writes).toEqual([])
-      expect(events.find(e => e.type === 'approval')).toMatchObject({ card: { tool: 'FolderTrust', input: JSON.stringify({ folder }) } })
+      const approval = events.find(e => e.type === 'approval')
+      if (kind === 'unknown') {
+        expect(approval).toMatchObject({ card: { input: JSON.stringify({ folder: null }), summary: expect.stringContaining('could not identify') } })
+        expect(JSON.stringify(approval)).not.toContain(storyDriveRoot)
+        expect(JSON.stringify(approval)).not.toContain(packagePath)
+      } else expect(approval).toMatchObject({ card: { tool: 'FolderTrust', input: JSON.stringify({ folder }) } })
     } else {
       expect(writes).toEqual(['\x1b[B', '\r'])
       expect(events.some(e => e.type === 'approval')).toBe(false)
