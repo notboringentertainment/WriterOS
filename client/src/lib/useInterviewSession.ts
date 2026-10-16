@@ -378,7 +378,7 @@ export function useInterviewSession(projectId: string, projectScopeKey?: string)
         ? { ...result.row, memory_receipt: result.memoryReceipt }
         : result.row)
       setProposalUnavailable(result.proposalUnavailable)
-      setPacketMessage(null)
+      setPacketMessage(result.reopened ? 'Your saved Pitch Packet is open again.' : null)
       setPacketDownloadError(null)
     } catch (err) {
       if (!isCurrent()) return

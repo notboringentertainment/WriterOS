@@ -59,7 +59,7 @@ export async function createPitchPacketDraft(input: {
   /** Morgan's prose pages as sent by the client; only their markdown is read. */
   pages?: unknown
   memoryProvider?: ProjectMemoryProvider | null
-}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
+}): Promise<{ row: packetStore.PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt; reopened?: true }> {
   const documents = ProjectDocumentsSchema.parse(input.documents)
   let projectMemory
   try {
@@ -78,6 +78,9 @@ export async function createPitchPacketDraft(input: {
   if (!session) throw new Error('Interview session not found.')
   requireSessionProject(session, input.projectId)
   if (session.state !== 'banked') throw new Error('Pitch Packet review requires a banked Meeting round.')
+  // F22: a saved draft or approved packet is reopened, never replaced.
+  const open = await packetStore.getOpenPitchPacket({ projectId: input.projectId, sessionId: input.sessionId })
+  if (open) return { row: open, proposalUnavailable: false, memoryReceipt: open.memory_receipt ?? projectMemory.receipt, reopened: true }
   const [sessions, storyLocks, openQuestions, directionSnapshot] = await Promise.all([
     interviewStore.listInterviewSessions(input.projectId), roomStore.getSharedBlockValue(input.projectId, 'story_locks'),
     roomStore.getSharedBlockValue(input.projectId, 'open_questions'), roomStore.getSharedBlockSnapshot(input.projectId, 'concept_seed'),

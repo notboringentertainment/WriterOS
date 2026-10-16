@@ -358,7 +358,7 @@ export async function createPitchPacketDraft(
   sessionId: string,
   documents: ProjectDocuments,
   projectMeta: { title?: string; pages?: ProjectPages },
-): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt }> {
+): Promise<{ row: PitchPacketRow; proposalUnavailable: boolean; memoryReceipt: MemoryReceipt; reopened?: boolean }> {
   const res = await fetch(`${pitchPacketPath(projectId, sessionId)}/draft`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
