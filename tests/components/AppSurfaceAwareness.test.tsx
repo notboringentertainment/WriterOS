@@ -40,7 +40,7 @@ describe('App surface awareness — live request path', () => {
     vi.restoreAllMocks()
   })
 
-  it('left-rail Writing Partner on Outline sends an intake surface with the first question', async () => {
+  it('left-rail Writing Partner on an unlinked Beat Sheet sends no question deck', async () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
@@ -57,12 +57,11 @@ describe('App surface awareness — live request path', () => {
     expect(body.projectId).toEqual(expect.any(String))
     expect(body.projectId).not.toBe('')
     expect(body.personaId).toBe('writingPartner')
-    expect(body.projectContext.surface.kind).toBe('intake')
-    expect(body.projectContext.surface.surface).toBe('outline')
-    expect(body.projectContext.surface.nextQuestion.label).toBe('Who are we following?')
+    // Beats come from Story-drive only; an unlinked project's Beat Sheet asks nothing.
+    expect(body.projectContext.surface).toEqual({ kind: 'none' })
   })
 
-  it('Writer’s Room specialist on Outline sends an intake surface with the first question', async () => {
+  it('Writer’s Room specialist on an unlinked Beat Sheet sends no question deck', async () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
@@ -77,12 +76,10 @@ describe('App surface awareness — live request path', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/wp-chat'))).toBe(true))
 
     const body = wpChatBody(fetchMock)
-    expect(body.projectContext.surface.kind).toBe('intake')
-    expect(body.projectContext.surface.surface).toBe('outline')
-    expect(body.projectContext.surface.nextQuestion.label).toBe('Who are we following?')
+    expect(body.projectContext.surface).toEqual({ kind: 'none' })
   })
 
-  it('live Room channel on Outline sends the exact question deck with the writer message', async () => {
+  it('live Room channel on an unlinked Beat Sheet sends no question deck with the writer message', async () => {
     const fetchMock = mockFetchCapturing()
     render(<App />)
 
@@ -98,12 +95,7 @@ describe('App surface awareness — live request path', () => {
     const call = fetchMock.mock.calls.find(([url, init]) =>
       String(url).includes('/api/room/') && String(url).endsWith('/messages') && init?.method === 'POST')!
     const body = JSON.parse((call[1] as RequestInit).body as string)
-    expect(body.surfaceAwareness).toMatchObject({
-      kind: 'intake',
-      surface: 'outline',
-      nextQuestion: { label: 'Who are we following?' },
-    })
-    expect(body.surfaceAwareness.questions[0].label).toBe('Who are we following?')
+    expect(body.surfaceAwareness).toEqual({ kind: 'none' })
   })
 
   it.each([

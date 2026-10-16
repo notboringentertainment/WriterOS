@@ -2,8 +2,6 @@ import React, { useState } from 'react'
 import type { OutlineDocumentContent } from '@shared/documents'
 import { orphanedBeatKeys, type LookbookDocument } from '@shared/lookbook'
 import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
-import { SERIES_FOUNDATIONS, setOutlinePath } from '../../../lib/outlineDeck'
-import { OutlineCard } from './OutlineCard'
 import { BeatSheetStatusLine } from './BeatSheetStatusLine'
 import { LookbookBeat } from './LookbookBeat'
 import { PromotedLooksLine } from '../looks/LookEntryButton'
@@ -19,9 +17,10 @@ export interface BeatSheetViewProps {
   onDismiss: (beatKey: string, questionId: string) => void
   onRemoveOrphan: (beatKey: string) => void
   refreshing: boolean
-  onContentChange: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
   changedSince?: boolean
   refreshError?: string | null
+  /** Unused since the foundation questions left the Beat Sheet; kept so existing callers and tests still type-check. */
+  onContentChange?: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
 }
 
 export function BeatSheetView({
@@ -34,7 +33,6 @@ export function BeatSheetView({
   onDismiss,
   onRemoveOrphan,
   refreshing,
-  onContentChange,
   changedSince,
   refreshError,
 }: BeatSheetViewProps) {
@@ -59,7 +57,6 @@ export function BeatSheetView({
   const liveKeys = new Set(content.units.map(unit => unit.id))
   const orphanKeys = lookbook ? orphanedBeatKeys(lookbook, liveKeys) : []
 
-  let currentSection = ''
   let currentMovement: string | null = null
 
   return (
@@ -73,23 +70,6 @@ export function BeatSheetView({
           onRefresh={onRefresh}
         />
       )}
-
-      {SERIES_FOUNDATIONS.map(card => {
-        const showSection = card.sectionLabel !== currentSection
-        currentSection = card.sectionLabel
-        return (
-          <React.Fragment key={card.id}>
-            {showSection && <h3 style={styles.sectionTitle}>{card.sectionLabel}</h3>}
-            <OutlineCard
-              card={card}
-              content={content}
-              onFieldChange={(path, value) =>
-                onContentChange(current => setOutlinePath(current, path, value))
-              }
-            />
-          </React.Fragment>
-        )
-      })}
 
       <h3 style={styles.sectionTitle}>Beat Sheet</h3>
 

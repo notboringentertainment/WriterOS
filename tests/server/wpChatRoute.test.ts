@@ -252,6 +252,7 @@ describe('/api/wp-chat synopsis story-coach context', () => {
     unit.turn = 'The voice knows his private grief.'
     unit.characters = ['Isaiah']
     state.documents.outline.content.units = [unit]
+    state.documents.outline.content.beatSheetSource = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 1, label: null }
 
     const { server, port } = await startApp()
     try {

@@ -269,7 +269,7 @@ describe('buildProjectContext', () => {
     ])
   })
 
-  it('maps outline document answers instead of stale legacy beats', () => {
+  it('sends Story-drive beats only: no spine pseudo-beat, no stale legacy beats', () => {
     const state = defaultProjectState()
     state.outline.beats[0].notes = 'Stale legacy note agents should not see.'
     const unit = createOutlineUnit('feature.incitingIncident')
@@ -277,21 +277,24 @@ describe('buildProjectContext', () => {
     unit.consequence = 'She has to answer even though the system warns her off.'
     state.documents.outline.content.spine.protagonist = 'Sara'
     state.documents.outline.content.units = [unit]
+    state.documents.outline.content.beatSheetSource = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 1, label: null }
 
     const ctx = buildProjectContext(state)
 
-    expect(ctx.beats[0]).toMatchObject({
-      id: 'outline-spine',
-      name: 'Story spine',
-      notes: expect.stringContaining('Sara'),
-    })
-    expect(ctx.beats[1]).toMatchObject({
-      id: 'feature.incitingIncident',
-      name: 'Inciting incident',
-    })
-    expect(ctx.beats[1].notes).toContain('Sara hears a rescue call')
-    expect(ctx.beats[1].notes).toContain('She has to answer')
+    expect(ctx.beats).toHaveLength(1)
+    expect(ctx.beats[0]).toMatchObject({ id: 'feature.incitingIncident', name: 'Inciting incident' })
+    expect(ctx.beats[0].notes).toContain('Sara hears a rescue call')
     expect(JSON.stringify(ctx.beats)).not.toContain('Stale legacy note')
+    expect(JSON.stringify(ctx.beats)).not.toContain('Story spine')
+  })
+
+  it('sends no beats for an unlinked project, whatever hand-written outline it holds', () => {
+    const state = defaultProjectState()
+    const unit = createOutlineUnit('feature.incitingIncident')
+    unit.whatHappens = 'Hand-written beat.'
+    state.documents.outline.content.units = [unit]
+    state.documents.outline.content.spine.protagonist = 'Sara'
+    expect(buildProjectContext(state).beats).toEqual([])
   })
 
   it('maps treatment document prose for Alex and broad story-flow context', () => {

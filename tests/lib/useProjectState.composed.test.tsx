@@ -18,12 +18,10 @@ const composed: ComposedDocument = {
 }
 
 describe('useProjectState composed', () => {
-  it('sets and clears the composed outline artifact', () => {
+  it('sets the composed outline artifact', () => {
     const { result } = renderHook(() => useProjectState())
     act(() => result.current.setComposedDocument('outline', composed))
     expect(result.current.state.documents.outline.composed?.sourceHash).toBe('h')
-    act(() => result.current.clearOutline())
-    expect(result.current.state.documents.outline.composed).toBeUndefined()
   })
 
   it('computes currentOutlineSourceHash from answers', () => {

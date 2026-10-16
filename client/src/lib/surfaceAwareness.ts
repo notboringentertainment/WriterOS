@@ -1,9 +1,7 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
 import type { SurfaceAnswer, SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
-import { resolveFeatureRoleUnitIds } from '@shared/featureRoleBindings'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
-import { getOutlineDeck, isOutlineCardAnswered, resolveOutlinePath } from './outlineDeck'
 import { STORY_BIBLE_SECTIONS, fieldIsWritten, readField, sectionIsWritten, visibleFields } from './storyBibleSections'
 
 export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState): SurfaceAwareness {
@@ -11,23 +9,17 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
 
   switch (activeTab) {
     case 'outline': {
+      // Only Story-drive's beats: the foundation questions and hand-written beat cards
+      // are no longer on the page, so they are no longer offered as questions.
       const content = state.documents.outline.content
-      const resolution = format === 'feature' ? resolveFeatureRoleUnitIds(content) : undefined
-      const questions: SurfaceQuestion[] = getOutlineDeck(format, resolution).map(card => {
-        const bindings = typeof card.mappingPath === 'string'
-          ? [{ path: card.mappingPath }]
-          : card.mappingPath
-        return {
-          id: card.id,
-          label: card.question,
-          helper: card.helper,
-          status: isOutlineCardAnswered(content, card) ? 'answered' : 'unanswered',
-          answers: collectSurfaceAnswers(bindings.map(binding => ({
-            label: 'label' in binding ? binding.label : undefined,
-            value: resolveOutlinePath(content, binding.path),
-          }))),
-        }
-      })
+      if (!content.beatSheetSource) return { kind: 'none' }
+      const questions: SurfaceQuestion[] = [...content.units].sort((x, y) => x.number - y.number).map(unit => ({
+        id: unit.id,
+        label: `${unit.number}. ${unit.title}`,
+        helper: unit.actOrSequence,
+        status: unit.whatHappens.trim() ? 'answered' : 'unanswered',
+        answers: collectSurfaceAnswers([{ value: unit.whatHappens }]),
+      }))
       return buildIntakeSurface('outline', 'Beat Sheet', format, questions)
     }
 

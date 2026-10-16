@@ -1,6 +1,6 @@
 # Beat Sheet: Story-drive beats only
 
-Date: 2026-10-16 · Branch: `plan/beat-sheet-foundations` · Status: DRAFT, for Codex review
+Date: 2026-10-16 · Branch: `plan/beat-sheet-foundations` · Status: Codex round 1 folded in; Ben approved both protected-test edits
 A small step after pare-down Phase 3 and before Phase 4. The pare-down plan's hard boundary, key decision and fact rule all apply (`2026-10-15-writeros-pare-down.md`).
 
 ## Why
@@ -18,14 +18,17 @@ Usage today: only Grave Affairs has foundation answers (6 of 7), and they are fl
    > No beat sheet yet. Beats come from this project's Story-drive beat sheet once the project is linked.
    - The beat-sheet status line still shows when there is one.
    - `OutlineEditView` and its card components are removed if nothing else imports them.
-3. **"Clear answers"** and `ClearOutlineDialog` are removed. No editable answers remain on the Beat Sheet. Lookbook answers have their own Dismiss. `useProjectState.clearOutline` goes if it has no other caller.
-4. **Readers**, by the Phase 3 fact rule:
+3. **No writes on open** (Codex R1): the effect in `OutlineTab.tsx` that seeds episodes 101–103 into a series outline is removed, so opening the Beat Sheet never changes `outline.json`. The format switch no longer warns about hidden answers.
+4. **"Clear answers"** and `ClearOutlineDialog` are removed. No editable answers remain on the Beat Sheet. Lookbook answers have their own Dismiss. `useProjectState.clearOutline` goes if it has no other caller.
+5. **Readers**, by the Phase 3 fact rule:
    - `wpRouting.ts` `documentOutlineBeats`:
      - The "Story spine" pseudo-beat is dropped; the Story Bible and canon carry those facts.
      - Hand-written units on an unlinked project are no longer sent as beats, so agents see the same beats the writer sees: Story-drive beats only.
    - `surfaceAwareness.ts` `outline` case: foundation cards and hand-unit cards come out of the question list. Agents then get no "unanswered" questions the page no longer asks.
      - For a linked project, it keeps the beat cards it sends today, so the wp-chat outline patch path (which needs an intake surface) is unchanged.
      - For an unlinked project, it reports `{ kind: 'none' }`.
+     - For an unlinked project the old wp-chat writing partner therefore no longer proposes hand-outline rewrites (Codex R1). That is intended: beats come from Story-drive only. Morgan's own `outline` target is untouched (hard boundary).
+   - `leftZone.ts` (Codex R1): the left rail's Beat Sheet list and beat count show Story-drive beats only; an unlinked project shows none.
    - `WritersRoom.tsx`, Oliver's summary: "N beats" from Story-drive beats; spine count dropped.
    - `shared/compose/factSheet.ts`, `recipe.ts`, `sourceHash.ts`: **unchanged.** They feed What's Standing and the compose source hash. Changing them would change canon-side output (hard boundary).
 
@@ -36,9 +39,13 @@ Usage today: only Grave Affairs has foundation answers (6 of 7), and they are fl
 - Lookbook.
 - Project format selector on the Beat Sheet.
 
-## Protected test edit (needs Ben's sign-off before it is applied)
+## Protected test edits (Ben approved both, 2026-10-16)
 
-`tests/components/BeatSheetView.test.tsx`, "keeps the Foundations cards above the beats": rewritten to assert that **no** foundation card renders and that beat 1 is still the first story content. Every other assertion in the file stays.
+In `tests/components/BeatSheetView.test.tsx`:
+- "keeps the Foundations cards above the beats" is rewritten to assert that **no** foundation card renders and that beat 1 still shows.
+- "shows the full deck when there is no beat sheet" (Codex R1) is rewritten to assert the "No beat sheet yet" message and no Refresh button. It also stops passing the two removed episode props.
+
+Every other assertion in the file stays.
 
 ## Not in scope (logged)
 

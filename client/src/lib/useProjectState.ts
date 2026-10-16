@@ -23,11 +23,9 @@ import type {
   StoryBibleDocumentContent,
   OutlineDocumentContent,
   AuthoredDocumentState,
-  OutlineEpisode,
   DocumentViewPreferences,
 } from '@shared/documents'
 import {
-  createEmptyOutlineContent,
   createEmptyStoryBibleContent,
   DOCUMENT_SCHEMA_VERSION,
 } from '@shared/documents'
@@ -36,7 +34,6 @@ import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectForma
 import type { ComposedDocument } from '@shared/compose/types'
 import { computeOutlineSourceHash } from '@shared/compose/sourceHash'
 import { pickIdentity } from '@shared/compose/identity'
-import { createOutlineEpisode, isAuthoredOutlineUnit } from './outlineDeck'
 import { defaultScriptFactsCache, rebuildScriptFactsCache } from './scriptFacts'
 
 export interface ImportedScriptPayload {
@@ -354,90 +351,6 @@ export function useProjectState() {
     },
     [update],
   )
-
-  const addEpisode = useCallback(() => {
-    setOutlineDocument(content => {
-      const nextNumber = content.episodes.length > 0
-        ? Math.max(...content.episodes.map(episode => episode.number)) + 1
-        : 101
-      return {
-        ...content,
-        episodes: [...content.episodes, createOutlineEpisode(nextNumber)],
-      }
-    })
-  }, [setOutlineDocument])
-
-  const renameEpisode = useCallback((episodeId: string, label: string) => {
-    setOutlineDocument(content => ({
-      ...content,
-      episodes: content.episodes.map(episode =>
-        episode.id === episodeId ? { ...episode, label } : episode,
-      ),
-    }))
-  }, [setOutlineDocument])
-
-  const setEpisodeField = useCallback(<K extends keyof OutlineEpisode>(
-    episodeId: string,
-    field: K,
-    value: OutlineEpisode[K],
-  ) => {
-    setOutlineDocument(content => ({
-      ...content,
-      episodes: content.episodes.map(episode =>
-        episode.id === episodeId ? { ...episode, [field]: value } : episode,
-      ),
-    }))
-  }, [setOutlineDocument])
-
-  const clearOutline = useCallback((options: { keep?: 'all' | 'foundations' } = {}) => {
-    update(s => {
-      const empty = createEmptyOutlineContent()
-      const outlineFormat = normalizeProjectFormat(s.meta.format)
-      const keepFoundations = options.keep === 'foundations'
-      const currentContent = normalizeOutlineContent(s.documents.outline.content)
-      const authoredUnits = currentContent.units.filter(isAuthoredOutlineUnit)
-      const authoredIds = new Set(authoredUnits.map(unit => unit.id))
-      const retainedRoleBindings = Object.entries(currentContent.featureRoleUnitIds ?? {})
-        .filter(([, id]) => id && authoredIds.has(id))
-      const baseContent =
-        keepFoundations
-          ? {
-              ...empty,
-              spine: { ...currentContent.spine },
-              units: authoredUnits,
-              ...(outlineFormat === 'feature' && retainedRoleBindings.length > 0
-                ? {
-                    featureRoleUnitIds: Object.fromEntries(retainedRoleBindings),
-                  }
-                : {}),
-              ...(outlineFormat === 'series'
-                ? {
-                    seriesEngine: { ...currentContent.seriesEngine },
-                    seasonArc: { ...currentContent.seasonArc },
-                    episodes: currentContent.episodes,
-                  }
-                : {}),
-            }
-          : empty
-      // Synced beats belong to Story-drive: clearing answers never drops them.
-      const content = currentContent.beatSheetSource
-        ? { ...baseContent, units: currentContent.units, beatSheetSource: currentContent.beatSheetSource }
-        : baseContent
-      const nextOutlineDoc = {
-        version: DOCUMENT_SCHEMA_VERSION,
-        revision: keepFoundations ? s.documents.outline.revision : 0,
-        mode: keepFoundations ? s.documents.outline.mode : 'beat_sheet_save_the_cat' as const,
-        updatedAt: nextTimestampAfter(s.documents.outline.updatedAt),
-        content,
-      }
-      const nextDocuments = { ...s.documents, outline: nextOutlineDoc }
-      return {
-        ...s,
-        outline: documentsToLegacy(nextDocuments, { outlineFormat }).outline,
-        documents: nextDocuments,
-      }
-    })
-  }, [update])
 
   const reorderBeats = useCallback((fromIndex: number, toIndex: number) => {
     update(s => {
@@ -785,10 +698,6 @@ export function useProjectState() {
     setComposedDocument,
     currentOutlineSourceHash,
     setOutlineViewPreferences,
-    addEpisode,
-    renameEpisode,
-    setEpisodeField,
-    clearOutline,
     reorderBeats,
     addCharacter,
     updateCharacter,

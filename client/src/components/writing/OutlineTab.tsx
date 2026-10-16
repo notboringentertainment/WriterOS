@@ -8,22 +8,12 @@ import type {
 import type { ComposeIdentity, ComposedDocument } from '@shared/compose/types'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
 import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
-import {
-  hasFeatureOutlineAnswers,
-  hasOutlineAnswers,
-  hasSeriesOutlineAnswers,
-  seedEpisodes101To103,
-} from '../../lib/outlineDeck'
 import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
-import { OutlineEditView } from './outline/OutlineEditView'
 import { BeatSheetView } from './outline/BeatSheetView'
 import { BeatSheetStatusLine } from './outline/BeatSheetStatusLine'
-import { ClearOutlineDialog } from './outline/ClearOutlineDialog'
 import type { LookbookDocument } from '@shared/lookbook'
 import { applyLookbookAsk, dismissLookbookQuestion, removeLookbookBeat, setLookbookAnswer } from '../../lib/lookbookEdits'
 import { useBoundProjectScopeKey } from '../../lib/useProjectRequestGeneration'
-
-type EpisodeTextField = Exclude<keyof OutlineEpisode, 'id' | 'number'>
 
 interface OutlineTabProps {
   projectId?: string
@@ -33,11 +23,8 @@ interface OutlineTabProps {
   identity: ComposeIdentity
   onProjectFormatChange?: (next: ProjectFormat) => void
   onContentChange: (updater: (content: OutlineDocumentContent) => OutlineDocumentContent) => void
-  onAddEpisode: () => void
-  onEpisodeFieldChange: (episodeId: string, field: EpisodeTextField, value: string) => void
   onViewPreferencesPatch: (patch: Partial<DocumentViewPreferences>) => void
   onComposed: (composed: ComposedDocument) => void
-  onClear?: (options?: { keep?: 'all' | 'foundations' }) => void
   /** Story-drive sync status; null/undefined for projects without a server link. */
   beatSheetStatus?: BeatSheetSyncStatusResponse | null
   onRefreshBeatSheet?: () => Promise<void>
@@ -56,11 +43,8 @@ export function OutlineTab({
   identity,
   onProjectFormatChange,
   onContentChange,
-  onAddEpisode,
-  onEpisodeFieldChange,
   onViewPreferencesPatch,
   onComposed,
-  onClear,
   beatSheetStatus = null,
   onRefreshBeatSheet,
   onCheckBeatSheetStatus,
@@ -68,13 +52,11 @@ export function OutlineTab({
   onLookbookChange,
   onRequestLookbookQuestions,
 }: OutlineTabProps) {
-  const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [changedSince, setChangedSince] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
-  const hasContent = hasOutlineAnswers(document.content)
 
   const isLinked = beatSheetStatus !== null && beatSheetStatus.kind !== 'not-linked'
 
@@ -119,37 +101,11 @@ export function OutlineTab({
     return { nothingToSee: prompts.length === 0 }
   }, [document.content.units, onLookbookChange, onRequestLookbookQuestions])
 
-  useEffect(() => {
-    if (activeFormat === 'series' && document.content.episodes.length === 0) {
-      onContentChange(seedEpisodes101To103)
-    }
-  }, [activeFormat, document.content.episodes.length, onContentChange])
-
+  // Beats come from Story-drive; the hand-written outline and its foundation answers
+  // stay on disk untouched but are no longer shown or edited here.
   function handleFormatChange(next: ProjectFormat) {
     if (next === activeFormat) return
-
-    const currentHasFormatAnswers = activeFormat === 'series'
-      ? hasSeriesOutlineAnswers(document.content)
-      : hasFeatureOutlineAnswers(document.content)
-
-    if (currentHasFormatAnswers) {
-      const confirmed = window.confirm(
-        `Switching to ${next} will hide your ${activeFormat} answers. They'll be kept and restored if you switch back.`,
-      )
-      if (!confirmed) return
-    }
-
     onProjectFormatChange?.(next)
-  }
-
-  function handleClearAll() {
-    setClearDialogOpen(false)
-    onClear?.({ keep: 'all' })
-  }
-
-  function handleKeepFoundations() {
-    setClearDialogOpen(false)
-    onClear?.({ keep: 'foundations' })
   }
 
   return (
@@ -168,20 +124,6 @@ export function OutlineTab({
               onChange={handleFormatChange}
               variant="standalone"
             />
-            {onClear && (
-              <button
-                type="button"
-                style={{
-                  ...styles.clearButton,
-                  ...(!hasContent ? styles.clearButtonDisabled : {}),
-                }}
-                onClick={() => setClearDialogOpen(true)}
-                disabled={!hasContent}
-                title="Clear answers"
-              >
-                Clear answers
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -202,7 +144,6 @@ export function OutlineTab({
               onLookbookChange?.(doc => dismissLookbookQuestion(doc, beatKey, questionId, new Date().toISOString()))}
             onRemoveOrphan={beatKey => onLookbookChange?.(doc => removeLookbookBeat(doc, beatKey))}
             refreshing={refreshing}
-            onContentChange={onContentChange}
           />
         ) : (
           <>
@@ -215,24 +156,16 @@ export function OutlineTab({
                 onRefresh={handleRefreshBeatSheet}
               />
             )}
-            <OutlineEditView
-              format={activeFormat}
-              content={document.content}
-              onContentChange={onContentChange}
-              onAddEpisode={onAddEpisode}
-              onEpisodeFieldChange={onEpisodeFieldChange}
-            />
+            <p style={styles.empty}>
+              {isLinked
+                ? 'No beat sheet yet. Beats appear here once the beat sheet is ratified in Story-drive.'
+                : "No beat sheet yet. Beats come from this project's Story-drive beat sheet once the project is linked."}
+            </p>
           </>
         )
       )}
 
 
-      <ClearOutlineDialog
-        open={clearDialogOpen}
-        onClose={() => setClearDialogOpen(false)}
-        onClearAll={handleClearAll}
-        onKeepFoundations={handleKeepFoundations}
-      />
     </div>
   )
 }
@@ -265,26 +198,19 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
   },
-  clearButton: {
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    background: 'var(--surface-2)',
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-body)',
-    fontSize: 12,
-    fontWeight: 600,
-    padding: '7px 10px',
-    cursor: 'pointer',
-  },
-  clearButtonDisabled: {
-    opacity: 0.45,
-    cursor: 'not-allowed',
-  },
   subtitle: {
     fontFamily: 'var(--font-body)',
     fontSize: 13,
     color: 'var(--fg-muted)',
     fontStyle: 'italic',
     margin: '4px 0 0',
+  },
+  empty: {
+    fontFamily: 'var(--font-body)',
+    fontSize: 17,
+    lineHeight: 1.6,
+    color: 'var(--fg-muted)',
+    margin: 0,
+    maxWidth: 560,
   },
 }

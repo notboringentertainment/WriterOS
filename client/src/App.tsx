@@ -1310,11 +1310,8 @@ export default function App() {
             identity={pickIdentity(project.state.meta)}
             onProjectFormatChange={project.setProjectFormat}
             onContentChange={project.setOutlineDocument}
-            onAddEpisode={project.addEpisode}
-            onEpisodeFieldChange={project.setEpisodeField}
             onViewPreferencesPatch={(patch) => project.setOutlineViewPreferences(patch)}
             onComposed={(composed) => project.setComposedDocument('outline', composed)}
-            onClear={project.clearOutline}
             beatSheetStatus={beatSheetStatus && beatSheetStatus.projectId === activeFolderProjectId ? beatSheetStatus.status : null}
             onRefreshBeatSheet={handleRefreshBeatSheet}
             onCheckBeatSheetStatus={handleCheckBeatSheetStatus}

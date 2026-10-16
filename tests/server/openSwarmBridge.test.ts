@@ -73,6 +73,7 @@ describe('OpenSwarm Writing Partner prompt', () => {
     const midpoint = createOutlineUnit('feature.midpoint')
     midpoint.whatHappens = 'The rescue turns personal when the missing patient is family.'
     state.documents.outline.content.units = [midpoint]
+    state.documents.outline.content.beatSheetSource = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 1, label: null }
 
     const prompt = buildOpenSwarmWritingPartnerPrompt(
       'Review this against my voice.',
