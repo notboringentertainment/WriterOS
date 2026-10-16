@@ -9,14 +9,14 @@ describe('Voice Profile first-run gate', () => {
     vi.restoreAllMocks()
   })
 
-  it('offers the Voice Profile ritual when no profile state exists', () => {
+  it('offers the Voice Profile ritual when no profile state exists', async () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'The story of you.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'The story of you.' })).toBeInTheDocument()
   })
 
-  it('skip records the state and never re-prompts on the next mount', () => {
+  it('skip records the state and never re-prompts on the next mount', async () => {
     const first = render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Skip for now' }))
     expect(screen.queryByRole('heading', { name: 'The story of you.' })).not.toBeInTheDocument()
     first.unmount()
 

@@ -1,20 +1,12 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import './phase1.css'
 import { getDisplayProjectTitle, normalizeProjectTitle } from '../../lib/projectIdentity'
 import type { ProjectSummary } from '../../lib/projectLibrary'
 import { ProjectMenu } from './ProjectMenu'
-import { SavedToast } from './SavedToast'
 import type { ActiveRitual } from '../../lib/shellState'
 
 type WritingTab = 'script' | 'story-bible' | 'outline' | 'treatment' | 'synopsis' | 'whats-standing'
 
-const WRITING_TABS: { id: WritingTab; label: string }[] = [
-  { id: 'script',      label: 'Script' },
-  { id: 'story-bible', label: 'Story Bible' },
-  { id: 'outline',     label: 'Beat Sheet' },
-  { id: 'treatment',   label: 'Treatment' },
-  { id: 'synopsis',    label: 'Synopsis' },
-  { id: 'whats-standing', label: "What's Standing" },
-]
 
 interface TopBarProps {
   homeActive?: boolean
@@ -65,7 +57,17 @@ export function TopBar({
 }: TopBarProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
-  const [savedToastNonce, setSavedToastNonce] = useState(0)
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [canonOpen, setCanonOpen] = useState(false)
+  const canonRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!canonOpen) return
+    const close = (event: MouseEvent) => { if (!canonRef.current?.contains(event.target as Node)) setCanonOpen(false) }
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setCanonOpen(false) }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', escape)
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', escape) }
+  }, [canonOpen])
   const [saveFailed, setSaveFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const cancelingTitleEditRef = useRef(false)
@@ -77,10 +79,10 @@ export function TopBar({
     if (!onSaveProject || saving) return
     setSaving(true)
     setSaveFailed(false)
-    setSavedToastNonce(0)
+    setSavedAt(null)
     try {
       if (await onSaveProject() === false) setSaveFailed(true)
-      else setSavedToastNonce(n => n + 1)
+      else setSavedAt(new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
     } catch {
       setSaveFailed(true)
     } finally {
@@ -121,355 +123,56 @@ export function TopBar({
     commitTitleEdit()
   }
 
+  const pagesActive = activeTab === 'treatment' || activeTab === 'synopsis'
   return (
-    <header style={styles.bar}>
-      <div style={styles.logo}>
-        <span style={styles.logoText}>WriterOS</span>
+    <header className="phase1-top">
+      <button className="phase1-brand" onClick={onHome}>WriterOS</button>
+      <div className="phase1-project">
+        {editingTitle ? (
+          <input aria-label="Project title" autoFocus value={draftTitle}
+            onChange={e => setDraftTitle(e.target.value)} onBlur={handleTitleBlur}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitTitleEdit() }
+              if (e.key === 'Escape') { e.preventDefault(); cancelTitleEdit() }
+            }} />
+        ) : <button aria-label={`Project title: ${displayTitle}`} onClick={startTitleEdit}>{displayTitle}</button>}
       </div>
-
-      {onHome && (
-        <button
-          type="button"
-          aria-pressed={homeActive}
-          style={{ ...styles.homeButton, ...(homeActive ? styles.homeButtonActive : {}) }}
-          onClick={onHome}
-        >
-          Home
-        </button>
-      )}
-
-      <nav role="tablist" style={styles.tabs}>
-        {WRITING_TABS.map(tab => {
-          const isActive = activeTab === tab.id && !writersRoomActive && !homeActive
-          return (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={isActive}
-              style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}) }}
-              onClick={() => onTabChange(tab.id)}
-            >
-              {tab.label}
-            </button>
-          )
+      <nav role="tablist" aria-label="Writing places" className="phase1-tabs">
+        {([{ id: 'script', label: 'Script' }, { id: 'outline', label: 'Beat Sheet' },
+          { id: 'pages', label: 'Pages' }, { id: 'story-bible', label: 'Story Bible' }] as const).map(tab => {
+          const selected = !homeActive && !writersRoomActive && !ritual &&
+            (tab.id === 'pages' ? pagesActive : activeTab === tab.id)
+          return <button key={tab.id} role="tab" aria-selected={selected}
+            aria-current={selected ? 'page' : undefined}
+            onClick={() => onTabChange(tab.id === 'pages' ? (pagesActive ? activeTab : 'treatment') : tab.id)}>
+            {tab.label}
+          </button>
         })}
       </nav>
-
-      <div style={styles.projectTitleSlot}>
-        {canSwitchProjects && (
-          <select
-            aria-label="Project library"
-            value={activeProjectId}
-            onChange={e => onProjectChange(e.target.value)}
-            style={styles.projectSelect}
-          >
-            {projectSummaries.map(summary => (
-              <option key={summary.id} value={summary.id}>
-                {formatProjectOptionLabel(summary, projectSummaries)}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {editingTitle ? (
-          <input
-            aria-label="Project title"
-            name="projectTitle"
-            autoComplete="off"
-            autoFocus
-            value={draftTitle}
-            onChange={e => setDraftTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitTitleEdit()
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                cancelTitleEdit()
-              }
-            }}
-            style={styles.projectTitleInput}
-          />
-        ) : onProjectTitleChange ? (
-          <button
-            type="button"
-            aria-label={`Project title: ${displayTitle}`}
-            style={styles.projectTitleButton}
-            onClick={startTitleEdit}
-          >
-            {displayTitle}
-          </button>
-        ) : (
-          <div style={styles.projectTitleText}>{displayTitle}</div>
-        )}
-
-        {onNewProject && (
-          <button
-            type="button"
-            aria-label="New script"
-            title="Start a new saved script"
-            style={styles.newProjectButton}
-            onClick={onNewProject}
-          >
-            New script
-          </button>
-        )}
-
-        {showProjectMenu && (
-          <ProjectMenu
-            onSave={handleSaveProject}
-            onRename={startTitleEdit}
-            onDelete={handleDeleteProject}
-            onExportSeed={onExportSeed}
-          />
-        )}
-
+      <div className="phase1-tools">
         {saveError || saveFailed
-          ? <span role="alert" style={{ flexShrink: 0, maxWidth: 180, fontSize: 12, lineHeight: '14px' }}>{saveError || 'Could not save. Try again.'}</span>
-          : saving ? <span role="status">Saving…</span>
-          : <SavedToast key={savedToastNonce} visible={savedToastNonce > 0} />}
-      </div>
-
-      <div style={styles.rightZone}>
-        <button
-          type="button"
-          aria-label="Voice Profile"
-          aria-pressed={voiceProfileOpen || ritual === 'voiceProfile'}
-          style={{ ...styles.cmdK, ...(voiceProfileOpen || ritual === 'voiceProfile' ? styles.voiceActive : {}) }}
-          onClick={onVoiceProfile}
-        >
-          Voice
+          ? <span role="alert" className="phase1-save">{saveError || 'Could not save. Try again.'}</span>
+          : saving ? <span role="status" className="phase1-save">Saving…</span>
+          : savedAt ? <span role="status" className="phase1-save"><i />Saved {savedAt}</span> : null}
+        <button className="phase1-tool" aria-pressed={writersRoomActive && !ritual} onClick={onWritersRoom}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>
+          Writer
         </button>
-        {onProjectMeeting && !homeActive && (
-          <button
-            type="button"
-            aria-label="Project Meeting"
-            aria-pressed={ritual === 'projectMeeting'}
-            style={{ ...styles.cmdK, ...(ritual === 'projectMeeting' ? styles.voiceActive : {}) }}
-            onClick={onProjectMeeting}
-          >
-            Project Meeting
+        <div className="phase1-canon" ref={canonRef}>
+          <button className="phase1-tool" aria-haspopup="menu" aria-expanded={canonOpen}
+            aria-pressed={ritual === 'memory' || activeTab === 'whats-standing'}
+            onClick={() => setCanonOpen(v => !v)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" /><path d="M9 10h6M9 14h6" /></svg>
+            Canon
           </button>
-        )}
-        {onOpenMemory && !homeActive && (
-          <button
-            type="button"
-            aria-label="Memory"
-            aria-pressed={ritual === 'memory'}
-            style={{ ...styles.cmdK, ...(ritual === 'memory' ? styles.voiceActive : {}) }}
-            onClick={onOpenMemory}
-          >
-            Memory
-          </button>
-        )}
-        <button
-          role="tab"
-          aria-selected={writersRoomActive}
-          style={{ ...styles.writersRoom, ...(writersRoomActive ? styles.writersRoomActive : {}) }}
-          onClick={onWritersRoom}
-        >
-          Writer's Room
-        </button>
+          {canonOpen && <div role="menu" className="phase1-menu">
+            <button role="menuitem" onClick={() => { setCanonOpen(false); onOpenMemory?.() }}>Memory</button>
+            <button role="menuitem" onClick={() => { setCanonOpen(false); onTabChange('whats-standing') }}>What's Standing</button>
+          </div>}
+        </div>
+        {showProjectMenu && <ProjectMenu onSave={handleSaveProject} onRename={startTitleEdit}
+          onDelete={handleDeleteProject} onExportSeed={onExportSeed} onProjectMeeting={onProjectMeeting} />}
       </div>
     </header>
   )
-}
-
-function formatProjectOptionLabel(summary: ProjectSummary, summaries: ProjectSummary[]) {
-  const title = getDisplayProjectTitle(summary.title)
-  const duplicateTitles = summaries.filter(candidate => getDisplayProjectTitle(candidate.title) === title)
-  if (duplicateTitles.length <= 1) return title
-
-  const timestamp = formatProjectTimestamp(summary.updatedAt)
-  const timestampLabel = `${title} · ${timestamp}`
-  const duplicateTimestamps = duplicateTitles.filter(candidate => formatProjectTimestamp(candidate.updatedAt) === timestamp)
-  if (duplicateTimestamps.length <= 1) return timestampLabel
-
-  const duplicateIndex = duplicateTitles
-    .slice()
-    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
-    .findIndex(candidate => candidate.id === summary.id) + 1
-
-  return `${timestampLabel} · #${duplicateIndex}`
-}
-
-function formatProjectTimestamp(timestamp: number) {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  bar: {
-    height: 'var(--topbar-height)' as string,
-    background: 'var(--surface)',
-    borderBottom: '1px solid var(--border)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '0 16px',
-    flexShrink: 0,
-    position: 'relative',
-    zIndex: 10,
-  },
-  logo: { flexShrink: 0, marginRight: 8 },
-  logoText: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: 500,
-    fontSize: 15,
-    color: 'var(--fg)',
-    letterSpacing: '-0.02em',
-  },
-  homeButton: {
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    padding: '4px 10px',
-    cursor: 'pointer',
-  },
-  homeButtonActive: {
-    color: 'var(--fg)',
-    borderColor: 'var(--border)',
-    background: 'var(--surface-2)',
-  },
-  tabs: { display: 'flex', gap: 2 },
-  tab: {
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    fontWeight: 400,
-    padding: '4px 12px',
-    cursor: 'pointer',
-    transition: 'color 120ms, border-color 120ms',
-  },
-  tabActive: {
-    color: 'var(--fg)',
-    borderColor: 'var(--border)',
-    background: 'var(--surface-2)',
-  },
-  projectTitleSlot: {
-    flex: 1,
-    textAlign: 'center',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    minWidth: 0,
-  },
-  projectTitleText: {
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    color: 'var(--fg-muted)',
-    fontStyle: 'italic',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  projectTitleButton: {
-    maxWidth: '100%',
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    fontStyle: 'italic',
-    padding: '3px 8px',
-    cursor: 'text',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  projectTitleInput: {
-    width: 'min(320px, 100%)',
-    background: 'var(--surface-2)',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    padding: '3px 8px',
-    textAlign: 'center',
-    outline: 'none',
-  },
-  projectSelect: {
-    maxWidth: 240,
-    background: 'var(--surface-2)',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 12,
-    padding: '3px 8px',
-    outline: 'none',
-  },
-  newProjectButton: {
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 12,
-    padding: '3px 8px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-  },
-  rightZone: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 },
-  writersRoom: {
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
-    fontSize: 13,
-    padding: '4px 12px',
-    cursor: 'pointer',
-  },
-  writersRoomActive: {
-    color: 'var(--primary)',
-    borderColor: 'var(--primary-dim)',
-    background: 'hsla(260, 100%, 80%, 0.08)',
-  },
-  voiceActive: {
-    color: 'var(--primary)',
-    borderColor: 'var(--primary-dim)',
-    background: 'hsla(260, 100%, 80%, 0.08)',
-  },
-  cmdK: {
-    background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
-    borderRadius: 6,
-    color: 'var(--fg-subtle)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 11,
-    padding: '3px 8px',
-    cursor: 'pointer',
-  },
 }

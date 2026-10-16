@@ -1,6 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
   /* ── Canonical WriterOS tokens (new-ui-plan §1). Single source; surfaces
      consume, never redefine. Legacy names kept as compatibility aliases
      until every consumer migrates. ── */

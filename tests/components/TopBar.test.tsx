@@ -13,23 +13,23 @@ const defaultProps = {
 }
 
 describe('TopBar', () => {
-  it('renders all five writing tabs', () => {
+  it('renders four writing tabs', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('Script')).toBeInTheDocument()
     expect(screen.getByText('Story Bible')).toBeInTheDocument()
     expect(screen.getByText('Beat Sheet')).toBeInTheDocument()
-    expect(screen.getByText('Treatment')).toBeInTheDocument()
-    expect(screen.getByText('Synopsis')).toBeInTheDocument()
+    expect(screen.getByText('Pages')).toBeInTheDocument()
+    expect(screen.getAllByRole('tab')).toHaveLength(4)
   })
 
-  it("renders Writer's Room tab", () => {
+  it("renders Writer tool", () => {
     render(<TopBar {...defaultProps} />)
-    expect(screen.getByText("Writer's Room")).toBeInTheDocument()
+    expect(screen.getByText("Writer")).toBeInTheDocument()
   })
 
-  it('renders Voice Profile button', () => {
+  it('keeps voice controls on the Writer page', () => {
     render(<TopBar {...defaultProps} />)
-    expect(screen.getByRole('button', { name: 'Voice Profile' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Voice Profile' })).not.toBeInTheDocument()
   })
 
   it('marks active tab with aria-selected true', () => {
@@ -41,27 +41,20 @@ describe('TopBar', () => {
   it('calls onTabChange with tab id when writing tab clicked', () => {
     const onTabChange = vi.fn()
     render(<TopBar {...defaultProps} onTabChange={onTabChange} />)
-    fireEvent.click(screen.getByText('Synopsis'))
-    expect(onTabChange).toHaveBeenCalledWith('synopsis')
+    fireEvent.click(screen.getByText('Pages'))
+    expect(onTabChange).toHaveBeenCalledWith('treatment')
   })
 
   it("calls onWritersRoom when Writer's Room clicked", () => {
     const onWritersRoom = vi.fn()
     render(<TopBar {...defaultProps} onWritersRoom={onWritersRoom} />)
-    fireEvent.click(screen.getByText("Writer's Room"))
+    fireEvent.click(screen.getByText("Writer"))
     expect(onWritersRoom).toHaveBeenCalled()
   })
 
-  it('calls onVoiceProfile when Voice clicked', () => {
-    const onVoiceProfile = vi.fn()
-    render(<TopBar {...defaultProps} onVoiceProfile={onVoiceProfile} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Voice Profile' }))
-    expect(onVoiceProfile).toHaveBeenCalled()
-  })
-
-  it('marks Voice Profile button pressed when open', () => {
-    render(<TopBar {...defaultProps} voiceProfileOpen={true} />)
-    expect(screen.getByRole('button', { name: 'Voice Profile' })).toHaveAttribute('aria-pressed', 'true')
+  it('marks Writer pressed when its page is open', () => {
+    render(<TopBar {...defaultProps} writersRoomActive />)
+    expect(screen.getByRole('button', { name: 'Writer' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('does not render a non-functional ⌘K command-palette button', () => {
@@ -118,53 +111,9 @@ describe('TopBar', () => {
     expect(screen.getByText('Lifeline')).toBeInTheDocument()
   })
 
-  it('calls onNewProject when New script is clicked', () => {
-    const onNewProject = vi.fn()
-    render(<TopBar {...defaultProps} onNewProject={onNewProject} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'New script' }))
-
-    expect(onNewProject).toHaveBeenCalled()
-  })
-
-  it('shows a project library selector when multiple projects exist', () => {
-    const onProjectChange = vi.fn()
-    render(
-      <TopBar
-        {...defaultProps}
-        activeProjectId="project-1"
-        projectSummaries={[
-          { id: 'project-1', title: 'First Script', createdAt: 1, updatedAt: 1 },
-          { id: 'project-2', title: 'Second Script', createdAt: 2, updatedAt: 2 },
-        ]}
-        onProjectChange={onProjectChange}
-      />
-    )
-
-    fireEvent.change(screen.getByRole('combobox', { name: 'Project library' }), {
-      target: { value: 'project-2' },
-    })
-
-    expect(onProjectChange).toHaveBeenCalledWith('project-2')
-  })
-
-  it('disambiguates duplicate untitled projects in the selector', () => {
-    render(
-      <TopBar
-        {...defaultProps}
-        projectTitle=""
-        activeProjectId="project-1"
-        projectSummaries={[
-          { id: 'project-1', title: '', createdAt: 1, updatedAt: 1000 },
-          { id: 'project-2', title: '', createdAt: 2, updatedAt: 1000 },
-        ]}
-        onProjectChange={vi.fn()}
-      />
-    )
-
-    const options = screen.getAllByRole('option').map(option => option.textContent)
-    expect(options[0]).toContain('Untitled Project')
-    expect(options[0]).toContain('#1')
-    expect(options[1]).toContain('#2')
+  it('keeps project creation and library navigation on Home', () => {
+    render(<TopBar {...defaultProps} onNewProject={vi.fn()} onProjectChange={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'New script' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })

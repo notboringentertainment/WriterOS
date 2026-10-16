@@ -104,7 +104,7 @@ export function Shell({
       }
       if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
         e.preventDefault()
-        const tabs: ActiveTab[] = ['script', 'story-bible', 'outline', 'treatment', 'synopsis']
+        const tabs: ActiveTab[] = ['script', 'outline', 'treatment', 'story-bible']
         const tab = tabs[Number(e.key) - 1]
         if (tab) setActiveTab(tab)
         else toggleWritersRoom()
@@ -180,7 +180,7 @@ export function Shell({
           onExportSeed={onExportSeed}
           onHome={openHome}
           onTabChange={setActiveTab}
-          onWritersRoom={toggleWritersRoom}
+          onWritersRoom={shellState.enterWritersRoom}
           onVoiceProfile={toggleVoiceProfile}
           voiceProfileOpen={voiceProfileOpen}
           ritual={ritual}

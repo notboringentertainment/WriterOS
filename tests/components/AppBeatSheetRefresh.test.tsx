@@ -61,7 +61,7 @@ describe('App beat sheet refresh', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/beat-sheet/refresh'))).toBe(true))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Bravo' }))
     await screen.findByLabelText('Project title: Bravo')
     pending.resolve({ beatSheet: { ...status, beatCount: 99 }, outline: staleOutline })

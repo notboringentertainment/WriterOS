@@ -57,7 +57,7 @@ describe('App hosted proposal ownership and existing preview integration', () =>
     const oldDeliver = deliver
     oldDeliver({ proposalId: 'proposal-1', proposal: scriptProposal })
     await screen.findByText('Proposed scene change')
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Project 2' }))
     await screen.findByLabelText('Project title: Project 2')
     oldDeliver({ proposalId: 'proposal-late', proposal: scriptProposal })

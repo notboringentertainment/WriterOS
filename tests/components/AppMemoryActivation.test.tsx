@@ -97,7 +97,8 @@ describe('App memory activation by storage kind', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open Server Backed Project' }))
     await screen.findByLabelText('Project title: Server Backed Project')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Memory' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Canon' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Memory' }))
 
     expect(await screen.findByRole('tablist', { name: 'Memory views' })).toBeInTheDocument()
     expect(screen.queryByText('Shared project memory requires project folder storage.')).not.toBeInTheDocument()
@@ -144,7 +145,8 @@ describe('App memory activation by storage kind', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open Real Folder Project' }))
     await screen.findByLabelText('Project title: Real Folder Project')
 
-    const memoryButton = await screen.findByRole('button', { name: 'Memory' })
+    fireEvent.click(screen.getByRole('button', { name: 'Canon' }))
+    const memoryButton = await screen.findByRole('menuitem', { name: 'Memory' })
     fireEvent.click(memoryButton)
 
     expect(await screen.findByText(
@@ -159,7 +161,8 @@ describe('App memory activation by storage kind', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open Current' }))
 
-    const memoryButton = await screen.findByRole('button', { name: 'Memory' })
+    fireEvent.click(screen.getByRole('button', { name: 'Canon' }))
+    const memoryButton = await screen.findByRole('menuitem', { name: 'Memory' })
     fireEvent.click(memoryButton)
 
     expect(await screen.findByText('Shared project memory requires project folder storage.')).toBeInTheDocument()

@@ -31,6 +31,7 @@ it('F24 switching tabs sends the final script to its folder before the folder sa
   await waitFor(() => expect(view.container.querySelector('.ProseMirror')).not.toBeNull())
   const editor = (view.container.querySelector('.ProseMirror') as HTMLElement & { editor: Editor }).editor
   act(() => { editor.commands.insertContent('Final pending words') })
-  fireEvent.click(screen.getByRole('tab', { name: 'Synopsis' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
   expect(writes.some(body => body.includes('Final pending words'))).toBe(true)
 })

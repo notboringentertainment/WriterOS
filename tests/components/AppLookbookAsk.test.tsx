@@ -59,7 +59,7 @@ describe('App lookbook ask', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Ask Zoe what this looks like' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/questions'))).toBe(true))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Bravo' }))
     await screen.findByLabelText('Project title: Bravo')
     pending.resolve({ questions: [{ prompt: 'STALE ONE?' }, { prompt: 'STALE TWO?' }], nothingToSee: false })

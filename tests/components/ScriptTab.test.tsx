@@ -320,25 +320,10 @@ describe('ScriptTab', () => {
     confirmSpy.mockRestore()
   })
 
-  it('imports from Script as a new project without replacement confirmation', () => {
-    const onImportFdx = vi.fn()
-    const confirmSpy = vi.spyOn(window, 'confirm')
-    const { getByTestId } = render(
-      <ScriptTab
-        initialScript="<p data-element-type='action'>Existing pages</p>"
-        onImportFdx={onImportFdx}
-      />
-    )
-    const file = new File(['<FinalDraft />'], 'New Project.fdx', { type: 'application/xml' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Import .fdx' }))
-    fireEvent.change(getByTestId('script-fdx-import-input'), {
-      target: { files: [file] },
-    })
-
-    expect(confirmSpy).not.toHaveBeenCalled()
-    expect(onImportFdx).toHaveBeenCalledWith(file)
-    confirmSpy.mockRestore()
+  it('does not offer project creation from Script', () => {
+    render(<ScriptTab onImportFdx={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Import .fdx' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('script-fdx-import-input')).not.toBeInTheDocument()
   })
 
   it('surfaces import warnings after a successful import', () => {

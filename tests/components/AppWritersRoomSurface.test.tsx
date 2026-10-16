@@ -27,15 +27,17 @@ describe("App Writer's Room layout", () => {
     expect(screen.queryByTestId('ritual-page')).not.toBeInTheDocument()
   })
 
-  it('keeps the active writing surface visible when Writer Room is open', () => {
+  it('shows voice controls and the room together on Writer', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
     expect(screen.getByRole('heading', { name: 'Beat Sheet' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    fireEvent.click(screen.getByRole('button', { name: "Writer" }))
 
-    expect(screen.getByRole('heading', { name: 'Beat Sheet' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Writer' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Voice Profile')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Beat Sheet', hidden: true })).not.toBeVisible()
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
     // Phase 1: the dock opens on the live room channel; 1:1 chats sit below it.
     expect(screen.getByTestId('room-channel')).toBeInTheDocument()
@@ -47,28 +49,30 @@ describe("App Writer's Room layout", () => {
   it('preserves the chosen surface when switching specialists', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
     expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    fireEvent.click(screen.getByRole('button', { name: "Writer" }))
     fireEvent.click(screen.getAllByText('Sam')[0])
 
-    expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Synopsis', hidden: true })).not.toBeVisible()
     expect(screen.getByText('Sam Chat')).toBeInTheDocument()
   })
 
-  it('keeps Writer Room open when switching writing surfaces', () => {
+  it('returns from Writer when switching writing places', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Beat Sheet' }))
-    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    fireEvent.click(screen.getByRole('button', { name: "Writer" }))
     expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Synopsis' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Synopsis' }))
 
     expect(screen.getByRole('heading', { name: 'Synopsis' })).toBeInTheDocument()
-    expect(screen.getByTestId('specialist-nav')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: "Writer's Room" })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByTestId('specialist-nav')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: "Writer" })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('does not remount the active script surface when toggling Writer Room', () => {
@@ -77,11 +81,11 @@ describe("App Writer's Room layout", () => {
 
     const scriptSurface = screen.getByTestId('script-tab-surface')
 
-    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    fireEvent.click(screen.getByRole('button', { name: "Writer" }))
 
     expect(screen.getByTestId('script-tab-surface')).toBe(scriptSurface)
 
-    fireEvent.click(screen.getByRole('tab', { name: "Writer's Room" }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Script' }))
 
     expect(screen.getByTestId('script-tab-surface')).toBe(scriptSurface)
   })

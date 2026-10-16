@@ -14,13 +14,13 @@ it('F19 waits for a successful save and shows a failed save in the top bar', asy
     voiceProfileOpen={false} onSaveProject={onSaveProject} />)
   fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
   fireEvent.click(screen.getByText('Save'))
-  expect(screen.queryByText('Saved ✓')).not.toBeInTheDocument()
+  expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
   await act(async () => finish(false))
   expect(screen.getByRole('alert')).toHaveTextContent('Could not save. Try again.')
   fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
   fireEvent.click(screen.getByText('Save'))
   await act(async () => finish(true))
-  expect(screen.getByText('Saved ✓')).toBeInTheDocument()
+  expect(screen.getByText(/^Saved /)).toBeInTheDocument()
 })
 
 it('F24 flushes the latest script once when the editor unmounts', async () => {

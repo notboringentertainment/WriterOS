@@ -166,6 +166,8 @@ export function useWriterOSProjectLibrary(): WriterOSProjectLibraryState {
           setPhase('disabled')
           return
         }
+        await nextAdapter.connectVoiceProfile?.()
+        if (cancelled) return
         setAdapter(nextAdapter)
         setPhase('ready')
         try {

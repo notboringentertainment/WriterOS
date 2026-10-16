@@ -1,4 +1,5 @@
 import { BeatSheetSyncStatusSchema } from '@shared/projectLibraryApi'
+import { connectVoiceProfileLibrary } from './voiceProfile'
 import type {
   BeatSheetSyncStatusResponse,
   ProjectLibraryBootstrap,
@@ -217,6 +218,7 @@ export async function bootstrapServerProjectStorage(
   return {
     ...(morgan ? { morgan } : {}),
     kind: 'server',
+    connectVoiceProfile: () => connectVoiceProfileLibrary(fetchProjectLibrary),
     label: bootstrap.label,
     defaultFolderLabel: bootstrap.label,
     capabilities: {

@@ -11,6 +11,7 @@ import { useVoiceProfileFlow } from '../../lib/useVoiceProfileFlow'
 
 interface VoiceProfileDrawerProps {
   open: boolean
+  embedded?: boolean
   onClose: () => void
   /** Opens the full-bleed Voice Profile ritual (closing the drawer first). */
   onOpenRitual?: () => void
@@ -142,14 +143,21 @@ function editDraftToProfile(draft: EditDraft, existing: VoiceProfileDocument): V
   }
 }
 
-export function VoiceProfileDrawer({ open, onClose, onOpenRitual }: VoiceProfileDrawerProps) {
+export function VoiceProfileDrawer({ open, onClose, onOpenRitual, embedded = false }: VoiceProfileDrawerProps) {
   const flow = useVoiceProfileFlow()
   const [mode, setMode] = useState<DrawerMode>('view')
   const [editDraft, setEditDraft] = useState<EditDraft | undefined>(undefined)
   const [assessmentSaved, setAssessmentSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>(undefined)
   const [clearPending, setClearPending] = useState(false)
+  const [libraryNotice, setLibraryNotice] = useState('')
   const { reload } = flow
+
+  useEffect(() => {
+    const onSync = (event: Event) => setLibraryNotice((event as CustomEvent<string>).detail)
+    window.addEventListener('writeros-voice-sync', onSync)
+    return () => window.removeEventListener('writeros-voice-sync', onSync)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -252,19 +260,20 @@ export function VoiceProfileDrawer({ open, onClose, onOpenRitual }: VoiceProfile
 
   return (
     <>
-      <div aria-hidden="true" style={styles.backdrop} onClick={onClose} />
-      <aside aria-label="Voice Profile" style={styles.drawer}>
+      {!embedded && <div aria-hidden="true" style={styles.backdrop} onClick={onClose} />}
+      <aside aria-label="Voice Profile" style={embedded ? { ...styles.drawer, position: 'relative', inset: 'auto', width: '100%', height: 'auto', maxHeight: 'none', boxShadow: 'none', marginBottom: 28 } : styles.drawer}>
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <span style={styles.drawerTitle}>Voice Profile</span>
             <StatusBadge status={status} />
           </div>
-          <button type="button" aria-label="Close Voice Profile" style={styles.closeButton} onClick={onClose}>
+          {!embedded && <button type="button" aria-label="Close Voice Profile" style={styles.closeButton} onClick={onClose}>
             X
-          </button>
+          </button>}
         </div>
 
         <div style={styles.body}>
+          {libraryNotice && <p role="status">{libraryNotice}</p>}
           {mode === 'assessment' ? (
             <AssessmentMode answers={assessmentAnswers} onAnswer={handleAssessmentAnswer} />
           ) : mode === 'edit' && editDraft ? (

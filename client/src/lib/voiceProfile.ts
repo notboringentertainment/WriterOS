@@ -34,7 +34,7 @@ const VOICE_PROFILE_STATUSES = new Set<VoiceProfileState['status']>([
   'complete',
 ])
 
-function isVoiceProfileDocument(value: unknown): value is VoiceProfileDocument {
+export function isVoiceProfileDocument(value: unknown): value is VoiceProfileDocument {
   if (!isRecord(value)) return false
   const storytellingDNA = value.storytellingDNA
   const influences = value.influences
@@ -150,9 +150,56 @@ export function saveVoiceProfileState(state: VoiceProfileState): void {
     VOICE_PROFILE_STORAGE_KEY,
     JSON.stringify({ ...state, updatedAt: new Date().toISOString() })
   )
+  if (state.status === 'complete' && state.profile) persistServerProfile(state.profile)
 }
 
 export function clearVoiceProfileState(): void {
   if (typeof localStorage === 'undefined') return
   localStorage.removeItem(VOICE_PROFILE_STORAGE_KEY)
+  persistServerProfile(null)
+}
+
+type LibraryFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+let libraryFetch: LibraryFetch | undefined
+let pendingWrite = Promise.resolve()
+
+function persistServerProfile(profile: VoiceProfileDocument | null): void {
+  const fetchProfile = libraryFetch
+  if (!fetchProfile) return
+  pendingWrite = pendingWrite.then(async () => {
+    const response = await fetchProfile('/api/project-library/voice-profile', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile }),
+    })
+    if (!response.ok) throw new Error('Voice profile could not be saved to the library.')
+    window.dispatchEvent(new CustomEvent('writeros-voice-sync', { detail: '' }))
+  }).catch(() => {
+    // Keep the browser copy available when the library cannot be reached.
+    window.dispatchEvent(new CustomEvent('writeros-voice-sync', { detail: 'Saved in this browser. The library copy could not be updated.' }))
+  })
+}
+
+/** Hydrate the synchronous readers before the library is marked ready. */
+export async function connectVoiceProfileLibrary(fetchProfile: LibraryFetch): Promise<void> {
+  libraryFetch = fetchProfile
+  const before = loadVoiceProfileState()
+  try {
+    const response = await fetchProfile('/api/project-library/voice-profile')
+    if (!response.ok) return
+    const { profile } = await response.json()
+    // An edit made while this request was in flight wins.
+    const current = loadVoiceProfileState()
+    if (current?.updatedAt !== before?.updatedAt) return
+    if (current?.status === 'draft_answers' || current?.status === 'draft_profile') return
+    const cached = completedVoiceProfileFromState(current)
+    if (isVoiceProfileDocument(profile) && (!cached || profile.updatedAt >= cached.updatedAt)) {
+      localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({
+        ...current, version: 1, status: 'complete', answers: current?.answers ?? {}, profile,
+        createdAt: profile.createdAt, updatedAt: profile.updatedAt,
+      } satisfies VoiceProfileState))
+    } else if (cached) {
+      persistServerProfile(cached)
+      await pendingWrite
+    }
+  } catch { /* The browser copy remains the fallback. */ }
 }

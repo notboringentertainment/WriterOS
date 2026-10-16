@@ -1,4 +1,8 @@
 import type { Express, Response } from 'express'
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { isVoiceProfileDocument } from '../../client/src/lib/voiceProfile'
 import { z } from 'zod'
 import { migrateState } from '../../client/src/lib/projectState'
 import type { StoredProject } from '../../client/src/lib/projectLibrary'
@@ -41,6 +45,36 @@ export function registerProjectLibraryRoutes(
 ): void {
   const requireSameOrigin = sameOrigin(config)
   const requireSession = authenticated(config)
+
+  const voicePath = () => {
+    dataStore(config, store)
+    if (!config.rootPath) throw new ProjectLibraryStoreError('Project library is disabled.', 503, 'disabled')
+    return path.join(config.rootPath, '.writeros-writer', 'voice-profile.json')
+  }
+  app.get('/api/project-library/voice-profile', requireSameOrigin, requireSession, async (_req, res) => {
+    try {
+      const filename = voicePath()
+      let profile: unknown = null
+      try { profile = JSON.parse(await readFile(filename, 'utf8')) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      if (profile !== null && !isVoiceProfileDocument(profile)) throw new Error('Invalid voice profile')
+      return res.json({ profile })
+    } catch (error) { return routeError(res, error) }
+  })
+  app.put('/api/project-library/voice-profile', requireSameOrigin, requireSession, async (req, res) => {
+    try {
+      const filename = voicePath()
+      const profile: unknown = req.body?.profile
+      if (profile !== null && !isVoiceProfileDocument(profile)) {
+        return res.status(400).json({ message: 'Voice profile is incomplete.' })
+      }
+      await mkdir(path.dirname(filename), { recursive: true })
+      const temporary = filename + '.' + randomUUID() + '.tmp'
+      await writeFile(temporary, JSON.stringify(profile, null, 2), { mode: 0o600 })
+      await rename(temporary, filename)
+      return res.json({ ok: true })
+    } catch (error) { return routeError(res, error) }
+  })
 
   app.use('/api/project-library', (_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store')

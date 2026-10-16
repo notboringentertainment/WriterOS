@@ -5,9 +5,10 @@ interface Props {
   onRename: () => void
   onDelete: () => void
   onExportSeed?: () => void
+  onProjectMeeting?: () => void
 }
 
-export function ProjectMenu({ onSave, onRename, onDelete, onExportSeed }: Props) {
+export function ProjectMenu({ onSave, onRename, onDelete, onExportSeed, onProjectMeeting }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -43,11 +44,13 @@ export function ProjectMenu({ onSave, onRename, onDelete, onExportSeed }: Props)
         style={styles.trigger}
         onClick={() => setOpen(v => !v)}
       >
-        ⋯
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
       </button>
 
       {open && (
         <div role="menu" style={styles.panel}>
+          {onProjectMeeting && <button type="button" role="menuitem" style={styles.item}
+            onClick={run(onProjectMeeting)}>Project Meeting</button>}
           <button
             type="button"
             role="menuitem"
@@ -95,15 +98,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   trigger: {
     background: 'none',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'var(--border)',
+    border: 'none',
     borderRadius: 6,
     color: 'var(--fg-muted)',
-    fontFamily: 'var(--font-display)',
+    fontFamily: 'var(--font-ui)',
     fontSize: 14,
     lineHeight: 1,
-    padding: '3px 8px',
+    padding: '6px 10px',
+    display: 'inline-flex',
+    alignItems: 'center',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
@@ -127,7 +130,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     borderRadius: 4,
     color: 'var(--fg)',
-    fontFamily: 'var(--font-display)',
+    fontFamily: 'var(--font-ui)',
     fontSize: 13,
     textAlign: 'left',
     padding: '6px 10px',

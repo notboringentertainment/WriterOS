@@ -32,6 +32,7 @@ import { isAbortError, postPersonaCapability } from './lib/postPersonaCapability
 import { Shell } from './components/shell/Shell'
 import { ProjectMeetingPage } from './components/ritual/ProjectMeetingPage'
 import { VoiceProfileRitualPage } from './components/ritual/VoiceProfileRitualPage'
+import { VoiceProfileDrawer } from './components/shell/VoiceProfileDrawer'
 import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
 import { SynopsisTab } from './components/writing/SynopsisTab'
@@ -208,10 +209,11 @@ export default function App() {
   // gate never re-prompts; the TopBar Voice button remains the standing entry.
   const { openRitual } = shellState
   useEffect(() => {
+    if (projectFolder.status === 'loading') return
     if (!loadVoiceProfileState()) {
       openRitual('voiceProfile')
     }
-  }, [openRitual])
+  }, [openRitual, projectFolder.status])
 
   // Project Meeting standings for the Home cards. Best effort, only while Home is
   // visible; a down room API simply hides the chips. Keyed on a stable id string —
@@ -1207,7 +1209,6 @@ export default function App() {
             onScriptSnapshotChange={handleScriptSnapshotChange}
             scriptFacts={project.state.script.facts}
             onRebuildScriptFacts={handleRebuildScriptFacts}
-            onImportFdx={handleImportFdxAsNewProject}
             onReplaceFdx={handleReplaceScriptFromFdx}
             importingFdx={importingFdx}
             importError={fdxImportError}
@@ -1465,10 +1466,22 @@ export default function App() {
           />
         )}
         <div style={styles.surfaceWithWritersRoom}>
-          <div style={styles.activeSurfacePane}>
+          <div style={shellState.writersRoomActive ? { display: 'none' } : styles.activeSurfacePane}>
+            {(shellState.activeTab === 'treatment' || shellState.activeTab === 'synopsis') && (
+              <nav aria-label="Pages" className="phase1-switch">
+                {(['treatment', 'synopsis'] as const).map(page => <button key={page}
+                  aria-current={shellState.activeTab === page ? 'page' : undefined}
+                  onClick={() => shellState.setActiveTab(page)}>{page === 'treatment' ? 'Treatment' : 'Synopsis'}</button>)}
+              </nav>
+            )}
             {activeSurface}
           </div>
           {shellState.writersRoomActive && (
+            <div className="phase1-writer">
+              <h1>Writer</h1>
+              <p>Your voice and the people who help you write, together in one place.</p>
+              <VoiceProfileDrawer open embedded onClose={() => {}}
+                onOpenRitual={() => shellState.openRitual('voiceProfile')} />
             <WritersRoom
               mode="dock"
               projectState={project.state}
@@ -1499,6 +1512,7 @@ export default function App() {
                   : undefined
               }
             />
+            </div>
           )}
         </div>
       </div>

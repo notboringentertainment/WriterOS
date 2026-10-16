@@ -258,17 +258,8 @@ export function ScriptTab({
           onElementTypeChange={handleToolbarElementTypeChange}
           onToggleFocusMode={onToggleFocusMode}
           onOpenTitlePage={canEditTitlePage ? () => setTitlePageOpen(true) : undefined}
-          onImportFdx={onImportFdx ? () => importFdxInputRef.current?.click() : undefined}
           onReplaceFdx={onReplaceFdx ? () => replaceFdxInputRef.current?.click() : undefined}
           importingFdx={importingFdx}
-        />
-        <input
-          ref={importFdxInputRef}
-          data-testid="script-fdx-import-input"
-          type="file"
-          accept=".fdx,application/xml,text/xml"
-          style={styles.hiddenInput}
-          onChange={handleImportFdxFile}
         />
         <input
           ref={replaceFdxInputRef}

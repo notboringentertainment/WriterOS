@@ -214,7 +214,7 @@ describe('App OpenSwarm handoff', () => {
     fireEvent.keyDown(screen.getByPlaceholderText('Message Morgan…'), { key: 'Enter' })
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/openswarm/writing-partner')).toBe(true))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Swarm Project B' }))
     await screen.findByLabelText('Project title: Swarm Project B')
     pending.resolve({
