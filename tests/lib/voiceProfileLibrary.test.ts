@@ -47,3 +47,23 @@ it('keeps unfinished browser answers when an older completed profile exists in t
   await connectVoiceProfileLibrary(async () => json({ profile: makeProfile() }))
   expect(JSON.parse(localStorage.getItem('writeros_voice_profile_v1')!).answers).toEqual({ q1: 'Still working' })
 })
+
+it('does not restore a cleared profile on reconnect, but uploads a profile saved after the clear', async () => {
+  const profile = makeProfile()
+  const clearedAt = '2026-10-16T12:00:00.000Z'
+  const fetcher = vi.fn(async (_url, init) => json(init?.method === 'PUT' ? { ok: true } : { profile: null, clearedAt }))
+  const cache = () => localStorage.setItem('writeros_voice_profile_v1', JSON.stringify({
+    version: 1, status: 'complete', answers: {}, profile, updatedAt: profile.updatedAt,
+  }))
+  cache()
+  await connectVoiceProfileLibrary(fetcher)
+  expect(loadCompletedVoiceProfile()).toBeUndefined()
+  expect(localStorage.getItem('writeros_voice_profile_v1')).toBeNull()
+  expect(fetcher).toHaveBeenCalledTimes(1)
+
+  profile.updatedAt = '2026-10-16T12:00:01.000Z'
+  cache()
+  await connectVoiceProfileLibrary(fetcher)
+  expect(loadCompletedVoiceProfile()).toEqual(profile)
+  expect(JSON.parse(fetcher.mock.calls[2][1]!.body as string)).toEqual({ profile })
+})

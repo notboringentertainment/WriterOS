@@ -186,12 +186,17 @@ export async function connectVoiceProfileLibrary(fetchProfile: LibraryFetch): Pr
   try {
     const response = await fetchProfile('/api/project-library/voice-profile')
     if (!response.ok) return
-    const { profile } = await response.json()
+    const { profile, clearedAt } = await response.json()
     // An edit made while this request was in flight wins.
     const current = loadVoiceProfileState()
     if (current?.updatedAt !== before?.updatedAt) return
     if (current?.status === 'draft_answers' || current?.status === 'draft_profile') return
     const cached = completedVoiceProfileFromState(current)
+    if (profile === null && typeof clearedAt === 'string' && cached &&
+      Date.parse(clearedAt) >= Date.parse(cached.updatedAt)) {
+      localStorage.removeItem(VOICE_PROFILE_STORAGE_KEY)
+      return
+    }
     if (isVoiceProfileDocument(profile) && (!cached || profile.updatedAt >= cached.updatedAt)) {
       localStorage.setItem(VOICE_PROFILE_STORAGE_KEY, JSON.stringify({
         ...current, version: 1, status: 'complete', answers: current?.answers ?? {}, profile,

@@ -27,6 +27,14 @@
 .phase1-writer * { font-family: var(--font-ui) !important; }
 .phase1-writer h1, .phase1-writer h2, .phase1-writer h3 { font-family: var(--font-display) !important; }
 @media (max-width: 1180px) { .phase1-project { display: none; } .phase1-tabs { margin-left: 0; } }
+@media (max-width: 1000px) {
+  .phase1-top { gap: 12px; padding: 0 12px; }
+  .phase1-tabs { gap: 2px; }
+  .phase1-tabs button { padding: 7px 10px; }
+  .phase1-tool-label, .phase1-save-text { display: none; }
+  .phase1-top .phase1-tool { gap: 0; }
+  .phase1-save { max-width: 120px; margin-right: 4px; line-height: 14px; }
+}
 .phase1-top, .phase1-writer { --fg-muted: hsl(220 10% 64%); --fg-subtle: hsl(220 10% 64%); --danger: hsl(12 85% 74%); --error: var(--danger); }
 .phase1-switch { --fg-muted: hsl(220 10% 64%); }
 .phase1-top button:focus-visible, .phase1-switch button:focus-visible, .phase1-writer :focus-visible { outline: 2px solid var(--wp-amber); outline-offset: 2px; border-radius: 4px; }

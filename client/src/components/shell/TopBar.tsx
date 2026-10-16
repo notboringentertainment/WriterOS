@@ -153,17 +153,17 @@ export function TopBar({
         {saveError || saveFailed
           ? <span role="alert" className="phase1-save">{saveError || 'Could not save. Try again.'}</span>
           : saving ? <span role="status" className="phase1-save">Saving…</span>
-          : savedAt ? <span role="status" className="phase1-save"><i />Saved {savedAt}</span> : null}
-        <button className="phase1-tool" aria-pressed={writersRoomActive && !ritual} onClick={onWritersRoom}>
+          : savedAt ? <span role="status" className="phase1-save" aria-label={`Saved ${savedAt}`} title={`Saved ${savedAt}`}><i /><span className="phase1-save-text">Saved {savedAt}</span></span> : null}
+        <button className="phase1-tool" aria-label="Writer" title="Writer" aria-pressed={writersRoomActive && !ritual} onClick={onWritersRoom}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>
-          Writer
+          <span className="phase1-tool-label">Writer</span>
         </button>
         <div className="phase1-canon" ref={canonRef}>
-          <button className="phase1-tool" aria-haspopup="menu" aria-expanded={canonOpen}
+          <button className="phase1-tool" aria-label="Canon" title="Canon" aria-haspopup="menu" aria-expanded={canonOpen}
             aria-pressed={ritual === 'memory' || activeTab === 'whats-standing'}
             onClick={() => setCanonOpen(v => !v)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" /><path d="M9 10h6M9 14h6" /></svg>
-            Canon
+            <span className="phase1-tool-label">Canon</span>
           </button>
           {canonOpen && <div role="menu" className="phase1-menu">
             <button role="menuitem" onClick={() => { setCanonOpen(false); onOpenMemory?.() }}>Memory</button>

@@ -57,6 +57,10 @@ export function registerProjectLibraryRoutes(
       let profile: unknown = null
       try { profile = JSON.parse(await readFile(filename, 'utf8')) }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      if (profile && typeof profile === 'object' && 'profile' in profile && profile.profile === null &&
+        'clearedAt' in profile && typeof profile.clearedAt === 'string') {
+        return res.json({ profile: null, clearedAt: profile.clearedAt })
+      }
       if (profile !== null && !isVoiceProfileDocument(profile)) throw new Error('Invalid voice profile')
       return res.json({ profile })
     } catch (error) { return routeError(res, error) }
@@ -70,7 +74,8 @@ export function registerProjectLibraryRoutes(
       }
       await mkdir(path.dirname(filename), { recursive: true })
       const temporary = filename + '.' + randomUUID() + '.tmp'
-      await writeFile(temporary, JSON.stringify(profile, null, 2), { mode: 0o600 })
+      await writeFile(temporary, JSON.stringify(profile === null
+        ? { profile: null, clearedAt: new Date().toISOString() } : profile, null, 2), { mode: 0o600 })
       await rename(temporary, filename)
       return res.json({ ok: true })
     } catch (error) { return routeError(res, error) }
