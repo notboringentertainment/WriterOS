@@ -38,6 +38,7 @@ export function ScreenplayEditor({
 }: ScreenplayEditorProps) {
   const editorDivRef = useRef<HTMLDivElement>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingHtmlRef = useRef<string | null>(null)
   // Stable ref so the debounced callback always calls the latest prop value
   const onContentChangeRef = useRef(onContentChange)
   onContentChangeRef.current = onContentChange
@@ -51,6 +52,10 @@ export function ScreenplayEditor({
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      if (pendingHtmlRef.current !== null) {
+        onContentChangeRef.current?.(pendingHtmlRef.current)
+        pendingHtmlRef.current = null
+      }
     }
   }, [])
 
@@ -114,8 +119,12 @@ export function ScreenplayEditor({
       publishContentSnapshot(editor)
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      pendingHtmlRef.current = editor.getHTML()
       saveTimerRef.current = setTimeout(() => {
-        onContentChangeRef.current?.(editor.getHTML())
+        saveTimerRef.current = null
+        const html = pendingHtmlRef.current
+        pendingHtmlRef.current = null
+        if (html !== null) onContentChangeRef.current?.(html)
       }, 500)
     },
 

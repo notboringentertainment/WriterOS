@@ -26,7 +26,8 @@ interface TopBarProps {
   onProjectTitleChange?: (title: string) => void
   onProjectChange?: (projectId: string) => void
   onNewProject?: () => void
-  onSaveProject?: () => void
+  onSaveProject?: () => void | boolean | Promise<void | boolean>
+  saveError?: string | null
   onDeleteProject?: () => void
   onExportSeed?: () => void
   onHome?: () => void
@@ -50,6 +51,7 @@ export function TopBar({
   onProjectChange,
   onNewProject,
   onSaveProject,
+  saveError,
   onDeleteProject,
   onExportSeed,
   onHome,
@@ -64,14 +66,26 @@ export function TopBar({
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const [savedToastNonce, setSavedToastNonce] = useState(0)
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [saving, setSaving] = useState(false)
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
   const showProjectMenu = Boolean(onSaveProject || onDeleteProject || onProjectTitleChange || onExportSeed)
 
-  function handleSaveProject() {
-    onSaveProject?.()
-    setSavedToastNonce(n => n + 1)
+  async function handleSaveProject() {
+    if (!onSaveProject || saving) return
+    setSaving(true)
+    setSaveFailed(false)
+    setSavedToastNonce(0)
+    try {
+      if (await onSaveProject() === false) setSaveFailed(true)
+      else setSavedToastNonce(n => n + 1)
+    } catch {
+      setSaveFailed(true)
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleDeleteProject() {
@@ -212,7 +226,10 @@ export function TopBar({
           />
         )}
 
-        <SavedToast key={savedToastNonce} visible={savedToastNonce > 0} />
+        {saveError || saveFailed
+          ? <span role="alert" style={{ flexShrink: 0, maxWidth: 180, fontSize: 12, lineHeight: '14px' }}>{saveError || 'Could not save. Try again.'}</span>
+          : saving ? <span role="status">Saving…</span>
+          : <SavedToast key={savedToastNonce} visible={savedToastNonce > 0} />}
       </div>
 
       <div style={styles.rightZone}>

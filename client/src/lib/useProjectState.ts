@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { defaultProjectState } from './projectState'
 import {
   activateStoredProject,
@@ -114,6 +114,8 @@ export function useProjectState() {
   const [initialLibrary] = useState(() => loadActiveProjectLibrary())
   const [state, setState] = useState<ProjectState>(() => initialLibrary.state)
   const [activeProjectId, setActiveProjectId] = useState(() => initialLibrary.activeProjectId)
+  const activeProjectIdRef = useRef(activeProjectId)
+  activeProjectIdRef.current = activeProjectId
   const [projects, setProjects] = useState(() => initialLibrary.projects)
 
   const update = useCallback((updater: (s: ProjectState) => ProjectState) => {
@@ -754,8 +756,18 @@ export function useProjectState() {
   }, [update])
 
   const updateScript = useCallback((rawHtml: string, scenes: ScriptScene[]) => {
+    if (activeProjectIdRef.current !== activeProjectId) {
+      setProjects(current => {
+        const previous = getStoredProject(activeProjectId, current)
+        if (!previous) return current
+        return saveProjectToLibrary(activeProjectId, {
+          ...previous.state, script: { ...previous.state.script, rawHtml, scenes },
+        }, current, false)
+      })
+      return
+    }
     update(s => ({ ...s, script: { ...s.script, rawHtml, scenes } }))
-  }, [update])
+  }, [activeProjectId, update])
 
   const rebuildScriptFacts = useCallback((rebuiltAt?: number | string | Date) => {
     update(s => ({
@@ -856,8 +868,10 @@ export function useProjectState() {
     setProjects(next.projects)
   }, [activeProjectId, projects, state])
 
-  const saveNow = useCallback(() => {
-    const nextProjects = saveProjectToLibrary(activeProjectId, state, projects)
+  const saveNow = useCallback((script?: { rawHtml: string; scenes: ScriptScene[] }) => {
+    const nextState = script ? { ...state, script: { ...state.script, ...script } } : state
+    const nextProjects = saveProjectToLibrary(activeProjectId, nextState, projects)
+    if (script) setState(nextState)
     setProjects(nextProjects)
     return getStoredProject(activeProjectId, nextProjects)!
   }, [activeProjectId, projects, state])

@@ -15,6 +15,8 @@ export function SavedToast({ visible, durationMs = 1500 }: Props) {
     return () => clearTimeout(id)
   }, [visible, durationMs])
 
+  if (!show) return null
+
   return (
     <div
       role="status"

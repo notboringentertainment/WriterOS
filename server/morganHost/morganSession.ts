@@ -3,6 +3,8 @@
 // Every way a session ends goes through finish(): answer open cards and proposals, stop the process group,
 // stop verified owned processes (Bash tools), close the channel, emit `ended` last, always settle `done`.
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import path from 'node:path'
 import { LiveChannel, type LiveSink } from './liveChannel'
 import type { MorganLaunch, MorganProjectPaths } from './launchArgs'
 import type { ChildProcessLike, SpawnChild } from './ptyProcess'
@@ -249,14 +251,27 @@ export class MorganSessions {
       s.trustAsked = true;
       if (s.startTimer) { clearTimeout(s.startTimer); s.startTimer = null; }
       const requestId = 'folder-trust';
-      const card: ApprovalCard = { requestId, tool: 'FolderTrust', summary: `Let Morgan work in ${project.storyDriveRoot ?? project.packagePath}? Claude Code asks this once per folder.`, input: launchFolder(project) };
-      s.approvals.set(requestId, { card, resolve: answer => {
+      const folders = normalizeTrustScreen(s.trustBuffer).split(/[\r\n]+/)
+        .map(line => line.trim().replace(/^[│┃]\s*|\s*[│┃]$/g, '').trim())
+        .filter(line => path.isAbsolute(line));
+      const folder = folders.length === 1 ? folders[0] : null;
+      const ownFolder = folder !== null && [project.packagePath, project.storyDriveRoot]
+        .some(own => {
+          try { return own !== null && realpathSync(own) === realpathSync(folder); }
+          catch { return false; }
+        });
+      const card: ApprovalCard = { requestId, tool: 'FolderTrust', summary: folder
+        ? `Let Morgan work in ${folder}? Claude Code asks this once per folder.`
+        : 'Let Morgan work in this folder? Claude Code is asking for your OK.', input: folder ? JSON.stringify({ folder }) : launchFolder(project) };
+      const resolveTrust = (answer: PermissionAnswer) => {
         if (answer.allow) {
           child.write('\x1b[B');
           s.startTimer = setTimeout(() => {
             s.startTimer = null;
             if (s.hello || s.finishing || s.ending) return;
             child.write('\r');
+            s.trustBuffer = '';
+            s.trustAsked = false;
             s.startTimer = setTimeout(() => { s.ending ??= 'start-failed'; void this.stopSession(projectId, s) }, this.deps.startTimeoutMs ?? 10000);
           }, 300);
         } else {
@@ -264,7 +279,9 @@ export class MorganSessions {
           s.ending ??= 'stopped';
           void this.stopSession(projectId, s);
         }
-      } });
+      };
+      if (ownFolder) { resolveTrust({ allow: true }); return; }
+      s.approvals.set(requestId, { card, resolve: resolveTrust });
       emit({ type: 'approval', card });
     });
     try { await this.refreshOwned(s) }

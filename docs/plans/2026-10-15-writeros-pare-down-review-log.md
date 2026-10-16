@@ -96,3 +96,21 @@ No remaining material plan defects found. The added storage and proposal code ha
 VERDICT: APPROVED
 
 Converged at round 4 of 5. Awaiting Ben (gate #2) plus Q1, Q2.
+
+## Act 3 — Build
+
+### Phase 0, Round 1 — Codex build
+Thread 01a142cd-dc2d-7ba3-b662-4881f0d19063. 11 files changed (+152 / -35), 7 new test files (12 tests). Codex reported full proof green and a sandbox walkthrough. No canon test files touched; no new dependencies.
+
+### Claude's verdict
+Diff read in full. Proof rerun by Claude: tsc clean, build clean; full suite green on 3 of 4 runs (one unidentified flaky failure on the first run, outside the new tests; the 12 new tests passed 5/5 in isolation). Browser check by Claude on a sandbox copy (port 5277, Room off, no AI keys):
+- F21: reload reopened Stool Pigeon, not a blank Untitled Project. PASS.
+- F24: typed in the script, switched to Story Bible at once; text on disk within 2 s. PASS.
+- F20: server restarted (new token), typed without reloading: PUT 401 → bootstrap → PUT 200; text on disk. PASS.
+- F19: Save showed "Saved ✓" only after the save; with the server down Save showed "Could not open or save this project. Try again." and no Saved. PASS.
+- F18: lock sync now runs on editor blur / save / leave, independent of the Room panel; server no-ops unchanged text (surfaceLockSync merged === current). Covered by tests with a fake Room backend (Room DB is shared with live, so not exercised in the browser).
+- Trust card: auto-answers only when the prompt's folder resolves (realpath) to the project's own Story-drive folder or package; any other folder still shows the card. Covered by tests.
+No Critical/Important findings, so no fix round. Minors logged, not fixed (per Ben's no-nitpick rule):
+- The save error text squeezes the project title in the current top bar. Phase 1 replaces this top bar.
+- The script now writes to the folder after every 500 ms typing pause, not only on the folder-save delay. That means more saves, with no correctness issue seen.
+- One flaky test under full-suite load, not in the Phase 0 tests.
