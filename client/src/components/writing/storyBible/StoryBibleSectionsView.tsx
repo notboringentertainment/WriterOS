@@ -33,6 +33,17 @@ export interface StoryBibleSectionsViewProps {
 
 const CLEAR_TIMEOUT_MS = 3000
 
+// Lists are split into items, so the typed text is kept as-is until the writer leaves the box.
+function ListField({ label, value, onCommit }: { label: string; value: string; onCommit: (text: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+  return <label className="sb-field">
+    <span>{label}</span>
+    <textarea value={draft} onChange={event => setDraft(event.target.value)}
+      onBlur={() => { if (draft !== value) onCommit(draft) }} />
+  </label>
+}
+
 function sectionRequest(section: StoryBibleSectionDef): string {
   return `Write the "${section.title}" section of the Story Bible from canon. Read story-bible.md in your formats folder and active canon first, ask only about what canon doesn't cover, one question at a time, then propose it through storyBible.`
 }
@@ -96,9 +107,13 @@ export function StoryBibleSectionsView({
               </select>
             </label>
           }
+          if (field.kind === 'list') {
+            return <ListField key={field.path} label={`${field.label} (one per line)`} value={readField(content, field.path)}
+              onCommit={text => onContentPatch(writeField(content, field, text))} />
+          }
           const Control = field.kind === 'text' ? 'input' : 'textarea'
           return <label key={field.path} className="sb-field">
-            <span>{field.label}{field.kind === 'list' ? ' (separate with commas)' : ''}</span>
+            <span>{field.label}</span>
             <Control value={readField(content, field.path)}
               onChange={event => onContentPatch(writeField(content, field, event.target.value))} />
           </label>

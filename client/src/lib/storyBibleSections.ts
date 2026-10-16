@@ -97,7 +97,8 @@ export const STORY_BIBLE_SECTIONS: readonly StoryBibleSectionDef[] = [
 export function readField(content: StoryBibleDocumentContent, path: string): string {
   const [group, key] = path.split('.') as [keyof StoryBibleDocumentContent, string]
   const value = (content[group] as unknown as Record<string, unknown>)[key]
-  return Array.isArray(value) ? value.join(', ') : typeof value === 'string' ? value : ''
+  // One list item per line: items such as comps are sentences that contain commas.
+  return Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''
 }
 
 export function writeField(
@@ -106,7 +107,7 @@ export function writeField(
   text: string,
 ): Partial<StoryBibleDocumentContent> {
   const [group, key] = field.path.split('.') as [keyof StoryBibleDocumentContent, string]
-  const value = field.kind === 'list' ? text.split(/[,\n]/).map(item => item.trim()).filter(Boolean) : text
+  const value = field.kind === 'list' ? text.split('\n').map(item => item.trim()).filter(Boolean) : text
   return { [group]: { ...(content[group] as object), [key]: value } } as Partial<StoryBibleDocumentContent>
 }
 

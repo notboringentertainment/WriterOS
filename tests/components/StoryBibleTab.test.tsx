@@ -166,6 +166,19 @@ describe('StoryBibleTab - sections view', () => {
     })
   })
 
+  it('keeps typed text in a list box, and saves one item per line on leaving it', () => {
+    const onContentPatch = vi.fn()
+    render(<StoryBibleTab document={defaultDocument} onContentPatch={onContentPatch} onClear={vi.fn()} />)
+    fireEvent.click(within(screen.getByTestId('story-bible-section-tone')).getByRole('button', { name: 'Write it yourself' }))
+    const box = screen.getByLabelText('Compare it to (one per line)')
+    fireEvent.change(box, { target: { value: 'Ray Donovan: the fixer, plus family\n' } })
+    expect(box).toHaveValue('Ray Donovan: the fixer, plus family\n')
+    expect(onContentPatch).not.toHaveBeenCalled()
+    fireEvent.change(box, { target: { value: 'Ray Donovan: the fixer, plus family\nAlien' } })
+    fireEvent.blur(box)
+    expect(onContentPatch).toHaveBeenCalledWith({ toneAndStyle: expect.objectContaining({ comps: ['Ray Donovan: the fixer, plus family', 'Alien'] }) })
+  })
+
   it('shows and edits the Story Bible stage', () => {
     const onContentPatch = vi.fn()
     const document = makeDocument({ cover: { ...createEmptyStoryBibleContent().cover, status: 'production' } }, { migratedFromLegacyStoryBible: true })
