@@ -1,6 +1,6 @@
 import type { Express, Response } from 'express'
 import type { Dirent } from 'node:fs'
-import { lstat, readdir, realpath } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
@@ -12,6 +12,8 @@ import type {
 } from '../../shared/projectLibraryApi'
 import type { BeatSheetSyncStatus } from '../projectMemory/beatSheetSync'
 import { syncBeatSheet } from '../projectMemory/beatSheetSync'
+import { AuthoredDocumentStateSchema, OutlineDocumentContentSchema } from '../../shared/documents'
+import { acquirePackageWriteLock } from './packageLock'
 import { guardExistingPath, type SafeExistingPath } from '../projectMemory/safePaths'
 import type { ProjectLibraryConfig } from './config'
 import { authenticated, sameOrigin } from './security'
@@ -121,6 +123,23 @@ async function ownersByRoot(projectsRoot: string, registry: StoryDriveLinks): Pr
 
 function unavailable(error: unknown): BeatSheetSyncStatus {
   return { kind: 'unavailable', ticket: null, message: error instanceof Error ? error.message : String(error) }
+}
+
+async function readSavedOutline(
+  rootPath: string,
+  projectId: string,
+  packagePath: string,
+): Promise<StoryDriveLinkResponse['outline']> {
+  const lock = await acquirePackageWriteLock({ workspaceRoot: rootPath, projectId })
+  try {
+    const raw = await readFile(path.join(packagePath, 'documents', 'outline.json'), 'utf8')
+    return AuthoredDocumentStateSchema(OutlineDocumentContentSchema).parse(JSON.parse(raw))
+  } catch (error) {
+    console.warn('[story-drive link] could not read the saved outline:', error instanceof Error ? error.message : error)
+    return null
+  } finally {
+    await lock.release()
+  }
 }
 
 const CANON_FAILED = "WriterOS linked the folder but couldn't bring in its Story-drive canon."
@@ -242,6 +261,11 @@ export function registerStoryDriveFolderRoutes(
         beatSheet = unavailable(error)
       }
       const canon = await runImport(deps, packagePath, selected.canonicalPath)
+      // Another tab may have synced first and taken the update; send the saved
+      // beats whenever there are any, so this tab never stays empty.
+      if (beatSheet.kind === 'updated' || beatSheet.kind === 'unchanged') {
+        outline = await readSavedOutline(rootPath, projectId, packagePath) ?? outline
+      }
       const body: StoryDriveLinkResponse = {
         link: { folderName: candidate.name },
         beatSheet,

@@ -16,6 +16,8 @@ import {
   type StoryDriveFolderDeps,
 } from '../../server/projectLibrary/storyDriveFolderRoutes'
 import { runProjectMemoryCli } from '../../server/projectMemory/cli'
+import { syncBeatSheet } from '../../server/projectMemory/beatSheetSync'
+import { STORY_DRIVE_LINKS_FILE } from '../../server/projectLibrary/storyDriveLinks'
 import { writerOSObserverIdle } from '../../server/projectMemory/writerOSObserver'
 
 const FIXTURE = path.resolve(__dirname, '../fixtures/beatSheet/synthetic-beat-sheet.md')
@@ -213,6 +215,20 @@ describe('linking a project', () => {
     expect(response.status).toBe(200)
     expect(response.json.canon).toEqual({ status: 'imported' })
     expect(response.json.beatSheet.kind).toBe('updated')
+    expect(response.json.outline.content.units.length).toBeGreaterThan(0)
+  })
+
+  it('returns the saved beats when another sync already took the update', async () => {
+    const wayfinder = await withBeatSheet('The Salt Line')
+    // Stand-in for another tab syncing between the claim and this route's own sync.
+    const packagePath = await store.resolveProjectPackagePath(PROJECT_ID)
+    await writeStoryDriveLink(workspace, PROJECT_ID, { root: await realpath(wayfinder) })
+    expect((await syncBeatSheet({ workspaceRoot: workspace, packagePath, projectId: PROJECT_ID })).status.kind).toBe('updated')
+    await writeFile(path.join(workspace, STORY_DRIVE_LINKS_FILE), JSON.stringify({ version: 1, links: {} }))
+
+    const response = await requestJson(linkPath(), { method: 'POST', body: { folder: 'The Salt Line' } })
+    expect(response.status).toBe(200)
+    expect(response.json.beatSheet.kind).toBe('unchanged')
     expect(response.json.outline.content.units.length).toBeGreaterThan(0)
   })
 
