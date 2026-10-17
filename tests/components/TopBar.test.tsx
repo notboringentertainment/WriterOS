@@ -129,3 +129,15 @@ describe('TopBar save status', () => {
     expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
   })
 })
+
+describe('TopBar Canon menu', () => {
+  it('disables Memory when there is no project to open it for', () => {
+    const { rerender } = render(<TopBar {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Canon' }))
+    expect(screen.getByRole('menuitem', { name: 'Memory' })).toBeDisabled()
+    const onOpenMemory = vi.fn()
+    rerender(<TopBar {...defaultProps} onOpenMemory={onOpenMemory} />)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Memory' }))
+    expect(onOpenMemory).toHaveBeenCalledTimes(1)
+  })
+})

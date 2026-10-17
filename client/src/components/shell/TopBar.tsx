@@ -168,7 +168,8 @@ export function TopBar({
             <span className="phase1-tool-label">Canon</span>
           </button>
           {canonOpen && <div role="menu" className="phase1-menu">
-            <button role="menuitem" onClick={() => { setCanonOpen(false); onOpenMemory?.() }}>Memory</button>
+            <button role="menuitem" disabled={!onOpenMemory} title={onOpenMemory ? undefined : 'Open a project to see its memory.'}
+              onClick={() => { setCanonOpen(false); onOpenMemory?.() }}>Memory</button>
             <button role="menuitem" onClick={() => { setCanonOpen(false); onTabChange('whats-standing') }}>What's Standing</button>
           </div>}
         </div>
