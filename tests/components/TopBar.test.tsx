@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { TopBar } from '../../client/src/components/shell/TopBar'
 
 const defaultProps = {
@@ -127,6 +127,23 @@ describe('TopBar save status', () => {
     expect(await screen.findByText(/^Saved /)).toBeInTheDocument()
     rerender(<TopBar {...props} activeProjectId="b" />)
     expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
+  })
+})
+
+describe('TopBar save finishing after a switch', () => {
+  it('does not show the old project\'s result on the new one', async () => {
+    let finish!: (ok: boolean) => void
+    const onSaveProject = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const props = { ...defaultProps, onSaveProject }
+    const { rerender } = render(<TopBar {...props} activeProjectId="a" />)
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    rerender(<TopBar {...props} activeProjectId="b" />)
+    await act(async () => { finish(true) })
+    expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    expect(onSaveProject).toHaveBeenCalledTimes(2)
   })
 })
 

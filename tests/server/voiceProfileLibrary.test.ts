@@ -72,4 +72,10 @@ it('refuses a late save older than the stored profile or a later clear, and is n
   expect((await put(fresh)).status).toBe(200)
 
   expect((await fetch(url, { headers })).headers.get('cache-control')).toBe('no-store')
+
+  // Sent together, newest first: the older one must still lose.
+  const newest = { ...makeProfile(), updatedAt: new Date(Date.now() + 120_000).toISOString(), archetype: 'Newest' }
+  const results = await Promise.all([put(newest), put(fresh), put(fresh), put(fresh)])
+  expect(results[0].status).toBe(200)
+  expect(await (await fetch(url, { headers })).json()).toEqual({ profile: newest })
 })

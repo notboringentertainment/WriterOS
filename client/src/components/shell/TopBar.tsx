@@ -70,8 +70,14 @@ export function TopBar({
   }, [canonOpen])
   const [saveFailed, setSaveFailed] = useState(false)
   const [saving, setSaving] = useState(false)
-  // "Saved 3:41" belongs to the project it was saved on.
-  useEffect(() => { setSavedAt(null); setSaveFailed(false) }, [activeProjectId])
+  // "Saved 3:41" belongs to the project it was saved on: a save still finishing after a switch is ignored.
+  const saveGeneration = useRef(0)
+  useEffect(() => {
+    saveGeneration.current += 1
+    setSavedAt(null)
+    setSaveFailed(false)
+    setSaving(false)
+  }, [activeProjectId])
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange
@@ -79,16 +85,20 @@ export function TopBar({
 
   async function handleSaveProject() {
     if (!onSaveProject || saving) return
+    const generation = saveGeneration.current
+    const current = () => saveGeneration.current === generation
     setSaving(true)
     setSaveFailed(false)
     setSavedAt(null)
     try {
-      if (await onSaveProject() === false) setSaveFailed(true)
-      else setSavedAt(new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
+      const ok = await onSaveProject() !== false
+      if (!current()) return
+      if (ok) setSavedAt(new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
+      else setSaveFailed(true)
     } catch {
-      setSaveFailed(true)
+      if (current()) setSaveFailed(true)
     } finally {
-      setSaving(false)
+      if (current()) setSaving(false)
     }
   }
 
