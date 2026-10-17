@@ -63,13 +63,11 @@ describe('BeatSheetView', () => {
     expect(screen.getAllByText('Lookbook')).toHaveLength(content.units.length)
   })
 
-  it('keeps the Foundations cards above the beats', () => {
+  // Ben approved this protected-test edit (2026-10-16): the Beat Sheet shows Story-drive beats only.
+  it('shows no Foundations cards above the beats', () => {
     renderView()
-    const first = SERIES_FOUNDATIONS[0]
-    const question = screen.getByText(first.question)
-    const firstBeat = screen.getByText('1. Opening image')
-    expect(question.compareDocumentPosition(firstBeat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    for (const card of SERIES_FOUNDATIONS) expect(screen.getByText(card.question)).toBeInTheDocument()
+    for (const card of SERIES_FOUNDATIONS) expect(screen.queryByText(card.question)).toBeNull()
+    expect(screen.getByText('1. Opening image')).toBeInTheDocument()
   })
 
   it('hides the five series-engine cards and the Episode map when a beat sheet is synced', () => {
@@ -81,7 +79,8 @@ describe('BeatSheetView', () => {
     expect(screen.queryByText('Episode map')).toBeNull()
   })
 
-  it('shows the full deck when there is no beat sheet', () => {
+  // Ben approved this protected-test edit (2026-10-16): no hand-written deck without a Story-drive beat sheet.
+  it('shows the no-beat-sheet message when there is no beat sheet', () => {
     const state = defaultProjectState()
     render(
       <OutlineTab
@@ -89,17 +88,13 @@ describe('BeatSheetView', () => {
         projectFormat="series"
         identity={{ title: 'T', genre: 'Drama' }}
         onContentChange={vi.fn()}
-        onAddEpisode={vi.fn()}
-        onEpisodeFieldChange={vi.fn()}
         onViewPreferencesPatch={vi.fn()}
         onComposed={vi.fn()}
         beatSheetStatus={{ kind: 'not-linked' }}
       />,
     )
-    const foundationIds = new Set(SERIES_FOUNDATIONS.map(card => card.id))
-    const engine = getOutlineDeck('series').filter(card => !foundationIds.has(card.id))
-    for (const card of engine) expect(screen.getByText(card.question)).toBeInTheDocument()
-    expect(screen.getByText('Episode map')).toBeInTheDocument()
+    expect(screen.getByText("No beat sheet yet. Beats come from this project's Story-drive beat sheet once the project is linked.")).toBeInTheDocument()
+    expect(screen.queryByText('Episode map')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
   })
 

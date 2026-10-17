@@ -64,6 +64,12 @@ function labelOr(value: string, kind: string, n: number): string {
   return clean || `${kind} ${n}`
 }
 
+/** The Beat Sheet shows Story-drive's beats only; an unlinked project has none. */
+function storyDriveBeats(state: ProjectState) {
+  const content = state.documents.outline.content
+  return content.beatSheetSource ? visibleOutlineUnits(content, state.meta.format) : []
+}
+
 function pageHeadings(state: ProjectState, page: 'synopsis' | 'treatment'): string[] {
   return (state.pages[page]?.markdown ?? '').split('\n')
     .map(line => /^#{1,6}\s+(.+)$/.exec(line.trim())?.[1]?.trim() ?? '')
@@ -89,7 +95,7 @@ export function selectSurfaceStructure(surface: ActiveTab, state: ProjectState):
     }
 
     case 'outline': {
-      const units = visibleOutlineUnits(state.documents.outline.content, state.meta.format)
+      const units = storyDriveBeats(state)
       const nodes: StructureNode[] = units.map(u => ({
         id: u.id,
         label: labelOr(u.title, 'Beat', u.number),
@@ -146,7 +152,7 @@ function surfaceCounts(surface: ActiveTab, state: ProjectState): ConsoleCount[] 
     case 'script':
       return [{ label: 'scenes', value: state.script.scenes.length }]
     case 'outline':
-      return [{ label: 'beats', value: visibleOutlineUnits(state.documents.outline.content, state.meta.format).length }]
+      return [{ label: 'beats', value: storyDriveBeats(state).length }]
     case 'treatment':
       return [{ label: 'sections', value: pageHeadings(state, surface).length }]
     case 'story-bible':

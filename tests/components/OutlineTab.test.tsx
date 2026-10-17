@@ -22,11 +22,8 @@ describe('OutlineTab', () => {
       identity: { title: 'T', genre: 'Drama' },
       onProjectFormatChange: vi.fn(),
       onContentChange: vi.fn(),
-      onAddEpisode: vi.fn(),
-      onEpisodeFieldChange: vi.fn(),
       onViewPreferencesPatch: vi.fn(),
       onComposed: vi.fn(),
-      onClear: vi.fn(),
       ...overrides,
     }
   }
@@ -38,11 +35,8 @@ describe('OutlineTab', () => {
       identity: { title: 'T', genre: 'Drama' },
       onProjectFormatChange: vi.fn(),
       onContentChange: vi.fn(),
-      onAddEpisode: vi.fn(),
-      onEpisodeFieldChange: vi.fn(),
       onViewPreferencesPatch: vi.fn(),
       onComposed: vi.fn(),
-      onClear: vi.fn(),
       ...overrides,
     }
 
@@ -50,74 +44,18 @@ describe('OutlineTab', () => {
     return props
   }
 
-  it('renders feature deck cards with plain-language questions', () => {
+  it('shows no foundation questions or hand-written beat editor on an unlinked project', () => {
     renderOutline()
 
-    expect(screen.getByText('Who are we following?')).toBeInTheDocument()
-    expect(screen.getByText('What disrupts it?')).toBeInTheDocument()
-    expect(screen.getByText('What final choice resolves the pressure?')).toBeInTheDocument()
-    expect(screen.queryByText('Inciting incident')).not.toBeInTheDocument()
-    expect(screen.queryByText('All-is-lost (with subplot)')).not.toBeInTheDocument()
+    expect(screen.getByText(/No beat sheet yet\. Beats come from this project's Story-drive beat sheet/)).toBeInTheDocument()
+    expect(screen.queryByText('Who are we following?')).toBeNull()
+    expect(screen.queryByText('What disrupts it?')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('calls onContentChange with the resolved card mapping when an answer changes', () => {
-    const onContentChange = vi.fn()
-    renderOutline({ onContentChange })
-
-    fireEvent.change(screen.getByLabelText('Who are we following?'), {
-      target: { value: 'Sara, a widowed firefighter.' },
-    })
-
-    const updater = onContentChange.mock.calls[0][0]
-    expect(updater(defaultDocument.content).spine.protagonist).toBe('Sara, a widowed firefighter.')
-  })
-
-  it('shows existing document answers', () => {
-    const document = {
-      ...defaultDocument,
-      content: {
-        ...defaultDocument.content,
-        spine: {
-          ...defaultDocument.content.spine,
-          protagonist: 'Sara, a widowed firefighter.',
-        },
-      },
-    }
-
-    renderOutline({ document })
-
-    expect(screen.getByDisplayValue('Sara, a widowed firefighter.')).toBeInTheDocument()
-  })
-
-  it('opens a clear dialog and clears the whole outline', () => {
-    const onClear = vi.fn()
-    const document = {
-      ...defaultDocument,
-      content: {
-        ...defaultDocument.content,
-        spine: {
-          ...defaultDocument.content.spine,
-          theme: 'Mercy under pressure',
-        },
-      },
-    }
-
-    renderOutline({ document, onClear })
-    fireEvent.click(screen.getByRole('button', { name: 'Clear answers' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Clear everything' }))
-
-    expect(onClear).toHaveBeenCalledWith({ keep: 'all' })
-  })
-
-  it('disables clear outline when the outline is empty', () => {
+  it('has no Clear answers button', () => {
     renderOutline()
-    expect(screen.getByRole('button', { name: 'Clear answers' })).toBeDisabled()
-  })
-
-  it('keeps the beat sheet editor visible for legacy Document preference without a toggle', () => {
-    renderOutline({ document: { ...defaultDocument, viewPreferences: { activeView: 'document' } } })
-    expect(screen.getByText('Who are we following?')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Document' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clear answers/i })).toBeNull()
   })
 
   it('renders project format selector when format props are supplied', () => {
@@ -135,19 +73,14 @@ describe('OutlineTab', () => {
     expect(onProjectFormatChange).toHaveBeenCalledWith('series')
   })
 
-  it('renders the series deck and seeds starter episodes on first series mount', async () => {
+  it('never writes to the outline just by opening a series project', async () => {
     const onContentChange = vi.fn()
     renderOutline({ projectFormat: 'series', onContentChange })
 
-    expect(screen.getByText('What keeps generating stories?')).toBeInTheDocument()
-    expect(screen.getByText('Episode map')).toBeInTheDocument()
-    await waitFor(() => expect(onContentChange).toHaveBeenCalled())
-    const seeded = onContentChange.mock.calls[0][0](defaultDocument.content)
-    expect(seeded.episodes.map((episode: { label: string }) => episode.label)).toEqual([
-      'Episode 101',
-      'Episode 102',
-      'Episode 103',
-    ])
+    expect(screen.queryByText('What keeps generating stories?')).toBeNull()
+    expect(screen.queryByText('Episode map')).toBeNull()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(onContentChange).not.toHaveBeenCalled()
   })
 
   describe('Story-drive wiring', () => {
@@ -262,7 +195,8 @@ describe('OutlineTab', () => {
     it('renders the status line without a synced beat sheet when linked', () => {
       renderOutline({ beatSheetStatus: { kind: 'no-beat-sheet' }, onRefreshBeatSheet: vi.fn() })
       expect(screen.getByRole('status')).toHaveTextContent('Linked to Story-drive, but no ratified beat sheet yet.')
-      expect(screen.getByText('Who are we following?')).toBeInTheDocument()
+      expect(screen.getByText('No beat sheet yet. Beats appear here once the beat sheet is ratified in Story-drive.')).toBeInTheDocument()
+      expect(screen.queryByText('Who are we following?')).toBeNull()
     })
   })
 })

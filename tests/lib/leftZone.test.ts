@@ -21,9 +21,17 @@ describe('selectSurfaceStructure', () => {
       createOutlineUnit('feature.openingNormalWorld'),
       { ...createOutlineUnit('pilot.beat01'), number: 1, title: 'The arrival', actOrSequence: 'Movement one', whatHappens: 'The case begins.' },
     ]
+    state.documents.outline.content.beatSheetSource = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 2, label: null }
     const structure = selectSurfaceStructure('outline', state)
     expect(structure.nodes).toEqual([{ id: 'pilot.beat01', label: 'The arrival', detail: 'Movement one' }])
     expect(selectConsoleState(state, 'outline', null).counts).toEqual([{ label: 'beats', value: 1 }])
+  })
+
+  it('lists no beats for an unlinked project, whatever hand-written units it holds', () => {
+    const state = defaultProjectState()
+    state.documents.outline.content.units = [{ ...createOutlineUnit('u1'), number: 1, title: 'Hand beat', whatHappens: 'Text.' }]
+    expect(selectSurfaceStructure('outline', state).nodes).toEqual([])
+    expect(selectConsoleState(state, 'outline', null).counts).toEqual([{ label: 'beats', value: 0 }])
   })
 
   it('renders an honest empty state for outline with no beats', () => {
@@ -43,6 +51,7 @@ describe('selectSurfaceStructure', () => {
       { id: 'u1', number: 1, actOrSequence: 'Act 1', title: 'Cold open', location: '', characters: [], whatHappens: '', conflict: '', turn: '', consequence: '', whyNext: '', linkedSceneIds: [], draftNotes: '' },
       { id: 'u2', number: 2, actOrSequence: 'Act 1', title: '', location: '', characters: [], whatHappens: '', conflict: '', turn: '', consequence: '', whyNext: '', linkedSceneIds: [], draftNotes: '' },
     ]
+    state.documents.outline.content.beatSheetSource = { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 2, label: null }
     const s = selectSurfaceStructure('outline', state)
     expect(s.empty).toBe(false)
     expect(s.nodes).toHaveLength(2)

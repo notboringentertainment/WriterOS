@@ -25,15 +25,12 @@ describe('names on screen', () => {
     const allowedStrings = new Set([
       "'outline'",      // surface id for the beat sheet (single quotes in code)
       '"outline"',      // surface id for the beat sheet (double quotes in code)
-      "'clear-outline-title'",  // data-testid in ClearOutlineDialog (single quotes)
-      '"clear-outline-title"',  // data-testid in ClearOutlineDialog (double quotes)
     ])
 
     const files = [
       'client/src/components/shell/TopBar.tsx',
       'client/src/lib/leftZone.ts',
       'client/src/components/writing/OutlineTab.tsx',
-      'client/src/components/writing/outline/ClearOutlineDialog.tsx',
       'client/src/components/writing/outline/OutlineDocumentView.tsx',
       'client/src/lib/documentMarkdown.ts',
       'client/src/components/writing/WritersRoom.tsx',

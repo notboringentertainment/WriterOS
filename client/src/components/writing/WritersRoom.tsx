@@ -25,17 +25,10 @@ function firstProseLine(markdown: string | undefined): string {
 function getContextSummary(id: SpecialistId, state: ProjectState): string {
   switch (id) {
     case 'oliver': {
+      // Story-drive's beats only, as on the Beat Sheet.
       const content = state.documents.outline.content
-      const spineFilled = Object.values(content.spine).filter(value => value.trim()).length
-      const unitFilled = content.units.filter(unit => (
-        unit.whatHappens.trim() ||
-        unit.conflict.trim() ||
-        unit.turn.trim() ||
-        unit.consequence.trim() ||
-        unit.whyNext.trim() ||
-        unit.draftNotes.trim()
-      )).length
-      return `${spineFilled} spine fields · ${unitFilled} beats`
+      const beats = content.beatSheetSource ? content.units.length : 0
+      return beats ? `${beats} beats from Story-drive` : 'No beat sheet yet'
     }
     case 'sam':
       return state.documents.storyBible.content.onePagePitch.logline.trim() || state.synopsis.logline || 'No logline yet'

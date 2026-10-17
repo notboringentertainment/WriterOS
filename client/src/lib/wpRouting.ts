@@ -246,29 +246,12 @@ function labeled(entries: Array<[string, string | undefined]>): string {
     .join('\n')
 }
 
-function documentOutlineBeats(state: ProjectState, format: ProjectFormat): ProjectContext['beats'] {
+// Agents see the beats the writer sees: Story-drive's beat sheet only. The foundation
+// answers, hand-written beats and series fields in outline.json are kept on disk but not sent.
+function documentOutlineBeats(state: ProjectState): ProjectContext['beats'] {
   const content = normalizeOutlineContent(state.documents.outline.content)
+  if (!content.beatSheetSource) return []
   const beats: ProjectContext['beats'] = []
-  const spineNotes = labeled([
-    ['Who we follow', content.spine.protagonist],
-    ['What they want', content.spine.externalGoal],
-    ['What they need', content.spine.internalNeed],
-    ['What pushes back', content.spine.centralOpposition],
-    ['What failure costs', content.spine.coreStakes],
-    ['Theme / question', content.spine.theme],
-    ['Ending', content.spine.ending],
-  ])
-
-  if (spineNotes) {
-    beats.push({
-      id: 'outline-spine',
-      name: 'Story spine',
-      description: 'Core story pressure and destination',
-      notes: spineNotes,
-      linkedSceneIds: [],
-    })
-  }
-
   for (const unit of [...content.units].sort((a, b) => a.number - b.number)) {
     const notes = labeled([
       ['What happens', unit.whatHappens],
@@ -287,64 +270,6 @@ function documentOutlineBeats(state: ProjectState, format: ProjectFormat): Proje
       linkedSceneIds: Array.isArray(unit.linkedSceneIds) ? unit.linkedSceneIds : [],
     })
   }
-
-  if (format === 'series') {
-    const seriesNotes = labeled([
-      ['Show pitch', content.seriesEngine.showPitch],
-      ['Repeatable conflict', content.seriesEngine.repeatableConflict],
-      ['Why it lasts', content.seriesEngine.premiseLongevity],
-      ['Long question', content.seriesEngine.serialQuestion],
-      ['Typical episode shape', content.seriesEngine.episodeEngine],
-      ['World pressure', content.seriesEngine.worldPressure],
-      ['Pilot promise', content.seriesEngine.pilotPromise],
-    ])
-    if (seriesNotes) {
-      beats.push({
-        id: 'series-engine',
-        name: 'Series engine',
-        description: 'Repeatable story pressure',
-        notes: seriesNotes,
-        linkedSceneIds: [],
-      })
-    }
-
-    const seasonNotes = labeled([
-      ['Season question', content.seasonArc.seasonQuestion],
-      ['Season pressure system', content.seasonArc.seasonAntagonist],
-      ['Season midpoint', content.seasonArc.seasonMidpoint],
-      ['Season climax', content.seasonArc.seasonClimax],
-      ['Season ending / hook', content.seasonArc.seasonEndingHook],
-    ])
-    if (seasonNotes) {
-      beats.push({
-        id: 'season-arc',
-        name: 'Season arc',
-        description: 'Season-level story movement',
-        notes: seasonNotes,
-        linkedSceneIds: [],
-      })
-    }
-
-    for (const episode of content.episodes) {
-      const episodeNotes = labeled([
-        ['Title', episode.title],
-        ['Hook', episode.hookLogline],
-        ['A story', episode.aStory],
-        ['B/C story', episode.bcStory],
-        ['What changes', episode.changeByEnd],
-        ['Ending hook', episode.endingHook],
-      ])
-      if (!episodeNotes) continue
-      beats.push({
-        id: text(episode.id),
-        name: text(episode.label) || `Episode ${episode.number}`,
-        description: 'Episode map',
-        notes: episodeNotes,
-        linkedSceneIds: [],
-      })
-    }
-  }
-
   return beats
 }
 
@@ -605,7 +530,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       need: text(c.need),
       arc: text(c.arc),
     })),
-    beats: documentOutlineBeats(state, projectFormat),
+    beats: documentOutlineBeats(state),
     treatment: {
       logline: text(treatmentContent.logline),
       concept: {
