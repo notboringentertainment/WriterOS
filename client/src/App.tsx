@@ -552,11 +552,15 @@ export default function App() {
   const handleScriptChange = useCallback(
     (html: string, scenes: ScriptScene[]) => {
       if (activeFolderProjectId && project.activeStoredProject) {
+        const savingProjectId = activeFolderProjectId
         void writeFolderProject({
           ...project.activeStoredProject,
           state: { ...project.state, script: { ...project.state.script, rawHtml: html, scenes } },
-        }).catch(error => setFolderProjectError(error instanceof TypeError
-          ? 'Could not save. Try again.' : formatFdxImportError(error)))
+        }).catch(error => {
+          // A failed save of the previous project must not show on the one now open.
+          if (activeFolderProjectIdRef.current !== savingProjectId) return
+          setFolderProjectError(error instanceof TypeError ? 'Could not save. Try again.' : formatFdxImportError(error))
+        })
       }
       if (activeAgentProjectKeyRef.current !== activeAgentProjectKey) {
         project.updateScript(html, scenes)

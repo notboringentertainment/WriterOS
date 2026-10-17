@@ -37,13 +37,25 @@ const report = events => post('/report', { epoch, fromSeq: events[0].seq, events
 if (mode === 'silent') setInterval(() => {}, 1000)
 else {
   if (mode === 'trust') {
-    process.stdout.write('Quick safety check: Is this a project you created or one you trust?\r\nNo, exit\r\nYes, I trust this folder\r\n');
+    // Like Claude Code's menu: cursor starts on "No, exit"; Down moves it to "Yes"; Enter picks the
+    // highlighted option. Keys that arrive before the menu is ready (FAKE_TRUST_READY_MS) are dropped.
+    process.stdout.write('Quick safety check: Is this a project you created or one you trust?\r\n❯ No, exit\r\n  Yes, I trust this folder\r\n');
+    const readyAt = Date.now() + Number(process.env.FAKE_TRUST_READY_MS ?? 0);
     await new Promise(resolve => {
-      let keys = '';
+      let onYes = false;
       const onData = data => {
-        keys += data.toString();
-        if (keys.includes('\x1b[B\r')) { process.stdin.off('data', onData); resolve(); }
-        else if (keys.includes('\r')) process.exit(2);
+        if (Date.now() < readyAt) return;
+        for (const key of data.toString().split(/(?=\x1b\[B|\r)/)) {
+          if (key.startsWith('\x1b[B')) {
+            onYes = true;
+            process.stdout.write('\x1b[2A  No, exit\r\n❯ Yes, I trust this folder\r\n');
+          } else if (key.startsWith('\r')) {
+            if (!onYes) process.exit(2);
+            process.stdin.off('data', onData);
+            resolve();
+            return;
+          }
+        }
       };
       process.stdin.setRawMode?.(true);
       process.stdin.on('data', onData);

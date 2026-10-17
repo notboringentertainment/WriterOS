@@ -98,10 +98,19 @@ export async function createPitchPacketDraft(input: {
   const generated = await generatePitchPacketProposals(groundedProjectContext, projectMemory)
   packet = applyUnapprovedProposals(packet, generated.proposals)
   emitMeetingTrace({ type: generated.unavailable ? 'meeting.packet.proposal_failed' : 'meeting.packet.proposal_completed', projectId: input.projectId, sessionId: input.sessionId })
-  const row = await packetStore.createPitchPacketDraft({
-    projectId: input.projectId, sessionId: input.sessionId, packet,
-    directionRevision: directionSnapshot.revision, memoryReceipt: generated.memoryReceipt,
-  })
+  let row: packetStore.PitchPacketRow
+  try {
+    row = await packetStore.createPitchPacketDraft({
+      projectId: input.projectId, sessionId: input.sessionId, packet,
+      directionRevision: directionSnapshot.revision, memoryReceipt: generated.memoryReceipt,
+    })
+  } catch (error) {
+    // Two requests at the same instant can both miss the open packet; the second insert then hits the
+    // one-open-packet-per-session rule. Reopen the packet the first request made instead of failing.
+    const winner = await packetStore.getOpenPitchPacket({ projectId: input.projectId, sessionId: input.sessionId }).catch(() => null)
+    if (winner) return { row: winner, proposalUnavailable: false, memoryReceipt: winner.memory_receipt ?? projectMemory.receipt, reopened: true }
+    throw error
+  }
   return { row, proposalUnavailable: generated.unavailable, memoryReceipt: generated.memoryReceipt }
 }
 

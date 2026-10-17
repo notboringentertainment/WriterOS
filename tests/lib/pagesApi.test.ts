@@ -31,3 +31,17 @@ describe('page writes', () => {
     expect(JSON.parse(fetch.mock.calls[1][1].body).page).toEqual(approved)
   })
 })
+
+describe('requestPage without the project library', () => {
+  it('says the library is unavailable instead of sending a request with no session', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ enabled: false }) })
+    vi.stubGlobal('fetch', fetch)
+    await expect(requestPage('project', 'synopsis')).rejects.toThrow(/project library, which isn't available/)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('handles a failed startup request the same way', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => { throw new Error('not json') } }))
+    await expect(requestPage('project', 'synopsis')).rejects.toThrow(/isn't available/)
+  })
+})

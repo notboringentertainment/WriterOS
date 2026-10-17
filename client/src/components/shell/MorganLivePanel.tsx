@@ -3,6 +3,7 @@ import type { MorganScreenEvent, PageProposal } from '@shared/morganLive'
 import type { MorganApi } from '../../lib/projectStorage'
 import { initialModel, reduce } from '../../lib/morganLive/model'
 import { MorganApprovalCard } from './MorganApprovalCard'
+import { ChatMarkdown } from '../../lib/chatMarkdown'
 
 export interface MorganPageRequest {
   text: string
@@ -150,7 +151,7 @@ export function MorganLivePanel({ projectId, morgan, surface, onPageProposal, on
       {model.feed.map(item => item.kind === 'tools' ? <details key={item.id} style={styles.tools}><summary>{item.label}</summary>{item.files.map((file, index) => <div key={index} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{file}</div>)}</details>
         : <div key={item.id} style={{ ...styles.message, ...(item.kind === 'you' ? styles.user : {}) }}>
           {item.kind === 'prose' && <div style={styles.speaker}>Morgan</div>}
-          {item.kind === 'prose' ? item.markdown : item.kind === 'you' ? item.text.replace(/^\[WriterOS: Ben is on the .+ page\]\n/, '') : 'Interrupted'}
+          {item.kind === 'prose' ? <ChatMarkdown text={item.markdown} /> : item.kind === 'you' ? item.text.replace(/^\[WriterOS: Ben is on the .+ page\]\n/, '') : 'Interrupted'}
         </div>)}
       {model.provisional && <div aria-label="Morgan is writing" style={styles.message}>{model.provisional}</div>}
       {model.proposals.map(p => <div key={p.proposalId} style={styles.message}>{p.proposal.summary}{' '}<button style={styles.button} onClick={() => onPageProposal(p)}>Show on page</button></div>)}

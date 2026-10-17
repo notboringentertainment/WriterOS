@@ -171,7 +171,8 @@ function persistServerProfile(profile: VoiceProfileDocument | null): void {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile }),
     })
-    if (!response.ok) throw new Error('Voice profile could not be saved to the library.')
+    // 409: another tab already saved something newer; the library copy is current.
+    if (!response.ok && response.status !== 409) throw new Error('Voice profile could not be saved to the library.')
     window.dispatchEvent(new CustomEvent('writeros-voice-sync', { detail: '' }))
   }).catch(() => {
     // Keep the browser copy available when the library cannot be reached.

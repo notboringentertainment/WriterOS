@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { TopBar } from '../../client/src/components/shell/TopBar'
 
 const defaultProps = {
@@ -115,5 +115,46 @@ describe('TopBar', () => {
     render(<TopBar {...defaultProps} onNewProject={vi.fn()} onProjectChange={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'New script' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+})
+
+describe('TopBar save status', () => {
+  it('drops "Saved …" when another project opens', async () => {
+    const props = { ...defaultProps, onSaveProject: vi.fn(async () => true) }
+    const { rerender } = render(<TopBar {...props} activeProjectId="a" />)
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    expect(await screen.findByText(/^Saved /)).toBeInTheDocument()
+    rerender(<TopBar {...props} activeProjectId="b" />)
+    expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
+  })
+})
+
+describe('TopBar save finishing after a switch', () => {
+  it('does not show the old project\'s result on the new one', async () => {
+    let finish!: (ok: boolean) => void
+    const onSaveProject = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const props = { ...defaultProps, onSaveProject }
+    const { rerender } = render(<TopBar {...props} activeProjectId="a" />)
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    rerender(<TopBar {...props} activeProjectId="b" />)
+    await act(async () => { finish(true) })
+    expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    expect(onSaveProject).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('TopBar Canon menu', () => {
+  it('disables Memory when there is no project to open it for', () => {
+    const { rerender } = render(<TopBar {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Canon' }))
+    expect(screen.getByRole('menuitem', { name: 'Memory' })).toBeDisabled()
+    const onOpenMemory = vi.fn()
+    rerender(<TopBar {...defaultProps} onOpenMemory={onOpenMemory} />)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Memory' }))
+    expect(onOpenMemory).toHaveBeenCalledTimes(1)
   })
 })

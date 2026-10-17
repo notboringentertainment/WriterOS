@@ -16,6 +16,7 @@
 .phase1-canon { position: relative; }
 .phase1-menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 160px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; box-shadow: 0 4px 12px #0005; z-index: 20; }
 .phase1-menu button { text-align: left; font: 400 13px var(--font-ui); padding: 6px 10px; border-radius: 4px; }
+.phase1-menu button:disabled { opacity: .45; cursor: not-allowed; }
 .phase1-switch { display: flex; flex-shrink: 0; gap: 22px; border-bottom: 1px solid var(--border); margin: 24px 36px 36px; font-family: var(--font-ui); }
 .phase1-switch button { font: 400 14px var(--font-ui); color: var(--fg-muted); padding: 0 0 12px; position: relative; background: none; border: 0; cursor: pointer; }
 .phase1-switch button[aria-current="page"] { color: var(--fg); }

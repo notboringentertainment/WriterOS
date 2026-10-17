@@ -6,7 +6,9 @@ export class StalePageError extends Error {
 
 export async function requestPage(projectId: string, name: PageName, page?: PageDocument): Promise<PageDocument> {
   const bootstrap = await fetch('/api/project-library/bootstrap', { credentials: 'same-origin' })
-  const { sessionToken } = await bootstrap.json()
+  const { sessionToken } = bootstrap.ok === false ? {} : await bootstrap.json().catch(() => ({}))
+  // Without a session the page request would fail with a confusing error; say what happened instead.
+  if (typeof sessionToken !== 'string' || !sessionToken) throw new Error("Pages need WriterOS's project library, which isn't available right now. Try again.")
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/pages/${name}`, {
     method: page ? 'PUT' : 'GET', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', 'X-WriterOS-Session': sessionToken },

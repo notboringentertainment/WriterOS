@@ -16,6 +16,16 @@ export function normalizeTrustScreen(buffer: string): string {
   return buffer.replace(/\x1b\[\d*[GC]/g, ' ').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
 }
 
+/** Which trust option the cursor is on, judged from the latest redraw; null when no cursor line is visible yet. */
+export function trustCursor(buffer: string): 'yes' | 'no' | null {
+  const screen = normalizeTrustScreen(buffer)
+  const yes = screen.search(/❯\s*Yes, I trust this folder(?![\s\S]*❯)/)
+  const no = screen.search(/❯\s*No, exit(?![\s\S]*❯)/)
+  if (yes >= 0) return 'yes'
+  if (no >= 0) return 'no'
+  return null
+}
+
 export function detectTrustScreen(buffer: string): boolean {
   const normalized = normalizeTrustScreen(buffer)
   return /trust (?:this|the) (?:folder|directory)|Yes, I trust this folder|Quick safety check:[\s\S]*project you created or one you trust/i.test(normalized)
@@ -245,6 +255,22 @@ export class MorganSessions {
       void this.stopSession(projectId, s)
     }, this.deps.startTimeoutMs ?? 10000)
     let waitingForTrustFolder = false;
+    // After the writer allows the folder: Enter is pressed only once the screen shows the cursor on
+    // "Yes, I trust this folder". An early Down can be dropped while the menu starts, and Enter on
+    // "No, exit" ends the session.
+    let confirmingTrust: { screen: string; downs: number; timer: ReturnType<typeof setInterval> | null } | null = null;
+    const confirmTrust = () => {
+      if (!confirmingTrust) return;
+      if (confirmingTrust.timer) clearInterval(confirmingTrust.timer);
+      confirmingTrust = null;
+      if (s.startTimer) { clearTimeout(s.startTimer); s.startTimer = null; }
+      if (s.hello || s.finishing || s.ending) return;
+      child.write('\r');
+      s.trustBuffer = '';
+      s.trustAsked = false;
+      s.startTimer = setTimeout(() => { s.ending ??= 'start-failed'; void this.stopSession(projectId, s) }, this.deps.startTimeoutMs ?? 10000);
+    };
+    const MAX_TRUST_DOWNS = 6;
     const decideTrust = (waitForFolder = true) => {
       if (s.hello || s.trustAsked || s.finishing || s.ending) return;
       if (!detectTrustScreen(s.trustBuffer)) return;
@@ -276,15 +302,25 @@ export class MorganSessions {
         : 'Claude Code is asking to trust a folder. WriterOS could not identify which folder.', input: JSON.stringify({ folder }) };
       const resolveTrust = (answer: PermissionAnswer) => {
         if (answer.allow) {
+          if (s.startTimer) { clearTimeout(s.startTimer); s.startTimer = null; }
+          confirmingTrust = { screen: s.trustBuffer, downs: 1, timer: null };
           child.write('\x1b[B');
-          s.startTimer = setTimeout(() => {
-            s.startTimer = null;
-            if (s.hello || s.finishing || s.ending) return;
-            child.write('\r');
-            s.trustBuffer = '';
-            s.trustAsked = false;
-            s.startTimer = setTimeout(() => { s.ending ??= 'start-failed'; void this.stopSession(projectId, s) }, this.deps.startTimeoutMs ?? 10000);
-          }, 300);
+          confirmingTrust.timer = setInterval(() => {
+            const pending = confirmingTrust;
+            if (!pending) return;
+            if (s.finishing || s.ending) { if (pending.timer) clearInterval(pending.timer); confirmingTrust = null; return; }
+            if (trustCursor(pending.screen) === 'yes') { confirmTrust(); return; }
+            if (pending.downs >= MAX_TRUST_DOWNS) {
+              if (pending.timer) clearInterval(pending.timer);
+              confirmingTrust = null;
+              s.endMessage = "Morgan couldn't get past Claude Code's folder question. Start Morgan again.";
+              s.ending ??= 'start-failed';
+              void this.stopSession(projectId, s);
+              return;
+            }
+            // Still on "No, exit" (or not drawn yet): the Down was dropped, so send it again.
+            if (trustCursor(pending.screen) !== 'yes') { pending.downs += 1; child.write('\x1b[B'); }
+          }, 500);
         } else {
           s.endMessage = 'Morgan needs your OK to work in this folder.';
           s.ending ??= 'stopped';
@@ -296,6 +332,11 @@ export class MorganSessions {
       emit({ type: 'approval', card });
     };
     child.onData(data => {
+      if (confirmingTrust) {
+        confirmingTrust.screen = (confirmingTrust.screen + data).slice(-8192);
+        if (trustCursor(confirmingTrust.screen) === 'yes') confirmTrust();
+        return;
+      }
       if (s.hello || s.trustAsked || s.finishing || s.ending) return;
       s.trustBuffer = (s.trustBuffer + data).slice(-8192);
       decideTrust();
