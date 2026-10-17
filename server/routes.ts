@@ -1,4 +1,6 @@
 import { registerBeatSheetRoutes } from './projectLibrary/beatSheetRoutes';
+import { defaultStoryDriveSearchRoot, registerStoryDriveFolderRoutes } from './projectLibrary/storyDriveFolderRoutes';
+import { importWayfinderCanon } from './projectMemory/importCanon';
 import { registerLookbookRoutes } from './lookbook/lookbookRoutes';
 import { registerLookRoutes } from './looks/lookRoutes';
 import { LookSessionContextSchema } from '../shared/looks';
@@ -1082,6 +1084,12 @@ export async function registerRoutes(app: Express, options: RegisterRoutesOption
     morganHost = createMorganHost({ ...projectLibraryConfig, rootPath: projectLibraryConfig.rootPath }, projectLibraryStore, process.env);
     registerMorganRoutes(app, projectLibraryConfig, morganHost.sessions);
   }
+  const morganSessions = morganHost?.sessions ?? null;
+  registerStoryDriveFolderRoutes(app, projectLibraryConfig, projectLibraryStore, {
+    searchRoot: defaultStoryDriveSearchRoot(process.env),
+    importCanon: importWayfinderCanon,
+    isMorganOpen: projectId => morganSessions?.has(projectId) ?? false,
+  });
 
   // Writers' Room runtime (Phase 1 spike). Routes 503 and the scheduler stays
   // off when Supabase env vars are absent — the rest of WriterOS is unaffected.

@@ -68,6 +68,39 @@ export async function writeStoryDriveLink(
   }
 }
 
+export type StoryDriveClaimConflict = 'project-linked' | 'folder-taken'
+
+/**
+ * Link a project only if it has no link yet and `isTaken` finds no other owner,
+ * both checked under the same registry lock as the write. `beforeWrite` runs
+ * last inside the lock (path identity checks).
+ */
+export async function claimStoryDriveLink(
+  projectsRoot: string,
+  projectId: string,
+  link: StoryDriveLink,
+  checks: {
+    isTaken(registry: StoryDriveLinks): Promise<boolean>
+    beforeWrite?(): Promise<void>
+  },
+): Promise<{ ok: true } | { ok: false; conflict: StoryDriveClaimConflict }> {
+  const validId = z.string().regex(WRITEROS_PROJECT_ID_PATTERN).parse(projectId)
+  const validLink = StoryDriveLinkSchema.parse(link)
+  const lock = await acquirePackageWriteLock({ workspaceRoot: projectsRoot, projectId: REGISTRY_LOCK_ID })
+  try {
+    const registry = await readStoryDriveLinks(projectsRoot)
+    if (registry.links[validId]) return { ok: false, conflict: 'project-linked' }
+    if (await checks.isTaken(registry)) return { ok: false, conflict: 'folder-taken' }
+    await checks.beforeWrite?.()
+    const next: StoryDriveLinks = { version: 1, links: { ...registry.links, [validId]: validLink } }
+    await mkdir(projectsRoot, { recursive: true })
+    await atomicReplace(path.join(projectsRoot, STORY_DRIVE_LINKS_FILE), `${JSON.stringify(next, null, 2)}\n`)
+    return { ok: true }
+  } finally {
+    await lock.release()
+  }
+}
+
 async function atomicReplace(filePath: string, contents: string): Promise<void> {
   const temporaryPath = path.join(
     path.dirname(filePath),

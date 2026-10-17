@@ -57,6 +57,36 @@ export const BeatSheetRefreshResponseSchema = z.object({
 })
 export type BeatSheetRefreshResponse = z.infer<typeof BeatSheetRefreshResponseSchema>
 
+export const StoryDriveFolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  linkedTo: z.object({ projectId: z.string(), title: z.string() }).nullable(),
+})
+export type StoryDriveFolder = z.infer<typeof StoryDriveFolderSchema>
+
+export const StoryDriveFoldersResponseSchema = z.object({
+  searchRoot: z.string(),
+  folders: z.array(StoryDriveFolderSchema),
+})
+export type StoryDriveFoldersResponse = z.infer<typeof StoryDriveFoldersResponseSchema>
+
+export const StoryDriveCanonResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('imported') }),
+  z.object({ status: z.literal('failed'), message: z.string() }),
+])
+export type StoryDriveCanonResult = z.infer<typeof StoryDriveCanonResultSchema>
+
+export const StoryDriveLinkResponseSchema = z.object({
+  link: z.object({ folderName: z.string() }),
+  beatSheet: BeatSheetSyncStatusSchema,
+  outline: AuthoredDocumentStateSchema(OutlineDocumentContentSchema).nullable(),
+  canon: StoryDriveCanonResultSchema,
+  morganOpen: z.boolean(),
+})
+export type StoryDriveLinkResponse = z.infer<typeof StoryDriveLinkResponseSchema>
+
+export const StoryDriveImportCanonResponseSchema = z.object({ canon: StoryDriveCanonResultSchema })
+
 export interface ProjectLibraryReadResponse {
   result: ProjectPackageReadResult
   /** Absent when talking to a server that predates the Beat Sheet. */

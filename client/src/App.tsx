@@ -40,6 +40,7 @@ import type { MorganPageRequest } from './components/shell/MorganLivePanel'
 import type { PageName } from '@shared/pages'
 import { requestPage, StalePageError } from './lib/pagesApi'
 import { OutlineTab } from './components/writing/OutlineTab'
+import type { StoryDriveLinking } from './components/writing/outline/StoryDriveLinkPicker'
 import { StoryBibleTab } from './components/writing/StoryBibleTab'
 import { WhatsStandingTab } from './components/writing/whatsStanding/WhatsStandingTab'
 import { WritersRoom } from './components/writing/WritersRoom'
@@ -651,6 +652,24 @@ export default function App() {
     if (outline) project.replaceOutlineDocument(outline)
     setBeatSheetStatus({ projectId: requestedProjectId, status: beatSheet })
   }, [activeFolderProjectId, project, projectFolder.beatSheet])
+
+  const storyDriveLinking = useMemo<StoryDriveLinking | undefined>(() => {
+    const client = projectFolder.storyDrive
+    if (!client || !activeFolderProjectId) return undefined
+    const requestedProjectId = activeFolderProjectId
+    return {
+      folders: () => client.folders(),
+      link: async (folder: string) => {
+        const result = await client.link(requestedProjectId, folder)
+        // The writer may have switched projects while linking.
+        if (activeFolderProjectIdRef.current !== requestedProjectId) return null
+        if (result.outline) project.replaceOutlineDocument(result.outline)
+        setBeatSheetStatus({ projectId: requestedProjectId, status: result.beatSheet })
+        return { folderName: result.link.folderName, canon: result.canon, morganOpen: result.morganOpen }
+      },
+      importCanon: () => client.importCanon(requestedProjectId),
+    }
+  }, [activeFolderProjectId, project, projectFolder.storyDrive])
 
   const handleRequestLookbookQuestions = useCallback(async (beatKey: string) => {
     const client = projectFolder.lookbook
@@ -1318,6 +1337,7 @@ export default function App() {
             lookbook={project.state.documents.lookbook}
             onLookbookChange={project.setLookbook}
             onRequestLookbookQuestions={projectFolder.lookbook && activeFolderProjectId ? handleRequestLookbookQuestions : undefined}
+            storyDriveLinking={storyDriveLinking}
           />
         )
       case 'story-bible':
