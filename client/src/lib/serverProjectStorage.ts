@@ -11,6 +11,7 @@ import type {
 import { postLookbookQuestions } from './lookbookClient'
 import { getLookExport, postLookPromote } from './looksClient'
 import { getBeatSheetStatus, postBeatSheetRefresh } from './beatSheetClient'
+import { getStoryDriveFolders, postStoryDriveImportCanon, postStoryDriveLink } from './storyDriveLinkClient'
 import type { StoredProject } from './projectLibrary'
 import type { MorganScreenEvent } from '@shared/morganLive'
 import type { MorganApi, ProjectStorageAdapter } from './projectStorage'
@@ -260,6 +261,11 @@ export async function bootstrapServerProjectStorage(
     beatSheet: {
       refresh: projectId => postBeatSheetRefresh(projectId, sessionHeaders['X-WriterOS-Session']),
       status: projectId => getBeatSheetStatus(projectId, sessionHeaders['X-WriterOS-Session']),
+    },
+    storyDrive: {
+      folders: () => getStoryDriveFolders(fetchProjectLibrary),
+      link: (projectId, folder) => postStoryDriveLink(projectId, folder, fetchProjectLibrary),
+      importCanon: projectId => postStoryDriveImportCanon(projectId, fetchProjectLibrary),
     },
     lookbook: {
       questions: (projectId, beatKey) =>
