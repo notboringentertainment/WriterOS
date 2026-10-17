@@ -74,6 +74,8 @@ export function registerProjectLibraryRoutes(
     return path.join(config.rootPath, '.writeros-writer', 'voice-profile.json')
   }
   app.get('/api/project-library/voice-profile', requireSameOrigin, requireSession, async (_req, res) => {
+    // Registered before the library-wide no-store below, so it sets its own.
+    res.setHeader('Cache-Control', 'no-store')
     try {
       const filename = voicePath()
       let profile: unknown = null
@@ -88,11 +90,24 @@ export function registerProjectLibraryRoutes(
     } catch (error) { return routeError(res, error) }
   })
   app.put('/api/project-library/voice-profile', requireSameOrigin, requireSession, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
     try {
       const filename = voicePath()
       const profile: unknown = req.body?.profile
       if (profile !== null && !isVoiceProfileDocument(profile)) {
         return res.status(400).json({ message: 'Voice profile is incomplete.' })
+      }
+      // A second tab's late save must not replace a newer profile or undo a later clear.
+      if (profile !== null) {
+        let stored: unknown = null
+        try { stored = JSON.parse(await readFile(filename, 'utf8')) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+        const storedAt = isVoiceProfileDocument(stored) ? stored.updatedAt
+          : stored && typeof stored === 'object' && 'clearedAt' in stored && typeof stored.clearedAt === 'string' ? stored.clearedAt
+          : null
+        if (storedAt !== null && Date.parse(profile.updatedAt) < Date.parse(storedAt)) {
+          return res.status(409).json({ error: 'stale', message: 'A newer voice profile is already saved.' })
+        }
       }
       await mkdir(path.dirname(filename), { recursive: true })
       const temporary = filename + '.' + randomUUID() + '.tmp'
