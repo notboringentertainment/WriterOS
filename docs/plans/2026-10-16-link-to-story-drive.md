@@ -43,11 +43,12 @@ Ownership compares effective roots (R1 #3): an existing registry entry `R` is no
    - Project already linked → 409 "already linked" (changing a link stays a terminal job, see Out of scope).
    - Folder already linked to another project → 409.
    - Writes via existing `writeStoryDriveLink(rootPath, projectId, { root })` (lock + atomic write already there). No `beatSheet` field: `locateDecision` auto-discovers the declared beat sheet.
+   - Then syncs the beat sheet itself (`syncBeatSheet`, write) and keeps its status and outline **before** the import, because the import's own sync would otherwise consume the update and a later refresh would return `unchanged` with no outline (R2 #1).
    - Then runs the same canon import Morgan's after-turn hook runs (`import --source wayfinder --project <pkg> --from <root> --apply`, moved from `morganRoutes.ts` into a shared helper both use). Import failure does not undo the link.
-   - Returns `{ link: { folderName }, canon: 'imported' | { error: string }, morganOpen: boolean }` (`morganOpen` = a live Morgan session for this project).
+   - Returns `{ link: { folderName }, beatSheet: <status>, outline: <outline or null>, canon: 'imported' | { error: string }, morganOpen: boolean }` (`morganOpen` = a live Morgan session for this project).
 3. `POST /api/project-library/projects/:projectId/story-drive-link/import-canon` — reruns only the import for an already-linked project (the Try again button). 409 if not linked.
 
-   The client then calls the existing `POST .../beat-sheet/refresh` and renders its status (updated / no-beat-sheet / ambiguous / malformed / unavailable) through the existing Beat Sheet status line.
+   The client applies `beatSheet` + `outline` from the link response through the same path the refresh handler uses (no second refresh call), and renders the status (updated / no-beat-sheet / ambiguous / malformed / unavailable) through the existing Beat Sheet status line.
 
 The link check for "already linked" and the write happen under the registry lock to avoid two tabs double-linking. (Today `writeStoryDriveLink` reads inside the lock; add a `refuseIfLinked` option or a new `linkStoryDriveFolderOnce` helper that checks both conditions inside the same lock.)
 
@@ -59,7 +60,7 @@ Existing behavior once linked: the Beat Sheet syncs on project open; appeals hav
 
 - Server storage adapter (`projectStorage.ts`) gains `listStoryDriveFolders`, `linkStoryDrive`, `importStoryDriveCanon`, sending the session header like the beat-sheet calls. `App.tsx` passes an optional `storyDriveLinking` capability to `OutlineTab` only when the active project is a server-library project (R1 #6).
 - `OutlineTab.tsx`: show the button + picker (`StoryDriveLinkPicker`) only when that capability is present **and** `beatSheetStatus?.kind === 'not-linked'`. Reuse existing button styles from the file.
-- `isLinked` must flip after linking without a page reload: after the POST succeeds, call the existing beat-sheet refresh handler, which updates status and outline.
+- `isLinked` must flip after linking without a page reload: the link response's status and outline are applied the same way a refresh result is.
 - Name match for preselect: lowercase, strip non-alphanumerics, compare WriterOS project title to folder name. Exact normalized match only; otherwise nothing preselected.
 
 ## Out of scope (and who owns it)
@@ -74,7 +75,7 @@ Existing behavior once linked: the Beat Sheet syncs on project open; appeals hav
 ## Tests
 
 - `tests/server/storyDriveLinks.test.ts`: link-once helper refuses already-linked project and already-taken folder; concurrent calls produce one link.
-- New `tests/server/storyDriveFolderRoutes.test.ts`: discovery (valid, hidden, `_`-prefixed, symlinked search-root ancestor, symlinked parent, symlinked `wayfinder`, MAP-only rejected), `linkedTo` marking with registry roots in both `X` and `X/wayfinder` form, unknown project id → 404, canon import runs once on link (stubbed runner) and its failure keeps the link, import-canon retry route, `morganOpen` flag, POST rejects unknown id / path-like id (`../x`, absolute), 409 cases, origin/session guards.
+- New `tests/server/storyDriveFolderRoutes.test.ts`: discovery (valid, hidden, `_`-prefixed, symlinked search-root ancestor, symlinked parent, symlinked `wayfinder`, MAP-only rejected), `linkedTo` marking with registry roots in both `X` and `X/wayfinder` form, unknown project id → 404, canon import runs once on link (stubbed runner) and its failure keeps the link, one test with the real import after a real sync proving the response still carries the beats (R2 #1), a `tickets` symlink beside a valid `resolved/` is not offered, import-canon retry route, `morganOpen` flag, POST rejects unknown id / path-like id (`../x`, absolute), 409 cases, origin/session guards.
 - `tests/components/OutlineTab.test.tsx`: no button without the capability (browser / local-folder) or when status is null; unlinked server project shows button; picker lists folders with preselect; disabled taken folder; Link → POST then refresh; error message shown; linked project shows no button.
 - No protected-test edits expected.
 
