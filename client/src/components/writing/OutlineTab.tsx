@@ -11,6 +11,7 @@ import { ProjectFormatSelector } from '../shared/ProjectFormatSelector'
 import type { BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
 import { BeatSheetView } from './outline/BeatSheetView'
 import { BeatSheetStatusLine } from './outline/BeatSheetStatusLine'
+import { StoryDriveLinkNotice, StoryDriveLinkPicker, type StoryDriveLinking, type StoryDriveLinkResult } from './outline/StoryDriveLinkPicker'
 import type { LookbookDocument } from '@shared/lookbook'
 import { applyLookbookAsk, dismissLookbookQuestion, removeLookbookBeat, setLookbookAnswer } from '../../lib/lookbookEdits'
 import { useBoundProjectScopeKey } from '../../lib/useProjectRequestGeneration'
@@ -33,6 +34,8 @@ interface OutlineTabProps {
   onLookbookChange?: (updater: (doc: LookbookDocument) => LookbookDocument) => void
   /** Asks Zoe about one beat; only present for server-linked projects. Resolves null when the result is stale (project switched) and must be ignored. */
   onRequestLookbookQuestions?: (beatKey: string) => Promise<{ questions: Array<{ prompt: string }>; nothingToSee: boolean } | null>
+  /** Present only for server-library projects, which can be linked from here. */
+  storyDriveLinking?: StoryDriveLinking
 }
 
 export function OutlineTab({
@@ -51,10 +54,12 @@ export function OutlineTab({
   lookbook,
   onLookbookChange,
   onRequestLookbookQuestions,
+  storyDriveLinking,
 }: OutlineTabProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [changedSince, setChangedSince] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [linkResult, setLinkResult] = useState<StoryDriveLinkResult | null>(null)
   const effectiveProjectScopeKey = useBoundProjectScopeKey(projectId, projectScopeKey)
   const activeFormat = normalizeProjectFormat(projectFormat)
 
@@ -88,6 +93,9 @@ export function OutlineTab({
       .catch(() => undefined)
     return () => { cancelled = true }
   }, [effectiveProjectScopeKey, isLinked])
+
+  // A link notice belongs to the project it was made on.
+  useEffect(() => { setLinkResult(null) }, [effectiveProjectScopeKey])
 
   const handleAskQuestions = useCallback(async (beatKey: string) => {
     if (!onRequestLookbookQuestions) throw new Error('Zoe is not available for this project.')
@@ -128,6 +136,10 @@ export function OutlineTab({
         </div>
       </div>
 
+      {linkResult && storyDriveLinking && (
+        <StoryDriveLinkNotice result={linkResult} onRetryCanon={() => storyDriveLinking.importCanon()} />
+      )}
+
       {(
         document.content.beatSheetSource ? (
           <BeatSheetView
@@ -161,6 +173,13 @@ export function OutlineTab({
                 ? 'No beat sheet yet. Beats appear here once the beat sheet is ratified in Story-drive.'
                 : "No beat sheet yet. Beats come from this project's Story-drive beat sheet once the project is linked."}
             </p>
+            {storyDriveLinking && beatSheetStatus?.kind === 'not-linked' && (
+              <StoryDriveLinkPicker
+                linking={storyDriveLinking}
+                projectTitle={identity.title}
+                onLinked={setLinkResult}
+              />
+            )}
           </>
         )
       )}

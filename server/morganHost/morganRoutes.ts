@@ -1,6 +1,6 @@
 // server/morganHost/morganRoutes.ts
 import type { Express, Request, Response } from 'express'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,7 @@ import { authenticated, sameOrigin } from '../projectLibrary/security'
 import type { ProjectLibraryStore } from '../projectLibrary/store'
 import { readStoryDriveLinks } from '../projectLibrary/storyDriveLinks'
 import { syncBeatSheet } from '../projectMemory/beatSheetSync'
+import { importWayfinderCanon } from '../projectMemory/importCanon'
 import { preflight, realDeps } from './claudeCli'
 import { buildMorganLaunch, defaultReadRoots, morganEnv, morganModel, ISOLATION_ARGS, PERMISSION_MODE, CLAUDE_MEM_DIR } from './launchArgs'
 import { sweepStaleSockets } from './liveChannel'
@@ -207,7 +208,7 @@ export function createMorganHost(
       const { status } = await syncBeatSheet({ workspaceRoot: config.rootPath, packagePath: project.packagePath, projectId, timeoutMs: 5000 })
       if (status.kind !== 'updated') return null
       try {
-        await importCanon(root, project.packagePath, project.storyDriveRoot)
+        await importWayfinderCanon(project.packagePath, project.storyDriveRoot)
         return 'The beat sheet changed, so WriterOS updated the Outline and canon to match.'
       } catch (error) {
         console.error('[morgan] canon import after beat sheet change failed', error)
@@ -221,18 +222,6 @@ export function createMorganHost(
     }),
   })
   return { sessions, killAllNow: () => killOwnedNow(runDir) }
-}
-
-// The same canon import Morgan's instructions describe (`npm run memory -- import --source wayfinder ... --apply`),
-// run by WriterOS itself after a beat sheet change: the writer's instruction to Morgan is the approval.
-function importCanon(root: string, packagePath: string, storyDriveRoot: string): Promise<void> {
-  const args = [path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(root, 'server', 'projectMemory', 'cli.ts'),
-    'import', '--source', 'wayfinder', '--project', packagePath, '--from', storyDriveRoot, '--apply']
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, args, { cwd: root, timeout: 120_000 }, (error, _stdout, stderr) => {
-      if (error) reject(Object.assign(error, { stderr })); else resolve()
-    })
-  })
 }
 
 

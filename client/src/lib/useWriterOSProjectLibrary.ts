@@ -5,6 +5,7 @@ import {
   type ArchiveProjectResult,
   type DuplicateProjectResult,
   type ProjectStorageBeatSheetClient,
+  type ProjectStorageStoryDriveClient,
   type ProjectStorageLookbookClient,
   type ProjectStorageLooksClient,
   type ProjectStorageMorganClient,
@@ -114,6 +115,8 @@ export interface WriterOSProjectLibraryState {
   openProject: (projectId: string) => Promise<WriterOSFolderProjectOpenResult>
   /** Server-backed libraries only: Story-drive beat sheet refresh/status. */
   beatSheet?: ProjectStorageBeatSheetClient | null
+  /** Server-backed libraries only: link a project to its Story-drive folder. */
+  storyDrive?: ProjectStorageStoryDriveClient | null
   lookbook?: ProjectStorageLookbookClient | null
   looks?: ProjectStorageLooksClient | null
   morgan?: ProjectStorageMorganClient | null
@@ -338,6 +341,7 @@ export function useWriterOSProjectLibrary(): WriterOSProjectLibraryState {
     forgetFolder: async () => undefined,
     openProject,
     beatSheet: adapter.beatSheet ?? null,
+    storyDrive: adapter.storyDrive ?? null,
     lookbook: adapter.lookbook ?? null,
     looks: adapter.looks ?? null,
     morgan: adapter.morgan ?? null,

@@ -1,4 +1,10 @@
-import type { BeatSheetRefreshResponse, BeatSheetSyncStatusResponse } from '@shared/projectLibraryApi'
+import type {
+  BeatSheetRefreshResponse,
+  BeatSheetSyncStatusResponse,
+  StoryDriveCanonResult,
+  StoryDriveFoldersResponse,
+  StoryDriveLinkResponse,
+} from '@shared/projectLibraryApi'
 import type { MorganScreenEvent } from '@shared/morganLive'
 import type { LookbookQuestionsResult } from './lookbookClient'
 import type { LookExportResponse, LookPromoteRequest } from '@shared/looks'
@@ -126,6 +132,12 @@ export interface ProjectStorageBeatSheetClient {
   status(projectId: string): Promise<BeatSheetSyncStatusResponse>
 }
 
+export interface ProjectStorageStoryDriveClient {
+  folders(): Promise<StoryDriveFoldersResponse>
+  link(projectId: string, folder: string): Promise<StoryDriveLinkResponse>
+  importCanon(projectId: string): Promise<StoryDriveCanonResult>
+}
+
 export interface ProjectStorageLookbookClient {
   questions(projectId: string, beatKey: string): Promise<LookbookQuestionsResult>
 }
@@ -155,6 +167,7 @@ export interface ProjectStorageAdapter<TRef extends ProjectStorageProjectRef = P
   readProject(ref: TRef): Promise<ProjectStorageReadResult>
   /** Present only on the server adapter, which holds the session token. */
   beatSheet?: ProjectStorageBeatSheetClient
+  storyDrive?: ProjectStorageStoryDriveClient
   lookbook?: ProjectStorageLookbookClient
   looks?: ProjectStorageLooksClient
   morgan?: ProjectStorageMorganClient
