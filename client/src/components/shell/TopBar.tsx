@@ -70,6 +70,8 @@ export function TopBar({
   }, [canonOpen])
   const [saveFailed, setSaveFailed] = useState(false)
   const [saving, setSaving] = useState(false)
+  // "Saved 3:41" belongs to the project it was saved on.
+  useEffect(() => { setSavedAt(null); setSaveFailed(false) }, [activeProjectId])
   const cancelingTitleEditRef = useRef(false)
   const displayTitle = getDisplayProjectTitle(projectTitle)
   const canSwitchProjects = projectSummaries.length > 1 && activeProjectId && onProjectChange

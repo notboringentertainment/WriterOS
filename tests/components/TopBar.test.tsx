@@ -117,3 +117,15 @@ describe('TopBar', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
+
+describe('TopBar save status', () => {
+  it('drops "Saved …" when another project opens', async () => {
+    const props = { ...defaultProps, onSaveProject: vi.fn(async () => true) }
+    const { rerender } = render(<TopBar {...props} activeProjectId="a" />)
+    fireEvent.click(screen.getByRole('button', { name: /project actions/i }))
+    fireEvent.click(screen.getByText('Save'))
+    expect(await screen.findByText(/^Saved /)).toBeInTheDocument()
+    rerender(<TopBar {...props} activeProjectId="b" />)
+    expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument()
+  })
+})
