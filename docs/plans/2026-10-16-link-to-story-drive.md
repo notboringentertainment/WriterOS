@@ -42,10 +42,10 @@ Ownership compares effective roots (R1 #3): an existing registry entry `R` is no
    - Re-runs discovery and resolves `folder` against it; anything not in the list → 400. The browser can never name an arbitrary path.
    - Project already linked → 409 "already linked" (changing a link stays a terminal job, see Out of scope).
    - Folder already linked to another project → 409.
-   - Writes via existing `writeStoryDriveLink(rootPath, projectId, { root })` (lock + atomic write already there). No `beatSheet` field: `locateDecision` auto-discovers the declared beat sheet.
+   - Writes via `claimStoryDriveLink(rootPath, projectId, { root }, checks)`: the already-linked and folder-taken checks and the path verify run under the same registry lock as the atomic write. No `beatSheet` field: `locateDecision` auto-discovers the declared beat sheet.
    - Then syncs the beat sheet itself (`syncBeatSheet`, write) and keeps its status and outline **before** the import, because the import's own sync would otherwise consume the update and a later refresh would return `unchanged` with no outline (R2 #1).
    - Then runs the same canon import Morgan's after-turn hook runs (`import --source wayfinder --project <pkg> --from <root> --apply`, moved from `morganRoutes.ts` into a shared helper both use). Import failure does not undo the link.
-   - Returns `{ link: { folderName }, beatSheet: <status>, outline: <outline or null>, canon: 'imported' | { error: string }, morganOpen: boolean }` (`morganOpen` = a live Morgan session for this project).
+   - Returns `{ link: { folderName }, beatSheet: <status>, outline: <outline or null>, canon: { status: 'imported' } | { status: 'failed', message: string }, morganOpen: boolean }` (`morganOpen` = a live Morgan session for this project).
 3. `POST /api/project-library/projects/:projectId/story-drive-link/import-canon` — reruns only the import for an already-linked project (the Try again button). 409 if not linked.
 
    The client applies `beatSheet` + `outline` from the link response through the same path the refresh handler uses (no second refresh call), and renders the status (updated / no-beat-sheet / ambiguous / malformed / unavailable) through the existing Beat Sheet status line.

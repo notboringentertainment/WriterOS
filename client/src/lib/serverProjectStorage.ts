@@ -263,9 +263,9 @@ export async function bootstrapServerProjectStorage(
       status: projectId => getBeatSheetStatus(projectId, sessionHeaders['X-WriterOS-Session']),
     },
     storyDrive: {
-      folders: () => getStoryDriveFolders(sessionHeaders['X-WriterOS-Session']),
-      link: (projectId, folder) => postStoryDriveLink(projectId, folder, sessionHeaders['X-WriterOS-Session']),
-      importCanon: projectId => postStoryDriveImportCanon(projectId, sessionHeaders['X-WriterOS-Session']),
+      folders: () => getStoryDriveFolders(fetchProjectLibrary),
+      link: (projectId, folder) => postStoryDriveLink(projectId, folder, fetchProjectLibrary),
+      importCanon: projectId => postStoryDriveImportCanon(projectId, fetchProjectLibrary),
     },
     lookbook: {
       questions: (projectId, beatKey) =>

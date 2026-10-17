@@ -7,6 +7,9 @@ import {
   type StoryDriveLinkResponse,
 } from '@shared/projectLibraryApi'
 
+/** The adapter's fetch: it adds the session header and refreshes the session once after a 401. */
+export type LibraryFetch = (input: string, init?: RequestInit) => Promise<Response>
+
 const projectPath = (projectId: string, leaf: string) =>
   `/api/project-library/projects/${encodeURIComponent(projectId)}/${leaf}`
 
@@ -21,10 +24,10 @@ async function failure(res: Response, fallback: string): Promise<Error> {
   return new Error(fallback)
 }
 
-export async function getStoryDriveFolders(sessionToken: string): Promise<StoryDriveFoldersResponse> {
-  const res = await fetch('/api/project-library/story-drive/folders', {
+export async function getStoryDriveFolders(send: LibraryFetch): Promise<StoryDriveFoldersResponse> {
+  const res = await send('/api/project-library/story-drive/folders', {
     credentials: 'same-origin',
-    headers: { Accept: 'application/json', 'X-WriterOS-Session': sessionToken },
+    headers: { Accept: 'application/json' },
   })
   if (!res.ok) throw await failure(res, "WriterOS couldn't list the Story-drive folders.")
   return StoryDriveFoldersResponseSchema.parse(await res.json())
@@ -33,12 +36,12 @@ export async function getStoryDriveFolders(sessionToken: string): Promise<StoryD
 export async function postStoryDriveLink(
   projectId: string,
   folder: string,
-  sessionToken: string,
+  send: LibraryFetch,
 ): Promise<StoryDriveLinkResponse> {
-  const res = await fetch(projectPath(projectId, 'story-drive-link'), {
+  const res = await send(projectPath(projectId, 'story-drive-link'), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-WriterOS-Session': sessionToken },
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({ folder }),
   })
   if (!res.ok) throw await failure(res, "WriterOS couldn't link the Story-drive folder.")
@@ -47,12 +50,12 @@ export async function postStoryDriveLink(
 
 export async function postStoryDriveImportCanon(
   projectId: string,
-  sessionToken: string,
+  send: LibraryFetch,
 ): Promise<StoryDriveCanonResult> {
-  const res = await fetch(projectPath(projectId, 'story-drive-link/import-canon'), {
+  const res = await send(projectPath(projectId, 'story-drive-link/import-canon'), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { Accept: 'application/json', 'X-WriterOS-Session': sessionToken },
+    headers: { Accept: 'application/json' },
   })
   if (!res.ok) throw await failure(res, "WriterOS couldn't bring in the Story-drive canon.")
   return StoryDriveImportCanonResponseSchema.parse(await res.json()).canon
