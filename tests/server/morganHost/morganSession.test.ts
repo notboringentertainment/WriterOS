@@ -129,7 +129,23 @@ describe('MorganSessions', () => {
     await until(seen, e => e.type === 'hello');
     await until(seen, e => text(e).includes('Ready.'));
     expect(writes.map(w => w.data)).toEqual(['\x1b[B', '\r']);
-    expect(writes[1].at - writes[0].at).toBeGreaterThanOrEqual(290);
+  });
+  it('sends Down again when the first one is dropped, and presses Enter only on Yes', async () => {
+    const writes: string[] = [];
+    const spawnChild: SpawnChild = (_file, args, opts) => {
+      const child = spawnWithPty(process.execPath, [fake, ...args], opts);
+      return { ...child, write: data => { writes.push(data); child.write(data); } };
+    };
+    const { sessions } = make('trust', { startTimeoutMs: 6000, spawnChild }, { FAKE_TRUST_READY_MS: '3000' }); current = sessions;
+    await sessions.start('p1');
+    const seen: MorganScreenEvent[] = [];
+    sessions.subscribe('p1', e => seen.push(e));
+    await until(seen, e => e.type === 'approval' && e.card.requestId === 'folder-trust');
+    sessions.answerApproval('p1', 'folder-trust', { allow: true });
+    await until(seen, e => text(e).includes('Ready.'));
+    expect(writes.filter(w => w === '\x1b[B').length).toBeGreaterThan(1);
+    expect(writes.at(-1)).toBe('\r');
+    expect(writes.filter(w => w === '\r')).toHaveLength(1);
   });
   it('denying folder trust ends the child and closes the socket', async () => {
     const { sessions, pids, runDir } = make('trust'); current = sessions;
