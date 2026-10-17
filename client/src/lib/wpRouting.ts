@@ -1,6 +1,7 @@
 import type { ProjectState } from './projectState'
 import { getProjectContextTitle } from './projectIdentity'
 import { normalizeProjectFormat, type ProjectFormat } from '@shared/projectFormat'
+import { visibleOutlineUnits } from './outlineDeck'
 import type { SynopsisDocumentContent, SynopsisSeriesContent, TreatmentDocumentContent } from '@shared/documents'
 import type { SurfaceAwareness } from '@shared/surfaceAwareness'
 import type { WorkspaceLocation } from '@shared/workspaceLocation'
@@ -252,7 +253,8 @@ function documentOutlineBeats(state: ProjectState): ProjectContext['beats'] {
   const content = normalizeOutlineContent(state.documents.outline.content)
   if (!content.beatSheetSource) return []
   const beats: ProjectContext['beats'] = []
-  for (const unit of [...content.units].sort((a, b) => a.number - b.number)) {
+  // Same beats the left rail shows: a series outline's leftover blank feature scaffold stays out.
+  for (const unit of [...visibleOutlineUnits(content, normalizeProjectFormat(state.meta.format))].sort((a, b) => a.number - b.number)) {
     const notes = labeled([
       ['What happens', unit.whatHappens],
       ['Conflict', unit.conflict],

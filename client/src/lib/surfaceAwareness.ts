@@ -1,4 +1,5 @@
 import { normalizeProjectFormat } from '@shared/projectFormat'
+import { visibleOutlineUnits } from './outlineDeck'
 import type { SurfaceAnswer, SurfaceAwareness, SurfaceQuestion } from '@shared/surfaceAwareness'
 import type { ProjectState } from './projectState'
 import type { ActiveTab } from './wpRouting'
@@ -13,7 +14,7 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
       // are no longer on the page, so they are no longer offered as questions.
       const content = state.documents.outline.content
       if (!content.beatSheetSource) return { kind: 'none' }
-      const questions: SurfaceQuestion[] = [...content.units].sort((x, y) => x.number - y.number).map(unit => ({
+      const questions: SurfaceQuestion[] = [...visibleOutlineUnits(content, format)].sort((x, y) => x.number - y.number).map(unit => ({
         id: unit.id,
         label: `${unit.number}. ${unit.title}`,
         helper: unit.actOrSequence,

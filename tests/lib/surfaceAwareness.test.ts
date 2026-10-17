@@ -47,6 +47,22 @@ describe('buildSurfaceAwareness', () => {
     expect(sa.questions.some(q => q.label === 'Who are we following?')).toBe(false)
   })
 
+  it('a linked series Beat Sheet leaves out a blank leftover feature scaffold beat, like the left rail', () => {
+    const state = featureState()
+    state.meta.format = 'series'
+    state.documents.outline.content = {
+      ...state.documents.outline.content,
+      units: [
+        createOutlineUnit('feature.openingNormalWorld'),
+        { ...createOutlineUnit('b1'), number: 1, title: 'Cold open', whatHappens: 'A ferry docks.' },
+      ],
+      beatSheetSource: { ticket: 'T-1', sourceHash: 'h', syncedAt: '2026-10-16T00:00:00.000Z', beatCount: 1, label: null },
+    }
+    const sa = buildSurfaceAwareness('outline', state)
+    if (sa.kind !== 'intake') throw new Error('expected intake')
+    expect(sa.questions.map(q => q.label)).toEqual(['1. Cold open'])
+  })
+
   it('Pages have no question decks', () => {
     expect(buildSurfaceAwareness('synopsis', featureState())).toEqual({ kind: 'none' })
     expect(buildSurfaceAwareness('treatment', featureState())).toEqual({ kind: 'none' })
