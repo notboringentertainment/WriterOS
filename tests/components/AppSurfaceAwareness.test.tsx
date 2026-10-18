@@ -101,7 +101,7 @@ describe('App surface awareness — live request path', () => {
   it.each([
     ['Synopsis', 'synopsis', undefined],
     ['Treatment', 'treatment', undefined],
-    ['Story Bible', 'story-bible', 'The story'],
+    ['Story Facts', 'story-bible', 'The story'],
   ])('left-rail Writing Partner on %s sends that surface question deck', async (tabLabel, surface, firstQuestion) => {
     const fetchMock = mockFetchCapturing()
     render(<App />)

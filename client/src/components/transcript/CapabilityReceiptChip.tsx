@@ -20,7 +20,7 @@ const STATUS_LABELS = {
 const CONTEXT_LABELS = {
   logline: 'Logline',
   synopsis: 'Synopsis',
-  storyBible: 'Story Bible',
+  storyBible: 'Story Facts',
   characters: 'Characters',
   scriptExcerpt: 'Script excerpt',
 } as const
@@ -28,7 +28,7 @@ const CONTEXT_LABELS = {
 const MISSING_LABELS = {
   logline: 'Logline',
   synopsis: 'Synopsis',
-  storyBible: 'Story Bible',
+  storyBible: 'Story Facts',
   characters: 'Characters',
 } as const
 

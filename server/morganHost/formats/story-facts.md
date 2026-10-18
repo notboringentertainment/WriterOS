@@ -1,4 +1,4 @@
-# Story Bible
+# Story Facts
 
 From the writer's story-bible template. Preserve the project's creative rules and continuity.
 

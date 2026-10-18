@@ -42,7 +42,7 @@ export function validateProposal(p: PageProposal, current: CurrentPages = {}): s
   if (['synopsis', 'treatment'].includes(String(p?.surface))) return 'This page is now written by Morgan'
   if (typeof p?.summary !== 'string' || p.summary.trim() === '') return 'summary: say in one line what changes and why'
   if (p.surface === 'page') {
-    if (!['synopsis', 'treatment', 'outline'].includes(p.page)) return 'page: choose synopsis, treatment or outline'
+    if (!['synopsis', 'treatment', 'outline', 'bible'].includes(p.page)) return 'page: choose synopsis, treatment, outline or bible'
     if (!Number.isInteger(p.baseRevision) || p.baseRevision < 0) return 'baseRevision: send the revision you read'
     return typeof p.markdown === 'string' ? null : 'markdown: send the whole page as prose'
   }

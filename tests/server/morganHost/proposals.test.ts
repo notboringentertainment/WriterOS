@@ -5,7 +5,7 @@ import { createEmptyOutlineContent } from '../../../shared/documents' // or the 
 
 describe('validateProposal', () => {
   it('accepts prose pages and refuses retired structured targets', () => {
-    expect(validateProposal({ surface: 'page', page: 'synopsis', baseRevision: 0, markdown: 'A courier chooses to stay.', summary: 'Write the synopsis' })).toBeNull()
+    expect(validateProposal({ surface: 'page', page: 'bible', baseRevision: 0, markdown: 'A courier chooses to stay.', summary: 'Write the synopsis' })).toBeNull()
     expect(validateProposal({ surface: 'page', page: 'unknown', baseRevision: 0, markdown: '', summary: 'Write' } as never)).toMatch(/page/)
     expect(validateProposal({ surface: 'page', page: 'outline', baseRevision: -1, markdown: '', summary: 'Write' })).toMatch(/baseRevision/)
     for (const surface of ['synopsis', 'treatment']) {

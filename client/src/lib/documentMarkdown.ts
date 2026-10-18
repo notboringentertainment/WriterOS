@@ -156,7 +156,7 @@ export function storyBibleToMarkdown(doc: AuthoredDocumentState<StoryBibleDocume
   })
 
   return lines(
-    `# Story Bible${titleSuffix}`,
+    `# Story Facts${titleSuffix}`,
     section('## Premise', content.premiseAndWorld.premise),
     section('## World Rules', content.premiseAndWorld.worldRules),
     characterBlocks.length ? `## Characters\n\n${characterBlocks.join('\n\n')}\n` : undefined,

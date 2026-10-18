@@ -5,8 +5,10 @@ import { requestPage, StalePageError } from '../../lib/pagesApi'
 import { useBoundProjectScopeKey, useProjectScopeCurrent } from '../../lib/useProjectRequestGeneration'
 import './pages.css'
 
-export const PAGE_NAMES: PageName[] = ['outline', 'treatment', 'synopsis']
+export const PAGE_NAMES: PageName[] = ['outline', 'treatment', 'synopsis', 'bible']
+export const PAGE_LABELS: Record<PageName, string> = { outline: 'Outline', treatment: 'Treatment', synopsis: 'Synopsis', bible: 'Story Bible' }
 const needs: Record<PageName, string[]> = {
+  bible: ['Identity and premise', 'Tone and style', 'The world and its rules', 'The characters', 'The story engine and seasons', 'Continuity and open questions'],
   synopsis: ['Who we follow', 'What they want', 'What stands in the way', 'The stakes', 'The turn', 'The ending'],
   treatment: ['The story and its world', 'The people we follow', 'The opening', 'The acts and turning points', 'The ending', 'Tone and style'],
   outline: ['The setup', 'The people and their goals', 'The story in order', 'The turning points', 'The stakes', 'The ending'],
@@ -61,7 +63,7 @@ export function Pages({ projectId, selected, onSelect, pages, onPage, snapshot, 
     return () => { cancelled = true }
   }, [projectId, selected, onPage])
   const page = pages[selected]
-  const title = selected[0].toUpperCase() + selected.slice(1)
+  const title = PAGE_LABELS[selected]
   const changed = changedCanon(page, snapshot)
   async function approve() {
     if (!page || !projectId || !snapshot) return
@@ -78,22 +80,22 @@ export function Pages({ projectId, selected, onSelect, pages, onPage, snapshot, 
   }
   async function ask(update = false) {
     setBusy(true); setError(null)
-    try { await onAskMorgan(`${update ? 'Update' : 'Write'} the ${selected} page from canon. Read its format, the other pages and the beat sheet first. Ask only about missing items, one at a time.`) }
+    try { await onAskMorgan(`${update ? 'Update' : 'Write'} the ${title} page from canon. Read its format, the other pages and the beat sheet first. Ask only about missing items, one at a time.`) }
     catch { if (scopeIsCurrent()) setError("Morgan isn't running yet. Open her panel with the M button and try again.") }
     finally { if (scopeIsCurrent()) setBusy(false) }
   }
   return <section className="pages-sheet">
     <nav aria-label="Pages" className="pages-switch">{PAGE_NAMES.map(name => <button key={name} aria-current={selected === name ? 'page' : undefined} onClick={() => onSelect(name)}>
-      {name[0].toUpperCase() + name.slice(1)} <small>{pageStatus(pages[name], snapshot)}</small>
+      {PAGE_LABELS[name]} <small>{pageStatus(pages[name], snapshot)}</small>
     </button>)}</nav>
     <h1>{title}</h1>
     {error && <p role="alert" className="pages-notice">{error}</p>}
-    {loading && <p role="status">Opening {selected}…</p>}
+    {loading && <p role="status">Opening {title}…</p>}
     {!page?.markdown.trim() ? <>
-      <p className="pages-lede">Morgan writes the {selected} from canon. She asks only about what canon doesn't answer yet.</p>
+      <p className="pages-lede">Morgan writes the {title} from canon. She asks only about what canon doesn't answer yet.</p>
       <button className="pages-button" disabled={busy || !projectId} onClick={() => void ask()}>Write it with Morgan</button>
       {!projectId && <p>Open a project from your project folder to write pages with Morgan.</p>}
-      <ul className="pages-needs" aria-label={`What an ${selected} needs`}>{needs[selected].map(item => <li key={item}>{item}</li>)}</ul>
+      <ul className="pages-needs" aria-label={`What ${selected === 'outline' ? 'an' : 'a'} ${title.toLowerCase()} needs`}>{needs[selected].map(item => <li key={item}>{item}</li>)}</ul>
     </> : <>
       <div className="pages-meta"><span>Written by Morgan from canon</span><span>·</span>
         <span>{page.status === 'approved' && page.approvedAt ? `Approved ${new Date(page.approvedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'Draft'}</span>

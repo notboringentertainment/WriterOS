@@ -52,7 +52,7 @@ describe('LeftRail', () => {
     expect(screen.getByLabelText('Active helper')).toHaveTextContent('Morgan')
   })
 
-  it('updates Story Bible helper hint from message intent', () => {
+  it('updates Story Facts helper hint from message intent', () => {
     render(<LeftRail {...defaultProps} open={true} activeTab="story-bible" storyBibleSection="world" />)
     const textarea = screen.getByPlaceholderText(/message/i)
 

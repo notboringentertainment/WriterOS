@@ -390,14 +390,14 @@ describe('approval and proposal polling', () => {
     const { sink } = sinkLog();
     const ch = await open(sink, { onProposal: async ask => { received.push(ask); return { outcome: 'kept' }; } });
     await hello(ch);
-    for (const page of ['synopsis', 'treatment', 'outline']) {
+    for (const page of ['synopsis', 'treatment', 'outline', 'bible']) {
       const markdown = page === 'treatment' ? '# Treatment\n\n' + 'A courier crosses the city.\n\n'.repeat(1200) : '# Sample page\n\nA courier crosses the city.';
       if (page === 'treatment') expect(Buffer.byteLength(markdown)).toBeGreaterThan(30 * 1024);
       const ask = { epoch: 'e1', proposalId: page, proposal: { surface: 'page', page, baseRevision: 0, markdown, summary: 'Write the page' } };
       expect(await post(ch.socketPath, '/proposal', ch.token, ask)).toEqual({ status: 200, body: { outcome: 'kept' } });
       expect(received.at(-1)).toEqual(ask);
     }
-    expect(received).toHaveLength(3);
+    expect(received).toHaveLength(4);
   });
 
   it('refuses retired structured synopsis and treatment proposals with the plain message', async () => {

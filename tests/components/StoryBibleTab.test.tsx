@@ -48,7 +48,7 @@ function snapshotWith(records: ProjectMemoryRecord[]): ProjectMemorySnapshot {
 }
 
 describe('StoryBibleTab - page chrome', () => {
-  it('renders the Story Bible surface name and reader-facing subtitle', () => {
+  it('renders the Story Facts surface name and reader-facing subtitle', () => {
     render(
       <StoryBibleTab
         document={defaultDocument}
@@ -57,9 +57,10 @@ describe('StoryBibleTab - page chrome', () => {
       />,
     )
 
-    expect(screen.getByText('Story Bible')).toBeInTheDocument()
+    expect(screen.getByText('Story Facts')).toBeInTheDocument()
+    expect(screen.getByText("This isn't a traditional story bible. That page lives in Pages.")).toBeInTheDocument()
     expect(
-      screen.getByText("Your story's facts in your words. Morgan reads this before she writes a page."),
+      screen.getByText("Your story's facts in your words."),
     ).toBeInTheDocument()
   })
 
@@ -148,7 +149,7 @@ describe('StoryBibleTab - sections view', () => {
     expect(screen.getByTestId('story-bible-section-engine')).toHaveTextContent('A new wreck every night.')
   })
 
-  it('edits a field inline as a Story Bible content patch', () => {
+  it('edits a field inline as a Story Facts content patch', () => {
     const onContentPatch = vi.fn()
     render(
       <StoryBibleTab
@@ -179,7 +180,7 @@ describe('StoryBibleTab - sections view', () => {
     expect(onContentPatch).toHaveBeenCalledWith({ toneAndStyle: expect.objectContaining({ comps: ['Ray Donovan: the fixer, plus family', 'Alien'] }) })
   })
 
-  it('shows and edits the Story Bible stage', () => {
+  it('shows and edits the Story Facts stage', () => {
     const onContentPatch = vi.fn()
     const document = makeDocument({ cover: { ...createEmptyStoryBibleContent().cover, status: 'production' } }, { migratedFromLegacyStoryBible: true })
     render(<StoryBibleTab document={document} onContentPatch={onContentPatch} onClear={vi.fn()} />)
@@ -205,6 +206,8 @@ describe('StoryBibleTab - sections view', () => {
     fireEvent.click(within(screen.getByTestId('story-bible-section-world')).getByRole('button', { name: 'Ask Morgan' }))
     await waitFor(() => expect(onAskMorgan).toHaveBeenCalledWith(expect.stringContaining('"World and rules"')))
     expect(onAskMorgan.mock.calls[0][0]).toContain('storyBible')
+    expect(onAskMorgan.mock.calls[0][0]).toContain('Story Facts')
+    expect(onAskMorgan.mock.calls[0][0]).toContain('story-facts.md')
   })
 
   it('lists the ledger\'s active open questions under "Still open"', async () => {
@@ -294,7 +297,7 @@ describe('StoryBibleTab - sections view', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /clear story bible/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clear story facts/i }))
     fireEvent.click(screen.getByRole('button', { name: /click again to clear/i }))
 
     expect(onClear).toHaveBeenCalledTimes(1)

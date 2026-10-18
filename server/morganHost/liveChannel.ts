@@ -384,6 +384,6 @@ function validProposal(b: ProposalAsk): boolean {
   if (!nonempty(b.epoch) || !nonempty(b.proposalId) || !p || typeof p !== "object" || typeof p.summary !== "string") return false;
   if (p.surface === "script") return !!p.target && typeof p.target === "object" && ["append", "replace-scene", "insert-after-scene"].includes(p.target.kind) && Array.isArray(p.blocks);
   if (!Number.isInteger(p.baseRevision) || p.baseRevision < 0) return false;
-  if (p.surface === "page") return ["synopsis", "treatment", "outline"].includes(p.page) && typeof p.markdown === "string";
+  if (p.surface === "page") return ["synopsis", "treatment", "outline", "bible"].includes(p.page) && typeof p.markdown === "string";
   return ["outline", "storyBible"].includes(p.surface) && "content" in p;
 }

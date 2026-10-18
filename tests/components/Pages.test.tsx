@@ -15,6 +15,17 @@ const snapshot = { records: [
 ] } as ProjectMemorySnapshot
 
 describe('Pages', () => {
+  it('offers Story Bible after Synopsis with its own needs and Morgan request', async () => {
+    const ask = vi.fn().mockResolvedValue(undefined)
+    vi.spyOn(pagesApi, 'requestPage').mockResolvedValue({ page: 'bible', markdown: '', status: 'draft', revision: 0 })
+    render(<Pages projectId="sample-project" selected="bible" onSelect={vi.fn()} pages={{}}
+      onPage={vi.fn()} onAskMorgan={ask} />)
+    expect(screen.getByRole('navigation', { name: 'Pages' }).textContent).toContain('Synopsis not startedStory Bible not started')
+    expect(screen.getByRole('heading', { name: 'Story Bible' })).toBeDefined()
+    expect(screen.getByText('Continuity and open questions')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Write it with Morgan' }))
+    await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.stringContaining('Write the Story Bible page')))
+  })
   afterEach(() => vi.restoreAllMocks())
   it('uses a styled plain message when Morgan cannot be reached', async () => {
     vi.spyOn(pagesApi, 'requestPage').mockResolvedValue({ page: 'outline', markdown: '', status: 'draft', revision: 0 })

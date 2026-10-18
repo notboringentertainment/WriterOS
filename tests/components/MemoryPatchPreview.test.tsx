@@ -29,7 +29,7 @@ describe('MemoryPatchPreview', () => {
       />,
     )
 
-    expect(screen.getByText('Suggested update to Story Bible')).toBeInTheDocument()
+    expect(screen.getByText('Suggested update to Story Facts')).toBeInTheDocument()
     expect(screen.getByText("Aligns the world rules with what was decided in Writer's Room.")).toBeInTheDocument()
     expect(screen.getByText('premiseAndWorld.worldRules')).toBeInTheDocument()
     expect(screen.getByText('toneAndStyle.pacingRules')).toBeInTheDocument()

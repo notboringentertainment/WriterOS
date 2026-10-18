@@ -99,7 +99,7 @@ function formatProjectContext(projectContext: PersonaCapabilityProjectContext): 
     'Characters:',
     bulletLines(characterLines),
     '',
-    'Story Bible:',
+    'Story Facts:',
     bulletLines(storyBibleLines),
     '',
     'Script context:',

@@ -21,7 +21,7 @@ describe('App project format selectors', () => {
     vi.restoreAllMocks()
   })
 
-  it('shares project format across Beat Sheet and Story Bible while Pages has no format editor', () => {
+  it('shares project format across Beat Sheet and Story Facts while Pages has no format editor', () => {
     render(<App />)
 
     openTab('Beat Sheet')
@@ -29,7 +29,7 @@ describe('App project format selectors', () => {
     fireEvent.change(formatSelector(), { target: { value: 'series' } })
     expect(formatSelector()).toHaveValue('series')
 
-    openTab('Story Bible')
+    openTab('Story Facts')
     expect(formatSelector()).toHaveValue('series')
     fireEvent.change(formatSelector(), { target: { value: 'feature' } })
     expect(formatSelector()).toHaveValue('feature')

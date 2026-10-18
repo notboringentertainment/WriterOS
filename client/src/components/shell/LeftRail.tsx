@@ -110,7 +110,7 @@ export function LeftRail({
               key={morganProjectId}
               projectId={morganProjectId}
               morgan={morgan}
-              surface={activeTab === 'story-bible' ? 'Story Bible' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              surface={activeTab === 'story-bible' ? 'Story Facts' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
               onPageProposal={onMorganPageProposal ?? ignoreProposal}
               onProjectChanged={onMorganProjectChanged}
               pageRequest={morganPageRequest}

@@ -216,11 +216,12 @@ describe('buildProjectContext', () => {
     state.documents.synopsis.content.logline.text = 'Legacy logline.'
     expect(buildProjectContext(state).logline).toBe('Legacy logline.')
     state.documents.storyBible.content.onePagePitch.logline = 'Bible logline.'
+    state.pages.bible = { page: 'bible', markdown: 'Series engine.', status: 'draft', revision: 1 }
     state.pages.outline = { page: 'outline', markdown: 'Outline prose.', status: 'draft', revision: 1 }
     const ctx = buildProjectContext(state)
     expect(ctx.logline).toBe('Bible logline.')
     expect(ctx.synopsis.logline).toBe('Bible logline.')
-    expect(ctx.pages).toEqual({ synopsis: '', treatment: '', outline: 'Outline prose.' })
+    expect(ctx.pages).toEqual({ synopsis: '', treatment: '', outline: 'Outline prose.', bible: 'Series engine.' })
   })
 
   it('maps empty default state', () => {

@@ -452,7 +452,7 @@ export function createWritingPartnerBrief(storyMemory: StoryMemory): string {
     storyMemory.dialogue.voiceNotes,
   ]);
   if (storyBibleFieldCount) {
-    lines.push(`- Story Bible: ${storyBibleFieldCount} field${storyBibleFieldCount === 1 ? '' : 's'} filled.`);
+    lines.push(`- Story Facts: ${storyBibleFieldCount} field${storyBibleFieldCount === 1 ? '' : 's'} filled.`);
   }
 
   if (storyMemory.decisions.length) {
@@ -750,8 +750,8 @@ Project context snapshot:
 - Genre: ${input.projectContext.genre || 'Not supplied'}
 - Format: ${input.projectContext.format}
 - Logline: ${input.projectContext.logline || input.projectContext.synopsis.logline || 'Not supplied'}
-- Story Bible setting: ${input.projectContext.storyBible.world.setting || 'Not supplied'}
-- Story Bible rules: ${input.projectContext.storyBible.rules || 'Not supplied'}
+- Story Facts setting: ${input.projectContext.storyBible.world.setting || 'Not supplied'}
+- Story Facts rules: ${input.projectContext.storyBible.rules || 'Not supplied'}
 - Script context: ${input.projectContext.script?.contextLabel || (input.projectContext.script?.excerpt ? `${input.projectContext.script.excerptWordCount} excerpt words` : 'Not supplied')}${input.projectMemoryPrompt ? `\n\n${input.projectMemoryPrompt}` : ''}
 
 Rules for Zoe's final response:
@@ -854,7 +854,7 @@ EXPERTISE-SPECIFIC GUIDELINES:`;
       case 'writingPartner':
         return `${basePrompt}
 MORGAN OPERATING CONTRACT:
-- Own the Morgan host lane: synthesize across Script, Synopsis, Outline, Treatment, Story Bible, Workspace Location, Surface Awareness, and the writer's Voice Profile when provided.
+- Own the Morgan host lane: synthesize across Script, Synopsis, Outline, Treatment, Story Facts, Workspace Location, Surface Awareness, and the writer's Voice Profile when provided.
 - Be a showrunner, not a passive router. Give a useful showrunner-level read first when the request is broad, then recommend Sam, Casey, Oliver, Maya, Zoe, or Alex only when their specialist lane is clearly the better next move.
 - Triage the work honestly: name the central creative problem, the tradeoff, and the next best move.
 - Keep the writing-first boundary: no silent edits, no claims that you changed project state, and no promises of background work. Advice and strategy only unless a real WriterOS control exists in the app.
@@ -987,7 +987,7 @@ const STRUCTURED_DOCUMENT_PATCH_SURFACE_LABELS: Record<StructuredDocumentSurface
   synopsis: 'Synopsis',
   outline: 'Outline',
   treatment: 'Treatment',
-  storyBible: 'Story Bible',
+  storyBible: 'Story Facts',
 };
 
 export function buildStructuredDocumentPatchSystemPrompt(

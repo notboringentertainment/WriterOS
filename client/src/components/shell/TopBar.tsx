@@ -151,7 +151,7 @@ export function TopBar({
       </div>
       <nav role="tablist" aria-label="Writing places" className="phase1-tabs">
         {([{ id: 'script', label: 'Script' }, { id: 'outline', label: 'Beat Sheet' },
-          { id: 'pages', label: 'Pages' }, { id: 'story-bible', label: 'Story Bible' }] as const).map(tab => {
+          { id: 'pages', label: 'Pages' }, { id: 'story-bible', label: 'Story Facts' }] as const).map(tab => {
           const selected = !homeActive && !writersRoomActive && !ritual &&
             (tab.id === 'pages' ? pagesActive : activeTab === tab.id)
           return <button key={tab.id} role="tab" aria-selected={selected}

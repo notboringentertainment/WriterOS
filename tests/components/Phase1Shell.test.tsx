@@ -10,7 +10,7 @@ describe('Phase 1 shell', () => {
     render(<TopBar activeTab="synopsis" projectTitle="The Long Hallway" writersRoomActive={false}
       onTabChange={onTabChange} onHome={onHome} onOpenMemory={onOpenMemory}
       onWritersRoom={vi.fn()} onVoiceProfile={vi.fn()} voiceProfileOpen={false} />)
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Script', 'Beat Sheet', 'Pages', 'Story Bible'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Script', 'Beat Sheet', 'Pages', 'Story Facts'])
     expect(screen.getByRole('tab', { name: 'Pages' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'WriterOS' }))
     expect(onHome).toHaveBeenCalledOnce()

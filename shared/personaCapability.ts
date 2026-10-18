@@ -142,7 +142,7 @@ export interface PersonaCapabilityProjectContext {
     }
   }
   /** Prose pages Morgan writes; absent from requests sent before Phase 3. */
-  pages?: { synopsis: string; treatment: string; outline: string }
+  pages?: { synopsis: string; treatment: string; outline: string; bible?: string }
   scenes: Array<{
     id: string
     heading: string
@@ -305,6 +305,7 @@ export const personaCapabilityProjectContextSchema = z.object({
     synopsis: z.string().default(''),
     treatment: z.string().default(''),
     outline: z.string().default(''),
+    bible: z.string().default(''),
   }).default({}),
   scenes: z.array(z.object({
     id: z.string(),

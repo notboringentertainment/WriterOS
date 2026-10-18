@@ -345,6 +345,7 @@ const projectContextSchema = z.object({
     synopsis: z.string().default(''),
     treatment: z.string().default(''),
     outline: z.string().default(''),
+    bible: z.string().default(''),
   }).default({}),
   scenes: z.array(z.object({
     id: z.string(),
@@ -551,7 +552,7 @@ function buildStoryMemoryCharacters(projectContext: ProjectContextForOpenSwarm):
     });
   }
 
-  // Fact rule: Story Bible characters win; the frozen legacy lists only add people it lacks.
+  // Fact rule: Story Facts characters win; the frozen legacy lists only add people it lacks.
   const storyBibleKeys = new Set(Object.keys(characters));
   const fromLegacy = (name: string) => !storyBibleKeys.has(characterKey(name, ''));
 
@@ -599,7 +600,7 @@ function countFilled(values: string[]): number {
 }
 
 function projectContextLogline(projectContext: ProjectContextForOpenSwarm): string {
-  // projectContext.logline is the Story Bible logline first, then the legacy synopsis logline.
+  // projectContext.logline is the Story Facts logline first, then the legacy synopsis logline.
   return projectContext.logline || projectContext.synopsis.loglineParts.text || projectContext.synopsis.logline || '';
 }
 
@@ -854,7 +855,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
     `Characters: ${characterLines.length} named character${characterLines.length === 1 ? '' : 's'}`,
     `Outline: ${beatLines.length} beat note${beatLines.length === 1 ? '' : 's'} supplied`,
     `Treatment: ${treatmentContextLines.length} filled field${treatmentContextLines.length === 1 ? '' : 's'}`,
-    `Story Bible: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
+    `Story Facts: ${storyBibleFilledCount} filled field${storyBibleFilledCount === 1 ? '' : 's'}`,
     `Script: ${script?.excerptWordCount || 0} excerpt word${script?.excerptWordCount === 1 ? '' : 's'}, ${script?.sceneCount || 0} scene${script?.sceneCount === 1 ? '' : 's'}${script?.contextLabel ? ` (${script.contextLabel})` : ''}`,
     `Script Facts: ${script?.facts ? `${script.facts.characters.length} character${script.facts.characters.length === 1 ? '' : 's'}, ${script.facts.locations.length} location${script.facts.locations.length === 1 ? '' : 's'}, ${script.facts.times.length} time marker${script.facts.times.length === 1 ? '' : 's'}` : 'not supplied'}`,
   ];
@@ -864,7 +865,7 @@ export function buildOpenSwarmWritingPartnerPrompt(
 Boundary rules:
 - Do not claim access to WriterOS transcripts, files, Voice Profile, or project state beyond this packet.
 - Do not mutate WriterOS state.
-- Voice Profile is writer-scoped and project-agnostic. Story Bible voice notes are project-scoped. Keep them separate.
+- Voice Profile is writer-scoped and project-agnostic. Story Facts voice notes are project-scoped. Keep them separate.
 - Treat this as advisory output that may be shown in the WriterOS Writing Partner transcript.
 - For story development, recommend only WriterOS creative partners: Sam, Casey, Oliver, Maya, Zoe, or Alex.
 - Recommend Deep Research only when the user explicitly asks for current/recent facts, source-backed research, real-world analogs, or market comps.
@@ -882,7 +883,7 @@ Task response contract:
 - Use compact section labels that end with a colon, such as "Verdict:", "Evidence:", "Missing Context:", and "Next Actions:".
 - Simple hyphen bullets are allowed. Avoid conversational throat-clearing.
 - Include a "Missing Context" section only when the context inventory shows material is absent.
-- When context is missing, name the WriterOS surface to fill (Synopsis, Characters, Outline, Treatment, Story Bible, or Script context). Do not ask the user to paste material into chat unless they explicitly ask for a paste-based workflow.
+- When context is missing, name the WriterOS surface to fill (Synopsis, Characters, Outline, Treatment, Story Facts, or Script context). Do not ask the user to paste material into chat unless they explicitly ask for a paste-based workflow.
 - Keep specialist recommendations brief and only include them when they directly advance the task.
 
 Creative partner lanes:
@@ -921,7 +922,7 @@ ${bulletLines(beatLines)}
 Treatment:
 ${treatmentContextLines.length ? treatmentContextLines.join('\n') : '- None supplied'}
 
-Story Bible:
+Story Facts:
 ${bulletLines(storyBibleLines)}
 
 Script context:

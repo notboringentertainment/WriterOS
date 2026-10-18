@@ -43,7 +43,7 @@ export function buildSurfaceAwareness(activeTab: ActiveTab, state: ProjectState)
               : visibleFields(section, content, format).filter(field => fieldIsWritten(content, field)).map(field => ({ label: field.label, value: readField(content, field.path) })),
         ),
       }))
-      return buildIntakeSurface('story-bible', 'Story Bible', format, questions)
+      return buildIntakeSurface('story-bible', 'Story Facts', format, questions)
     }
 
     default:
