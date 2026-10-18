@@ -28,7 +28,7 @@ WriterOS is the home for a project's canon and its script. The live app (port 51
   and Morgan's instructions say "the Story Facts's Looks section". Known, not fixed.
 - #84 (Morgan asks before she sends, signs or deletes through your connected apps) is waiting
   on your decision.
-- Older pull requests still open and not being worked on: #55, #65, #67.
+- Older pull requests still open and not being worked on: #55, #67.
 
 ## Next
 
