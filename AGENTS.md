@@ -2,6 +2,15 @@
 
 Models are strong enough to infer stack from `package.json` and `src/`. Only document what is **not obvious** from the tree.
 
+## Status page and finishing work
+
+- **Start of every session:** read [`STATUS.md`](STATUS.md) first. It says what is live, open and next.
+- **When work lands** (merged, and deployed where the app deploys), whoever finished it, Claude or Codex, does all three before calling it done:
+  1. **Rewrite `STATUS.md` in place:** Live, Open, Next, and the date. Plain language for Ben, readable in two minutes, no commit hashes or internal code names. Start from the current file so newer status isn't overwritten by an older view.
+  2. **Archive the work's notes:** move its plan, handoff and review notes into `docs/archive/` (moved, not deleted). Current plans and standing reference docs stay. This repository is public: notes that were never committed and mention Ben's stories, characters or places go to `~/Projects/housekeeping/archive/<date>/` instead, never into the repo.
+  3. **Remove the work's worktree** only when its exact commit is in the target branch, it has no uncommitted or untracked files, its ignored files hold nothing that exists only there, and nothing is running in it. Never force removal. Keep the branch.
+- Don't leave a new plan or handoff beside an old one for the same work; update or archive the old one.
+
 ## Product
 
 Personality-driven multi-agent **writing studio**. Six specialists + Triage share one `ProjectState`. React + Vite app in `src/`; HTML prototype in `project/` is visual spec only — do not port its structure.
