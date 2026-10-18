@@ -54,3 +54,14 @@ The deferred items are reasonable scope decisions:
 No additional material blocker found. This approves the implementation plan; it does not certify unimplemented behavior.
 
 VERDICT: APPROVED
+## Act 3 — Build
+### Round 1 — Codex build
+Codex (thread 01a15021-a8cf-7353-aee6-e68058daabce) implemented the plan: `bible` page id across shared/pages.ts, page paths, store (empty when missing, never reads documents.storyBible), Pages.tsx label map, Morgan validators/types/tool/persona, formats (story-facts.md renamed, bible.md new), Story Facts display labels across client and server prompts. Reported one full-suite timeout that passed alone; no live Morgan run.
+
+### Claude's verdict
+- Read the full diff: in scope, matches the plan, canon test files untouched.
+- `npm run test:run`: 296 files passed, 2980 tests passed, 10 skipped. `npm run check` clean. `npm run build` done.
+- Sandbox walkthrough (copy of WriterOS Projects, port 5277): Story Facts tab shows title, "Your story's facts in your words." and "This isn't a traditional story bible. That page lives in Pages."; Pages shows Outline / Treatment / Synopsis / Story Bible; opening Bloodless created an empty documents/pages/bible.json and left story-bible.json byte-identical.
+- Not tested: a live Morgan write of the Story Bible page (sandbox Morgan trust bug; Ben's real run covers it).
+- Minor, logged not fixed: persona text reads "the Story Facts's Looks section"; Clear button reads "clear the whole Story Facts".
+No fix rounds needed.

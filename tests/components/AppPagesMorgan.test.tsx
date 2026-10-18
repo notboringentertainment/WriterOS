@@ -36,7 +36,7 @@ describe('Pages Morgan request and sidebar', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }))
     await screen.findByRole('button', { name: 'Write it with Morgan' })
     expect(screen.queryByLabelText('Morgan conversation')).toBeNull()
-    for (const name of ['Outline', 'Treatment', 'Synopsis']) {
+    for (const name of ['Outline', 'Treatment', 'Synopsis', 'Story Bible']) {
       fireEvent.click(screen.getByRole('button', { name: `${name} not started` }))
       const footer = screen.getByLabelText('Project state')
       expect(within(footer).getByText(name, { exact: true })).toBeDefined()
@@ -51,7 +51,7 @@ describe('Pages Morgan request and sidebar', () => {
     expect(submissions()).toHaveLength(0)
     act(() => stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'hello', hello: hello() })}\n\n`)))
     await waitFor(() => expect(submissions()).toHaveLength(1))
-    expect(JSON.parse(submissions()[0][1]!.body as string)).toMatchObject({ context: { surface: 'page:synopsis' } })
+    expect(JSON.parse(submissions()[0][1]!.body as string)).toMatchObject({ context: { surface: 'page:bible' } })
     view.unmount()
   })
 })

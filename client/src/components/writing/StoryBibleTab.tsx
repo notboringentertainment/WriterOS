@@ -77,7 +77,7 @@ export function StoryBibleTab({
                 margin: 0,
               }}
             >
-              Story Bible
+              Story Facts
             </h2>
             <p
               style={{
@@ -87,7 +87,10 @@ export function StoryBibleTab({
                 margin: '8px 0 0',
               }}
             >
-              Your story's facts in your words. Morgan reads this before she writes a page.
+              Your story's facts in your words.
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: '8px 0 0' }}>
+              This isn't a traditional story bible. That page lives in Pages.
             </p>
           </div>
           <ProjectFormatSelector

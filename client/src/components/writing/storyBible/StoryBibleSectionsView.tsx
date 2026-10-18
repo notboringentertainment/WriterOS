@@ -45,7 +45,7 @@ function ListField({ label, value, onCommit }: { label: string; value: string; o
 }
 
 function sectionRequest(section: StoryBibleSectionDef): string {
-  return `Write the "${section.title}" section of the Story Bible from canon. Read story-bible.md in your formats folder and active canon first, ask only about what canon doesn't cover, one question at a time, then propose it through storyBible.`
+  return `Write the "${section.title}" section of the Story Facts from canon. Read story-facts.md in your formats folder and active canon first, ask only about what canon doesn't cover, one question at a time, then propose it through storyBible.`
 }
 
 function openQuestionRequest(text: string): string {
@@ -186,7 +186,7 @@ export function StoryBibleSectionsView({
       ))}
       <div className="sb-footer">
         <button type="button" className="sb-link" onClick={handleClearClick}>
-          {clearArmed ? 'Click again to clear the whole Story Bible' : 'Clear story bible'}
+          {clearArmed ? 'Click again to clear the whole Story Facts' : 'Clear story facts'}
         </button>
       </div>
     </div>

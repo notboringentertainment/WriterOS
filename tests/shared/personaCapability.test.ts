@@ -4,6 +4,7 @@ import {
   getMissingCapabilitySurfaces,
   isAllowedPersonaCapability,
   personaCapabilityRequestSchema,
+  personaCapabilityProjectContextSchema,
   PERSONA_CAPABILITY_ALLOWLIST,
 } from '../../shared/personaCapability'
 import { defaultProjectState } from '../../client/src/lib/projectState'
@@ -105,6 +106,12 @@ describe('persona capability contracts', () => {
 
     expect(getCapabilityContextChips(context)).toEqual(['logline', 'characters', 'storyBible'])
     expect(getMissingCapabilitySurfaces(context)).toEqual(['synopsis'])
+  })
+
+  it('preserves bible prose through the capability context schema', () => {
+    const state = defaultProjectState()
+    state.pages.bible = { page: 'bible', markdown: 'The season engine repeats.', status: 'draft', revision: 1 }
+    expect(personaCapabilityProjectContextSchema.parse(buildProjectContext(state)).pages.bible).toBe('The season engine repeats.')
   })
 
   it('counts a written synopsis page as synopsis context', () => {

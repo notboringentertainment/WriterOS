@@ -9,7 +9,7 @@ describe('surfaceLabel', () => {
     expect(surfaceLabel('outline')).toBe('Beat Sheet')
     expect(surfaceLabel('synopsis')).toBe('Synopsis')
     expect(surfaceLabel('treatment')).toBe('Treatment')
-    expect(surfaceLabel('story-bible')).toBe('Story Bible')
+    expect(surfaceLabel('story-bible')).toBe('Story Facts')
   })
 })
 

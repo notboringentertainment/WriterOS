@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const PageNameSchema = z.enum(['synopsis', 'treatment', 'outline'])
+export const PageNameSchema = z.enum(['synopsis', 'treatment', 'outline', 'bible'])
 export type PageName = z.infer<typeof PageNameSchema>
 export const PageDocumentSchema = z.object({
   page: PageNameSchema,

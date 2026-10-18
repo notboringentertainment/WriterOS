@@ -16,7 +16,7 @@ describe('TopBar', () => {
   it('renders four writing tabs', () => {
     render(<TopBar {...defaultProps} />)
     expect(screen.getByText('Script')).toBeInTheDocument()
-    expect(screen.getByText('Story Bible')).toBeInTheDocument()
+    expect(screen.getByText('Story Facts')).toBeInTheDocument()
     expect(screen.getByText('Beat Sheet')).toBeInTheDocument()
     expect(screen.getByText('Pages')).toBeInTheDocument()
     expect(screen.getAllByRole('tab')).toHaveLength(4)

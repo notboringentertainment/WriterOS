@@ -64,7 +64,7 @@ export type ScriptTarget =
   | { kind: 'append' }
 export type PageProposal =
   | { surface: 'outline' | 'storyBible'; baseRevision: number; content: unknown; summary: string }
-  | { surface: 'page'; page: 'synopsis' | 'treatment' | 'outline'; baseRevision: number; markdown: string; summary: string }
+  | { surface: 'page'; page: 'synopsis' | 'treatment' | 'outline' | 'bible'; baseRevision: number; markdown: string; summary: string }
   | { surface: 'script'; target: ScriptTarget; blocks: ScriptBlock[]; summary: string; expectedEnding?: ScriptBlock[] } // append: the last scene as read
 export interface ProposalAsk { epoch: string; proposalId: string; proposal: PageProposal }
 export interface ProposalOutcome { outcome: 'kept' | 'dismissed' | 'stale' | 'invalid' | 'session-ended'; note?: string; message?: string } // reply to POST /proposal

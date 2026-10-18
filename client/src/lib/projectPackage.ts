@@ -38,6 +38,7 @@ export const WRITEROS_PAGE_PATHS = {
   synopsis: 'documents/pages/synopsis.json',
   treatment: 'documents/pages/treatment.json',
   outline: 'documents/pages/outline.json',
+  bible: 'documents/pages/bible.json',
 } as const
 export const WRITEROS_LOOKS_PATH = 'documents/looks.json'
 export const WRITEROS_TRANSCRIPT_PATHS = {

@@ -29,8 +29,8 @@ function setup() {
     if (url.includes('/api/morgan/')) return new Response(null, { status: 204 })
     for (const p of projects) {
       if (url === `/api/project-library/projects/${p.id}` && init?.method !== 'PUT') return json({ result: { ok: true, project: structuredClone(p), warnings: [] }, beatSheet: null })
-      if (url === `/api/projects/${p.id}/pages/synopsis`) {
-        const page = init?.method === 'PUT' ? JSON.parse(init.body as string).page : { page: 'synopsis', markdown: '', status: 'draft', revision: 0 }
+      if (url === `/api/projects/${p.id}/pages/synopsis` || url === `/api/projects/${p.id}/pages/bible`) {
+        const page = init?.method === 'PUT' ? JSON.parse(init.body as string).page : { page: url.split('/').at(-1), markdown: '', status: 'draft', revision: 0 }
         return json({ page: { ...page, revision: init?.method === 'PUT' ? page.revision + 1 : page.revision } })
       }
     }
@@ -55,19 +55,19 @@ describe('App hosted proposal ownership and existing preview integration', () =>
   beforeEach(() => { localStorage.clear(); seedSkippedVoiceProfileState() })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('shows a prose proposal on its matching page, saves Keep through the page PUT, then answers Morgan', async () => {
+  it.each(['synopsis', 'bible'] as const)('keeps a %s prose proposal on its matching page and answers Morgan', async page => {
     const { fetchMock } = setup()
     await openFirst()
     const markdown = '# Synopsis\n\nA courier crosses a flooded city.'
-    act(() => deliver({ proposalId: 'page-proposal', proposal: { surface: 'page', page: 'synopsis', baseRevision: 0, markdown, summary: 'A new synopsis draft' } }))
+    act(() => deliver({ proposalId: 'page-proposal', proposal: { surface: 'page', page, baseRevision: 0, markdown, summary: 'A new prose draft' } }))
     await screen.findByRole('heading', { name: "Morgan's suggestion" })
-    expect(screen.getByRole('button', { name: 'Synopsis not started' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: `${page === 'bible' ? 'Story Bible' : 'Synopsis'} not started` })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
     expect(answers(fetchMock)).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Keep' }))
     await waitFor(() => expect(answers(fetchMock)).toHaveLength(1))
-    const put = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/projects/project-one/pages/synopsis' && init?.method === 'PUT')!
-    expect(JSON.parse(put[1]!.body as string)).toEqual({ expectedRevision: 0, page: { page: 'synopsis', markdown, status: 'draft', revision: 0 } })
+    const put = fetchMock.mock.calls.find(([url, init]) => String(url) === `/api/projects/project-one/pages/${page}` && init?.method === 'PUT')!
+    expect(JSON.parse(put[1]!.body as string)).toEqual({ expectedRevision: 0, page: { page, markdown, status: 'draft', revision: 0 } })
     expect(answers(fetchMock)[0][0]).toBe('/api/morgan/project-one/proposal/page-proposal')
     expect(JSON.parse(answers(fetchMock)[0][1]!.body as string)).toEqual({ outcome: 'kept' })
     expect(screen.queryByRole('heading', { name: "Morgan's suggestion" })).not.toBeInTheDocument()

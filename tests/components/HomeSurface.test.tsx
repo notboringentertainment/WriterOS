@@ -542,7 +542,7 @@ describe('HomeSurface', () => {
       const dialog = screen.getByRole('dialog')
       expect(within(dialog).getByText(/Delete .*Quiet Frequencies/)).toBeInTheDocument()
       expect(
-        within(dialog).getByText(/script, synopsis, beat sheet, story bible, treatment, and all transcripts/)
+        within(dialog).getByText(/script, synopsis, beat sheet, Story Facts, Story Bible, treatment, and all transcripts/)
       ).toBeInTheDocument()
     })
 

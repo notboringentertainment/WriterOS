@@ -35,7 +35,7 @@ import { VoiceProfileRitualPage } from './components/ritual/VoiceProfileRitualPa
 import { VoiceProfileDrawer } from './components/shell/VoiceProfileDrawer'
 import { getDisplayProjectTitle } from './lib/projectIdentity'
 import { ScriptTab } from './components/writing/ScriptTab'
-import { Pages, PageProse } from './components/writing/Pages'
+import { Pages, PageProse, PAGE_LABELS } from './components/writing/Pages'
 import type { MorganPageRequest } from './components/shell/MorganLivePanel'
 import type { PageName } from '@shared/pages'
 import { requestPage, StalePageError } from './lib/pagesApi'
@@ -1613,7 +1613,7 @@ export default function App() {
       const state = selectConsoleState(project.state, surface, shellState.storyBibleSection)
       return surface === 'synopsis' || surface === 'treatment'
         ? { structure: { surface, heading: 'Pages', nodes: [], empty: true },
-            state: { ...state, surfaceLabel: selectedPage[0].toUpperCase() + selectedPage.slice(1), persona: 'Morgan', counts: [] } }
+            state: { ...state, surfaceLabel: PAGE_LABELS[selectedPage], persona: 'Morgan', counts: [] } }
         : { structure: selectSurfaceStructure(surface, project.state), state }
     },
     [project.state, shellState.activeTab, shellState.storyBibleSection, selectedPage],

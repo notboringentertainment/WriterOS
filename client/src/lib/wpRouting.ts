@@ -56,7 +56,7 @@ export interface ProjectContext {
   }
   scenes: ProjectState['script']['scenes']
   /** The prose pages Morgan writes (draft or approved). Readers prefer these over the frozen legacy fields. */
-  pages: { synopsis: string; treatment: string; outline: string }
+  pages: { synopsis: string; treatment: string; outline: string; bible: string }
   storyBible: {
     themes: string
     rules: string
@@ -584,6 +584,7 @@ export function buildProjectContext(state: ProjectState, userMessage = '', optio
       synopsis: text(state.pages.synopsis?.markdown),
       treatment: text(state.pages.treatment?.markdown),
       outline: text(state.pages.outline?.markdown),
+      bible: text(state.pages.bible?.markdown),
     },
     storyBible: {
       themes: text(storyBible.themes),

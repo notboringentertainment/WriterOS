@@ -75,7 +75,7 @@ describe('buildSurfaceAwareness', () => {
     expect(sa.kind).toBe('intake')
     if (sa.kind !== 'intake') return
     expect(sa.surface).toBe('story-bible')
-    expect(sa.surfaceTitle).toBe('Story Bible')
+    expect(sa.surfaceTitle).toBe('Story Facts')
     expect(sa.totalCount).toBe(STORY_BIBLE_SECTIONS.length)
     expect(sa.answeredCount).toBe(1)
     expect(sa.questions[0]).toMatchObject({

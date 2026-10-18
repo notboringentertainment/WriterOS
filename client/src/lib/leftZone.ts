@@ -50,7 +50,7 @@ const SURFACE_LABELS: Record<ActiveTab, string> = {
   synopsis: 'Synopsis',
   outline: 'Beat Sheet',
   treatment: 'Treatment',
-  'story-bible': 'Story Bible',
+  'story-bible': 'Story Facts',
   'whats-standing': "What's Standing",
 }
 

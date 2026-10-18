@@ -4,7 +4,7 @@ import type { ProposalOutcome } from './protocol'
 export const PROPOSE_TOOL_NAME = 'propose_page_change'
 export const PROPOSE_DESCRIPTION = [
   'Show the writer a change to a WriterOS page; they keep or dismiss it on the page. Returns their decision.',
-  'page: read documents/pages/<page>.json first; send page (synopsis, treatment or outline), the revision you read as baseRevision, and the complete new markdown. Get the absolute formats folder from the WRITEROS_MORGAN_FORMATS environment variable and read <page>.md there, plus canon, the other pages and the beat sheet before writing.',
+  'page: read documents/pages/<page>.json first; send page (synopsis, treatment, outline or bible), the revision you read as baseRevision, and the complete new markdown. Get the absolute formats folder from the WRITEROS_MORGAN_FORMATS environment variable and read <page>.md there, plus canon, the other pages and the beat sheet before writing.',
   'outline / storyBible: read documents/<surface>.json in the WriterOS package first; send the whole new `content` (same shape) and the `revision` you read as `baseRevision`.',
   'script: read script/script.writeros.html first. Send `blocks` (each {type, text}; types: scene-heading, action, character, dialogue, parenthetical, transition) and a `target`: replace-scene or insert-after-scene with the exact `sceneHeading` and `expectedScene` (every paragraph of that scene as you read it, heading first, each {type, text} from its data-element-type and text), or append with `expectedEnding` (the last scene the same way).',
   'Always include a one-line `summary` of what changes and why.',
@@ -14,7 +14,7 @@ export const PROPOSE_INPUT_SCHEMA = {
   required: ['surface', 'summary'],
   properties: {
     surface: { type: 'string', enum: ['page', 'outline', 'storyBible', 'script'] },
-    page: { type: 'string', enum: ['synopsis', 'treatment', 'outline'] },
+    page: { type: 'string', enum: ['synopsis', 'treatment', 'outline', 'bible'] },
     markdown: { type: 'string' },
     summary: { type: 'string', maxLength: 500 },
     baseRevision: { type: 'integer', minimum: 0 },

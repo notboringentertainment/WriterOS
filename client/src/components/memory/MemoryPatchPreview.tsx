@@ -11,7 +11,7 @@ const SURFACE_LABELS: Record<StructuredDocumentSurface, string> = {
   synopsis: 'Synopsis',
   outline: 'Beat Sheet',
   treatment: 'Treatment',
-  storyBible: 'Story Bible',
+  storyBible: 'Story Facts',
 }
 
 const WORKFLOW_LABELS: Record<MemoryWorkflow, string> = {

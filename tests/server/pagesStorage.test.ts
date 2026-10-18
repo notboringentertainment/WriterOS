@@ -5,8 +5,38 @@ import { describe, expect, it } from 'vitest'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 import { defaultProjectState } from '../../client/src/lib/projectState'
 import { detectDocumentChanges } from '../../server/projectMemory/writerOSObserver'
+import { pageStatus } from '../../client/src/components/writing/Pages'
+import type { ProjectMemorySnapshot } from '../../shared/projectMemory'
 
 describe('page storage', () => {
+  it('keeps and approves a bible independently of facts, refuses stale writes, and survives save and reopen', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'writeros-bible-'))
+    try {
+      const store = await createProjectLibraryStore(root)
+      const state = defaultProjectState()
+      state.documents.storyBible.content.onePagePitch.logline = 'These facts must never become page prose.'
+      const project = { id: '11111111-1111-4111-8111-111111111111', createdAt: Date.now(), updatedAt: Date.now(), state }
+      await store.writeProject(project)
+      const empty = await store.readPage!(project.id, 'bible')
+      expect(empty).toEqual({ page: 'bible', markdown: '', status: 'draft', revision: 0 })
+      const kept = await store.writePage!(project.id, { ...empty, markdown: '# Story Bible\n\nA repeatable story engine.' }, 0)
+      expect(kept.stale).toBe(false)
+      expect((await store.writePage!(project.id, { ...empty, markdown: 'Stale' }, 0)).stale).toBe(true)
+      const approved = await store.writePage!(project.id, { ...kept.page, status: 'approved', approvedAt: '2026-10-18T12:00:00.000Z', approvedCanon: [{ id: 'fact', version: 'v1' }] }, 1)
+      await store.writeProject(project)
+      const reopened = await createProjectLibraryStore(root)
+      const page = await reopened.readPage!(project.id, 'bible')
+      expect(page).toEqual(approved.page)
+      expect(page.revision).toBe(2)
+      const snapshot = { records: [{ id: 'fact', kind: 'canon', status: 'active', updatedAt: 'v1', claim: 'The engine repeats.' }] } as ProjectMemorySnapshot
+      expect(pageStatus(page, snapshot)).toBe('approved')
+      snapshot.records[0].updatedAt = 'v2'
+      expect(pageStatus(page, snapshot)).toBe('out of date')
+      const files = await reopened.readPackageSnapshot!(project.id)
+      expect(JSON.parse(files['documents/pages/bible.json']!)).toEqual(page)
+      expect(JSON.parse(files['documents/story-bible.json']!).content.onePagePitch.logline).toBe(state.documents.storyBible.content.onePagePitch.logline)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
   it('seeds once, refuses stale writes, and preserves frozen bytes across format and page work', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'writeros-pages-'))
     try {

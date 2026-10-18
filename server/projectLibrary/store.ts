@@ -430,6 +430,8 @@ export async function createProjectLibraryStore(
       let page: PageDocument
       if (files[relativePath] !== undefined) {
         page = PageDocumentSchema.parse(JSON.parse(files[relativePath]!))
+      } else if (name === 'bible') {
+        page = { page: name, markdown: '', status: 'draft', revision: 0 }
       } else {
         const parsed = readWriterOSProjectPackage(files)
         if (!parsed.ok) throw new ProjectLibraryStoreError('This project could not be read.', 400, 'invalid-project')

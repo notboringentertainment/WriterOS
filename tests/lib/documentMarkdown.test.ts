@@ -146,7 +146,7 @@ describe('storyBibleToMarkdown', () => {
       continuityFacts: '',
     })
     const md = storyBibleToMarkdown({ version: 1, revision: 0, mode: 'development', updatedAt: FIXED_TS, content })
-    expect(md).toContain('# Story Bible — My Film')
+    expect(md).toContain('# Story Facts — My Film')
     expect(md).toContain('### Sara')
   })
 })

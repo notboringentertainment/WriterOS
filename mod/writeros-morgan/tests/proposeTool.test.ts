@@ -4,7 +4,7 @@ import { outcomeText, PROPOSE_INPUT_SCHEMA } from '../hooks/proposeTool'
 
 test('schema names prose pages and surviving structured targets', () => {
   expect(PROPOSE_INPUT_SCHEMA.properties.surface.enum).toEqual(['page', 'outline', 'storyBible', 'script'])
-  expect(PROPOSE_INPUT_SCHEMA.properties.page.enum).toEqual(['synopsis', 'treatment', 'outline'])
+  expect(PROPOSE_INPUT_SCHEMA.properties.page.enum).toEqual(['synopsis', 'treatment', 'outline', 'bible'])
 })
 
 test('outcomes read plainly to Morgan', () => {
