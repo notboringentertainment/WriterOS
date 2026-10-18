@@ -22,11 +22,13 @@ WriterOS is the home for a project's canon and its script. The live app (port 51
 
 - Two Story-drive projects are ready to link, but their beats were hand-edited outside
   Story-drive. They get resubmitted through Story-drive before linking.
-- When you type a follow-up to Morgan while on the Story Bible page, she may think you are on
-  a different page. The "write this page" button works correctly. Known, not fixed.
-- Two small wording slips on Story Facts ("the Story Facts's Looks section",
-  "clear the whole Story Facts"). Known, not fixed.
-- Older pull requests still open and not being worked on: #55, #65, #67, #84.
+- When you type to Morgan from any page in Pages, she's told you're on Treatment. The
+  "Write it with Morgan" button sends the right page. Known, not fixed.
+- Two small wording slips: the Story Facts clear button reads "clear the whole Story Facts",
+  and Morgan's instructions say "the Story Facts's Looks section". Known, not fixed.
+- #84 (Morgan asks before she sends, signs or deletes through your connected apps) is waiting
+  on your decision.
+- Older pull requests still open and not being worked on: #55, #65, #67.
 
 ## Next
 
