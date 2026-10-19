@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { PublishMemoryInputSchema } from '../../shared/projectMemory'
+import { MEMORY_DETAIL_MAX, PublishMemoryInputSchema } from '../../shared/projectMemory'
 import type { ProjectMemoryRecord } from '../../shared/projectMemory'
 import { appealsForCommit, renderAppealTicket } from '../../server/appeals/appealTicket'
 
@@ -241,15 +241,15 @@ The harbor is closed after midnight.
       requestedStatus: 'active',
       source: { sourceId: 'resolved/long-history.md' },
     })
-    expect(preview.records[1]?.detail).toHaveLength(8_000)
+    expect(preview.records[1]?.detail).toBe(
+      `Superseded answer (2026-08-01): ${'The earlier rule had an exception. '.repeat(260).trim()}`,
+    )
     expect(preview.counts.activeCanon).toBe(2)
     expect(preview.counts.candidates).toBe(0)
     expect(preview.warnings).toContain(
       'resolved/long-answer.md:1: claim shortened to a 600-character gist; full ratified answer preserved in detail',
     )
-    expect(preview.warnings).toContain(
-      'resolved/long-history.md:1: full answer exceeds 8000 characters; detail truncated but active canon retained',
-    )
+    expect(preview.warnings.some(warning => warning.startsWith('resolved/long-history.md'))).toBe(false)
   })
 
   it('imports a long ratified answer as active canon with a gisted claim and the full answer in detail', async () => {
@@ -328,7 +328,7 @@ ${longAnswer}
     expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0 })
   })
 
-  it('keeps a ratified answer active even when it exceeds the 8000-character detail cap', async () => {
+  it('keeps a ratified answer longer than the old 8000-character cap whole, under its own key', async () => {
     const root = await createSourceRoot('writeros-wayfinder-oversized-ratified-')
     const longAnswer = Array.from(
       { length: 400 },
@@ -352,11 +352,40 @@ ${longAnswer}
     expect(preview.records).toHaveLength(1)
     const [record] = preview.records
     expect(record).toMatchObject({ kind: 'canon', requestedStatus: 'active' })
-    expect(record?.detail).toHaveLength(8_000)
-    expect(preview.warnings).toContain(
-      'resolved/oversized-ratified.md:1: full answer exceeds 8000 characters; detail truncated but active canon retained',
-    )
+    expect(record?.detail).toBe(longAnswer)
+    expect(preview.warnings.some(warning => warning.includes('detail truncated'))).toBe(false)
+    // Imports before the cap was raised stored this answer cut short under the
+    // plain key; the full answer must be a new publication, not a no-op.
+    const legacyKey = `import:story-wayfinder:${createHash('sha256')
+      .update(`story-wayfinder\0resolved/oversized-ratified.md\0${record?.source.sourceHash}`).digest('hex')}`
+    expect(record?.dedupeKey).not.toBe(legacyKey)
     expect(preview.counts).toMatchObject({ activeCanon: 1, candidates: 0 })
+  })
+
+  it('still caps an answer past the record detail limit, keeping it active canon', async () => {
+    const root = await createSourceRoot('writeros-wayfinder-past-detail-limit-')
+    const hugeAnswer = 'The harbor rule holds. '.repeat(3_000).trim()
+    expect(hugeAnswer.length).toBeGreaterThan(MEMORY_DETAIL_MAX)
+    await writeSource(root, 'resolved/huge-ratified.md', `# Lock the huge clause set
+type: sketch
+mode: hitl
+resolved: 2026-08-13
+
+## Answer
+${hugeAnswer}
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+
+    const preview = await previewProjectMemoryImport({
+      source: 'wayfinder', projectId: 'project-wayfinder-huge-ratified', sourceRoot: root,
+    })
+
+    const [record] = preview.records
+    expect(record).toMatchObject({ kind: 'canon', requestedStatus: 'active' })
+    expect(record?.detail).toHaveLength(MEMORY_DETAIL_MAX)
+    expect(preview.warnings).toContain(
+      `resolved/huge-ratified.md:1: full answer exceeds ${MEMORY_DETAIL_MAX} characters; detail truncated but active canon retained`,
+    )
   })
 
   it('stands in for the real dry-run regression: 0 of 16 ratified tickets are demoted for prose length', async () => {
@@ -1388,7 +1417,7 @@ Claims without resolvable locators stay out.
 
   it('bounds claims, details, and evidence before records cross the import boundary', async () => {
     const longClaim = 'X'.repeat(700)
-    const longDetail = 'Y'.repeat(9_000)
+    const longDetail = 'Y'.repeat(MEMORY_DETAIL_MAX + 1_000)
     const wayfinderRoot = await createSourceRoot('writeros-import-bounds-wayfinder-')
     await writeSource(wayfinderRoot, 'resolved/scoped.md', `# Long scoped ticket
 type: grill
@@ -1450,7 +1479,7 @@ ${longClaim}
     expect(records).toHaveLength(3)
     expect(records.every(record => PublishMemoryInputSchema.safeParse(record).success)).toBe(true)
     expect(records.every(record => record.claim.length <= 600)).toBe(true)
-    expect(records.every(record => (record.detail?.length ?? 0) <= 8_000)).toBe(true)
+    expect(records.every(record => (record.detail?.length ?? 0) <= MEMORY_DETAIL_MAX)).toBe(true)
     expect(records.every(record => (record.evidence ?? []).every(item => item.excerpt.length <= 1_500))).toBe(true)
     expect(records.find(record => record.source.workflow === 'buzz')?.evidence).toHaveLength(3)
     expect(previews.every(preview => preview.warnings.some(warning => warning.includes('truncated')))).toBe(true)

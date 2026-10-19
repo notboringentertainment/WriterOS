@@ -1,4 +1,5 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -6,6 +7,7 @@ import { defaultProjectState } from '../../client/src/lib/projectState'
 import { createProjectLibraryStore } from '../../server/projectLibrary/store'
 import { createProjectMemoryStore, projectMemoryStore } from '../../server/projectMemory/store'
 import { runProjectMemoryCli } from '../../server/projectMemory/cli'
+import { LEGACY_MEMORY_DETAIL_MAX } from '../../shared/projectMemory'
 
 const temporaryRoots: string[] = []
 
@@ -497,5 +499,143 @@ describe('reconcile-stale rename check', () => {
       expect.objectContaining({ sourceId: 'tickets/old-a.md', reason: 'More than one removed ticket has the same question text as resolved/peak.md.' }),
       expect.objectContaining({ sourceId: 'tickets/old-b.md', reason: 'More than one removed ticket has the same question text as resolved/peak.md.' }),
     ])
+  })
+})
+
+function scopedOut(projectId: string, sourceId: string, hash: string) {
+  return ticket(projectId, sourceId, hash, {
+    dedupeKey: `import:story-wayfinder:${sourceId}:${hash}:scoped-out`,
+    kind: 'development',
+    claim: `Scoped out: ${sourceId}`,
+    detail: 'Scoped-out answer: Replaced, not re-decided; this ticket stays on file as history.',
+    source: {
+      workflow: 'story-wayfinder',
+      sourceId,
+      sourceUri: `story-wayfinder:${sourceId}`,
+      sourceHash: hash,
+      capturedAt: '2026-09-01T00:00:00.000Z',
+      approval: 'none',
+    },
+  })
+}
+
+describe('answers replaced at the source', () => {
+  it('reconcile retires the canon a scoped-out answer replaced, and importing again does not revive it', async () => {
+    const projectId = 'reconcile-scoped-canon'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedVersions(projectPath, projectId, 'resolved/old-sheet.md', ['v1'])
+    // The pre-fix import landed the scope-out beside the canon it replaced.
+    await projectMemoryStore.publish(projectPath, scopedOut(projectId, 'resolved/old-sheet.md', 's1') as never)
+    await seedVersions(projectPath, projectId, 'resolved/new-sheet.md', ['n1'])
+    const before = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const oldCanon = before.records.find(record => record.kind === 'canon' && record.source.sourceId === 'resolved/old-sheet.md')
+    expect(oldCanon?.status).toBe('active')
+    const current = preview(projectId, [
+      scopedOut(projectId, 'resolved/old-sheet.md', 's1'),
+      ticket(projectId, 'resolved/new-sheet.md', 'n1'),
+    ])
+
+    const dry = await run('reconcile-stale', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output).toMatchObject({ skipped: [] })
+    const groups = dry.output?.groups as Array<Record<string, unknown>>
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ kind: 'development', sourceId: 'resolved/old-sheet.md', winnerSourceHash: 's1' })
+    expect(groups[0].retireRecordIds).toContain(oldCanon?.id)
+
+    const applied = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1 })
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    expect(after.records.find(record => record.id === oldCanon?.id)?.status).toBe('superseded')
+    const activeAtOld = after.records.filter(record => (
+      record.status === 'active' && record.source.sourceId === 'resolved/old-sheet.md'
+    ))
+    expect(activeAtOld).toHaveLength(1)
+    expect(activeAtOld[0]).toMatchObject({ kind: 'development', claim: 'Scoped out: resolved/old-sheet.md' })
+    // The replacement answer is untouched.
+    expect(after.records.filter(record => (
+      record.status === 'active' && record.kind === 'canon' && record.source.sourceId === 'resolved/new-sheet.md'
+    ))).toHaveLength(1)
+
+    const reimport = await run('import', projectPath, sourceRoot, '--apply', current)
+    expect(reimport.output).toMatchObject({ applied: 0, supersessions: 0, revision: after.revision })
+    const again = await run('reconcile-stale', projectPath, sourceRoot, '--apply', current)
+    expect(again.output).toMatchObject({ applied: 0, groups: [], revision: after.revision })
+    const final = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    expect(final.records.find(record => record.id === oldCanon?.id)?.status).toBe('superseded')
+  })
+
+  it('a fresh import of a scoped-out answer retires the canon of the same ticket', async () => {
+    const projectId = 'import-scoped-canon'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedVersions(projectPath, projectId, 'resolved/old-sheet.md', ['v1'])
+    const current = preview(projectId, [scopedOut(projectId, 'resolved/old-sheet.md', 's1')])
+
+    const dry = await run('import', projectPath, sourceRoot, '--dry-run', current)
+    expect(dry.output).toMatchObject({ supersessionsExpected: 1 })
+    const applied = await run('import', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, supersessions: 1 })
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    expect(after.records.filter(record => record.status === 'active')).toEqual([
+      expect.objectContaining({ kind: 'development', source: expect.objectContaining({ sourceHash: 's1' }) }),
+    ])
+  })
+
+  it('does not let an ordinary development answer retire canon', async () => {
+    const projectId = 'import-development-keeps-canon'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    await seedVersions(projectPath, projectId, 'resolved/rule.md', ['v1'])
+    const development = ticket(projectId, 'resolved/rule.md', 'd1', {
+      dedupeKey: 'import:story-wayfinder:resolved/rule.md:d1',
+      kind: 'development',
+      detail: 'Research notes, not a scope-out.',
+    })
+
+    await run('import', projectPath, sourceRoot, '--apply', preview(projectId, [development]))
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    expect(after.records.filter(record => record.status === 'active').map(record => record.kind).sort())
+      .toEqual(['canon', 'development'])
+  })
+})
+
+describe('answers cut short by the old 8,000-character cap', () => {
+  it('republish whole on the next import, retire the short copy, and stay put on a second import', async () => {
+    const projectId = 'import-full-detail'
+    const { projectPath, sourceRoot } = await createProject(projectId)
+    const answer = Array.from({ length: 450 }, (_unused, index) => `Beat ${index} turns the job.`).join(' ')
+    expect(answer.length).toBeGreaterThan(LEGACY_MEMORY_DETAIL_MAX)
+    await mkdir(path.join(sourceRoot, 'resolved'), { recursive: true })
+    await writeFile(path.join(sourceRoot, 'resolved', 'long-sheet.md'), `# Lay the long sheet
+type: grill
+mode: hitl
+resolved: 2026-10-01
+
+## Answer
+${answer}
+`)
+    const { previewProjectMemoryImport } = await import('../../server/projectMemory/importer')
+    const current = await previewProjectMemoryImport({ source: 'wayfinder', projectId, sourceRoot })
+    const [full] = current.records
+    expect(full.detail).toBe(answer)
+    // What the pre-fix importer stored: same bytes, plain key, detail cut at 8,000.
+    const legacyKey = `import:story-wayfinder:${createHash('sha256')
+      .update(`story-wayfinder\0resolved/long-sheet.md\0${full.source.sourceHash}`).digest('hex')}`
+    await projectMemoryStore.publish(projectPath, {
+      ...full,
+      dedupeKey: legacyKey,
+      detail: `${answer.slice(0, LEGACY_MEMORY_DETAIL_MAX - 1)}…`,
+    } as never)
+
+    const applied = await run('import', projectPath, sourceRoot, '--apply', current)
+    expect(applied.output).toMatchObject({ applied: 1, supersessions: 1 })
+    const after = await projectMemoryStore.readSnapshotReadOnly(projectPath)
+    const active = after.records.filter(record => record.status === 'active')
+    expect(active).toHaveLength(1)
+    expect(active[0]).toMatchObject({ kind: 'canon', detail: answer })
+    expect(after.records.filter(record => record.status === 'superseded')).toHaveLength(1)
+
+    const again = await run('import', projectPath, sourceRoot, '--apply', current)
+    expect(again.output).toMatchObject({ applied: 0, supersessions: 0, revision: after.revision })
+    const reread = await createProjectMemoryStore().readSnapshotReadOnly(projectPath)
+    expect(reread.records.find(record => record.status === 'active')?.detail).toBe(answer)
   })
 })

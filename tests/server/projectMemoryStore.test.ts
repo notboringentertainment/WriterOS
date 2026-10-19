@@ -12,6 +12,7 @@ import {
   MemoryWorkflowSchema,
   ProjectMemoryActionSchema,
   ProjectMemoryConflictResolutionSchema,
+  MEMORY_DETAIL_MAX,
   ProjectMemoryConflictStatusSchema,
   ProjectMemoryEventSchema,
   ProjectMemoryRecordSchema,
@@ -177,8 +178,8 @@ describe('project memory schemas', () => {
     expect(PublishMemoryInputSchema.safeParse(publishInput({ claim: '' })).success).toBe(false)
     expect(PublishMemoryInputSchema.safeParse(publishInput({ claim: 'x'.repeat(600) })).success).toBe(true)
     expect(PublishMemoryInputSchema.safeParse(publishInput({ claim: 'x'.repeat(601) })).success).toBe(false)
-    expect(PublishMemoryInputSchema.safeParse(publishInput({ detail: 'x'.repeat(8_000) })).success).toBe(true)
-    expect(PublishMemoryInputSchema.safeParse(publishInput({ detail: 'x'.repeat(8_001) })).success).toBe(false)
+    expect(PublishMemoryInputSchema.safeParse(publishInput({ detail: 'x'.repeat(MEMORY_DETAIL_MAX) })).success).toBe(true)
+    expect(PublishMemoryInputSchema.safeParse(publishInput({ detail: 'x'.repeat(MEMORY_DETAIL_MAX + 1) })).success).toBe(false)
   })
 
   it('enforces evidence, tag, and entity bounds', () => {
