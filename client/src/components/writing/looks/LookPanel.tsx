@@ -262,11 +262,10 @@ export function LookPanel(props: LookPanelProps) {
             {promoted ? (
               <div style={styles.promotedBlock} role="status">
                 <p style={styles.promotedLine}>
-                  Promoted · look_hash <code style={styles.code}>{promoted.lookHash.slice(0, 12)}</code> · awaiting Front Lot ratification
+                  Saved to canon.
                 </p>
                 <p style={styles.hint}>
-                  Next, in OpenMontage: <code style={styles.code}>look_run.py --entity {state.kind === 'promoted' ? state.entityId : target.entityId} --source writeros</code>,
-                  then approve the gate in a terminal.
+                  Open Front Lot to lock and sign this look.
                 </p>
                 {!promoted.exportWritten && (
                   <p style={styles.problem}>Promoted, but the export file was not written. Click Re-export.</p>
@@ -302,7 +301,7 @@ export function LookPanel(props: LookPanelProps) {
                     disabled={!canPromote} onClick={() => { void handlePromote() }}>
                     {state.kind === 'sending' ? 'Promoting…' : 'Promote to canon'}
                   </button>
-                  <span style={styles.hint}>Promotion is not ratification. Ratify in OpenMontage.</span>
+                  <span style={styles.hint}>Promoting saves it to canon. Front Lot is where you lock and sign it.</span>
                 </div>
               </>
             )}
