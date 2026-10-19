@@ -121,8 +121,9 @@ describe('Promote', () => {
     expect(body.spec.depends_on).toBeUndefined()
     expect(Object.keys(body.spec).every((field: string) => body.fieldSources[field] === 'writer')).toBe(true)
     expect(props.onPromoted).toHaveBeenCalled()
-    expect(screen.getByRole('status')).toHaveTextContent('Promoted · look_hash aaaaaaaaaaaa · awaiting Front Lot ratification')
-    expect(screen.getByText(/--source writeros/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Saved to canon.')
+    expect(screen.getByText('Open Front Lot to lock and sign this look.')).toBeInTheDocument()
+    expect(screen.queryByText(/look_hash|look_run|terminal/)).not.toBeInTheDocument()
   })
 
   it('shows the server problems as sentences on a 400', async () => {
@@ -226,7 +227,7 @@ describe('Writers Room', () => {
 })
 
 describe('Look review fixes', () => {
-  it('after Promote, the next-step command names the id the writer promoted, not the opening id', async () => {
+  it('after Promote, the saved message stays up when the draft is cleared, with no command or hash', async () => {
     const promote = vi.fn().mockResolvedValue({ ok: true, response: {
       recordId: 'mem_x', lookHash: 'a'.repeat(64), memoryRevision: 4, exportPath: 'memory/exports/look-locks-4.json',
       exportWritten: true, supersededRecordId: null, retried: false } })
@@ -234,7 +235,8 @@ describe('Look review fixes', () => {
     const { props, rerender } = renderPanel({ draft, promote })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Promote to canon' })) })
     rerender(<LookPanel {...props} draft={undefined} />)
-    expect(screen.getByText(/--entity custom-joe/)).toBeInTheDocument()
+    expect(screen.getByText('Open Front Lot to lock and sign this look.')).toBeInTheDocument()
+    expect(screen.queryByText(/--entity|look_hash|look_run|terminal/)).not.toBeInTheDocument()
   })
 
   it('a promotion that finishes after the panel closed does not call back', async () => {
