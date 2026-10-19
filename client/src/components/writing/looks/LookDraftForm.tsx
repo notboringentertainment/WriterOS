@@ -15,7 +15,7 @@ export interface LookDraftFormProps {
 }
 
 export const LOOK_FIELD_LABELS: Record<string, string> = {
-  entity_id: 'Look id',
+  entity_id: 'Short name',
   prompt_safe_description: 'Description',
   age_band: 'Age band',
   build: 'Build',
@@ -173,7 +173,7 @@ export function LookDraftForm({ draft, problems, onField, onClear, onReference, 
         )}
       </fieldset>
 
-      {text('entity_id', 'Look id', 'Lowercase letters, digits and hyphens. OpenMontage keys the look on this.')}
+      {text('entity_id', 'Short name', 'Lowercase letters, numbers and hyphens. Front Lot finds the look by this name.')}
       <DescriptionField id={fid('prompt_safe_description')} value={typeof spec.prompt_safe_description === 'string' ? spec.prompt_safe_description : ''}
         problem={problemFor('prompt_safe_description')} disabled={disabled}
         onChange={next => (next === '' ? onClear('prompt_safe_description') : onField('prompt_safe_description', next))} />
