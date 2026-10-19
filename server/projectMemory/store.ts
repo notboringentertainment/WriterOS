@@ -439,7 +439,7 @@ function applyEvent(
     let supersessionTargets: ProjectMemoryRecord[]
     try {
       supersessionTargets = event.supersededRecordIds.map(recordId => requireRecord(state.snapshot, recordId))
-      validateSupersessionTargets(event.record.kind, event.record.source, supersessionTargets)
+      validateSupersessionTargets(event.record.kind, event.record.source, supersessionTargets, event.record.detail)
     } catch (error) {
       throw corruptLedger(lineNumber, error instanceof Error ? error.message : String(error))
     }
@@ -755,6 +755,7 @@ function validateSupersessionTargets(
   winnerKind: ProjectMemoryRecord['kind'],
   winnerSource: MemorySource,
   targets: ProjectMemoryRecord[],
+  winnerDetail?: string,
 ): void {
   for (const target of targets) {
     // An answer closes its question: active canon or development may retire
@@ -763,9 +764,18 @@ function validateSupersessionTargets(
     const closesQuestion = target.kind === 'open_question'
       && (winnerKind === 'canon' || winnerKind === 'development')
       && target.source.workflow === winnerSource.workflow
-    if (target.status !== 'active' || (target.kind !== winnerKind && !closesQuestion)) {
+    // A ticket whose answer was replaced at its source (a Story-drive
+    // scope-out) keeps its file as history: the development record of that
+    // same file retires the canon it used to carry.
+    const replacesOwnCanon = target.kind === 'canon'
+      && winnerKind === 'development'
+      && winnerSource.workflow === 'story-wayfinder'
+      && winnerDetail?.startsWith('Scoped-out answer:') === true
+      && target.source.workflow === winnerSource.workflow
+      && target.source.sourceId === winnerSource.sourceId
+    if (target.status !== 'active' || (target.kind !== winnerKind && !closesQuestion && !replacesOwnCanon)) {
       throw new ProjectMemoryStoreError(
-        'Supersession requires an active record of the same memory kind, or an open question closed by an answer from the same workflow.',
+        'Supersession requires an active record of the same memory kind, an open question closed by an answer from the same workflow, or canon replaced at its own source.',
         'invalid-action',
       )
     }
@@ -844,7 +854,7 @@ function derivePromotionMutation(
     )
   }
   const targets = requireSupersessionTargets(snapshot, record.id, supersedes)
-  validateSupersessionTargets(record.kind, record.source, targets)
+  validateSupersessionTargets(record.kind, record.source, targets, record.detail)
   const targetIds = new Set(targets.map(target => target.id))
   const openConflicts = snapshot.conflicts.filter(conflict => (
     conflict.status === 'open'
@@ -956,7 +966,7 @@ function createPublicationEvent(
     recordId,
     unique([...input.supersedes, ...priorVersionIds]),
   )
-  validateSupersessionTargets(input.kind, input.source, explicitTargets)
+  validateSupersessionTargets(input.kind, input.source, explicitTargets, input.detail)
 
   let automaticDocumentTargets: ProjectMemoryRecord[] = []
   if (input.kind === 'document_fact') {

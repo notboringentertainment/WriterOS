@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { lstat, readdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { PublishMemoryInput } from '../../../shared/projectMemory'
+import {
+  LEGACY_MEMORY_DETAIL_MAX,
+  MEMORY_DETAIL_MAX,
+  type PublishMemoryInput,
+} from '../../../shared/projectMemory'
 import { UnsafeProjectMemoryPathError } from '../safePaths'
 import { unescapeSectionLine } from '../../appeals/appealTicket'
 import {
@@ -370,13 +374,18 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
             : activeCanon && claim !== rawClaim
               ? rawClaim
               : undefined
-        const detail = rawDetail === undefined ? undefined : truncateImportText(rawDetail, 8_000)
+        const detail = rawDetail === undefined ? undefined : truncateImportText(rawDetail, MEMORY_DETAIL_MAX)
         const detailTruncated = detail !== rawDetail
         if (detailTruncated) {
           warnings.push(activeCanon
-            ? `${relativePath}:1: full answer exceeds 8000 characters; detail truncated but active canon retained`
-            : `${relativePath}:1: detail truncated to 8000 characters`)
+            ? `${relativePath}:1: full answer exceeds ${MEMORY_DETAIL_MAX} characters; detail truncated but active canon retained`
+            : `${relativePath}:1: detail truncated to ${MEMORY_DETAIL_MAX} characters`)
         }
+        // Before 2026-10-19 detail was cut at 8,000 characters, and a
+        // publication is idempotent per (key, hash): the same bytes would
+        // never republish in full. A distinct key lets such an answer land
+        // again whole; supersedesPriorVersions then retires the short copy.
+        const outgrewLegacyDetail = (rawDetail?.length ?? 0) > LEGACY_MEMORY_DETAIL_MAX
         const requestedStatus = nearScoped
           || unsafeLine !== undefined
           || invalidTicketMetadata
@@ -391,7 +400,9 @@ export const wayfinderMemorySourceAdapter: MemorySourceAdapter = {
         // is left alone (the store never retires a candidate).
         const dedupeKey = scoped
           ? `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}\0scoped-out`)}`
-          : `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}`)}`
+          : outgrewLegacyDetail
+            ? `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}\0full-detail`)}`
+            : `import:story-wayfinder:${sha256(`story-wayfinder\0${relativePath}\0${sourceHash}`)}`
         records.push({
           projectId,
           dedupeKey,

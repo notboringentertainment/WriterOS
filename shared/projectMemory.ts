@@ -171,13 +171,23 @@ export function canPromoteMemoryRecord(record: {
     && record.source.approval === 'explicit'
 }
 
+/**
+ * A record's full text. Imported Story-drive answers carry the whole ratified
+ * answer here (a pilot beat sheet runs past 15,000 characters). Active canon
+ * context renders claims only, so this does not grow what every prompt reads.
+ * The limit was 8,000 until 2026-10-19; answers imported before then may be
+ * cut short (see LEGACY_MEMORY_DETAIL_MAX).
+ */
+export const MEMORY_DETAIL_MAX = 64_000
+export const LEGACY_MEMORY_DETAIL_MAX = 8_000
+
 export const ProjectMemoryRecordSchema = z.object({
   id: IdentifierSchema,
   projectId: IdentifierSchema,
   kind: MemoryKindSchema,
   status: MemoryStatusSchema,
   claim: z.string().min(1).max(600),
-  detail: z.string().max(8_000).optional(),
+  detail: z.string().max(MEMORY_DETAIL_MAX).optional(),
   tags: z.array(z.string().min(1).max(100)).max(20),
   entities: z.array(z.string().min(1).max(200)).max(30),
   source: MemorySourceSchema,
@@ -241,7 +251,7 @@ export const PublishMemoryInputSchema = z.object({
   kind: MemoryKindSchema,
   requestedStatus: RequestedMemoryStatusSchema,
   claim: z.string().min(1).max(600),
-  detail: z.string().max(8_000).optional(),
+  detail: z.string().max(MEMORY_DETAIL_MAX).optional(),
   tags: z.array(z.string().min(1).max(100)).max(20).default([]),
   entities: z.array(z.string().min(1).max(200)).max(30).default([]),
   source: MemorySourceSchema,

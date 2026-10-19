@@ -725,7 +725,8 @@ async function runImport(
         source: record.source,
       }).length
       const questions = closureTargets(snapshot, record).length
-      supersessionsExpected += versions + questions
+      const replacedCanon = replacedCanonFor(snapshot.records, record).length
+      supersessionsExpected += versions + questions + replacedCanon
       questionsClosedExpected += questions
     }
     io.stdout(`${JSON.stringify({
@@ -750,11 +751,12 @@ async function runImport(
   for (const record of records) {
     let result
     let questionIds = closureTargets(latest, record)
-    let input: PublishMemoryInput = questionIds.length === 0
+    let retireIds = [...questionIds, ...replacedCanonFor(latest.records, record).map(existing => existing.id)]
+    let input: PublishMemoryInput = retireIds.length === 0
       ? record
       : {
         ...record,
-        supersedes: [...new Set([...(record.supersedes ?? []), ...questionIds])],
+        supersedes: [...new Set([...(record.supersedes ?? []), ...retireIds])],
         // Pin the closure to the snapshot its targets were chosen from; the
         // store refuses if another writer moved the ledger in between.
         expectedRevision: latest.revision,
@@ -773,11 +775,12 @@ async function runImport(
           await project.verify()
           latest = await memoryStore.readSnapshot(projectPath)
           questionIds = closureTargets(latest, record)
-          input = questionIds.length === 0
+          retireIds = [...questionIds, ...replacedCanonFor(latest.records, record).map(existing => existing.id)]
+          input = retireIds.length === 0
             ? record
             : {
               ...record,
-              supersedes: [...new Set([...(record.supersedes ?? []), ...questionIds])],
+              supersedes: [...new Set([...(record.supersedes ?? []), ...retireIds])],
               expectedRevision: latest.revision,
             }
           continue
@@ -838,7 +841,7 @@ interface AnswerRepair {
   sourceId: string
   winnerRecordId: string
   winnerSourceHash: string
-  /** Every active version of this source, the winner included. */
+  /** Every active version of this source, the winner included, plus any canon a scoped-out winner replaced. */
   retireRecordIds: string[]
   /** Active open-question records of the same ticket whose open file is gone. */
   closeQuestionIds: string[]
@@ -867,11 +870,34 @@ function versionAnchor(kind: string, workflow: string, sourceId: string): string
   return `${kind}\0${workflow}\0${sourceId}`
 }
 
-function repairDedupeKey(workflow: string, sourceId: string, targetIds: readonly string[], closesQuestions: boolean): string {
-  if (!closesQuestions) return `maintenance:collapse:${workflow}:${sourceId}`
-  // A closure key must change with its targets: after a reopen, a later
-  // closure against the same answer bytes is a new publication, while a
-  // retry of the same closure stays idempotent.
+/** A resolved Wayfinder ticket whose answer was replaced at its source and kept as history. */
+function isScopedOutAnswer(record: Pick<PublishMemoryInput, 'kind' | 'source' | 'detail'>): boolean {
+  return record.kind === 'development'
+    && record.source.workflow === 'story-wayfinder'
+    && record.source.sourceId.startsWith('resolved/')
+    && record.detail?.startsWith('Scoped-out answer:') === true
+}
+
+/** Active canon of the same ticket that a scoped-out answer retires. */
+function replacedCanonFor(
+  records: RepairSnapshot['records'],
+  record: Pick<PublishMemoryInput, 'kind' | 'source' | 'detail'>,
+): RepairSnapshot['records'] {
+  if (!isScopedOutAnswer(record)) return []
+  return records.filter(existing => (
+    existing.status === 'active'
+    && existing.kind === 'canon'
+    && existing.source.workflow === record.source.workflow
+    && existing.source.sourceId === record.source.sourceId
+  ))
+}
+
+function repairDedupeKey(workflow: string, sourceId: string, targetIds: readonly string[], closesOthers: boolean): string {
+  if (!closesOthers) return `maintenance:collapse:${workflow}:${sourceId}`
+  // A key that closes questions or retires replaced canon must change with
+  // its targets: after a reopen, a later closure against the same answer
+  // bytes is a new publication, while a retry of the same closure stays
+  // idempotent.
   const digest = createHash('sha256').update([...targetIds].sort().join('\n')).digest('hex')
   return `maintenance:close:${workflow}:${sourceId}:${digest}`
 }
@@ -971,7 +997,12 @@ function planAnswerRepairs(
         }
       }
     }
-    if (members.length < 2 && questions.length === 0) continue
+    // Canon at this ticket that a scoped-out answer would retire (only
+    // considered once the current version is known to be that scope-out).
+    const canonAtSource = isAnswerAnchor && first.kind === 'development'
+      ? replacedCanonFor(snapshot.records, { ...first, detail: 'Scoped-out answer:' })
+      : []
+    if (members.length < 2 && questions.length === 0 && canonAtSource.length === 0) continue
     const questionSkip = (reason: string) => {
       if (questions.length > 0) {
         skippedQuestions.push({ sourceId: openPath as string, recordIds: questions.map(record => record.id), reason })
@@ -1000,7 +1031,9 @@ function planAnswerRepairs(
       questionSkip('The answer carries store-derived authority and cannot be republished.')
       continue
     }
-    const retireRecordIds = members.map(record => record.id)
+    const replacedCanon = isScopedOutAnswer(winner) ? canonAtSource : []
+    if (members.length < 2 && questions.length === 0 && replacedCanon.length === 0) continue
+    const retireRecordIds = [...members, ...replacedCanon].map(record => record.id)
     const closeQuestionIds = questions.map(record => record.id)
     groups.push({
       kind: winner.kind,
@@ -1015,7 +1048,7 @@ function planAnswerRepairs(
         winner.source.workflow,
         winner.source.sourceId,
         [...retireRecordIds, ...closeQuestionIds],
-        closeQuestionIds.length > 0,
+        closeQuestionIds.length > 0 || replacedCanon.length > 0,
       ),
     })
   }
@@ -1034,7 +1067,7 @@ function planAnswerRepairs(
   }
   // A question-version group whose every record is closed by an answer
   // repair is handled by that repair; do not also report it as skipped.
-  const closedIds = new Set(groups.flatMap(group => group.closeQuestionIds))
+  const closedIds = new Set(groups.flatMap(group => [...group.closeQuestionIds, ...group.retireRecordIds]))
   return {
     groups,
     skipped: skipped.filter(entry => !entry.recordIds.every(id => closedIds.has(id))),
