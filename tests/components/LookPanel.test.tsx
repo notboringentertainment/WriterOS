@@ -113,6 +113,7 @@ describe('Promote', () => {
     const { props } = renderPanel({ draft: completeCharacter(), promote })
     const button = screen.getByRole('button', { name: 'Promote to canon' })
     expect(button).toBeEnabled()
+    expect(screen.queryByText(/look_hash|OpenMontage/)).not.toBeInTheDocument()
     await act(async () => { fireEvent.click(button) })
     const body = promote.mock.calls[0][0]
     expect(body.reference).toBe('none')
@@ -167,12 +168,14 @@ describe('Promote', () => {
     expect(screen.getByText('Promoted, but the export file was not written. Click Re-export.')).toBeInTheDocument()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Re-export' })) })
     expect(props.reexport).toHaveBeenCalled()
-    expect(screen.getByText('Export written. OpenMontage can read it now.')).toBeInTheDocument()
+    expect(screen.getByText('Export written. Front Lot can read it now.')).toBeInTheDocument()
   })
 
   it('says a promoted look already exists and that promoting replaces it', () => {
     renderPanel({ prior: { recordId: 'mem_p', entityKind: 'character', entityId: 'vector-engineer', entityName: 'Vector Engineer', lookHash: 'c'.repeat(64), reference: 'none' as const, spec: {} as never } })
-    expect(screen.getByText(/A promoted look already exists/)).toHaveTextContent('cccccccccccc')
+    const notice = screen.getByText(/is already saved to canon/)
+    expect(notice).toHaveTextContent('A look for Vector Engineer is already saved to canon.')
+    expect(notice).not.toHaveTextContent(/cccccccccccc|look_hash|ratified/)
   })
 
   it('without a server library, Promote explains why it is unavailable', () => {

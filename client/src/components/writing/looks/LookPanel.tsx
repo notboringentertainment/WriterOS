@@ -162,7 +162,7 @@ export function LookPanel(props: LookPanelProps) {
     setReexportNote(null)
     try {
       await reexport()
-      setReexportNote('Export written. OpenMontage can read it now.')
+      setReexportNote('Export written. Front Lot can read it now.')
     } catch (error) {
       setReexportNote(error instanceof Error ? error.message : 'Re-export failed.')
     } finally {
@@ -196,9 +196,9 @@ export function LookPanel(props: LookPanelProps) {
 
       {prior && !promoted && (
         <p style={styles.notice}>
-          A promoted look already exists for {prior.entityName} (look_hash <code style={styles.code}>{prior.lookHash.slice(0, 12)}</code>).
+          A look for {prior.entityName} is already saved to canon.
           Promoting this one replaces it{renaming && draft ? ` and renames it from ${prior.entityName} to ${draft.entityName}` : ''};
-          once ratified, headshots and sheets made from the old look stop being usable.
+          once you sign the new look in Front Lot, headshots and sheets made from the old look can no longer be used.
           {props.onStartFromPromoted && isPristineDraft(draft) && (
             <>
               {' '}To change a detail without retyping the look, start from your promoted answers.{' '}
@@ -293,9 +293,6 @@ export function LookPanel(props: LookPanelProps) {
                 {unchanged && <p style={styles.hint}>This is identical to the promoted look. Change something before promoting.</p>}
                 {!promote && <p style={styles.hint}>Promotion needs this project open from the WriterOS project folder.</p>}
                 {promote && memoryRevision === undefined && <p style={styles.hint}>Loading project memory…</p>}
-                {check.hash && (
-                  <p style={styles.hint}>look_hash preview <code style={styles.code}>{check.hash.slice(0, 12)}</code></p>
-                )}
                 <div style={styles.promoteRow}>
                   <button type="button" style={{ ...styles.promoteButton, ...(!canPromote ? styles.disabled : {}) }}
                     disabled={!canPromote} onClick={() => { void handlePromote() }}>
@@ -329,7 +326,7 @@ function NameField({ name, onName, disabled }: { name: string; onName: (name: st
           if (event.target.value.trim()) onName(event.target.value)
         }}
       />
-      <span style={styles.hint}>What the story calls this. The look id below follows it unless you changed the id yourself.</span>
+      <span style={styles.hint}>What the story calls this. The short name below follows it unless you changed the short name yourself.</span>
     </label>
   )
 }
@@ -392,7 +389,6 @@ const styles: Record<string, React.CSSProperties> = {
   problem: { fontFamily: 'var(--font-body)', fontSize: 13, lineHeight: 1.5, color: 'var(--danger, #b3261e)', margin: 0 },
   promotedBlock: { display: 'flex', flexDirection: 'column', gap: 8 },
   promotedLine: { fontFamily: 'var(--font-body)', fontSize: 15, fontWeight: 600, color: 'var(--fg)', margin: 0 },
-  code: { fontFamily: 'var(--font-mono)', fontSize: 12 },
   nameField: { display: 'flex', flexDirection: 'column', gap: 6 },
   nameLabel: { fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, color: 'var(--fg)' },
   nameInput: {
